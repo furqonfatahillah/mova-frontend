@@ -1,0 +1,4691 @@
+import { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
+import {
+  ShoppingCart, Receipt, Clock, AlertTriangle, ArrowRight,
+  Search, X, Plus, Minus, Trash2, CheckCircle, Printer,
+  CreditCard, QrCode, Banknote, Utensils, Coffee, Pizza,
+  Sparkles, User, Table, Store, Calendar, RotateCcw, Eye,
+  Package, ShieldAlert, ArrowUpRight, Send, Bookmark, ChefHat,
+  FileText, CheckCircle2, ChevronRight, PauseCircle, RefreshCw, XCircle, Users,
+  Percent, Tag, Gift, Scissors, Split, Divide
+} from 'lucide-react';
+import api from '../api/client';
+import { rupiah, num, LoadingState, PageHeader } from '../components/ui';
+import { printElement } from '../utils/print';
+import toast from 'react-hot-toast';
+import { useOutlet } from '../context/OutletContext';
+
+export default function POS() {
+  const [menus, setMenus] = useState([]);
+  const [transactions, setTransactions] = useState([]);
+  const [ingredients, setIngredients] = useState([]);
+  const [activeShift, setActiveShift] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Filters & Search
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('ALL');
+
+  // Cart State
+  const [cart, setCart] = useState([]);
+  const [orderType, setOrderType] = useState('DINE_IN');
+  const [tableNumber, setTableNumber] = useState('');
+  const [customerName, setCustomerName] = useState('');
+  const [orderDate, setOrderDate] = useState(new Date().toISOString().slice(0, 10));
+
+  // Payment Modal State
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState('CASH');
+  const [cashReceived, setCashReceived] = useState('');
+  const [orderNotes, setOrderNotes] = useState('');
+
+  // Receipt Modal State
+  const [receiptModalOpen, setReceiptModalOpen] = useState(false);
+  const [completedOrder, setCompletedOrder] = useState(null);
+
+  // History Tab toggle
+  const [showHistory, setShowHistory] = useState(false);
+
+  // Modifier Selection Modal State
+  const [modifierModal, setModifierModal] = useState({
+    open: false,
+    menu: null,
+    status: null,
+    selectedOptions: {},
+    qty: 1,
+    notes: '',
+  });
+
+  // Stock Out Alert Modal State
+  const [stockAlertModal, setStockAlertModal] = useState({
+    open: false,
+    menu: null,
+    status: null,
+  });
+
+  // Quick Restock Modal State
+  const [restockModal, setRestockModal] = useState({
+    open: false,
+    ingredientId: '',
+    qty: 1,
+    unitType: 'BELI', // 'BELI' or 'PAKAI'
+    unitPrice: '',
+    notes: 'Pembelian darurat kasir',
+    submitting: false,
+  });
+
+  // Open Bills & Table Management State
+  const [openBills, setOpenBills] = useState([]);
+  const [openBillsModalOpen, setOpenBillsModalOpen] = useState(false);
+  const [activeOpenBillPayment, setActiveOpenBillPayment] = useState(null);
+  const [appendModeBill, setAppendModeBill] = useState(null);
+  const [showTableStrip, setShowTableStrip] = useState(true);
+  const [mobileActiveTab, setMobileActiveTab] = useState('catalog');
+
+  // Printing & Chit Modals
+  const [kitchenChitModal, setKitchenChitModal] = useState({
+    open: false,
+    bill: null,
+    items: [],
+    isAdditional: false,
+  });
+  const [prebillModal, setPrebillModal] = useState({
+    open: false,
+    bill: null,
+  });
+  const [cancelBillModal, setCancelBillModal] = useState({
+    open: false,
+    bill: null,
+    reason: '',
+    submitting: false,
+  });
+
+  // Split Bill Modal State
+  const [splitBillModal, setSplitBillModal] = useState({
+    open: false,
+    bill: null,
+    mode: 'BY_ITEM', // 'BY_ITEM' or 'EQUAL'
+    selectedItemQtys: {}, // { [trxId]: qtyToPay }
+    totalSplits: 2,
+    activeEqualIndex: 1,
+    paymentMethod: 'CASH',
+    cashReceived: '',
+    customerName: '',
+    notes: '',
+    submitting: false,
+  });
+
+  // Discount & Voucher State
+  const [availableDiscounts, setAvailableDiscounts] = useState([]);
+  const [appliedDiscount, setAppliedDiscount] = useState(null);
+  const [promoCodeInput, setPromoCodeInput] = useState('');
+  const [validatingPromo, setValidatingPromo] = useState(false);
+  const [promoModalOpen, setPromoModalOpen] = useState(false);
+  const [customDiscountModal, setCustomDiscountModal] = useState({
+    open: false,
+    type: 'PERCENTAGE',
+    value: '',
+    name: 'Diskon Kasir',
+  });
+
+  const standardTables = [
+    'Meja 01', 'Meja 02', 'Meja 03', 'Meja 04', 'Meja 05', 'Meja 06',
+    'Meja 07', 'Meja 08', 'Meja 09', 'Meja 10', 'VIP 01', 'VIP 02',
+    'Outdoor 01', 'Outdoor 02'
+  ];
+
+  const currentUser = JSON.parse(localStorage.getItem('pos_user') || '{}');
+  const { activeOutletId, activeOutlet, isOwnerWebsite, changeOutlet, outlets } = useOutlet();
+
+  const currentTargetOutlet = activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all'
+    ? Number(activeOutletId)
+    : (currentUser.outlet_id || 1);
+
+  useEffect(() => {
+    fetchAll();
+  }, [activeOutletId]);
+
+  async function fetchOpenBills() {
+    try {
+      const res = await api.get('/transactions/open-bills', {
+        params: { outlet_id: currentTargetOutlet }
+      });
+      setOpenBills(res.data || []);
+    } catch (err) {
+      console.error('Error fetching open bills:', err);
+    }
+  }
+
+  async function fetchAll() {
+    setLoading(true);
+    try {
+      const [m, t, i, s, ob, disc] = await Promise.all([
+        api.get('/menus'),
+        api.get('/transactions', { params: { outlet_id: currentTargetOutlet, status: 'PAID' } }),
+        api.get('/ingredients', { params: { outlet_id: currentTargetOutlet } }),
+        api.get('/shifts/active', { params: { outlet_id: currentTargetOutlet } }),
+        api.get('/transactions/open-bills', { params: { outlet_id: currentTargetOutlet } }),
+        api.get('/discounts/available', { params: { outlet_id: currentTargetOutlet } }).catch(() => ({ data: [] })),
+      ]);
+      setMenus(m.data.filter(x => x.active));
+      setTransactions(t.data.slice(0, 30));
+      setIngredients(i.data);
+      setActiveShift(s.data);
+      setOpenBills(ob.data || []);
+      setAvailableDiscounts(disc.data || []);
+    } catch {
+      toast.error('Gagal memuat data POS');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Categories extraction
+  const categories = useMemo(() => {
+    const cats = new Set(menus.map(m => m.category || 'Lainnya'));
+    return ['ALL', ...Array.from(cats)];
+  }, [menus]);
+
+  // Calculate available servings and sold-out status for a menu
+  function getMenuStockStatus(menu) {
+    const recipe = menu.recipes?.[0];
+    if (!recipe || !recipe.items || recipe.items.length === 0) {
+      return {
+        hasRecipe: false,
+        availableServings: 0,
+        isSoldOut: true,
+        isLowStock: false,
+        reason: 'Belum ada resep aktif',
+        limitingIngredient: null,
+        details: [],
+      };
+    }
+
+    let minServings = Infinity;
+    let limitingIngredient = null;
+    const details = [];
+
+    for (const item of recipe.items) {
+      const ing = ingredients.find(i => i.id === item.ingredient_id) || item.ingredient;
+      const currentStock = ing ? (ing.current_stock ?? ing.stok_awal ?? 0) : 0;
+      const requiredQty = Number(item.qty) || 1;
+      const possibleServings = Math.max(0, Math.floor(currentStock / requiredQty));
+      const isDeficit = currentStock < requiredQty;
+
+      details.push({
+        id: item.ingredient_id,
+        name: ing?.name || `Bahan #${item.ingredient_id}`,
+        required: requiredQty,
+        unit: item.unit || ing?.unit_pakai || 'satuan',
+        stock: currentStock,
+        possibleServings,
+        isDeficit,
+      });
+
+      if (possibleServings < minServings) {
+        minServings = possibleServings;
+        limitingIngredient = {
+          id: item.ingredient_id,
+          name: ing?.name || `Bahan #${item.ingredient_id}`,
+          unit: item.unit || ing?.unit_pakai || 'satuan',
+          stock: currentStock,
+          required: requiredQty,
+        };
+      }
+    }
+
+    const availableServings = minServings === Infinity ? 0 : minServings;
+    const isSoldOut = availableServings <= 0;
+    const isLowStock = !isSoldOut && availableServings <= 5;
+
+    return {
+      hasRecipe: true,
+      availableServings,
+      isSoldOut,
+      isLowStock,
+      limitingIngredient,
+      details,
+    };
+  }
+
+  // Filtered menus with stock status attached
+  const filteredMenus = useMemo(() => {
+    return menus
+      .filter(m => {
+        const matchCat = selectedCategory === 'ALL' || (m.category || 'Lainnya') === selectedCategory;
+        const matchSearch = m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (m.code && m.code.toLowerCase().includes(searchQuery.toLowerCase()));
+        return matchCat && matchSearch;
+      })
+      .map(m => ({
+        ...m,
+        stockStatus: getMenuStockStatus(m),
+      }));
+  }, [menus, selectedCategory, searchQuery, ingredients]);
+
+  // Cart calculations (supporting modifier addon prices & discounts)
+  const cartGrossSubtotal = useMemo(() => {
+    return cart.reduce((sum, item) => sum + ((item.unitPrice ?? item.menu.price) * item.qty), 0);
+  }, [cart]);
+
+  const cartDiscountAmount = useMemo(() => {
+    if (!appliedDiscount || cartGrossSubtotal <= 0) return 0;
+    const rate = Number(appliedDiscount.value ?? appliedDiscount.rate ?? 0);
+    const maxCap = appliedDiscount.max_discount_amount ?? appliedDiscount.max_discount;
+    if (appliedDiscount.type === 'PERCENTAGE') {
+      const raw = Math.round((cartGrossSubtotal * rate) / 100);
+      return maxCap ? Math.min(raw, Number(maxCap)) : raw;
+    } else {
+      return Math.min(rate, cartGrossSubtotal);
+    }
+  }, [appliedDiscount, cartGrossSubtotal]);
+
+  const cartTotal = useMemo(() => {
+    return Math.max(0, cartGrossSubtotal - cartDiscountAmount);
+  }, [cartGrossSubtotal, cartDiscountAmount]);
+
+  const cartItemCount = useMemo(() => {
+    return cart.reduce((sum, item) => sum + item.qty, 0);
+  }, [cart]);
+
+  // Total to be paid in payment modal (either active open bill or current cart total)
+  const payableTotal = activeOpenBillPayment ? Number(activeOpenBillPayment.total_price) : cartTotal;
+
+  // Change amount calculation for CASH
+  const parsedCash = parseFloat(cashReceived) || 0;
+  const changeAmount = Math.max(0, parsedCash - payableTotal);
+  const isCashSufficient = paymentMethod !== 'CASH' || parsedCash >= payableTotal;
+
+  // Auto-remove applied discount if cart drops below min_order_amount
+  useEffect(() => {
+    if (appliedDiscount && appliedDiscount.min_order_amount && cartGrossSubtotal > 0 && cartGrossSubtotal < Number(appliedDiscount.min_order_amount)) {
+      toast.error(`Diskon "${appliedDiscount.name}" dibatalkan: minimal pembelian ${rupiah(appliedDiscount.min_order_amount)}`);
+      setAppliedDiscount(null);
+    }
+  }, [cartGrossSubtotal, appliedDiscount]);
+
+  // Apply Voucher Code
+  async function handleApplyVoucherCode() {
+    const code = promoCodeInput.trim().toUpperCase();
+    if (!code) {
+      toast.error('Ketik kode voucher terlebih dahulu.');
+      return;
+    }
+    if (cartGrossSubtotal <= 0) {
+      toast.error('Masukkan menu ke keranjang terlebih dahulu.');
+      return;
+    }
+    setValidatingPromo(true);
+    try {
+      const { data } = await api.post('/discounts/validate-code', {
+        code,
+        subtotal: cartGrossSubtotal,
+        outlet_id: currentTargetOutlet,
+      });
+      setAppliedDiscount(data.discount);
+      setPromoCodeInput('');
+      toast.success(`Voucher "${data.discount.code || data.discount.name}" aktif! Hemat ${rupiah(data.discount_amount)}`);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Kode voucher tidak valid atau belum memenuhi syarat.');
+    } finally {
+      setValidatingPromo(false);
+    }
+  }
+
+  // Select Direct Promo
+  function handleSelectPromo(promo) {
+    if (promo.min_order_amount && cartGrossSubtotal < Number(promo.min_order_amount)) {
+      toast.error(`Minimal belanja ${rupiah(promo.min_order_amount)} untuk promo ini.`);
+      return;
+    }
+    setAppliedDiscount(promo);
+    setPromoModalOpen(false);
+    toast.success(`Promo "${promo.name}" diterapkan!`);
+  }
+
+  // Apply Custom Manual Cashier Discount
+  function handleApplyCustomDiscount() {
+    const val = parseFloat(customDiscountModal.value);
+    if (isNaN(val) || val <= 0) {
+      toast.error('Masukkan nilai diskon yang valid.');
+      return;
+    }
+    if (customDiscountModal.type === 'PERCENTAGE' && val > 100) {
+      toast.error('Diskon persentase tidak boleh lebih dari 100%.');
+      return;
+    }
+    setAppliedDiscount({
+      id: null,
+      name: customDiscountModal.name?.trim() || 'Diskon Kasir',
+      code: null,
+      type: customDiscountModal.type,
+      rate: val,
+      max_discount: null,
+      min_order_amount: 0,
+    });
+    setCustomDiscountModal({
+      open: false,
+      type: 'PERCENTAGE',
+      value: '',
+      name: 'Diskon Kasir',
+    });
+    setPromoModalOpen(false);
+    toast.success('Diskon manual kasir berhasil diterapkan!');
+  }
+
+  // Remove Applied Discount
+  function handleRemoveDiscount() {
+    setAppliedDiscount(null);
+    toast.info('Diskon telah dilepas.');
+  }
+
+  // Handle card click
+  function handleMenuCardClick(menu, status) {
+    if (!status.hasRecipe) {
+      toast.error(`Menu "${menu.name}" belum memiliki resep aktif.`);
+      return;
+    }
+
+    // If ingredient is out of stock, trigger confirmation dialog
+    if (status.isSoldOut) {
+      setStockAlertModal({
+        open: true,
+        menu,
+        status,
+      });
+      return;
+    }
+
+    // If menu has modifier groups, open modifier modal
+    if (menu.modifier_groups && menu.modifier_groups.length > 0) {
+      openModifierModal(menu, status);
+      return;
+    }
+
+    // Otherwise add to cart directly
+    addItemToCart(menu);
+  }
+
+  // Open Modifier Customization Modal
+  function openModifierModal(menu, status) {
+    const initialSelection = {};
+    (menu.modifier_groups || []).forEach(group => {
+      const isSingleChoice = group.max_selection === 1;
+      const isRequired = (group.min_selection ?? 0) >= 1;
+      if (isSingleChoice && isRequired && group.options && group.options.length > 0) {
+        initialSelection[group.id] = [group.options[0].id];
+      } else {
+        initialSelection[group.id] = [];
+      }
+    });
+
+    setModifierModal({
+      open: true,
+      menu,
+      status: status || getMenuStockStatus(menu),
+      selectedOptions: initialSelection,
+      qty: 1,
+      notes: '',
+    });
+  }
+
+  // Toggle modifier option
+  function handleToggleModifierOption(group, option) {
+    setModifierModal(prev => {
+      const current = prev.selectedOptions[group.id] || [];
+      const isSingleChoice = group.max_selection === 1;
+
+      if (isSingleChoice) {
+        const isSelected = current.includes(option.id);
+        const isRequired = (group.min_selection ?? 0) >= 1;
+        if (isSelected && !isRequired) {
+          return {
+            ...prev,
+            selectedOptions: {
+              ...prev.selectedOptions,
+              [group.id]: [],
+            }
+          };
+        }
+        return {
+          ...prev,
+          selectedOptions: {
+            ...prev.selectedOptions,
+            [group.id]: [option.id],
+          }
+        };
+      } else {
+        const isSelected = current.includes(option.id);
+        let updated;
+        if (isSelected) {
+          updated = current.filter(id => id !== option.id);
+        } else {
+          if (group.max_selection && current.length >= group.max_selection) {
+            toast.error(`Maksimal ${group.max_selection} pilihan untuk ${group.name}`);
+            return prev;
+          }
+          updated = [...current, option.id];
+        }
+        return {
+          ...prev,
+          selectedOptions: {
+            ...prev.selectedOptions,
+            [group.id]: updated,
+          }
+        };
+      }
+    });
+  }
+
+  // Calculate modal total
+  function calculateModalTotal() {
+    if (!modifierModal.menu) return 0;
+    const base = Number(modifierModal.menu.price) || 0;
+    let extra = 0;
+    (modifierModal.menu.modifier_groups || []).forEach(group => {
+      const selectedIds = modifierModal.selectedOptions[group.id] || [];
+      (group.options || []).forEach(opt => {
+        if (selectedIds.includes(opt.id)) {
+          extra += Number(opt.price) || 0;
+        }
+      });
+    });
+    return (base + extra) * modifierModal.qty;
+  }
+
+  // Confirm modifier selection and add to cart
+  function handleConfirmModifierModal() {
+    const { menu, selectedOptions, qty, notes } = modifierModal;
+    if (!menu) return;
+
+    // Validate min_selection
+    for (const group of (menu.modifier_groups || [])) {
+      const selected = selectedOptions[group.id] || [];
+      const min = group.min_selection ?? 0;
+      if (min > 0 && selected.length < min) {
+        toast.error(`Harap pilih minimal ${min} opsi untuk "${group.name}".`);
+        return;
+      }
+    }
+
+    // Flatten selected options with details
+    const selectedModifierObjects = [];
+    (menu.modifier_groups || []).forEach(group => {
+      const selectedIds = selectedOptions[group.id] || [];
+      (group.options || []).forEach(opt => {
+        if (selectedIds.includes(opt.id)) {
+          selectedModifierObjects.push({
+            id: opt.id,
+            group_id: group.id,
+            group_name: group.name,
+            name: opt.name,
+            price: Number(opt.price) || 0,
+            ingredient_id: opt.ingredient_id,
+            ingredient_name: opt.ingredient?.name,
+            qty: opt.qty,
+            unit: opt.unit || opt.ingredient?.unit_pakai,
+          });
+        }
+      });
+    });
+
+    addItemToCart(menu, notes, selectedModifierObjects, qty);
+    setModifierModal({
+      open: false,
+      menu: null,
+      status: null,
+      selectedOptions: {},
+      qty: 1,
+      notes: '',
+    });
+    toast.success(`"${menu.name}" ditambahkan ke keranjang.`);
+  }
+
+  // Add item to cart with modifier support
+  function addItemToCart(menu, forcedNote = '', selectedModifiers = [], initialQty = 1) {
+    const sortedModIds = [...(selectedModifiers || [])].map(m => m.id).sort((a, b) => a - b);
+    const cartKey = `${menu.id}_${sortedModIds.join('-')}`;
+    const extraPrice = (selectedModifiers || []).reduce((sum, m) => sum + (Number(m.price) || 0), 0);
+    const unitPrice = Number(menu.price) + extraPrice;
+
+    setCart(prev => {
+      const existingIndex = prev.findIndex(item => (item.cartKey || `${item.menu.id}_`) === cartKey);
+      if (existingIndex > -1) {
+        const updated = [...prev];
+        updated[existingIndex] = {
+          ...updated[existingIndex],
+          qty: updated[existingIndex].qty + initialQty,
+          notes: forcedNote || updated[existingIndex].notes,
+        };
+        return updated;
+      } else {
+        return [...prev, {
+          cartKey,
+          menu,
+          qty: initialQty,
+          notes: forcedNote,
+          selectedModifiers: selectedModifiers || [],
+          unitPrice,
+        }];
+      }
+    });
+  }
+
+  // Force add out-of-stock item (Emergency Order)
+  function handleForceAddToCart() {
+    if (stockAlertModal.menu) {
+      const m = stockAlertModal.menu;
+      setStockAlertModal({ open: false, menu: null, status: null });
+      if (m.modifier_groups?.length > 0) {
+        openModifierModal(m, { isSoldOut: false, hasRecipe: true });
+        return;
+      }
+      addItemToCart(m, 'Bahan darurat / fisik tersedia');
+      toast.success(`"${m.name}" dimasukkan ke keranjang (Order Darurat).`);
+    }
+  }
+
+  // Open Quick Restock Modal
+  function handleOpenRestock(ingredientId) {
+    setRestockModal({
+      open: true,
+      ingredientId: ingredientId || (ingredients[0]?.id?.toString() || ''),
+      qty: 5,
+      unitType: 'BELI',
+      notes: 'Pembelian darurat kasir',
+      submitting: false,
+    });
+  }
+
+  // Submit Quick Restock
+  async function handleSubmitRestock(e) {
+    e.preventDefault();
+    const ing = ingredients.find(i => i.id === Number(restockModal.ingredientId));
+    if (!ing) return;
+
+    setRestockModal(p => ({ ...p, submitting: true }));
+    try {
+      const conversion = Number(ing.konversi) || 1;
+      const netQty = restockModal.unitType === 'BELI'
+        ? Number(restockModal.qty) * conversion
+        : Number(restockModal.qty);
+
+      await api.post('/movements', {
+        date: orderDate,
+        ingredient_id: ing.id,
+        type: 'PURCHASE',
+        qty: Number(restockModal.qty),
+        unit_type: restockModal.unitType,
+        unit_price: restockModal.unitPrice !== '' ? Number(restockModal.unitPrice) : null,
+        outlet_id: currentTargetOutlet,
+        note: restockModal.notes || 'Pembelian darurat kasir',
+      });
+
+      toast.success(`Stok "${ing.name}" bertambah +${num(netQty)} ${ing.unit_pakai} di ${activeOutlet?.name || 'cabang ini'}!`);
+
+      // Refresh ingredients and active shift for this outlet
+      const [updatedIngs, s] = await Promise.all([
+        api.get('/ingredients', { params: { outlet_id: currentTargetOutlet } }),
+        api.get('/shifts/active', { params: { outlet_id: currentTargetOutlet } }),
+      ]);
+      setIngredients(updatedIngs.data);
+      setActiveShift(s.data);
+
+      setRestockModal(p => ({ ...p, open: false, submitting: false }));
+      if (stockAlertModal.open) {
+        setStockAlertModal({ open: false, menu: null, status: null });
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal menambah stok bahan.');
+      setRestockModal(p => ({ ...p, submitting: false }));
+    }
+  }
+
+  // Update item quantity
+  function updateQty(targetKey, delta) {
+    setCart(prev => {
+      return prev
+        .map(item => {
+          const itemKey = item.cartKey || item.menu.id;
+          if (itemKey === targetKey || item.menu.id === targetKey) {
+            const newQty = item.qty + delta;
+            return newQty > 0 ? { ...item, qty: newQty } : null;
+          }
+          return item;
+        })
+        .filter(Boolean);
+    });
+  }
+
+  // Update item note
+  function updateItemNotes(targetKey, noteText) {
+    setCart(prev => prev.map(item => {
+      const itemKey = item.cartKey || item.menu.id;
+      return (itemKey === targetKey || item.menu.id === targetKey) ? { ...item, notes: noteText } : item;
+    }));
+  }
+
+  // Remove single item
+  function removeFromCart(targetKey) {
+    setCart(prev => prev.filter(item => {
+      const itemKey = item.cartKey || item.menu.id;
+      return itemKey !== targetKey && item.menu.id !== targetKey;
+    }));
+  }
+
+  // Clear entire cart
+  function clearCart() {
+    if (cart.length === 0) return;
+    if (window.confirm('Kosongkan semua pesanan di keranjang?')) {
+      setCart([]);
+      setCustomerName('');
+      setTableNumber('');
+      setOrderNotes('');
+      setAppliedDiscount(null);
+      setPromoCodeInput('');
+    }
+  }
+
+  // Open payment modal for regular cart
+  function handleOpenPayment() {
+    if (cart.length === 0) {
+      toast.error('Keranjang pesanan masih kosong.');
+      return;
+    }
+    setActiveOpenBillPayment(null);
+    setCashReceived(cartTotal.toString());
+    setPaymentMethod('CASH');
+    setPaymentModalOpen(true);
+  }
+
+  // Open payment modal for an existing open bill
+  function handleOpenPayOpenBill(bill) {
+    setActiveOpenBillPayment(bill);
+    setPaymentMethod('CASH');
+    setCashReceived(Number(bill.total_price).toString());
+    setOrderNotes('');
+    setPaymentModalOpen(true);
+  }
+
+  // Open Split Bill modal
+  function handleOpenSplitBill(bill) {
+    const initialQtys = {};
+    (bill.items || []).forEach(it => {
+      initialQtys[it.id] = 0;
+    });
+
+    const isExistingEqualSplit = (bill.paid_splits_count || 0) > 0 && (bill.split_total || 0) > 0;
+    const totalSplits = isExistingEqualSplit ? Number(bill.split_total) : 2;
+    const paidIndices = bill.paid_split_indices || [];
+
+    // Pick first unpaid index
+    let nextUnpaid = 1;
+    for (let i = 1; i <= totalSplits; i++) {
+      if (!paidIndices.includes(i)) {
+        nextUnpaid = i;
+        break;
+      }
+    }
+
+    const equalPartAmount = Math.round((Number(bill.total_price) || 0) / totalSplits);
+
+    setSplitBillModal({
+      open: true,
+      bill,
+      mode: isExistingEqualSplit ? 'EQUAL' : 'BY_ITEM',
+      selectedItemQtys: initialQtys,
+      totalSplits,
+      activeEqualIndex: nextUnpaid,
+      paymentMethod: 'CASH',
+      cashReceived: isExistingEqualSplit ? equalPartAmount.toString() : '',
+      customerName: isExistingEqualSplit ? `Tamu ${nextUnpaid}/${totalSplits}` : '',
+      notes: '',
+      submitting: false,
+    });
+  }
+
+  // Adjust item qty to pay in Split by Item
+  function handleSplitItemQtyChange(itemId, delta, maxQty) {
+    setSplitBillModal(prev => {
+      const current = prev.selectedItemQtys[itemId] || 0;
+      const next = Math.max(0, Math.min(maxQty, current + delta));
+      const updated = { ...prev.selectedItemQtys, [itemId]: next };
+
+      let sub = 0;
+      (prev.bill?.items || []).forEach(it => {
+        const q = updated[it.id] || 0;
+        const unitPrice = (Number(it.subtotal) || Number(it.total_price)) / (Number(it.qty) || 1);
+        sub += unitPrice * q;
+      });
+
+      return {
+        ...prev,
+        selectedItemQtys: updated,
+        cashReceived: sub > 0 ? sub.toString() : '',
+      };
+    });
+  }
+
+  // Select all items for split
+  function handleSelectAllSplitItems() {
+    setSplitBillModal(prev => {
+      const updated = {};
+      let sub = 0;
+      (prev.bill?.items || []).forEach(it => {
+        updated[it.id] = it.qty;
+        sub += Number(it.total_price);
+      });
+      return {
+        ...prev,
+        selectedItemQtys: updated,
+        cashReceived: sub.toString(),
+      };
+    });
+  }
+
+  // Clear all split item selections
+  function handleClearSplitItems() {
+    setSplitBillModal(prev => {
+      const updated = {};
+      (prev.bill?.items || []).forEach(it => {
+        updated[it.id] = 0;
+      });
+      return {
+        ...prev,
+        selectedItemQtys: updated,
+        cashReceived: '',
+      };
+    });
+  }
+
+  // Submit Split by Item
+  async function handleSubmitSplitByItem() {
+    const { bill, selectedItemQtys, paymentMethod, cashReceived, customerName, notes } = splitBillModal;
+    if (!bill) return;
+
+    const itemsToPay = Object.entries(selectedItemQtys)
+      .filter(([_, q]) => q > 0)
+      .map(([id, q]) => ({ id: Number(id), qty: q }));
+
+    if (itemsToPay.length === 0) {
+      toast.error('Pilih minimal 1 menu/porsi untuk dibayar pada bagian ini.');
+      return;
+    }
+
+    let subtotal = 0;
+    (bill.items || []).forEach(it => {
+      const q = selectedItemQtys[it.id] || 0;
+      if (q > 0) {
+        const unit = (Number(it.subtotal) || Number(it.total_price)) / (Number(it.qty) || 1);
+        subtotal += unit * q;
+      }
+    });
+
+    const parsedCash = parseFloat(cashReceived) || 0;
+    if (paymentMethod === 'CASH' && parsedCash < subtotal) {
+      toast.error('Nominal uang tunai kurang dari total bagian ini!');
+      return;
+    }
+
+    const changeAmount = paymentMethod === 'CASH' ? Math.max(0, parsedCash - subtotal) : 0;
+
+    setSplitBillModal(p => ({ ...p, submitting: true }));
+    try {
+      const payload = {
+        items: itemsToPay,
+        payment_method: paymentMethod,
+        amount_paid: paymentMethod === 'CASH' ? parsedCash : subtotal,
+        change_amount: changeAmount,
+        customer_name: customerName || undefined,
+        notes: notes || undefined,
+      };
+
+      const { data } = await api.post(`/transactions/open-bills/${bill.order_number}/split-by-item`, payload);
+
+      toast.success(`Pembayaran Bagian ${data.split_index} (${data.order_number}) berhasil!`);
+
+      // Show Thermal Receipt for this split
+      setCompletedOrder({
+        order_number: data.order_number,
+        parent_order_number: data.parent_order_number,
+        split_index: data.split_index,
+        split_type: 'BY_ITEM',
+        date: data.date || new Date().toISOString().slice(0, 10),
+        customer_name: data.customer_name || 'Tamu',
+        order_type: 'DINE_IN',
+        table_number: data.table_number,
+        payment_method: data.payment_method,
+        amount_paid: data.amount_paid,
+        change_amount: data.change_amount,
+        subtotal: data.subtotal,
+        discount_amount: data.discount_amount || 0,
+        total_price: data.total_price,
+        remaining_total: data.remaining_total,
+        is_table_closed: data.is_table_closed,
+        items: data.items || [],
+        cashier: currentUser.name || 'Kasir',
+        shift_name: activeShift?.shift?.shift_name || 'Reguler',
+        outlet_name: activeOutlet?.name || currentUser.outlet_name || 'Outlet',
+        created_at: data.paid_at || new Date().toLocaleString('id-ID'),
+      });
+
+      setSplitBillModal(p => ({ ...p, open: false, submitting: false }));
+      setOpenBillsModalOpen(false);
+      setReceiptModalOpen(true);
+      fetchAll();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal memproses split bill.');
+      setSplitBillModal(p => ({ ...p, submitting: false }));
+    }
+  }
+
+  // Submit Split Evenly
+  async function handleSubmitSplitEvenly(splitIndex, splitAmount) {
+    const { bill, totalSplits, paymentMethod, cashReceived, customerName, notes } = splitBillModal;
+    if (!bill) return;
+
+    const parsedCash = parseFloat(cashReceived) || 0;
+    if (paymentMethod === 'CASH' && parsedCash < splitAmount) {
+      toast.error('Nominal uang tunai kurang dari nominal patungan!');
+      return;
+    }
+
+    const changeAmount = paymentMethod === 'CASH' ? Math.max(0, parsedCash - splitAmount) : 0;
+
+    setSplitBillModal(p => ({ ...p, submitting: true }));
+    try {
+      const payload = {
+        total_splits: Number(totalSplits),
+        split_index: Number(splitIndex),
+        split_amount: Number(splitAmount),
+        payment_method: paymentMethod,
+        amount_paid: paymentMethod === 'CASH' ? parsedCash : splitAmount,
+        change_amount: changeAmount,
+        customer_name: customerName || `Tamu ${splitIndex}/${totalSplits}`,
+        notes: notes || undefined,
+      };
+
+      const { data } = await api.post(`/transactions/open-bills/${bill.order_number}/split-evenly`, payload);
+
+      toast.success(`Pembayaran Patungan Bagian ${data.split_index}/${data.split_total} berhasil!`);
+
+      setCompletedOrder({
+        order_number: data.order_number,
+        parent_order_number: data.parent_order_number,
+        split_index: data.split_index,
+        split_total: data.split_total,
+        split_type: 'EQUAL',
+        date: data.date || new Date().toISOString().slice(0, 10),
+        customer_name: data.customer_name,
+        order_type: 'DINE_IN',
+        table_number: data.table_number,
+        payment_method: data.payment_method,
+        amount_paid: data.amount_paid,
+        change_amount: data.change_amount,
+        subtotal: data.subtotal,
+        discount_amount: 0,
+        total_price: data.total_price,
+        remaining_total: data.remaining_total,
+        is_table_closed: data.is_table_closed,
+        items: data.items || [],
+        cashier: currentUser.name || 'Kasir',
+        shift_name: activeShift?.shift?.shift_name || 'Reguler',
+        outlet_name: activeOutlet?.name || currentUser.outlet_name || 'Outlet',
+        created_at: data.paid_at || new Date().toLocaleString('id-ID'),
+      });
+
+      setSplitBillModal(p => ({ ...p, open: false, submitting: false }));
+      setOpenBillsModalOpen(false);
+      setReceiptModalOpen(true);
+      fetchAll();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal memproses pembayaran patungan.');
+      setSplitBillModal(p => ({ ...p, submitting: false }));
+    }
+  }
+
+  // Hold order (Save as Open Bill)
+  async function handleHoldOrder() {
+    if (cart.length === 0) {
+      toast.error('Keranjang pesanan masih kosong.');
+      return;
+    }
+
+    const currentTable = tableNumber.trim();
+    if (orderType === 'DINE_IN' && !currentTable) {
+      toast.error('Pilih atau ketik Nomor Meja untuk pesanan Dine-In sebelum Hold Bill!');
+      return;
+    }
+
+    // Check if table is already occupied
+    const occupiedBill = openBills.find(b =>
+      b.table_number?.toLowerCase() === currentTable.toLowerCase() ||
+      b.table_number?.toLowerCase() === currentTable.replace('Meja ', '').toLowerCase()
+    );
+
+    if (occupiedBill) {
+      const confirmAppend = window.confirm(
+        `${currentTable} sudah memiliki tagihan terbuka (${occupiedBill.order_number} - ${rupiah(occupiedBill.total_price)}).\n\nApakah Anda ingin menambahkan pesanan ini ke tagihan meja yang sudah ada?`
+      );
+      if (confirmAppend) {
+        setAppendModeBill(occupiedBill);
+        handleSubmitAppendItems(occupiedBill);
+        return;
+      } else {
+        return;
+      }
+    }
+
+    setSubmitting(true);
+    try {
+      const payload = {
+        date: orderDate,
+        customer_name: customerName || undefined,
+        order_type: orderType,
+        table_number: currentTable || undefined,
+        status: 'HOLD',
+        notes: orderNotes || undefined,
+        shift_id: activeShift?.shift?.id || undefined,
+        outlet_id: currentTargetOutlet,
+        discount_id: appliedDiscount?.id || undefined,
+        discount_amount: cartDiscountAmount || 0,
+        discount_name: appliedDiscount?.name || undefined,
+        discount_type: appliedDiscount?.type || undefined,
+        discount_rate: appliedDiscount?.value ?? appliedDiscount?.rate ?? undefined,
+        items: cart.map(item => ({
+          menu_id: item.menu.id,
+          qty: item.qty,
+          notes: item.notes || undefined,
+          modifier_option_ids: (item.selectedModifiers || []).map(m => m.id),
+          modifiers: item.selectedModifiers || [],
+        })),
+      };
+
+      const { data } = await api.post('/transactions', payload);
+
+      toast.success(`Tagihan ${currentTable || data.order_number} berhasil disimpan (Open Bill)!`);
+
+      // Open Kitchen Chit Modal automatically
+      setKitchenChitModal({
+        open: true,
+        bill: {
+          order_number: data.order_number,
+          table_number: data.table_number || currentTable,
+          order_type: data.order_type || orderType,
+          customer_name: data.customer_name || customerName || 'Tamu Resto',
+          cashier: currentUser.name || 'Kasir',
+          outlet_name: activeOutlet?.name || 'Cabang MOVA',
+          created_at: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+        },
+        items: data.items || cart.map(i => ({ menu_name: i.menu.name, qty: i.qty, notes: i.notes, modifiers: i.selectedModifiers })),
+        isAdditional: false,
+      });
+
+      // Clear cart
+      setCart([]);
+      setCustomerName('');
+      setTableNumber('');
+      setOrderNotes('');
+      setAppliedDiscount(null);
+      setPromoCodeInput('');
+
+      // Refresh open bills
+      fetchOpenBills();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal menyimpan tagihan terbuka.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // Start append mode for an open bill
+  function handleStartAppendItems(bill) {
+    setAppendModeBill(bill);
+    setOrderType('DINE_IN');
+    setTableNumber(bill.table_number || '');
+    setCustomerName(bill.customer_name || '');
+    setCart([]);
+    setOpenBillsModalOpen(false);
+    toast.success(`Mode Tambah Menu aktif untuk ${bill.table_number}. Silakan pilih menu di katalog.`);
+  }
+
+  // Submit append items to existing open bill
+  async function handleSubmitAppendItems(targetBill = appendModeBill) {
+    const activeTarget = targetBill || appendModeBill;
+    if (!activeTarget) return;
+    if (cart.length === 0) {
+      toast.error('Pilih minimal 1 menu tambahan untuk dikirim ke dapur!');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const payload = {
+        items: cart.map(item => ({
+          menu_id: item.menu.id,
+          qty: item.qty,
+          notes: item.notes || undefined,
+          modifier_option_ids: (item.selectedModifiers || []).map(m => m.id),
+          modifiers: item.selectedModifiers || [],
+        })),
+      };
+
+      const { data } = await api.post(`/transactions/${activeTarget.order_number}/add-items`, payload);
+
+      toast.success(`Pesanan tambahan berhasil dikirim ke Meja ${activeTarget.table_number}!`);
+
+      // Open Kitchen Chit for newly added items only
+      setKitchenChitModal({
+        open: true,
+        bill: {
+          order_number: activeTarget.order_number,
+          table_number: activeTarget.table_number,
+          order_type: activeTarget.order_type || 'DINE_IN',
+          customer_name: activeTarget.customer_name || 'Tamu Resto',
+          cashier: currentUser.name || 'Kasir',
+          outlet_name: activeOutlet?.name || 'Cabang MOVA',
+          created_at: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+        },
+        items: data.added_items || cart.map(i => ({ menu_name: i.menu.name, qty: i.qty, notes: i.notes, modifiers: i.selectedModifiers })),
+        isAdditional: true,
+      });
+
+      setCart([]);
+      setAppendModeBill(null);
+      setTableNumber('');
+      setCustomerName('');
+      fetchOpenBills();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal menambahkan menu ke tagihan terbuka.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // Open Pre-bill Modal
+  function handleOpenPrebill(bill) {
+    setPrebillModal({
+      open: true,
+      bill,
+    });
+  }
+
+  // Open Kitchen Chit Modal
+  function handleOpenKitchenChit(bill) {
+    setKitchenChitModal({
+      open: true,
+      bill: {
+        order_number: bill.order_number,
+        table_number: bill.table_number,
+        order_type: bill.order_type || 'DINE_IN',
+        customer_name: bill.customer_name || 'Tamu Resto',
+        cashier: bill.cashier?.name || currentUser.name || 'Kasir',
+        outlet_name: activeOutlet?.name || bill.outlet_name || 'Cabang MOVA',
+        created_at: bill.created_at || new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+      },
+      items: bill.items || [],
+      isAdditional: false,
+    });
+  }
+
+  // Confirm cancel open bill
+  async function handleConfirmCancelBill() {
+    if (!cancelBillModal.bill) return;
+    setCancelBillModal(p => ({ ...p, submitting: true }));
+    try {
+      await api.post(`/transactions/${cancelBillModal.bill.order_number}/cancel`, {
+        reason: cancelBillModal.reason || undefined,
+      });
+      toast.success(`Tagihan Meja ${cancelBillModal.bill.table_number} (${cancelBillModal.bill.order_number}) berhasil dibatalkan.`);
+      setCancelBillModal({ open: false, bill: null, reason: '', submitting: false });
+      fetchOpenBills();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal membatalkan tagihan.');
+      setCancelBillModal(p => ({ ...p, submitting: false }));
+    }
+  }
+
+  // Submit payment (Handles both regular cart and open bill payment)
+  async function handleProcessOrder() {
+    if (!isCashSufficient) {
+      toast.error('Nominal uang tunai yang diterima kurang!');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      if (activeOpenBillPayment) {
+        // Paying an open bill
+        const payload = {
+          payment_method: paymentMethod,
+          amount_paid: paymentMethod === 'CASH' ? parsedCash : Number(activeOpenBillPayment.total_price),
+          change_amount: paymentMethod === 'CASH' ? changeAmount : 0,
+          notes: orderNotes || undefined,
+        };
+
+        const { data } = await api.post(`/transactions/${activeOpenBillPayment.order_number}/pay`, payload);
+
+        setCompletedOrder({
+          order_number: data.order_number,
+          date: data.paid_at || new Date().toISOString().slice(0, 10),
+          customer_name: data.customer_name || 'Pelanggan Umum',
+          order_type: 'DINE_IN',
+          table_number: data.table_number,
+          payment_method: data.payment_method,
+          amount_paid: data.amount_paid,
+          change_amount: data.change_amount,
+          subtotal: data.subtotal || (Number(data.total_price) + Number(data.discount_amount || 0)),
+          discount_amount: data.discount_amount || 0,
+          discount_name: data.discount_name || null,
+          total_price: data.total_price,
+          items: data.items,
+          cashier: currentUser.name || 'Kasir',
+          shift_name: activeShift?.shift?.shift_name || 'Reguler',
+          outlet_name: activeOutlet?.name || currentUser.outlet_name || 'Outlet',
+          created_at: data.paid_at || new Date().toLocaleString('id-ID'),
+        });
+
+        toast.success(`Pembayaran ${data.order_number} (Meja ${data.table_number}) berhasil lunas!`);
+        setActiveOpenBillPayment(null);
+        setPaymentModalOpen(false);
+        setOpenBillsModalOpen(false);
+        setReceiptModalOpen(true);
+
+        // Refresh data
+        fetchAll();
+      } else {
+        // Direct cart checkout
+        const payload = {
+          date: orderDate,
+          customer_name: customerName || undefined,
+          order_type: orderType,
+          table_number: orderType === 'DINE_IN' ? tableNumber : undefined,
+          payment_method: paymentMethod,
+          amount_paid: paymentMethod === 'CASH' ? parsedCash : cartTotal,
+          change_amount: paymentMethod === 'CASH' ? changeAmount : 0,
+          notes: orderNotes || undefined,
+          shift_id: activeShift?.shift?.id || undefined,
+          outlet_id: currentTargetOutlet,
+          discount_id: appliedDiscount?.id || undefined,
+          discount_amount: cartDiscountAmount || 0,
+          discount_name: appliedDiscount?.name || undefined,
+          discount_type: appliedDiscount?.type || undefined,
+          discount_rate: appliedDiscount?.value ?? appliedDiscount?.rate ?? undefined,
+          items: cart.map(item => ({
+            menu_id: item.menu.id,
+            qty: item.qty,
+            notes: item.notes || undefined,
+            modifier_option_ids: (item.selectedModifiers || []).map(m => m.id),
+            modifiers: item.selectedModifiers || [],
+          })),
+        };
+
+        const { data } = await api.post('/transactions', payload);
+
+        setCompletedOrder({
+          order_number: data.order_number,
+          date: data.date,
+          customer_name: data.customer_name || 'Pelanggan Umum',
+          order_type: data.order_type,
+          table_number: data.table_number,
+          payment_method: data.payment_method,
+          amount_paid: data.amount_paid,
+          change_amount: data.change_amount,
+          subtotal: data.subtotal || cartGrossSubtotal,
+          discount_amount: data.discount_amount || cartDiscountAmount,
+          discount_name: data.discount_name || appliedDiscount?.name,
+          total_price: data.total_price,
+          items: data.items,
+          cashier: data.cashier?.name || currentUser.name || 'Kasir',
+          shift_name: activeShift?.shift?.shift_name || 'Reguler',
+          outlet_name: activeOutlet?.name || currentUser.outlet_name || 'Outlet',
+          created_at: data.created_at || new Date().toLocaleString('id-ID'),
+        });
+
+        toast.success(`Pesanan ${data.order_number} berhasil dicatat di ${activeOutlet?.name || 'cabang'}!`);
+
+        // Reset cart and modals
+        setCart([]);
+        setCustomerName('');
+        setTableNumber('');
+        setOrderNotes('');
+        setAppliedDiscount(null);
+        setPromoCodeInput('');
+        setPaymentModalOpen(false);
+        setReceiptModalOpen(true);
+
+        fetchAll();
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal memproses transaksi.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // Trigger print
+  function handlePrintReceipt() {
+    printElement('printable-thermal-receipt', `Struk - ${completedOrder?.order_number || ''}`, {
+      isThermal: true,
+      pageSize: '80mm auto'
+    });
+  }
+
+  // Reprint from history
+  function handleReprint(trx) {
+    setCompletedOrder({
+      order_number: trx.order_number || `TRX-${trx.id}`,
+      date: trx.date,
+      customer_name: trx.customer_name || 'Pelanggan Umum',
+      order_type: trx.order_type || 'DINE_IN',
+      table_number: trx.table_number || '-',
+      payment_method: trx.payment_method || 'CASH',
+      amount_paid: trx.amount_paid || trx.total_price,
+      change_amount: trx.change_amount || 0,
+      subtotal: trx.subtotal || (Number(trx.total_price) + Number(trx.discount_amount || 0)),
+      discount_amount: trx.discount_amount || 0,
+      discount_name: trx.discount_name || null,
+      total_price: trx.total_price,
+      items: [
+        {
+          menu_name: trx.menu?.name || 'Menu',
+          price: (trx.menu?.price || trx.total_price / trx.qty),
+          qty: trx.qty,
+          total_price: trx.total_price,
+          notes: trx.notes,
+          modifiers: trx.modifiers || [],
+        }
+      ],
+      cashier: trx.user?.name || currentUser.name || 'Kasir',
+      shift_name: trx.shift?.shift_name || 'Reguler',
+      created_at: trx.created_at || trx.date,
+    });
+    setReceiptModalOpen(true);
+  }
+
+  if (loading) return <LoadingState />;
+
+  const restockSelectedIng = ingredients.find(i => i.id === Number(restockModal.ingredientId));
+
+  return (
+    <div className="fade-in">
+      <PageHeader
+        title="POS / Kasir MOVA"
+        subtitle="Katalog menu visual, kontrol stok porsi real-time, keranjang pesanan, dan cetak struk thermal."
+        action={
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => handleOpenRestock()}
+              title="Tambah Stok Bahan Baku"
+            >
+              <Package size={14} /> Tambah Stok Cepat
+            </button>
+
+            {/* Open Bills Management Button */}
+            <button
+              className="btn btn-sm"
+              onClick={() => setOpenBillsModalOpen(true)}
+              style={{
+                background: openBills.length > 0 ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.22) 0%, rgba(217, 119, 6, 0.3) 100%)' : 'rgba(255, 255, 255, 0.05)',
+                border: openBills.length > 0 ? '1px solid rgba(245, 158, 11, 0.5)' : '1px solid var(--border)',
+                color: openBills.length > 0 ? '#fcd34d' : 'var(--text-secondary)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                fontWeight: openBills.length > 0 ? 700 : 500,
+                boxShadow: openBills.length > 0 ? '0 0 15px rgba(245, 158, 11, 0.2)' : 'none'
+              }}
+              title="Kelola pesanan tersimpan / tagihan meja (Hold Order)"
+            >
+              <Clock size={14} style={{ color: openBills.length > 0 ? '#fbbf24' : 'inherit' }} />
+              <span>Tagihan Terbuka</span>
+              <span style={{
+                background: openBills.length > 0 ? '#f59e0b' : 'rgba(255,255,255,0.1)',
+                color: openBills.length > 0 ? '#000000' : 'var(--text-muted)',
+                fontWeight: 800,
+                fontSize: 11,
+                padding: '1px 7px',
+                borderRadius: 10,
+                minWidth: 18,
+                textAlign: 'center'
+              }}>
+                {openBills.length}
+              </span>
+            </button>
+
+            <button
+              className={`btn ${showHistory ? 'btn-primary' : 'btn-secondary'} btn-sm`}
+              onClick={() => setShowHistory(!showHistory)}
+            >
+              <Receipt size={14} />
+              {showHistory ? 'Kembali ke Kasir' : 'Riwayat Nota'}
+            </button>
+          </div>
+        }
+      />
+
+      {/* Active Shift Banner */}
+      {activeShift?.shift ? (
+        <div style={{
+          background: 'linear-gradient(90deg, rgba(16, 185, 129, 0.12) 0%, rgba(124, 58, 237, 0.1) 100%)',
+          border: '1px solid var(--ok-border)',
+          borderRadius: 12,
+          padding: '12px 18px',
+          marginBottom: 18,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 12
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ width: 9, height: 9, borderRadius: '50%', background: 'var(--ok)', boxShadow: '0 0 10px var(--ok)' }} />
+            <span style={{ fontSize: 13, color: '#ffffff' }}>
+              Shift Aktif: <strong>{activeShift.shift.shift_name}</strong> · Kasir: <strong>{activeShift.shift.user?.name}</strong>
+            </span>
+            <span className="mono" style={{ fontSize: 12, color: 'var(--accent-bright)' }}>
+              ({activeShift.total_transactions} trx · {rupiah(activeShift.total_sales)})
+            </span>
+          </div>
+          <Link to="/shift" className="btn btn-secondary btn-sm" style={{ padding: '4px 10px' }}>
+            Kelola Shift <ArrowRight size={12} />
+          </Link>
+        </div>
+      ) : (
+        <div style={{
+          background: 'rgba(245, 158, 11, 0.12)',
+          border: '1px solid rgba(245, 158, 11, 0.3)',
+          borderRadius: 12,
+          padding: '12px 18px',
+          marginBottom: 18,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 12
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <AlertTriangle size={18} style={{ color: 'var(--warn)' }} />
+            <div>
+              <strong style={{ color: '#ffffff', fontSize: 13 }}>Belum Ada Shift Kasir yang Dibuka</strong>
+              <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '2px 0 0' }}>
+                Buka shift kasir terlebih dahulu agar transaksi diakumulasikan ke closing shift.
+              </p>
+            </div>
+          </div>
+          <Link to="/shift" className="btn btn-primary btn-sm">
+            Buka Shift Sekarang
+          </Link>
+        </div>
+      )}
+
+      {/* Consolidated Warning Banner in POS */}
+      {isOwnerWebsite && (activeOutletId === 'ALL' || activeOutletId === 'all') && (
+        <div style={{
+          background: 'rgba(56, 189, 248, 0.08)',
+          border: '1px solid rgba(56, 189, 248, 0.25)',
+          borderRadius: 12,
+          padding: '12px 16px',
+          marginBottom: 18,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 12
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Store size={18} style={{ color: '#38bdf8' }} />
+            <div>
+              <strong style={{ color: '#ffffff', fontSize: 13 }}>Mode Semua Cabang (Konsolidasi) Aktif di POS</strong>
+              <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '2px 0 0' }}>
+                Transaksi kasir idealnya dilakukan per cabang outlet agar stok bahan baku berkurang di cabang yang tepat.
+              </p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {outlets.map(o => (
+              <button
+                key={o.id}
+                type="button"
+                onClick={() => changeOutlet(o.id)}
+                className="btn btn-sm btn-outline"
+                style={{ fontSize: 11.5, padding: '4px 10px' }}
+              >
+                Pilih {o.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          VIEW 1: HISTORY / RIWAYAT TRANSAKSI TAB
+         ======================================================== */}
+      {showHistory ? (
+        <div className="card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <div style={{ fontWeight: 700, fontSize: 15, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Receipt size={18} style={{ color: 'var(--accent)' }} />
+              Daftar Riwayat Transaksi Penjualan
+            </div>
+            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+              Menampilkan {transactions.length} transaksi terakhir
+            </span>
+          </div>
+
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>No. Order</th>
+                  <th>Tanggal</th>
+                  <th>Menu</th>
+                  <th className="right">Qty</th>
+                  <th className="right">Total</th>
+                  <th>Metode</th>
+                  <th>Tipe</th>
+                  <th>Kasir</th>
+                  <th className="center">Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {transactions.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="center text-muted" style={{ padding: 24 }}>
+                      Belum ada transaksi tercatat.
+                    </td>
+                  </tr>
+                ) : (
+                  transactions.map(t => (
+                    <tr key={t.id}>
+                      <td className="mono" style={{ fontSize: 12, color: 'var(--accent-bright)', fontWeight: 600 }}>
+                        {t.order_number || `TRX-${t.id}`}
+                      </td>
+                      <td className="mono" style={{ fontSize: 12 }}>{t.date}</td>
+                      <td style={{ fontWeight: 500 }}>
+                        <div>{t.menu?.name}</div>
+                        {t.modifiers && t.modifiers.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                            {t.modifiers.map((m, mIdx) => (
+                              <span key={mIdx} style={{
+                                fontSize: 10,
+                                background: 'rgba(139, 92, 246, 0.15)',
+                                color: '#c4b5fd',
+                                border: '1px solid rgba(139, 92, 246, 0.25)',
+                                padding: '1px 5px',
+                                borderRadius: 4,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 3
+                              }}>
+                                <span>{m.name}</span>
+                                {Number(m.price) > 0 && <strong style={{ color: '#a78bfa' }}>+{rupiah(m.price)}</strong>}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {t.notes && (
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>*{t.notes}</div>
+                        )}
+                      </td>
+                      <td className="mono right">{t.qty}</td>
+                      <td className="mono right" style={{ color: 'var(--ok)', fontWeight: 600 }}>{rupiah(t.total_price)}</td>
+                      <td>
+                        <span className="badge badge-neutral" style={{ fontSize: 11 }}>
+                          {t.payment_method || 'CASH'}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="badge badge-info" style={{ fontSize: 11 }}>
+                          {t.order_type || 'DINE_IN'} {t.table_number ? `(${t.table_number})` : ''}
+                        </span>
+                      </td>
+                      <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{t.user?.name || '-'}</td>
+                      <td className="center">
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => handleReprint(t)}
+                          title="Cetak Ulang Struk"
+                          style={{ padding: '4px 8px' }}
+                        >
+                          <Printer size={13} style={{ marginRight: 4 }} /> Struk
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <>
+        {/* ========================================================
+            VIEW 2: POS CASHIER (GRID MENU & INTERACTIVE CART)
+           ======================================================== */}
+        {/* Mobile Tab Switcher (Katalog Menu vs Keranjang) */}
+        <div className="pos-mobile-tabs">
+          <button
+            type="button"
+            className={`pos-mobile-tab-btn ${mobileActiveTab === 'catalog' ? 'active' : ''}`}
+            onClick={() => setMobileActiveTab('catalog')}
+          >
+            <Utensils size={15} />
+            <span>Katalog Menu</span>
+            <span className="badge-count">{filteredMenus.length}</span>
+          </button>
+          <button
+            type="button"
+            className={`pos-mobile-tab-btn ${mobileActiveTab === 'cart' ? 'active' : ''}`}
+            onClick={() => setMobileActiveTab('cart')}
+          >
+            <ShoppingCart size={15} />
+            <span>Keranjang</span>
+            {cart.length > 0 && (
+              <span className="badge-count cart-active">{cart.reduce((sum, item) => sum + item.qty, 0)}</span>
+            )}
+          </button>
+        </div>
+
+        <div className="pos-container">
+          {/* SISI KIRI: KATALOG MENU */}
+          <div className={`pos-catalog-column ${mobileActiveTab === 'cart' ? 'mobile-hidden' : ''}`}>
+            {/* Table Management & Occupancy Bar */}
+            <div className="pos-table-strip">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700, color: '#ffffff' }}>
+                  <Table size={15} style={{ color: 'var(--accent-bright)' }} />
+                  <span>Denah Meja Dine-In</span>
+                  <span style={{
+                    fontSize: 11,
+                    background: 'rgba(245, 158, 11, 0.15)',
+                    color: '#fbbf24',
+                    border: '1px solid rgba(245, 158, 11, 0.3)',
+                    padding: '1px 7px',
+                    borderRadius: 10,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4
+                  }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#f59e0b' }} />
+                    {openBills.length} Terisi
+                  </span>
+                  <span style={{
+                    fontSize: 11,
+                    background: 'rgba(16, 185, 129, 0.12)',
+                    color: '#34d399',
+                    border: '1px solid rgba(16, 185, 129, 0.25)',
+                    padding: '1px 7px',
+                    borderRadius: 10,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4
+                  }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
+                    {Math.max(0, standardTables.length - openBills.length)} Kosong
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {openBills.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setOpenBillsModalOpen(true)}
+                      className="btn btn-sm btn-outline"
+                      style={{ fontSize: 11, padding: '3px 9px', color: '#fbbf24', borderColor: 'rgba(245,158,11,0.4)', display: 'flex', alignItems: 'center', gap: 4 }}
+                    >
+                      <Clock size={12} /> Kelola Open Bills ({openBills.length})
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowTableStrip(!showTableStrip)}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 11.5 }}
+                  >
+                    {showTableStrip ? 'Sembunyikan' : 'Tampilkan'}
+                  </button>
+                </div>
+              </div>
+
+              {showTableStrip && (
+                <div className="pos-table-grid">
+                  {standardTables.map(tbl => {
+                    const bill = openBills.find(b =>
+                      b.table_number?.toLowerCase() === tbl.toLowerCase() ||
+                      b.table_number?.toLowerCase() === tbl.replace('Meja ', '').toLowerCase()
+                    );
+                    const isOccupied = !!bill;
+                    const isSelected = tableNumber === tbl && !isOccupied;
+
+                    return (
+                      <div
+                        key={tbl}
+                        className={`pos-table-chip ${isOccupied ? 'occupied' : 'vacant'} ${isSelected ? 'selected' : ''}`}
+                        onClick={() => {
+                          if (isOccupied) {
+                            setOpenBillsModalOpen(true);
+                          } else {
+                            setOrderType('DINE_IN');
+                            setTableNumber(tbl);
+                            toast.success(`${tbl} dipilih.`);
+                          }
+                        }}
+                        title={isOccupied ? `${tbl}: Terisi (${rupiah(bill.total_price)} - ${bill.duration_mins}m lalu). Klik untuk kelola.` : `Pilih ${tbl} untuk pesanan baru`}
+                      >
+                        <span style={{
+                          width: 7, height: 7, borderRadius: '50%',
+                          background: isOccupied ? '#f59e0b' : '#10b981',
+                          boxShadow: isOccupied ? '0 0 6px #f59e0b' : '0 0 6px #10b981'
+                        }} />
+                        <span>{tbl}</span>
+                        {isOccupied && (
+                          <span style={{ fontSize: 10, opacity: 0.9, marginLeft: 2, background: 'rgba(0,0,0,0.3)', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>
+                            {bill.duration_mins}m · {rupiah(bill.total_price)}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Search & Category Tabs */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
+              {/* Search Bar */}
+              <div style={{ position: 'relative' }}>
+                <Search size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Cari nama menu atau kode..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  style={{ paddingLeft: 40, paddingRight: searchQuery ? 36 : 14, borderRadius: 12 }}
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+                  >
+                    <X size={15} />
+                  </button>
+                )}
+              </div>
+
+              {/* Category Pills */}
+              <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+                {categories.map(cat => {
+                  const count = cat === 'ALL' ? menus.length : menus.filter(m => (m.category || 'Lainnya') === cat).length;
+                  return (
+                    <button
+                      key={cat}
+                      className={`pos-category-pill ${selectedCategory === cat ? 'active' : ''}`}
+                      onClick={() => setSelectedCategory(cat)}
+                    >
+                      {cat === 'ALL' ? 'Semua Menu' : cat}
+                      <span style={{
+                        fontSize: 10,
+                        background: selectedCategory === cat ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)',
+                        padding: '1px 6px',
+                        borderRadius: 10
+                      }}>
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Menu Cards Grid */}
+            <div className="pos-menu-grid">
+              {filteredMenus.length === 0 ? (
+                <div className="card center" style={{ gridColumn: '1 / -1', padding: 40 }}>
+                  <p style={{ color: 'var(--text-secondary)' }}>Tidak ada menu yang cocok dengan pencarian.</p>
+                </div>
+              ) : (
+                filteredMenus.map(menu => {
+                  const cartItem = cart.find(it => it.menu.id === menu.id);
+                  const status = menu.stockStatus;
+                  const isDrink = (menu.category || '').toLowerCase().includes('minum');
+
+                  return (
+                    <div
+                      key={menu.id}
+                      className={`pos-menu-card ${cartItem ? 'in-cart' : ''} ${status.isSoldOut ? 'sold-out' : ''}`}
+                      onClick={() => handleMenuCardClick(menu, status)}
+                    >
+                      {/* Badge if in cart */}
+                      {cartItem && (
+                        <div className="pos-menu-badge">
+                          x{cartItem.qty}
+                        </div>
+                      )}
+
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div className="pos-menu-icon" style={{
+                            background: status.isSoldOut ? 'rgba(244, 63, 94, 0.15)' : undefined,
+                            borderColor: status.isSoldOut ? 'rgba(244, 63, 94, 0.3)' : undefined,
+                            color: status.isSoldOut ? '#fb7185' : undefined,
+                          }}>
+                            {isDrink ? <Coffee size={22} /> : <Utensils size={22} />}
+                          </div>
+
+                          {/* Stock Status Badge */}
+                          {status.isSoldOut ? (
+                            <span className="pos-stock-badge sold-out">
+                              Habis
+                            </span>
+                          ) : status.isLowStock ? (
+                            <span className="pos-stock-badge low-stock">
+                              Sisa {status.availableServings}
+                            </span>
+                          ) : (
+                            <span className="pos-stock-badge in-stock">
+                              ~{status.availableServings} porsi
+                            </span>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, marginBottom: 2 }}>
+                          <span style={{ fontSize: 11, color: 'var(--accent-bright)', fontWeight: 600 }}>
+                            {menu.category || 'Menu'}
+                          </span>
+                          {menu.modifier_groups && menu.modifier_groups.length > 0 && (
+                            <span style={{
+                              fontSize: 10,
+                              fontWeight: 700,
+                              background: 'rgba(139, 92, 246, 0.18)',
+                              color: '#c4b5fd',
+                              border: '1px solid rgba(139, 92, 246, 0.35)',
+                              padding: '1px 6px',
+                              borderRadius: 4,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 3
+                            }}>
+                              <Sparkles size={9} /> {menu.modifier_groups.length} Varian
+                            </span>
+                          )}
+                        </div>
+                        <h4 style={{
+                          fontSize: 14,
+                          fontWeight: 700,
+                          color: status.isSoldOut ? '#fca5a5' : '#ffffff',
+                          marginBottom: 4,
+                          lineHeight: 1.3
+                        }}>
+                          {menu.name}
+                        </h4>
+                      </div>
+
+                      <div style={{ marginTop: 12, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span className="mono" style={{ fontWeight: 800, color: status.isSoldOut ? '#fb7185' : 'var(--ok)', fontSize: 13.5 }}>
+                          {rupiah(menu.price)}
+                        </span>
+                        {status.isSoldOut ? (
+                          <span style={{ fontSize: 10, color: 'var(--danger)', fontWeight: 600 }}>
+                            {status.limitingIngredient ? `${status.limitingIngredient.name} Habis` : '! Habis'}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: 10, color: 'var(--text-muted)' }} title="Resep Aktif">
+                            ✓ Resep
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* SISI KANAN: KERANJANG PESANAN (CART PANEL) */}
+          <div className={`pos-cart-panel ${mobileActiveTab === 'catalog' ? 'mobile-hidden' : ''}`}>
+            {/* Header Keranjang */}
+            <div className="pos-cart-header">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div style={{ fontWeight: 800, fontSize: 15, display: 'flex', alignItems: 'center', gap: 8, color: '#ffffff' }}>
+                  <ShoppingCart size={18} style={{ color: 'var(--accent)' }} />
+                  Pesanan Pelanggan
+                </div>
+                {cart.length > 0 && (
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={clearCart}
+                    style={{ fontSize: 11, color: 'var(--danger)', padding: '2px 8px' }}
+                  >
+                    <RotateCcw size={12} style={{ marginRight: 4 }} /> Kosongkan
+                  </button>
+                )}
+              </div>
+
+              {/* Order Type Selector */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 10 }}>
+                {[
+                  { key: 'DINE_IN', label: 'Dine In' },
+                  { key: 'TAKEAWAY', label: 'Take Away' },
+                  { key: 'DELIVERY', label: 'Delivery' },
+                ].map(type => (
+                  <button
+                    key={type.key}
+                    type="button"
+                    onClick={() => setOrderType(type.key)}
+                    style={{
+                      padding: '6px 8px',
+                      borderRadius: 8,
+                      fontSize: 11.5,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      border: '1px solid',
+                      borderColor: orderType === type.key ? 'var(--accent-bright)' : 'var(--border)',
+                      background: orderType === type.key ? 'var(--accent-gradient)' : 'rgba(255,255,255,0.04)',
+                      color: '#ffffff',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    {type.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Append Mode Active Banner */}
+              {appendModeBill && (
+                <div style={{
+                  background: 'rgba(245, 158, 11, 0.15)',
+                  border: '1px solid rgba(245, 158, 11, 0.35)',
+                  borderRadius: 8,
+                  padding: '8px 10px',
+                  marginBottom: 10,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: 8
+                }}>
+                  <div style={{ fontSize: 11.5, color: '#fcd34d' }}>
+                    <strong>Tambah Menu:</strong> {appendModeBill.table_number} <span className="mono">({appendModeBill.order_number})</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAppendModeBill(null);
+                      setCart([]);
+                      setTableNumber('');
+                      setCustomerName('');
+                    }}
+                    className="btn btn-ghost btn-sm"
+                    style={{ padding: '2px 6px', fontSize: 10.5, color: '#fb7185' }}
+                  >
+                    Batal
+                  </button>
+                </div>
+              )}
+
+              {/* Customer & Table details */}
+              <div style={{ display: 'grid', gridTemplateColumns: orderType === 'DINE_IN' ? '1fr 90px' : '1fr', gap: 8 }}>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Nama Pelanggan (opsional)"
+                  value={customerName}
+                  onChange={e => setCustomerName(e.target.value)}
+                  style={{ fontSize: 12, padding: '7px 10px', borderRadius: 8 }}
+                />
+                {orderType === 'DINE_IN' && (
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="No. Meja"
+                    value={tableNumber}
+                    onChange={e => setTableNumber(e.target.value)}
+                    style={{ fontSize: 12, padding: '7px 10px', borderRadius: 8 }}
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* Cart Item List */}
+            <div className="pos-cart-list">
+              {cart.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '36px 14px', color: 'var(--text-muted)' }}>
+                  <div style={{
+                    width: 50, height: 50, borderRadius: '50%',
+                    background: 'rgba(255,255,255,0.04)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    margin: '0 auto 12px', color: 'var(--text-muted)'
+                  }}>
+                    <ShoppingCart size={24} />
+                  </div>
+                  <strong style={{ display: 'block', color: '#ffffff', fontSize: 13, marginBottom: 4 }}>
+                    Keranjang Kosong
+                  </strong>
+                  <span style={{ fontSize: 11.5 }}>
+                    Klik menu di katalog sisi kiri untuk memasukkan pesanan.
+                  </span>
+                </div>
+              ) : (
+                cart.map(item => {
+                  const status = getMenuStockStatus(item.menu);
+                  const itemKey = item.cartKey || item.menu.id;
+                  const effectiveUnitPrice = item.unitPrice ?? item.menu.price;
+
+                  return (
+                    <div key={itemKey} className="pos-cart-item">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                        <div style={{ flex: 1, paddingRight: 8 }}>
+                          <div style={{ fontWeight: 700, fontSize: 13, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <span>{item.menu.name}</span>
+                            {status.isSoldOut && (
+                              <span style={{ fontSize: 10, color: 'var(--danger)', background: 'rgba(244,63,94,0.15)', padding: '1px 5px', borderRadius: 4 }}>
+                                ⚠️ Stok Habis
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Selected Modifiers Pills */}
+                          {item.selectedModifiers && item.selectedModifiers.length > 0 && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                              {item.selectedModifiers.map((mod, mIdx) => (
+                                <span key={mIdx} style={{
+                                  fontSize: 10,
+                                  background: 'rgba(139, 92, 246, 0.15)',
+                                  border: '1px solid rgba(139, 92, 246, 0.3)',
+                                  color: '#c4b5fd',
+                                  padding: '1px 6px',
+                                  borderRadius: 4,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 3
+                                }}>
+                                  <span>{mod.name}</span>
+                                  {Number(mod.price) > 0 && (
+                                    <strong style={{ color: '#a78bfa' }}>+{rupiah(mod.price)}</strong>
+                                  )}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>
+                            {rupiah(effectiveUnitPrice)} {item.selectedModifiers?.length > 0 && `(Dasar ${rupiah(item.menu.price)})`}
+                          </div>
+                        </div>
+                        <div className="mono" style={{ fontWeight: 700, fontSize: 13, color: 'var(--ok)' }}>
+                          {rupiah(effectiveUnitPrice * item.qty)}
+                        </div>
+                      </div>
+
+                      {/* Controls & Item Note */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <button
+                            type="button"
+                            className="pos-qty-btn"
+                            onClick={() => updateQty(itemKey, -1)}
+                          >
+                            <Minus size={12} />
+                          </button>
+                          <span className="mono" style={{ minWidth: 20, textAlign: 'center', fontWeight: 700, fontSize: 13, color: '#ffffff' }}>
+                            {item.qty}
+                          </span>
+                          <button
+                            type="button"
+                            className="pos-qty-btn"
+                            onClick={() => updateQty(itemKey, 1)}
+                          >
+                            <Plus size={12} />
+                          </button>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <input
+                            type="text"
+                            placeholder="Catatan..."
+                            value={item.notes || ''}
+                            onChange={e => updateItemNotes(itemKey, e.target.value)}
+                            style={{
+                              background: 'rgba(0,0,0,0.2)',
+                              border: '1px solid var(--border)',
+                              borderRadius: 6,
+                              padding: '3px 6px',
+                              fontSize: 11,
+                              color: '#ffffff',
+                              width: 110,
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeFromCart(itemKey)}
+                            style={{
+                              background: 'none', border: 'none',
+                              color: 'var(--danger)', cursor: 'pointer',
+                              padding: 4, display: 'flex', alignItems: 'center'
+                            }}
+                            title="Hapus menu ini"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Cart Footer / Checkout Action */}
+            <div style={{ padding: 16, borderTop: '1px solid var(--border)', background: 'rgba(15, 23, 42, 0.6)' }}>
+              {/* Discount & Voucher Section */}
+              {!appendModeBill && (
+                <div style={{
+                  marginBottom: 12,
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px dashed rgba(255, 255, 255, 0.15)',
+                }}>
+                  {appliedDiscount ? (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{
+                          background: 'rgba(16, 185, 129, 0.18)',
+                          color: '#34d399',
+                          padding: '2px 6px',
+                          borderRadius: 4,
+                          fontSize: 10.5,
+                          fontWeight: 800,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 3
+                        }}>
+                          <Tag size={11} />
+                          {appliedDiscount.type === 'PERCENTAGE' ? `${appliedDiscount.value ?? appliedDiscount.rate}%` : 'Rp'}
+                        </span>
+                        <div>
+                          <div style={{ fontSize: 11.5, fontWeight: 700, color: '#ffffff' }}>
+                            {appliedDiscount.name}
+                          </div>
+                          <div style={{ fontSize: 10, color: '#34d399', fontWeight: 600 }}>
+                            Hemat -{rupiah(cartDiscountAmount)}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleRemoveDiscount}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--text-muted)',
+                          cursor: 'pointer',
+                          padding: 4,
+                          display: 'flex',
+                          alignItems: 'center'
+                        }}
+                        title="Hapus diskon"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                        <div style={{ position: 'relative', flex: 1 }}>
+                          <Tag size={12} style={{ position: 'absolute', left: 8, top: 8, color: 'var(--text-muted)' }} />
+                          <input
+                            type="text"
+                            placeholder="Kode Voucher..."
+                            value={promoCodeInput}
+                            onChange={e => setPromoCodeInput(e.target.value.toUpperCase())}
+                            onKeyDown={e => { if (e.key === 'Enter') handleApplyVoucherCode(); }}
+                            style={{
+                              width: '100%',
+                              padding: '5px 8px 5px 26px',
+                              background: 'rgba(0, 0, 0, 0.25)',
+                              border: '1px solid var(--border)',
+                              borderRadius: 6,
+                              fontSize: 11,
+                              color: '#ffffff',
+                              textTransform: 'uppercase',
+                              fontWeight: 700,
+                              letterSpacing: '0.04em'
+                            }}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={handleApplyVoucherCode}
+                          disabled={validatingPromo || !promoCodeInput.trim()}
+                          style={{ fontSize: 11, padding: '4px 8px' }}
+                        >
+                          {validatingPromo ? 'Cek...' : 'Terapkan'}
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={() => setPromoModalOpen(true)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--accent-bright)',
+                            cursor: 'pointer',
+                            fontSize: 10.5,
+                            fontWeight: 600,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            padding: 0
+                          }}
+                        >
+                          <Gift size={11} /> Promo Tersedia ({availableDiscounts.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCustomDiscountModal(p => ({ ...p, open: true }))}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer',
+                            fontSize: 10.5,
+                            padding: 0
+                          }}
+                        >
+                          + Diskon Kasir
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Subtotal, Diskon, Total breakdown */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                <span>Subtotal ({cartItemCount} menu):</span>
+                <span className="mono">{rupiah(cartGrossSubtotal)}</span>
+              </div>
+              {cartDiscountAmount > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 11.5, color: '#34d399', fontWeight: 600 }}>
+                  <span>Potongan Diskon:</span>
+                  <span className="mono">-{rupiah(cartDiscountAmount)}</span>
+                </div>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14, alignItems: 'baseline', paddingTop: 4, borderTop: '1px dashed rgba(255,255,255,0.08)' }}>
+                <span style={{ fontWeight: 700, fontSize: 14, color: '#ffffff' }}>
+                  {appendModeBill ? 'Tambahan Tagihan:' : 'Total Tagihan:'}
+                </span>
+                <span className="mono" style={{ fontSize: 19, fontWeight: 800, color: appendModeBill ? '#fbbf24' : 'var(--ok)' }}>
+                  {rupiah(cartTotal)}
+                </span>
+              </div>
+
+              {appendModeBill ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <button
+                    type="button"
+                    className="btn w-full"
+                    onClick={() => handleSubmitAppendItems()}
+                    disabled={cart.length === 0 || submitting}
+                    style={{
+                      background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)',
+                      color: '#ffffff',
+                      justifyContent: 'center',
+                      padding: '12px',
+                      fontSize: 13.5,
+                      fontWeight: 800,
+                      boxShadow: cart.length > 0 ? '0 4px 20px rgba(217, 119, 6, 0.4)' : 'none'
+                    }}
+                  >
+                    <ChefHat size={16} style={{ marginRight: 6 }} />
+                    Kirim Tambahan ke Dapur ({rupiah(cartTotal)})
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      setAppendModeBill(null);
+                      setCart([]);
+                      setTableNumber('');
+                      setCustomerName('');
+                    }}
+                    style={{ justifyContent: 'center' }}
+                  >
+                    Batal Mode Tambah
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: '1.05fr 1.35fr', gap: 8 }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={handleHoldOrder}
+                    disabled={cart.length === 0 || submitting}
+                    style={{
+                      justifyContent: 'center',
+                      padding: '12px 6px',
+                      fontSize: 12.5,
+                      fontWeight: 700,
+                      background: 'rgba(245, 158, 11, 0.12)',
+                      borderColor: 'rgba(245, 158, 11, 0.35)',
+                      color: '#fbbf24',
+                    }}
+                    title="Simpan pesanan belum bayar / buka tagihan meja (Hold Order)"
+                  >
+                    <Bookmark size={14} style={{ marginRight: 4 }} />
+                    Hold Bill
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleOpenPayment}
+                    disabled={cart.length === 0}
+                    style={{
+                      justifyContent: 'center',
+                      padding: '12px 6px',
+                      fontSize: 12.5,
+                      fontWeight: 800,
+                      boxShadow: cart.length > 0 ? '0 4px 20px var(--accent-glow)' : 'none'
+                    }}
+                  >
+                    Bayar ({rupiah(cartTotal)}) <ArrowRight size={14} style={{ marginLeft: 4 }} />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Floating Mobile Cart Bar (Sticky at bottom on narrow screens) */}
+        {cart.length > 0 && mobileActiveTab === 'catalog' && (
+          <div className="pos-floating-mobile-bar">
+            <div className="pos-floating-bar-info">
+              <div className="pos-floating-bar-badge">
+                <ShoppingCart size={15} />
+                <span>{cart.reduce((sum, item) => sum + item.qty, 0)} item</span>
+              </div>
+              <div className="pos-floating-bar-price">
+                <span style={{ fontSize: 10.5, color: 'var(--text-secondary)' }}>Total:</span>
+                <strong className="mono" style={{ fontSize: 14.5, color: '#34d399' }}>{rupiah(cartTotal)}</strong>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => setMobileActiveTab('cart')}
+              style={{ fontWeight: 800, padding: '8px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              Lihat Keranjang <ArrowRight size={14} />
+            </button>
+          </div>
+        )}
+        </>
+      )}
+
+      {/* ========================================================
+          MODAL A: PERINGATAN BAHAN HABIS / DEFISIT
+         ======================================================== */}
+      {stockAlertModal.open && stockAlertModal.menu && (
+        <div className="modal-overlay" onClick={() => setStockAlertModal({ open: false, menu: null, status: null })}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <div style={{
+                width: 42, height: 42, borderRadius: 10,
+                background: 'rgba(244, 63, 94, 0.15)',
+                border: '1px solid rgba(244, 63, 94, 0.3)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#fb7185'
+              }}>
+                <ShieldAlert size={22} />
+              </div>
+              <div>
+                <h3 style={{ fontSize: 16, fontWeight: 800, color: '#ffffff', margin: 0 }}>
+                  Stok Bahan Tidak Mencukupi!
+                </h3>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                  Peringatan ketersediaan bahan baku di sistem
+                </span>
+              </div>
+            </div>
+
+            <p style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.5, marginBottom: 14 }}>
+              Menu <strong>{stockAlertModal.menu.name}</strong> membutuhkan bahan baku yang saat ini stoknya habis atau di bawah takaran resep:
+            </p>
+
+            {/* Breakdown Table */}
+            <div style={{
+              background: 'rgba(0,0,0,0.25)',
+              border: '1px solid var(--border)',
+              borderRadius: 10,
+              padding: 10,
+              marginBottom: 16,
+              maxHeight: 180,
+              overflowY: 'auto'
+            }}>
+              {stockAlertModal.status.details.map((item, idx) => (
+                <div key={idx} style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '6px 4px',
+                  borderBottom: idx < stockAlertModal.status.details.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none',
+                  fontSize: 12
+                }}>
+                  <div>
+                    <strong style={{ color: item.isDeficit ? '#fb7185' : '#ffffff' }}>
+                      {item.name}
+                    </strong>
+                    <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
+                      Butuh: {num(item.required)} {item.unit} / porsi
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <span className="mono" style={{
+                      fontWeight: 700,
+                      color: item.isDeficit ? 'var(--danger)' : 'var(--ok)'
+                    }}>
+                      {num(item.stock)} {item.unit}
+                    </span>
+                    <div style={{ fontSize: 10, color: item.isDeficit ? 'var(--danger)' : 'var(--text-muted)' }}>
+                      {item.isDeficit ? '❌ Habis / Defisit' : `✓ ~${item.possibleServings} porsi`}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setStockAlertModal({ open: false, menu: null, status: null })}
+                  style={{ flex: 1, minWidth: 90, justifyContent: 'center' }}
+                >
+                  Batal
+                </button>
+                <Link
+                  to={`/transfer?destination_outlet_id=${currentTargetOutlet}&ingredient_id=${stockAlertModal.status.limitingIngredient?.id || ''}`}
+                  className="btn btn-outline"
+                  style={{ flex: 1.5, minWidth: 140, justifyContent: 'center', fontWeight: 700, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  <Send size={14} /> Minta Transfer Cabang
+                </Link>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => handleOpenRestock(stockAlertModal.status.limitingIngredient?.id)}
+                  style={{ flex: 2, minWidth: 160, justifyContent: 'center', fontWeight: 700 }}
+                >
+                  <Package size={14} style={{ marginRight: 4 }} /> Restock Beli Cabang Ini
+                </button>
+              </div>
+
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={handleForceAddToCart}
+                style={{ fontSize: 11.5, color: 'var(--text-secondary)', justifyContent: 'center' }}
+              >
+                Tetap Jual (Order Darurat / Bahan Ada di Dapur) <ArrowUpRight size={13} style={{ marginLeft: 4 }} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL B: TAMBAH STOK CEPAT (QUICK RESTOCK)
+         ======================================================== */}
+      {restockModal.open && (
+        <div className="modal-overlay" onClick={() => setRestockModal(p => ({ ...p, open: false }))}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <div>
+                <h3 style={{ fontSize: 16, fontWeight: 800, color: '#ffffff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Package size={18} style={{ color: 'var(--accent)' }} />
+                  Tambah Stok Cepat Bahan Baku
+                </h3>
+                <span style={{ fontSize: 11.5, color: 'var(--accent-bright)', fontWeight: 600 }}>
+                  📍 Cabang: {activeOutlet?.name || 'Cabang Aktif'}
+                </span>
+              </div>
+              <button
+                className="btn btn-ghost btn-icon"
+                onClick={() => setRestockModal(p => ({ ...p, open: false }))}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitRestock}>
+              {/* Select Ingredient */}
+              <div className="form-group mb-3">
+                <label className="form-label">Pilih Bahan Baku</label>
+                <select
+                  className="form-control"
+                  value={restockModal.ingredientId}
+                  onChange={e => setRestockModal(p => ({ ...p, ingredientId: e.target.value }))}
+                  required
+                >
+                  {ingredients.map(ing => (
+                    <option key={ing.id} value={ing.id}>
+                      {ing.code} - {ing.name} (Sisa: {num(ing.current_stock ?? ing.stok_awal)} {ing.unit_pakai})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Quantity and Unit Mode */}
+              <div className="form-group mb-3">
+                <label className="form-label">Jumlah Penambahan</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 8 }}>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0.001"
+                    className="form-control"
+                    value={restockModal.qty}
+                    onChange={e => setRestockModal(p => ({ ...p, qty: e.target.value }))}
+                    required
+                  />
+                  <select
+                    className="form-control"
+                    value={restockModal.unitType}
+                    onChange={e => setRestockModal(p => ({ ...p, unitType: e.target.value }))}
+                  >
+                    <option value="BELI">
+                      {restockSelectedIng?.unit_beli || 'Satuan Beli'} ({restockSelectedIng?.konversi || 1000}x)
+                    </option>
+                    <option value="PAKAI">
+                      {restockSelectedIng?.unit_pakai || 'Satuan Pakai'}
+                    </option>
+                  </select>
+                </div>
+                {restockSelectedIng && restockModal.unitType === 'BELI' && (
+                  <span style={{ fontSize: 11, color: 'var(--accent-bright)', marginTop: 4, display: 'block' }}>
+                    = {num(Number(restockModal.qty) * (Number(restockSelectedIng.konversi) || 1))} {restockSelectedIng.unit_pakai}
+                  </span>
+                )}
+              </div>
+
+              {/* Purchase Price (Moving Average Costing) */}
+              <div className="form-group mb-3">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label className="form-label" style={{ color: '#34d399', fontWeight: 600 }}>
+                    Harga Beli Satuan (Rp)
+                  </label>
+                  <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
+                    per {restockModal.unitType === 'BELI' ? restockSelectedIng?.unit_beli : restockSelectedIng?.unit_pakai}
+                  </span>
+                </div>
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  className="form-control mono"
+                  style={{ borderColor: 'rgba(16, 185, 129, 0.4)' }}
+                  placeholder={`Standar: ${restockModal.unitType === 'BELI' ? restockSelectedIng?.harga : Number((Number(restockSelectedIng?.harga || 0) / Number(restockSelectedIng?.konversi || 1)).toFixed(2))}`}
+                  value={restockModal.unitPrice}
+                  onChange={e => setRestockModal(p => ({ ...p, unitPrice: e.target.value }))}
+                />
+                <span style={{ fontSize: 10.5, color: 'var(--text-secondary)', marginTop: 3, display: 'block' }}>
+                  ⚡ Sistem otomatis mengupdate HPP menu menggunakan metode <strong>Moving Average</strong>.
+                </span>
+              </div>
+
+              {/* Note */}
+              <div className="form-group mb-3">
+                <label className="form-label">Catatan</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  value={restockModal.notes}
+                  onChange={e => setRestockModal(p => ({ ...p, notes: e.target.value }))}
+                  placeholder="Misal: Beli di pasar lokal / Masuk kiriman"
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setRestockModal(p => ({ ...p, open: false }))}
+                  style={{ flex: 1, justifyContent: 'center' }}
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={restockModal.submitting}
+                  style={{ flex: 2, justifyContent: 'center', fontWeight: 800 }}
+                >
+                  {restockModal.submitting ? 'Menyimpan...' : 'Simpan Stok Masuk'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL 1: PEMBAYARAN CERDAS (PAYMENT MODAL)
+         ======================================================== */}
+      {paymentModalOpen && (
+        <div className="modal-overlay" onClick={() => setPaymentModalOpen(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ fontSize: 17, fontWeight: 800, color: '#ffffff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Banknote size={20} style={{ color: activeOpenBillPayment ? '#fbbf24' : 'var(--accent)' }} />
+                {activeOpenBillPayment ? 'Pelunasan Tagihan Terbuka (Open Bill)' : 'Pembayaran Transaksi'}
+              </h3>
+              <button
+                className="btn btn-ghost btn-icon"
+                onClick={() => setPaymentModalOpen(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Total Display */}
+            <div style={{
+              background: activeOpenBillPayment
+                ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.18) 0%, rgba(217, 119, 6, 0.28) 100%)'
+                : 'linear-gradient(135deg, rgba(124, 58, 237, 0.15) 0%, rgba(79, 70, 229, 0.25) 100%)',
+              border: activeOpenBillPayment ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid rgba(139, 92, 246, 0.3)',
+              borderRadius: 14,
+              padding: '16px 18px',
+              textAlign: 'center',
+              marginBottom: 18
+            }}>
+              <span style={{ fontSize: 11.5, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+                {activeOpenBillPayment ? 'Total Tagihan Meja' : 'Total Tagihan Pembayaran'}
+              </span>
+              <div className="mono" style={{ fontSize: 26, fontWeight: 900, color: '#ffffff', marginTop: 4 }}>
+                {rupiah(payableTotal)}
+              </div>
+              <div style={{ fontSize: 12, color: activeOpenBillPayment ? '#fcd34d' : 'var(--accent-bright)', marginTop: 4 }}>
+                {activeOpenBillPayment ? (
+                  `Meja: ${activeOpenBillPayment.table_number || '-'} · No: ${activeOpenBillPayment.order_number} (${activeOpenBillPayment.total_items || activeOpenBillPayment.items?.length || 0} item)`
+                ) : (
+                  `${orderType === 'DINE_IN' ? `Dine In ${tableNumber ? `· Meja ${tableNumber}` : ''}` : orderType}${customerName ? ` · ${customerName}` : ''} (${cartItemCount} item)`
+                )}
+              </div>
+
+              {/* If discount applied on regular cart */}
+              {!activeOpenBillPayment && cartDiscountAmount > 0 && (
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  marginTop: 8,
+                  paddingTop: 8,
+                  borderTop: '1px dashed rgba(255,255,255,0.18)',
+                  fontSize: 12
+                }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Subtotal: {rupiah(cartGrossSubtotal)}</span>
+                  <span style={{ color: '#34d399', fontWeight: 700 }}>Diskon: -{rupiah(cartDiscountAmount)}</span>
+                </div>
+              )}
+
+              {/* If discount applied on open bill */}
+              {activeOpenBillPayment && Number(activeOpenBillPayment.discount_amount) > 0 && (
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  marginTop: 8,
+                  paddingTop: 8,
+                  borderTop: '1px dashed rgba(255,255,255,0.18)',
+                  fontSize: 12
+                }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Subtotal: {rupiah(Number(activeOpenBillPayment.subtotal) || (Number(activeOpenBillPayment.total_price) + Number(activeOpenBillPayment.discount_amount)))}</span>
+                  <span style={{ color: '#34d399', fontWeight: 700 }}>Diskon ({activeOpenBillPayment.discount_name}): -{rupiah(activeOpenBillPayment.discount_amount)}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Payment Method Pills */}
+            <div className="form-group mb-3">
+              <label className="form-label">Metode Pembayaran</label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                {[
+                  { key: 'CASH', label: 'Tunai', icon: Banknote },
+                  { key: 'QRIS', label: 'QRIS', icon: QrCode },
+                  { key: 'TRANSFER', label: 'Transfer / EDC', icon: CreditCard },
+                ].map(m => {
+                  const Icon = m.icon;
+                  const active = paymentMethod === m.key;
+                  return (
+                    <button
+                      key={m.key}
+                      type="button"
+                      onClick={() => {
+                        setPaymentMethod(m.key);
+                        if (m.key !== 'CASH') setCashReceived(payableTotal.toString());
+                      }}
+                      style={{
+                        padding: '10px 8px',
+                        borderRadius: 10,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: 6,
+                        border: '1px solid',
+                        borderColor: active ? 'var(--accent-bright)' : 'var(--border)',
+                        background: active ? 'var(--accent-gradient)' : 'rgba(255,255,255,0.04)',
+                        color: '#ffffff',
+                        fontWeight: active ? 700 : 500,
+                        fontSize: 12,
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <Icon size={18} />
+                      {m.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* CASH Payment Fields */}
+            {paymentMethod === 'CASH' && (
+              <div className="form-group mb-3">
+                <label className="form-label">Uang Diterima (Rp)</label>
+                <input
+                  type="number"
+                  className="form-control"
+                  value={cashReceived}
+                  onChange={e => setCashReceived(e.target.value)}
+                  placeholder="0"
+                  style={{ fontSize: 16, fontWeight: 700, padding: '10px 14px' }}
+                />
+
+                {/* Quick Cash Buttons */}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                  <button
+                    type="button"
+                    className="pos-quick-cash-btn"
+                    onClick={() => setCashReceived(payableTotal.toString())}
+                  >
+                    Uang Pas
+                  </button>
+                  {[20000, 50000, 100000, 200000].map(amt => (
+                    amt >= payableTotal && (
+                      <button
+                        key={amt}
+                        type="button"
+                        className="pos-quick-cash-btn"
+                        onClick={() => setCashReceived(amt.toString())}
+                      >
+                        {rupiah(amt)}
+                      </button>
+                    )
+                  ))}
+                </div>
+
+                {/* Change Calculation */}
+                <div style={{
+                  marginTop: 12,
+                  padding: '10px 14px',
+                  borderRadius: 10,
+                  background: isCashSufficient ? 'rgba(16, 185, 129, 0.12)' : 'rgba(244, 63, 94, 0.12)',
+                  border: `1px solid ${isCashSufficient ? 'var(--ok-border)' : 'rgba(244, 63, 94, 0.3)'}`,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: isCashSufficient ? 'var(--ok)' : 'var(--danger)' }}>
+                    {isCashSufficient ? 'Kembalian:' : 'Uang Kurang:'}
+                  </span>
+                  <span className="mono" style={{ fontSize: 16, fontWeight: 800, color: isCashSufficient ? 'var(--ok)' : 'var(--danger)' }}>
+                    {isCashSufficient ? rupiah(changeAmount) : rupiah(payableTotal - parsedCash)}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* QRIS Simulator */}
+            {paymentMethod === 'QRIS' && (
+              <div style={{
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid var(--border)',
+                borderRadius: 12,
+                padding: 18,
+                textAlign: 'center',
+                marginBottom: 16
+              }}>
+                <div style={{
+                  width: 140, height: 140,
+                  background: '#ffffff',
+                  borderRadius: 10,
+                  margin: '0 auto 12px',
+                  padding: 8,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <QrCode size={110} color="#000000" />
+                  <span style={{ fontSize: 9, color: '#000', fontWeight: 800 }}>MOVA QRIS</span>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                  Arahkan kamera / e-wallet pelanggan ke kode QR di atas.
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--accent-bright)', marginTop: 4 }}>
+                  BCA · Mandiri · GoPay · OVO · DANA · ShopeePay
+                </div>
+              </div>
+            )}
+
+            {/* Transfer / Debit */}
+            {paymentMethod === 'TRANSFER' && (
+              <div className="form-group mb-3">
+                <label className="form-label">No. Referensi / Bank / EDC</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Contoh: EDC Mandiri / Trf BCA Ref #12345"
+                  value={orderNotes}
+                  onChange={e => setOrderNotes(e.target.value)}
+                />
+              </div>
+            )}
+
+            {/* Submit Action */}
+            <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setPaymentModalOpen(false)}
+                style={{ flex: 1, justifyContent: 'center' }}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleProcessOrder}
+                disabled={submitting || !isCashSufficient}
+                style={{ flex: 2, justifyContent: 'center', fontWeight: 800 }}
+              >
+                {submitting ? 'Memproses...' : 'Selesaikan & Cetak Struk'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL 2: PRATINJAU & CETAK STRUK THERMAL (58mm/80mm)
+         ======================================================== */}
+      {receiptModalOpen && completedOrder && (
+        <div className="modal-overlay" onClick={() => setReceiptModalOpen(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 390, padding: 18 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <span style={{ fontWeight: 800, fontSize: 14, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <CheckCircle size={16} color="var(--ok)" /> Struk Pembayaran
+              </span>
+              <button
+                className="btn btn-ghost btn-icon"
+                onClick={() => setReceiptModalOpen(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* THERMAL RECEIPT DISPLAY */}
+            <div id="printable-thermal-receipt" className="thermal-receipt-preview">
+              {/* Header */}
+              <div style={{ textAlign: 'center', marginBottom: 12 }}>
+                <div style={{ fontWeight: 900, fontSize: 16, letterSpacing: '0.05em' }}>
+                  MOVA POS
+                </div>
+                <div style={{ fontSize: 10, opacity: 0.8 }}>
+                  Move Your Business Forward
+                </div>
+                <div style={{ fontSize: 9.5, marginTop: 4 }}>
+                  Outlet: {activeShift?.shift?.outlet?.name || 'Cabang Utama'}
+                </div>
+                {completedOrder.parent_order_number && (
+                  <div style={{
+                    fontSize: 10,
+                    fontWeight: 900,
+                    border: '1.5px solid #000',
+                    padding: '2px 6px',
+                    margin: '4px auto 0',
+                    display: 'inline-block',
+                    letterSpacing: '0.04em'
+                  }}>
+                    *** SPLIT BILL {completedOrder.split_type === 'EQUAL' ? `(PATUNGAN ${completedOrder.split_index}/${completedOrder.split_total})` : `(BAGIAN ${completedOrder.split_index})`} ***
+                  </div>
+                )}
+              </div>
+
+              <div style={{ borderBottom: '1px dashed #000', margin: '8px 0' }} />
+
+              {/* Order Meta */}
+              <div style={{ fontSize: 10.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>No. Nota:</span>
+                  <strong>{completedOrder.order_number}</strong>
+                </div>
+                {completedOrder.parent_order_number && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10 }}>
+                    <span>Tagihan Induk:</span>
+                    <strong>{completedOrder.parent_order_number}</strong>
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Waktu:</span>
+                  <span>{completedOrder.created_at}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Kasir / Shift:</span>
+                  <span>{completedOrder.cashier} ({completedOrder.shift_name})</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Tipe / Meja:</span>
+                  <span>
+                    {completedOrder.order_type}
+                    {completedOrder.table_number ? ` - Meja ${completedOrder.table_number}` : ''}
+                  </span>
+                </div>
+                {completedOrder.customer_name && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Pelanggan:</span>
+                    <span>{completedOrder.customer_name}</span>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ borderBottom: '1px dashed #000', margin: '8px 0' }} />
+
+              {/* Items List */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {completedOrder.items.map((it, idx) => (
+                  <div key={idx}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <strong>{it.menu_name}</strong>
+                      <strong>{rupiah(it.total_price)}</strong>
+                    </div>
+                    {it.modifiers && it.modifiers.length > 0 && (
+                      <div style={{ fontSize: 9.5, color: '#333333', paddingLeft: 6, margin: '1px 0' }}>
+                        {it.modifiers.map((m, mIdx) => (
+                          <div key={mIdx} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span>+ {m.name}</span>
+                            {Number(m.price) > 0 && <span>+{rupiah(m.price)}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, opacity: 0.8 }}>
+                      <span>{it.qty} x {rupiah(it.price)}</span>
+                      {it.notes && <span>*{it.notes}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ borderBottom: '1px dashed #000', margin: '8px 0' }} />
+
+              {/* Totals & Payment */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {Number(completedOrder.discount_amount) > 0 && (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5 }}>
+                      <span>Subtotal:</span>
+                      <span>{rupiah(completedOrder.subtotal || (Number(completedOrder.total_price) + Number(completedOrder.discount_amount)))}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, fontWeight: 700 }}>
+                      <span>Diskon ({completedOrder.discount_name || 'Promo'}):</span>
+                      <span>-{rupiah(completedOrder.discount_amount)}</span>
+                    </div>
+                  </>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 900 }}>
+                  <span>TOTAL:</span>
+                  <span>{rupiah(completedOrder.total_price)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5 }}>
+                  <span>Metode:</span>
+                  <span>{completedOrder.payment_method}</span>
+                </div>
+                {completedOrder.payment_method === 'CASH' && (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5 }}>
+                      <span>Bayar (Tunai):</span>
+                      <span>{rupiah(completedOrder.amount_paid)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontWeight: 800 }}>
+                      <span>Kembalian:</span>
+                      <span>{rupiah(completedOrder.change_amount)}</span>
+                    </div>
+                  </>
+                )}
+                {completedOrder.remaining_total !== undefined && (
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: 10.5,
+                    marginTop: 4,
+                    paddingTop: 4,
+                    borderTop: '1px dotted #000',
+                    fontWeight: 800
+                  }}>
+                    <span>{completedOrder.is_table_closed ? 'STATUS MEJA:' : 'SISA TAGIHAN MEJA:'}</span>
+                    <span>{completedOrder.is_table_closed ? 'LUNAS (SELESAI)' : rupiah(completedOrder.remaining_total)}</span>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ borderBottom: '1px dashed #000', margin: '8px 0' }} />
+
+              {/* Footer */}
+              <div style={{ textAlign: 'center', fontSize: 9.5, opacity: 0.85, marginTop: 8 }}>
+                <div>Terima kasih atas kunjungan Anda!</div>
+                <div>Layanan Konsumen: halo@movapos.id</div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => setReceiptModalOpen(false)}
+                style={{ flex: 1, justifyContent: 'center' }}
+              >
+                Pesanan Baru
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handlePrintReceipt}
+                style={{ flex: 1, justifyContent: 'center', fontWeight: 800 }}
+              >
+                <Printer size={15} style={{ marginRight: 6 }} /> Cetak Struk
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL 3: DAFTAR TAGIHAN TERBUKA (OPEN BILLS MANAGER)
+         ======================================================== */}
+      {openBillsModalOpen && (
+        <div className="modal-overlay" onClick={() => setOpenBillsModalOpen(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 840, width: '95%', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 14 }}>
+              <div>
+                <h3 style={{ fontSize: 18, fontWeight: 800, color: '#ffffff', margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Clock size={20} style={{ color: '#fbbf24' }} />
+                  Daftar Tagihan Terbuka (Open Bills)
+                  <span style={{
+                    fontSize: 12,
+                    background: '#f59e0b',
+                    color: '#000000',
+                    fontWeight: 800,
+                    padding: '2px 8px',
+                    borderRadius: 12
+                  }}>
+                    {openBills.length} Meja
+                  </span>
+                </h3>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '4px 0 0' }}>
+                  Tagihan pesanan meja dine-in yang sedang berjalan. Belum memotong stok & belum masuk closing kasir.
+                </p>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={fetchOpenBills}
+                  title="Segarkan data tagihan"
+                >
+                  <RefreshCw size={13} style={{ marginRight: 4 }} /> Segarkan
+                </button>
+                <button
+                  className="btn btn-ghost btn-icon"
+                  onClick={() => setOpenBillsModalOpen(false)}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* List / Grid of Open Bills */}
+            <div style={{ flex: 1, overflowY: 'auto', paddingRight: 4 }}>
+              {openBills.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '48px 16px' }}>
+                  <div style={{
+                    width: 60, height: 60, borderRadius: '50%',
+                    background: 'rgba(16, 185, 129, 0.12)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    margin: '0 auto 16px', color: 'var(--ok)'
+                  }}>
+                    <CheckCircle2 size={32} />
+                  </div>
+                  <h4 style={{ color: '#ffffff', fontSize: 15, fontWeight: 700, margin: '0 0 6px' }}>
+                    Tidak Ada Tagihan Terbuka
+                  </h4>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: 12.5, maxWidth: 360, margin: '0 auto 16px' }}>
+                    Semua pesanan saat ini sudah diselesaikan (lunas) atau meja sedang kosong.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={() => setOpenBillsModalOpen(false)}
+                  >
+                    Mulai Pesanan Baru
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 14 }}>
+                  {openBills.map(bill => (
+                    <div key={bill.order_number} className="pos-openbill-card">
+                      <div>
+                        {/* Top Meta */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{
+                              background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                              color: '#000000',
+                              fontWeight: 900,
+                              fontSize: 14,
+                              padding: '4px 10px',
+                              borderRadius: 8,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 5
+                            }}>
+                              <Table size={14} />
+                              {bill.table_number || 'Tanpa Meja'}
+                            </div>
+                            <span style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                              {bill.customer_name ? `(${bill.customer_name})` : ''}
+                            </span>
+                          </div>
+
+                          <div style={{
+                            display: 'flex', alignItems: 'center', gap: 4,
+                            fontSize: 11, color: '#fbbf24',
+                            background: 'rgba(245, 158, 11, 0.12)',
+                            border: '1px solid rgba(245, 158, 11, 0.25)',
+                            padding: '3px 8px', borderRadius: 8
+                          }}>
+                            <Clock size={11} />
+                            <span>{bill.duration_mins} menit lalu</span>
+                          </div>
+                        </div>
+
+                        {/* Order No & Cashier */}
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, display: 'flex', justifyContent: 'space-between' }}>
+                          <span>No: <strong className="mono" style={{ color: 'var(--text-secondary)' }}>{bill.order_number}</strong></span>
+                          <span>Kasir: {bill.cashier?.name || 'Kasir'}</span>
+                        </div>
+
+                        {/* Items list preview */}
+                        <div style={{
+                          background: 'rgba(0,0,0,0.25)',
+                          border: '1px solid rgba(255,255,255,0.06)',
+                          borderRadius: 8,
+                          padding: '8px 10px',
+                          maxHeight: 120,
+                          overflowY: 'auto',
+                          marginBottom: 10
+                        }}>
+                          {bill.items?.map((it, idx) => (
+                            <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, padding: '3px 0', borderBottom: idx < bill.items.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                              <div>
+                                <strong style={{ color: '#ffffff' }}>{it.qty}x</strong> <span style={{ color: 'var(--text-secondary)' }}>{it.menu_name}</span>
+                                {it.modifiers && it.modifiers.length > 0 && (
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginTop: 2 }}>
+                                    {it.modifiers.map((m, mIdx) => (
+                                      <span key={mIdx} style={{ fontSize: 9.5, color: '#c4b5fd', background: 'rgba(139, 92, 246, 0.15)', padding: '0 4px', borderRadius: 3 }}>
+                                        {m.name}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                                {it.notes && <div style={{ fontSize: 10, color: 'var(--accent-bright)' }}>*{it.notes}</div>}
+                              </div>
+                              <span className="mono" style={{ color: '#ffffff' }}>{rupiah(it.total_price)}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Total Subtotal */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', paddingTop: 4 }}>
+                          <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>Total Sementara ({bill.total_items} item):</span>
+                          <span className="mono" style={{ fontSize: 17, fontWeight: 900, color: '#fbbf24' }}>
+                            {rupiah(bill.total_price)}
+                          </span>
+                        </div>
+
+                        {/* Equal Split Progress Banner if partially paid */}
+                        {bill.paid_splits_count > 0 && (
+                          <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            background: 'rgba(168, 85, 247, 0.12)',
+                            border: '1px solid rgba(168, 85, 247, 0.35)',
+                            padding: '6px 10px',
+                            borderRadius: 6,
+                            marginTop: 6,
+                            fontSize: 11
+                          }}>
+                            <span style={{ color: '#d8b4fe', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <Scissors size={11} /> Patungan: {bill.paid_splits_count}/{bill.split_total} Lunas ({rupiah(bill.paid_splits_total)})
+                            </span>
+                            <span className="mono" style={{ color: '#fbbf24', fontWeight: 800 }}>
+                              Sisa: {rupiah(bill.remaining_balance)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Card Action Buttons */}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 10 }}>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline"
+                          onClick={() => handleStartAppendItems(bill)}
+                          style={{ flex: 1, minWidth: 100, fontSize: 11, padding: '5px 8px', justifyContent: 'center' }}
+                          title="Tambah menu makanan/minuman baru ke tagihan ini"
+                        >
+                          <Plus size={12} style={{ marginRight: 3 }} /> Tambah Menu
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-secondary"
+                          onClick={() => handleOpenKitchenChit(bill)}
+                          style={{ flex: 1, minWidth: 90, fontSize: 11, padding: '5px 8px', justifyContent: 'center' }}
+                          title="Cetak tiket dapur untuk koki (tanpa harga)"
+                        >
+                          <ChefHat size={12} style={{ marginRight: 3 }} /> Tiket Dapur
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-secondary"
+                          onClick={() => handleOpenPrebill(bill)}
+                          style={{ flex: 1, minWidth: 90, fontSize: 11, padding: '5px 8px', justifyContent: 'center' }}
+                          title="Cetak lembar cek tagihan sementara untuk tamu"
+                        >
+                          <FileText size={12} style={{ marginRight: 3 }} /> Pre-Bill
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          onClick={() => handleOpenSplitBill(bill)}
+                          style={{
+                            flex: 1,
+                            minWidth: 95,
+                            fontSize: 11,
+                            padding: '5px 8px',
+                            justifyContent: 'center',
+                            background: 'rgba(168, 85, 247, 0.16)',
+                            border: '1px solid rgba(168, 85, 247, 0.4)',
+                            color: '#d8b4fe',
+                            fontWeight: 700
+                          }}
+                          title="Pisah tagihan per menu atau bagi rata (Split Bill)"
+                        >
+                          <Scissors size={12} style={{ marginRight: 3 }} /> Split Bill
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-primary"
+                          onClick={() => handleOpenPayOpenBill(bill)}
+                          style={{ flex: 1.2, minWidth: 110, fontSize: 11.5, fontWeight: 800, padding: '5px 10px', justifyContent: 'center' }}
+                          title="Selesaikan pembayaran tagihan meja ini"
+                        >
+                          <Banknote size={13} style={{ marginRight: 4 }} /> Bayar Lunas
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-ghost"
+                          onClick={() => setCancelBillModal({ open: true, bill, reason: '', submitting: false })}
+                          style={{ padding: '5px 8px', color: 'var(--danger)', fontSize: 11 }}
+                          title="Batalkan / Void tagihan meja ini"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setOpenBillsModalOpen(false)}
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL 4: CETAK TIKET DAPUR (KITCHEN CHIT)
+         ======================================================== */}
+      {kitchenChitModal.open && kitchenChitModal.bill && (
+        <div className="modal-overlay" onClick={() => setKitchenChitModal({ open: false, bill: null, items: [], isAdditional: false })}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 380, padding: 18 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <span style={{ fontWeight: 800, fontSize: 14, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <ChefHat size={16} style={{ color: '#fbbf24' }} />
+                {kitchenChitModal.isAdditional ? 'Tiket Dapur (Menu Tambahan)' : 'Tiket Dapur (Kitchen Chit)'}
+              </span>
+              <button
+                className="btn btn-ghost btn-icon"
+                onClick={() => setKitchenChitModal({ open: false, bill: null, items: [], isAdditional: false })}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Printable Kitchen Chit Container */}
+            <div id="printable-kitchen-chit" className="thermal-receipt-preview" style={{ background: '#ffffff', color: '#000000' }}>
+              <div style={{ textAlign: 'center', borderBottom: '2px solid #000', paddingBottom: 6, marginBottom: 8 }}>
+                <div style={{ fontWeight: 900, fontSize: 15, letterSpacing: '0.05em' }}>
+                  *** TIKET DAPUR / KITCHEN ***
+                </div>
+                {kitchenChitModal.isAdditional && (
+                  <div style={{ fontSize: 11, fontWeight: 800, background: '#000', color: '#fff', padding: '1px 4px', margin: '2px auto', display: 'inline-block' }}>
+                    + PESANAN TAMBAHAN +
+                  </div>
+                )}
+                <div style={{ fontSize: 9.5, marginTop: 2 }}>
+                  {kitchenChitModal.bill.outlet_name}
+                </div>
+              </div>
+
+              {/* Huge Table Box */}
+              <div style={{
+                border: '2px solid #000',
+                padding: '6px 8px',
+                textAlign: 'center',
+                marginBottom: 8,
+                borderRadius: 4
+              }}>
+                <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  NOMOR MEJA:
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: '0.05em' }}>
+                  {kitchenChitModal.bill.table_number || 'DINE IN'}
+                </div>
+                {kitchenChitModal.bill.customer_name && (
+                  <div style={{ fontSize: 10, marginTop: 2 }}>
+                    Tamu: <strong>{kitchenChitModal.bill.customer_name}</strong>
+                  </div>
+                )}
+              </div>
+
+              {/* Meta */}
+              <div style={{ fontSize: 9.5, display: 'flex', justifyContent: 'space-between', marginBottom: 6, borderBottom: '1px dashed #000', paddingBottom: 6 }}>
+                <div>No: <strong>{kitchenChitModal.bill.order_number}</strong></div>
+                <div>Jam: {kitchenChitModal.bill.created_at}</div>
+              </div>
+
+              {/* Items without price */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, margin: '8px 0' }}>
+                {kitchenChitModal.items.map((it, idx) => (
+                  <div key={idx} style={{ borderBottom: '1px dotted #ccc', paddingBottom: 4 }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                      <span style={{ fontSize: 16, fontWeight: 900, minWidth: 26 }}>
+                        {it.qty}x
+                      </span>
+                      <strong style={{ fontSize: 13, flex: 1 }}>
+                        {it.menu_name || it.name}
+                      </strong>
+                    </div>
+                    {it.modifiers && it.modifiers.length > 0 && (
+                      <div style={{ fontSize: 11, fontWeight: 800, color: '#b45309', paddingLeft: 34, marginTop: 2 }}>
+                        {it.modifiers.map((m, mIdx) => (
+                          <div key={mIdx}>👉 {m.group_name ? `${m.group_name}: ` : ''}{m.name}</div>
+                        ))}
+                      </div>
+                    )}
+                    {it.notes && (
+                      <div style={{ fontSize: 10.5, fontStyle: 'italic', paddingLeft: 34, marginTop: 2 }}>
+                        * Catatan: {it.notes}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ borderTop: '2px dashed #000', marginTop: 10, paddingTop: 6, textAlign: 'center', fontSize: 9 }}>
+                <div>Kasir: {kitchenChitModal.bill.cashier}</div>
+                <div style={{ marginTop: 2 }}>Harap sajikan makanan hangat & higienis.</div>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setKitchenChitModal({ open: false, bill: null, items: [], isAdditional: false })}
+                style={{ flex: 1, justifyContent: 'center' }}
+              >
+                Tutup
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => printElement('printable-kitchen-chit', `Kitchen Chit - ${kitchenChitModal.bill.table_number || ''}`, { isThermal: true, pageSize: '80mm auto' })}
+                style={{ flex: 1.5, justifyContent: 'center', fontWeight: 800, background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)' }}
+              >
+                <Printer size={15} style={{ marginRight: 6 }} /> Cetak ke Dapur
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL 5: CETAK PRE-BILL (TAGIHAN SEMENTARA)
+         ======================================================== */}
+      {prebillModal.open && prebillModal.bill && (
+        <div className="modal-overlay" onClick={() => setPrebillModal({ open: false, bill: null })}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 390, padding: 18 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <span style={{ fontWeight: 800, fontSize: 14, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <FileText size={16} style={{ color: 'var(--accent)' }} /> Tagihan Sementara (Pre-Bill)
+              </span>
+              <button
+                className="btn btn-ghost btn-icon"
+                onClick={() => setPrebillModal({ open: false, bill: null })}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Printable Pre-bill Container */}
+            <div id="printable-prebill" className="thermal-receipt-preview" style={{ background: '#ffffff', color: '#000000' }}>
+              <div style={{ textAlign: 'center', marginBottom: 10 }}>
+                <div style={{ fontWeight: 900, fontSize: 16 }}>MOVA POS</div>
+                <div style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 2 }}>
+                  LEMBAR CEK TAGIHAN (PRE-BILL)
+                </div>
+                <div style={{ fontSize: 9, fontStyle: 'italic', color: '#444' }}>
+                  ** BUKAN BUKTI PEMBAYARAN SAH **
+                </div>
+                <div style={{ fontSize: 9.5, marginTop: 4 }}>
+                  {activeShift?.shift?.outlet?.name || prebillModal.bill.outlet_name || 'Outlet Utama'}
+                </div>
+              </div>
+
+              <div style={{ borderBottom: '1px dashed #000', margin: '6px 0' }} />
+
+              <div style={{ fontSize: 10.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>No. Order:</span>
+                  <strong>{prebillModal.bill.order_number}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Meja / Tamu:</span>
+                  <strong>{prebillModal.bill.table_number || '-'} {prebillModal.bill.customer_name ? `(${prebillModal.bill.customer_name})` : ''}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Waktu Pesan:</span>
+                  <span>{prebillModal.bill.created_at || new Date().toLocaleString('id-ID')}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Kasir:</span>
+                  <span>{prebillModal.bill.cashier?.name || currentUser.name || 'Kasir'}</span>
+                </div>
+              </div>
+
+              <div style={{ borderBottom: '1px dashed #000', margin: '6px 0' }} />
+
+              {/* Items Breakdown */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5, margin: '6px 0' }}>
+                {prebillModal.bill.items?.map((it, idx) => (
+                  <div key={idx}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <strong>{it.menu_name}</strong>
+                      <strong>{rupiah(it.total_price)}</strong>
+                    </div>
+                    {it.modifiers && it.modifiers.length > 0 && (
+                      <div style={{ fontSize: 9, color: '#555', paddingLeft: 6, margin: '1px 0' }}>
+                        {it.modifiers.map((m, mIdx) => (
+                          <div key={mIdx} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span>+ {m.name}</span>
+                            {Number(m.price) > 0 && <span>+{rupiah(m.price)}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9.5, opacity: 0.8 }}>
+                      <span>{it.qty} x {rupiah(it.price)}</span>
+                      {it.notes && <span>*{it.notes}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ borderBottom: '1px dashed #000', margin: '6px 0' }} />
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 900 }}>
+                <span>TOTAL SEMENTARA:</span>
+                <span>{rupiah(prebillModal.bill.total_price)}</span>
+              </div>
+
+              <div style={{ borderBottom: '1px dashed #000', margin: '6px 0' }} />
+
+              <div style={{ textAlign: 'center', fontSize: 9.5, marginTop: 8 }}>
+                <div>Mohon periksa kembali pesanan Anda.</div>
+                <div>Silakan selesaikan pembayaran di meja kasir.</div>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setPrebillModal({ open: false, bill: null })}
+                style={{ flex: 1, justifyContent: 'center' }}
+              >
+                Tutup
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => printElement('printable-prebill', `Pre-Bill - ${prebillModal.bill.table_number || ''}`, { isThermal: true, pageSize: '80mm auto' })}
+                style={{ flex: 1.5, justifyContent: 'center', fontWeight: 800 }}
+              >
+                <Printer size={15} style={{ marginRight: 6 }} /> Cetak Lembar Tagihan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL 6: BATALKAN / VOID TAGIHAN TERBUKA
+         ======================================================== */}
+      {cancelBillModal.open && cancelBillModal.bill && (
+        <div className="modal-overlay" onClick={() => setCancelBillModal({ open: false, bill: null, reason: '', submitting: false })}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <div style={{
+                width: 40, height: 40, borderRadius: 10,
+                background: 'rgba(244, 63, 94, 0.15)',
+                border: '1px solid rgba(244, 63, 94, 0.3)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#fb7185'
+              }}>
+                <Trash2 size={20} />
+              </div>
+              <div>
+                <h3 style={{ fontSize: 16, fontWeight: 800, color: '#ffffff', margin: 0 }}>
+                  Batalkan Tagihan Terbuka?
+                </h3>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                  Meja {cancelBillModal.bill.table_number} ({cancelBillModal.bill.order_number})
+                </span>
+              </div>
+            </div>
+
+            <p style={{ fontSize: 12.5, color: 'var(--text-primary)', lineHeight: 1.5, marginBottom: 14 }}>
+              Apakah Anda yakin ingin membatalkan tagihan sebesar <strong>{rupiah(cancelBillModal.bill.total_price)}</strong>? Tagihan ini akan diberi status <strong>CANCELLED</strong> dan meja akan kembali kosong.
+            </p>
+
+            <div className="form-group mb-3">
+              <label className="form-label">Alasan Pembatalan (opsional)</label>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Misal: Tamu batal / Salah input nomor meja"
+                value={cancelBillModal.reason}
+                onChange={e => setCancelBillModal(p => ({ ...p, reason: e.target.value }))}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setCancelBillModal({ open: false, bill: null, reason: '', submitting: false })}
+                style={{ flex: 1, justifyContent: 'center' }}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={handleConfirmCancelBill}
+                disabled={cancelBillModal.submitting}
+                style={{ flex: 1.5, justifyContent: 'center', fontWeight: 800 }}
+              >
+                {cancelBillModal.submitting ? 'Membatalkan...' : 'Ya, Batalkan Tagihan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL 7: PILIH VARIAN & MODIFIER (LEVEL, SAUS, TOPPING)
+         ======================================================== */}
+      {modifierModal.open && modifierModal.menu && (
+        <div className="modal-overlay" onClick={() => setModifierModal({ open: false, menu: null, status: null, selectedOptions: {}, qty: 1, notes: '' })}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 540, width: '95%', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid var(--border)', paddingBottom: 12, marginBottom: 14 }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--accent-bright)', background: 'rgba(139, 92, 246, 0.15)', padding: '2px 8px', borderRadius: 6 }}>
+                    {modifierModal.menu.category || 'Menu'}
+                  </span>
+                  <span className="mono" style={{ fontSize: 13, fontWeight: 800, color: 'var(--ok)' }}>
+                    Dasar: {rupiah(modifierModal.menu.price)}
+                  </span>
+                </div>
+                <h3 style={{ fontSize: 18, fontWeight: 800, color: '#ffffff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Sparkles size={18} style={{ color: '#a78bfa' }} />
+                  {modifierModal.menu.name}
+                </h3>
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-icon"
+                onClick={() => setModifierModal({ open: false, menu: null, status: null, selectedOptions: {}, qty: 1, notes: '' })}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Body: Groups & Options */}
+            <div style={{ flex: 1, overflowY: 'auto', paddingRight: 4, display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {(modifierModal.menu.modifier_groups || []).map(group => {
+                const isSingleChoice = group.max_selection === 1;
+                const min = group.min_selection ?? 0;
+                const isRequired = min >= 1;
+                const selectedList = modifierModal.selectedOptions[group.id] || [];
+
+                return (
+                  <div key={group.id} style={{
+                    background: 'rgba(255, 255, 255, 0.02)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 10,
+                    padding: 12
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontWeight: 700, fontSize: 13.5, color: '#ffffff' }}>
+                          {group.name}
+                        </span>
+                        {group.description && (
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>({group.description})</span>
+                        )}
+                      </div>
+                      <span style={{
+                        fontSize: 10.5,
+                        padding: '2px 8px',
+                        borderRadius: 8,
+                        fontWeight: 700,
+                        background: isRequired && selectedList.length === 0 ? 'rgba(244, 63, 94, 0.15)' : 'rgba(255, 255, 255, 0.07)',
+                        color: isRequired && selectedList.length === 0 ? '#fb7185' : 'var(--text-secondary)',
+                        border: isRequired && selectedList.length === 0 ? '1px solid rgba(244, 63, 94, 0.3)' : '1px solid var(--border)'
+                      }}>
+                        {isRequired ? (isSingleChoice ? 'Wajib (Pilih 1)' : `Wajib (Min. ${min})`) : (isSingleChoice ? 'Opsional' : `Opsional (Maks ${group.max_selection || 'Bebas'})`)}
+                      </span>
+                    </div>
+
+                    {/* Options List */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
+                      {(group.options || []).map(opt => {
+                        const isSelected = selectedList.includes(opt.id);
+                        const extraPrice = Number(opt.price) || 0;
+
+                        return (
+                          <div
+                            key={opt.id}
+                            onClick={() => handleToggleModifierOption(group, opt)}
+                            style={{
+                              padding: '9px 12px',
+                              borderRadius: 8,
+                              cursor: 'pointer',
+                              border: isSelected ? '1.5px solid var(--accent-bright)' : '1px solid rgba(255, 255, 255, 0.08)',
+                              background: isSelected ? 'rgba(139, 92, 246, 0.18)' : 'rgba(0, 0, 0, 0.25)',
+                              transition: 'all 0.15s ease',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              gap: 8,
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <div style={{
+                                width: 16, height: 16,
+                                borderRadius: isSingleChoice ? '50%' : 4,
+                                border: isSelected ? '2px solid var(--accent-bright)' : '1.5px solid rgba(255, 255, 255, 0.3)',
+                                background: isSelected ? 'var(--accent-bright)' : 'transparent',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center'
+                              }}>
+                                {isSelected && (
+                                  <div style={{
+                                    width: isSingleChoice ? 6 : 8,
+                                    height: isSingleChoice ? 6 : 8,
+                                    background: '#000000',
+                                    borderRadius: isSingleChoice ? '50%' : 1
+                                  }} />
+                                )}
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 12.5, fontWeight: isSelected ? 700 : 500, color: isSelected ? '#ffffff' : 'var(--text-secondary)' }}>
+                                  {opt.name}
+                                </div>
+                                {opt.ingredient && (
+                                  <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                    ✂ {num(opt.qty)} {opt.unit || opt.ingredient.unit_pakai} {opt.ingredient.name}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            <span className="mono" style={{
+                              fontSize: 11.5,
+                              fontWeight: 700,
+                              color: extraPrice > 0 ? '#fbbf24' : 'var(--text-muted)'
+                            }}>
+                              {extraPrice > 0 ? `+${rupiah(extraPrice)}` : 'Gratis'}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Special Instructions / Notes */}
+              <div>
+                <label className="form-label" style={{ fontSize: 11.5 }}>Catatan Tambahan untuk Koki (Opsional)</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Misal: Saus dipisah, jangan terlalu asin, dll."
+                  value={modifierModal.notes}
+                  onChange={e => setModifierModal(p => ({ ...p, notes: e.target.value }))}
+                  style={{ fontSize: 12 }}
+                />
+              </div>
+            </div>
+
+            {/* Footer Calculation & Action */}
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginTop: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                {/* Quantity Control */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Jumlah:</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <button
+                      type="button"
+                      className="pos-qty-btn"
+                      onClick={() => setModifierModal(p => ({ ...p, qty: Math.max(1, p.qty - 1) }))}
+                    >
+                      <Minus size={12} />
+                    </button>
+                    <span className="mono" style={{ minWidth: 24, textAlign: 'center', fontWeight: 800, fontSize: 14, color: '#ffffff' }}>
+                      {modifierModal.qty}
+                    </span>
+                    <button
+                      type="button"
+                      className="pos-qty-btn"
+                      onClick={() => setModifierModal(p => ({ ...p, qty: p.qty + 1 }))}
+                    >
+                      <Plus size={12} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Subtotal preview */}
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    Total Menu + Varian:
+                  </div>
+                  <div className="mono" style={{ fontSize: 17, fontWeight: 900, color: 'var(--ok)' }}>
+                    {rupiah(calculateModalTotal())}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setModifierModal({ open: false, menu: null, status: null, selectedOptions: {}, qty: 1, notes: '' })}
+                  style={{ flex: 1, justifyContent: 'center' }}
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={handleConfirmModifierModal}
+                  style={{ flex: 2, justifyContent: 'center', fontWeight: 800 }}
+                >
+                  <ShoppingCart size={15} style={{ marginRight: 6 }} /> Masukkan ke Keranjang
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL: PILIH PROMO & DISKON TERSEDIA
+         ======================================================== */}
+      {promoModalOpen && (
+        <div className="modal-overlay" onClick={() => setPromoModalOpen(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 520, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, borderBottom: '1px solid var(--border)', paddingBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  width: 36, height: 36, borderRadius: 8,
+                  background: 'rgba(236, 72, 153, 0.15)',
+                  border: '1px solid rgba(236, 72, 153, 0.3)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#f472b6'
+                }}>
+                  <Gift size={18} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: 16, fontWeight: 800, color: '#ffffff', margin: 0 }}>
+                    Promo & Diskon Tersedia
+                  </h3>
+                  <span style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                    Pilih promo aktif untuk {activeOutlet?.name || 'cabang ini'}
+                  </span>
+                </div>
+              </div>
+              <button className="btn btn-ghost btn-icon" onClick={() => setPromoModalOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ overflowY: 'auto', flex: 1, paddingRight: 4, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {availableDiscounts.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--text-muted)' }}>
+                  <Tag size={36} style={{ margin: '0 auto 10px', opacity: 0.4 }} />
+                  <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-secondary)' }}>Tidak ada promo aktif</div>
+                  <div style={{ fontSize: 11, marginTop: 4 }}>Gunakan kode voucher khusus atau tambahkan diskon manual kasir.</div>
+                </div>
+              ) : (
+                availableDiscounts.map(disc => {
+                  const meetsMin = !disc.min_order_amount || cartGrossSubtotal >= Number(disc.min_order_amount);
+                  const isSelected = appliedDiscount?.id === disc.id;
+                  return (
+                    <div
+                      key={disc.id}
+                      style={{
+                        background: isSelected ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                        border: isSelected ? '1px solid var(--ok)' : '1px solid var(--border)',
+                        borderRadius: 10,
+                        padding: '12px 14px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: 12
+                      }}
+                    >
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                          <span style={{
+                            background: disc.type === 'PERCENTAGE' ? 'rgba(236, 72, 153, 0.18)' : 'rgba(59, 130, 246, 0.18)',
+                            color: disc.type === 'PERCENTAGE' ? '#f472b6' : '#60a5fa',
+                            border: `1px solid ${disc.type === 'PERCENTAGE' ? 'rgba(236, 72, 153, 0.35)' : 'rgba(59, 130, 246, 0.35)'}`,
+                            fontSize: 10.5,
+                            fontWeight: 800,
+                            padding: '1px 6px',
+                            borderRadius: 4
+                          }}>
+                            {disc.type === 'PERCENTAGE' ? `${disc.value ?? disc.rate}% OFF` : `POTONGAN ${rupiah(disc.value ?? disc.rate)}`}
+                          </span>
+                          {disc.code && (
+                            <span className="mono" style={{ fontSize: 11, background: 'rgba(255,255,255,0.06)', padding: '1px 6px', borderRadius: 4, color: '#fcd34d' }}>
+                              {disc.code}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontWeight: 700, fontSize: 13, color: '#ffffff' }}>
+                          {disc.name}
+                        </div>
+                        {disc.description && (
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                            {disc.description}
+                          </div>
+                        )}
+                        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4, display: 'flex', gap: 10 }}>
+                          {disc.min_order_amount > 0 && (
+                            <span>Min. belanja: {rupiah(disc.min_order_amount)}</span>
+                          )}
+                          {(Number(disc.max_discount_amount) > 0 || Number(disc.max_discount) > 0) && (
+                            <span>Maks. diskon: {rupiah(disc.max_discount_amount || disc.max_discount)}</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        {isSelected ? (
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={handleRemoveDiscount}
+                            style={{ fontSize: 11, color: 'var(--danger)' }}
+                          >
+                            Lepas
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm"
+                            disabled={!meetsMin}
+                            onClick={() => handleSelectPromo(disc)}
+                            style={{ fontSize: 11 }}
+                          >
+                            {meetsMin ? 'Gunakan' : 'Min Belum Cukup'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => {
+                  setPromoModalOpen(false);
+                  setCustomDiscountModal({ open: true, type: 'PERCENTAGE', value: '', name: 'Diskon Kasir' });
+                }}
+              >
+                <Percent size={13} style={{ marginRight: 5 }} /> Buat Diskon Manual Kasir
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setPromoModalOpen(false)}
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL: DISKON MANUAL KASIR (CUSTOM DISCOUNT)
+         ======================================================== */}
+      {customDiscountModal.open && (
+        <div className="modal-overlay" onClick={() => setCustomDiscountModal(p => ({ ...p, open: false }))}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 800, color: '#ffffff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Percent size={18} style={{ color: '#ec4899' }} />
+                Diskon Manual Kasir
+              </h3>
+              <button
+                className="btn btn-ghost btn-icon"
+                onClick={() => setCustomDiscountModal(p => ({ ...p, open: false }))}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="form-group mb-3">
+              <label className="form-label">Keterangan / Alasan Diskon</label>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Contoh: Diskon Karyawan, Tamu VIP, Komplain"
+                value={customDiscountModal.name}
+                onChange={e => setCustomDiscountModal(p => ({ ...p, name: e.target.value }))}
+              />
+            </div>
+
+            <div className="form-group mb-3">
+              <label className="form-label">Tipe Diskon</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setCustomDiscountModal(p => ({ ...p, type: 'PERCENTAGE' }))}
+                  style={{
+                    padding: '8px',
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    fontSize: 12,
+                    border: '1px solid',
+                    borderColor: customDiscountModal.type === 'PERCENTAGE' ? 'var(--accent-bright)' : 'var(--border)',
+                    background: customDiscountModal.type === 'PERCENTAGE' ? 'var(--accent-gradient)' : 'rgba(255,255,255,0.04)',
+                    color: '#ffffff'
+                  }}
+                >
+                  Persentase (%)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCustomDiscountModal(p => ({ ...p, type: 'FIXED' }))}
+                  style={{
+                    padding: '8px',
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    fontSize: 12,
+                    border: '1px solid',
+                    borderColor: customDiscountModal.type === 'FIXED' ? 'var(--accent-bright)' : 'var(--border)',
+                    background: customDiscountModal.type === 'FIXED' ? 'var(--accent-gradient)' : 'rgba(255,255,255,0.04)',
+                    color: '#ffffff'
+                  }}
+                >
+                  Nominal Tunai (Rp)
+                </button>
+              </div>
+            </div>
+
+            <div className="form-group mb-3">
+              <label className="form-label">
+                {customDiscountModal.type === 'PERCENTAGE' ? 'Besar Diskon (%)' : 'Potongan Harga (Rp)'}
+              </label>
+              <input
+                type="number"
+                className="form-control"
+                placeholder={customDiscountModal.type === 'PERCENTAGE' ? '10' : '15000'}
+                value={customDiscountModal.value}
+                onChange={e => setCustomDiscountModal(p => ({ ...p, value: e.target.value }))}
+                style={{ fontSize: 16, fontWeight: 700 }}
+              />
+            </div>
+
+            {/* Live Calculation Preview */}
+            {customDiscountModal.value && Number(customDiscountModal.value) > 0 && (
+              <div style={{
+                background: 'rgba(236, 72, 153, 0.12)',
+                border: '1px solid rgba(236, 72, 153, 0.3)',
+                borderRadius: 8,
+                padding: '10px 12px',
+                marginBottom: 16,
+                fontSize: 12
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Subtotal:</span>
+                  <span className="mono">{rupiah(cartGrossSubtotal)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3, color: '#f472b6', fontWeight: 600 }}>
+                  <span>Potongan:</span>
+                  <span className="mono">
+                    -{rupiah(customDiscountModal.type === 'PERCENTAGE'
+                      ? Math.round((cartGrossSubtotal * Number(customDiscountModal.value)) / 100)
+                      : Math.min(Number(customDiscountModal.value), cartGrossSubtotal)
+                    )}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed rgba(255,255,255,0.15)', paddingTop: 4, fontWeight: 800, color: '#ffffff' }}>
+                  <span>Estimasi Bayar:</span>
+                  <span className="mono">
+                    {rupiah(Math.max(0, cartGrossSubtotal - (customDiscountModal.type === 'PERCENTAGE'
+                      ? Math.round((cartGrossSubtotal * Number(customDiscountModal.value)) / 100)
+                      : Math.min(Number(customDiscountModal.value), cartGrossSubtotal)
+                    )))}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setCustomDiscountModal(p => ({ ...p, open: false }))}
+                style={{ flex: 1, justifyContent: 'center' }}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleApplyCustomDiscount}
+                disabled={!customDiscountModal.value || Number(customDiscountModal.value) <= 0}
+                style={{ flex: 2, justifyContent: 'center', fontWeight: 800 }}
+              >
+                Terapkan Diskon
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL: SPLIT BILL (PISAH TAGIHAN MEJA)
+         ======================================================== */}
+      {splitBillModal.open && splitBillModal.bill && (() => {
+        const bill = splitBillModal.bill;
+        const billTotal = Number(bill.total_price) || 0;
+
+        // Calculate selected total for BY_ITEM
+        let splitItemTotal = 0;
+        let splitItemCount = 0;
+        (bill.items || []).forEach(it => {
+          const q = splitBillModal.selectedItemQtys[it.id] || 0;
+          if (q > 0) {
+            const unit = (Number(it.subtotal) || Number(it.total_price)) / (Number(it.qty) || 1);
+            splitItemTotal += unit * q;
+            splitItemCount += q;
+          }
+        });
+        const remainingAfterItemSplit = Math.max(0, billTotal - splitItemTotal);
+
+        // Calculate for EQUAL
+        const splits = Math.max(2, Number(splitBillModal.totalSplits) || 2);
+        const equalPartAmount = Math.round(billTotal / splits);
+
+        // Current target payment
+        const targetAmount = splitBillModal.mode === 'BY_ITEM' ? splitItemTotal : equalPartAmount;
+        const parsedCash = parseFloat(splitBillModal.cashReceived) || 0;
+        const cashChange = Math.max(0, parsedCash - targetAmount);
+        const isCashSufficient = splitBillModal.paymentMethod !== 'CASH' || parsedCash >= targetAmount;
+        const canSubmit = splitBillModal.mode === 'BY_ITEM'
+          ? (splitItemCount > 0 && isCashSufficient && !splitBillModal.submitting)
+          : (targetAmount > 0 && isCashSufficient && !splitBillModal.submitting);
+
+        return (
+          <div className="modal-overlay" onClick={() => setSplitBillModal(p => ({ ...p, open: false }))}>
+            <div
+              className="modal-content"
+              onClick={e => e.stopPropagation()}
+              style={{
+                maxWidth: 680,
+                width: '95%',
+                maxHeight: '90vh',
+                display: 'flex',
+                flexDirection: 'column',
+                padding: 20,
+                gap: 14
+              }}
+            >
+              {/* Modal Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: 12 }}>
+                <div>
+                  <h3 style={{ fontSize: 17, fontWeight: 800, color: '#ffffff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Scissors size={18} style={{ color: '#c084fc' }} />
+                    Pisah Tagihan (Split Bill)
+                    <span style={{
+                      fontSize: 12,
+                      background: 'rgba(192, 132, 252, 0.2)',
+                      color: '#d8b4fe',
+                      padding: '2px 8px',
+                      borderRadius: 12,
+                      fontWeight: 700,
+                      border: '1px solid rgba(192, 132, 252, 0.4)'
+                    }}>
+                      Meja {bill.table_number || 'Dine-In'}
+                    </span>
+                  </h3>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 3 }}>
+                    Nota Induk: <span className="mono" style={{ color: '#fff' }}>{bill.order_number}</span> · Total Tagihan Meja: <strong className="mono" style={{ color: '#fbbf24' }}>{rupiah(billTotal)}</strong>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-icon"
+                  onClick={() => setSplitBillModal(p => ({ ...p, open: false }))}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Mode Toggle Switcher */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: 8,
+                background: 'rgba(255,255,255,0.03)',
+                padding: 4,
+                borderRadius: 10,
+                border: '1px solid var(--border)'
+              }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSplitBillModal(p => ({
+                      ...p,
+                      mode: 'BY_ITEM',
+                      cashReceived: splitItemTotal > 0 ? splitItemTotal.toString() : ''
+                    }));
+                  }}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    fontSize: 12,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    border: '1px solid',
+                    borderColor: splitBillModal.mode === 'BY_ITEM' ? '#c084fc' : 'transparent',
+                    background: splitBillModal.mode === 'BY_ITEM' ? 'rgba(192, 132, 252, 0.2)' : 'transparent',
+                    color: splitBillModal.mode === 'BY_ITEM' ? '#ffffff' : 'var(--text-secondary)'
+                  }}
+                >
+                  <Utensils size={14} /> Pisah per Menu (Item Split)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSplitBillModal(p => ({
+                      ...p,
+                      mode: 'EQUAL',
+                      cashReceived: equalPartAmount > 0 ? equalPartAmount.toString() : ''
+                    }));
+                  }}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    fontSize: 12,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    border: '1px solid',
+                    borderColor: splitBillModal.mode === 'EQUAL' ? '#c084fc' : 'transparent',
+                    background: splitBillModal.mode === 'EQUAL' ? 'rgba(192, 132, 252, 0.2)' : 'transparent',
+                    color: splitBillModal.mode === 'EQUAL' ? '#ffffff' : 'var(--text-secondary)'
+                  }}
+                >
+                  <Users size={14} /> Bagi Rata Nominal (Patungan)
+                </button>
+              </div>
+
+              {/* Scrollable Body Content */}
+              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12, paddingRight: 4 }}>
+                {/* ====================================================
+                    TAB 1: PISAH PER MENU (BY ITEM)
+                   ==================================================== */}
+                {splitBillModal.mode === 'BY_ITEM' && (
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <span style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                        Pilih menu & jumlah porsi yang dibayar oleh tamu ini:
+                      </span>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button
+                          type="button"
+                          className="btn btn-xs btn-outline"
+                          onClick={handleSelectAllSplitItems}
+                          style={{ fontSize: 11, padding: '2px 8px' }}
+                        >
+                          Pilih Semua
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-xs btn-ghost"
+                          onClick={handleClearSplitItems}
+                          style={{ fontSize: 11, padding: '2px 8px', color: 'var(--danger)' }}
+                        >
+                          Reset
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Menu Items Stepper List */}
+                    <div style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 6,
+                      maxHeight: 210,
+                      overflowY: 'auto',
+                      border: '1px solid var(--border)',
+                      borderRadius: 8,
+                      padding: 8,
+                      background: 'rgba(0,0,0,0.2)'
+                    }}>
+                      {(bill.items || []).map(it => {
+                        const qSelected = splitBillModal.selectedItemQtys[it.id] || 0;
+                        const unitPrice = (Number(it.subtotal) || Number(it.total_price)) / (Number(it.qty) || 1);
+                        const isSelected = qSelected > 0;
+
+                        return (
+                          <div
+                            key={it.id}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '8px 10px',
+                              borderRadius: 6,
+                              background: isSelected ? 'rgba(192, 132, 252, 0.1)' : 'rgba(255,255,255,0.02)',
+                              border: '1px solid',
+                              borderColor: isSelected ? 'rgba(192, 132, 252, 0.35)' : 'rgba(255,255,255,0.05)'
+                            }}
+                          >
+                            <div style={{ flex: 1, paddingRight: 10 }}>
+                              <div style={{ fontSize: 12.5, fontWeight: 700, color: '#ffffff' }}>
+                                {it.menu_name}
+                              </div>
+                              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                                {rupiah(unitPrice)} / porsi · Tersisa di meja: <strong style={{ color: '#fbbf24' }}>{it.qty} porsi</strong>
+                              </div>
+                              {it.modifiers && it.modifiers.length > 0 && (
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginTop: 3 }}>
+                                  {it.modifiers.map((m, mIdx) => (
+                                    <span key={mIdx} style={{ fontSize: 9, color: '#c4b5fd', background: 'rgba(139, 92, 246, 0.15)', padding: '0 4px', borderRadius: 3 }}>
+                                      {m.name}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Stepper Controls */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(0,0,0,0.3)', borderRadius: 6, border: '1px solid var(--border)' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSplitItemQtyChange(it.id, -1, it.qty)}
+                                  disabled={qSelected <= 0}
+                                  style={{
+                                    width: 28,
+                                    height: 28,
+                                    border: 'none',
+                                    background: 'transparent',
+                                    color: qSelected <= 0 ? 'var(--text-muted)' : '#ffffff',
+                                    cursor: qSelected <= 0 ? 'not-allowed' : 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                  }}
+                                >
+                                  <Minus size={12} />
+                                </button>
+                                <span style={{ width: 28, textAlign: 'center', fontSize: 12.5, fontWeight: 800, color: isSelected ? '#d8b4fe' : 'var(--text-secondary)' }}>
+                                  {qSelected}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSplitItemQtyChange(it.id, 1, it.qty)}
+                                  disabled={qSelected >= it.qty}
+                                  style={{
+                                    width: 28,
+                                    height: 28,
+                                    border: 'none',
+                                    background: 'transparent',
+                                    color: qSelected >= it.qty ? 'var(--text-muted)' : '#ffffff',
+                                    cursor: qSelected >= it.qty ? 'not-allowed' : 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                  }}
+                                >
+                                  <Plus size={12} />
+                                </button>
+                              </div>
+
+                              {/* Row Total */}
+                              <div className="mono" style={{ width: 75, textAlign: 'right', fontSize: 12, fontWeight: 700, color: isSelected ? '#ffffff' : 'var(--text-muted)' }}>
+                                {rupiah(unitPrice * qSelected)}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Split Balance Summary */}
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: 8,
+                      marginTop: 8,
+                      background: 'rgba(255,255,255,0.03)',
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      border: '1px solid var(--border)'
+                    }}>
+                      <div>
+                        <div style={{ fontSize: 10.5, color: 'var(--text-secondary)' }}>Total Bagian Ini ({splitItemCount} item):</div>
+                        <div className="mono" style={{ fontSize: 15, fontWeight: 900, color: '#c084fc' }}>
+                          {rupiah(splitItemTotal)}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: 10.5, color: 'var(--text-secondary)' }}>Sisa Tagihan Meja Nanti:</div>
+                        <div className="mono" style={{ fontSize: 15, fontWeight: 800, color: remainingAfterItemSplit === 0 ? 'var(--ok)' : '#fbbf24' }}>
+                          {remainingAfterItemSplit === 0 ? 'Lunas (Meja Ditutup)' : rupiah(remainingAfterItemSplit)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ====================================================
+                    TAB 2: BAGI RATA NOMINAL (EQUAL SPLIT)
+                   ==================================================== */}
+                {splitBillModal.mode === 'EQUAL' && (
+                  <div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                      Pilih jumlah tamu untuk membagi rata total tagihan <strong className="mono" style={{ color: '#fff' }}>{rupiah(billTotal)}</strong>:
+                    </div>
+
+                    {/* Split Count Selector Buttons */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, marginBottom: 12 }}>
+                      {[2, 3, 4, 5, 6].map(n => {
+                        const isLocked = (bill.paid_splits_count || 0) > 0;
+                        const isCur = splitBillModal.totalSplits === n;
+                        const partVal = Math.round(billTotal / n);
+                        return (
+                          <button
+                            key={n}
+                            type="button"
+                            disabled={isLocked && !isCur}
+                            onClick={() => {
+                              if (isLocked) return;
+                              setSplitBillModal(p => ({
+                                ...p,
+                                totalSplits: n,
+                                activeEqualIndex: 1,
+                                cashReceived: partVal.toString()
+                              }));
+                            }}
+                            style={{
+                              padding: '8px 4px',
+                              borderRadius: 8,
+                              cursor: (isLocked && !isCur) ? 'not-allowed' : 'pointer',
+                              textAlign: 'center',
+                              opacity: (isLocked && !isCur) ? 0.4 : 1,
+                              border: '1px solid',
+                              borderColor: isCur ? '#c084fc' : 'var(--border)',
+                              background: isCur ? 'rgba(192, 132, 252, 0.2)' : 'rgba(255,255,255,0.03)',
+                              color: isCur ? '#ffffff' : 'var(--text-secondary)'
+                            }}
+                          >
+                            <div style={{ fontSize: 12.5, fontWeight: 800 }}>{n} Orang</div>
+                            <div className="mono" style={{ fontSize: 9.5, opacity: 0.85, marginTop: 2 }}>
+                              @{rupiah(partVal)}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Installment Slot Cards */}
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                      {(bill.paid_splits_count || 0) > 0
+                        ? `Bagian ${(bill.paid_splits_count)} dari ${splits} sudah lunas. Pilih bagian berikutnya yang dibayar:`
+                        : 'Pilih bagian yang dibayar sekarang:'}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 6 }}>
+                      {Array.from({ length: splits }).map((_, idx) => {
+                        const splitNum = idx + 1;
+                        const isPaidSlot = (bill.paid_split_indices || []).includes(splitNum);
+                        const isSelectedSlot = (splitBillModal.activeEqualIndex || 1) === splitNum && !isPaidSlot;
+                        return (
+                          <div
+                            key={splitNum}
+                            onClick={() => {
+                              if (isPaidSlot) return;
+                              setSplitBillModal(p => ({
+                                ...p,
+                                activeEqualIndex: splitNum,
+                                customerName: p.customerName || `Tamu ${splitNum}/${splits}`,
+                                cashReceived: equalPartAmount.toString()
+                              }));
+                            }}
+                            style={{
+                              padding: '8px 10px',
+                              borderRadius: 8,
+                              cursor: isPaidSlot ? 'default' : 'pointer',
+                              border: '1px solid',
+                              borderColor: isPaidSlot ? 'rgba(34, 197, 94, 0.4)' : (isSelectedSlot ? '#c084fc' : 'rgba(255,255,255,0.08)'),
+                              background: isPaidSlot ? 'rgba(34, 197, 94, 0.12)' : (isSelectedSlot ? 'rgba(192, 132, 252, 0.15)' : 'rgba(255,255,255,0.02)'),
+                              opacity: isPaidSlot ? 0.75 : 1,
+                              textAlign: 'center'
+                            }}
+                          >
+                            <div style={{ fontSize: 11.5, fontWeight: 800, color: isPaidSlot ? '#86efac' : (isSelectedSlot ? '#d8b4fe' : '#ffffff') }}>
+                              Bagian {splitNum} dari {splits}
+                            </div>
+                            <div className="mono" style={{ fontSize: 13, fontWeight: 900, color: isPaidSlot ? '#86efac' : '#fbbf24', marginTop: 2 }}>
+                              {rupiah(equalPartAmount)}
+                            </div>
+                            <div style={{ fontSize: 9.5, color: isPaidSlot ? '#86efac' : (isSelectedSlot ? '#c084fc' : 'var(--text-muted)'), marginTop: 2, fontWeight: isPaidSlot ? 700 : 400 }}>
+                              {isPaidSlot ? '✓ Sudah Lunas' : (isSelectedSlot ? '● Aktif Dibayar' : 'Klik untuk Pilih')}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* ====================================================
+                    SHARED PAYMENT SECTION
+                   ==================================================== */}
+                <div style={{
+                  borderTop: '1px solid var(--border)',
+                  paddingTop: 10,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10
+                }}>
+                  {/* Guest Name & Notes in 2 Cols */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <div className="form-group mb-0">
+                      <label className="form-label" style={{ fontSize: 11 }}>Nama / Identitas Tamu (Opsional)</label>
+                      <input
+                        type="text"
+                        className="form-control form-control-sm"
+                        placeholder={splitBillModal.mode === 'BY_ITEM' ? "Contoh: Budi (Ayam Geprek)" : `Tamu ${(splitBillModal.activeEqualIndex || 1)}/${splits}`}
+                        value={splitBillModal.customerName}
+                        onChange={e => setSplitBillModal(p => ({ ...p, customerName: e.target.value }))}
+                      />
+                    </div>
+                    <div className="form-group mb-0">
+                      <label className="form-label" style={{ fontSize: 11 }}>Catatan Pembayaran</label>
+                      <input
+                        type="text"
+                        className="form-control form-control-sm"
+                        placeholder="Contoh: Split bill meja 07"
+                        value={splitBillModal.notes}
+                        onChange={e => setSplitBillModal(p => ({ ...p, notes: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Payment Method Pills */}
+                  <div>
+                    <label className="form-label" style={{ fontSize: 11, marginBottom: 4 }}>Metode Pembayaran</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
+                      {[
+                        { id: 'CASH', label: 'Tunai', icon: Banknote },
+                        { id: 'QRIS', label: 'QRIS', icon: QrCode },
+                        { id: 'TRANSFER', label: 'Transfer', icon: ArrowRight },
+                        { id: 'DEBIT', label: 'Debit/EDC', icon: CreditCard },
+                      ].map(m => {
+                        const Icon = m.icon;
+                        const isCur = splitBillModal.paymentMethod === m.id;
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => {
+                              setSplitBillModal(p => ({
+                                ...p,
+                                paymentMethod: m.id,
+                                cashReceived: m.id === 'CASH' && !p.cashReceived ? targetAmount.toString() : p.cashReceived
+                              }));
+                            }}
+                            style={{
+                              padding: '6px 8px',
+                              borderRadius: 6,
+                              cursor: 'pointer',
+                              fontSize: 11,
+                              fontWeight: 700,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 5,
+                              border: '1px solid',
+                              borderColor: isCur ? '#c084fc' : 'var(--border)',
+                              background: isCur ? 'rgba(192, 132, 252, 0.25)' : 'rgba(255,255,255,0.03)',
+                              color: isCur ? '#ffffff' : 'var(--text-secondary)'
+                            }}
+                          >
+                            <Icon size={12} /> {m.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Cash Controls */}
+                  {splitBillModal.paymentMethod === 'CASH' && (
+                    <div style={{
+                      background: 'rgba(0,0,0,0.25)',
+                      padding: 10,
+                      borderRadius: 8,
+                      border: '1px solid var(--border)'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Nominal Tunai Diterima:</span>
+                        {targetAmount > 0 && (
+                          <button
+                            type="button"
+                            className="btn btn-xs btn-outline"
+                            onClick={() => setSplitBillModal(p => ({ ...p, cashReceived: targetAmount.toString() }))}
+                            style={{ fontSize: 10, padding: '1px 6px' }}
+                          >
+                            Uang Pas ({rupiah(targetAmount)})
+                          </button>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <input
+                          type="number"
+                          className="form-control"
+                          placeholder={targetAmount > 0 ? targetAmount.toString() : "0"}
+                          value={splitBillModal.cashReceived}
+                          onChange={e => setSplitBillModal(p => ({ ...p, cashReceived: e.target.value }))}
+                          style={{ fontSize: 16, fontWeight: 800, flex: 1 }}
+                        />
+                        <div style={{ textAlign: 'right', minWidth: 120 }}>
+                          <div style={{ fontSize: 10, color: 'var(--text-secondary)' }}>Kembalian:</div>
+                          <div className="mono" style={{ fontSize: 15, fontWeight: 900, color: cashChange > 0 ? 'var(--ok)' : '#ffffff' }}>
+                            {rupiah(cashChange)}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Quick Cash Presets */}
+                      <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
+                        {[20000, 50000, 100000].map(val => (
+                          <button
+                            key={val}
+                            type="button"
+                            className="btn btn-xs btn-secondary"
+                            onClick={() => setSplitBillModal(p => ({ ...p, cashReceived: val.toString() }))}
+                            style={{ fontSize: 10, padding: '2px 6px' }}
+                          >
+                            {rupiah(val)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* QRIS Visual Hint */}
+                  {splitBillModal.paymentMethod === 'QRIS' && (
+                    <div style={{
+                      textAlign: 'center',
+                      padding: 10,
+                      background: 'rgba(255,255,255,0.03)',
+                      borderRadius: 8,
+                      border: '1px solid var(--border)'
+                    }}>
+                      <QrCode size={40} style={{ margin: '0 auto 4px', color: '#c084fc' }} />
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#fff' }}>
+                        Scan QRIS untuk nominal <span className="mono" style={{ color: '#fbbf24' }}>{rupiah(targetAmount)}</span>
+                      </div>
+                      <div style={{ fontSize: 10, color: 'var(--text-secondary)' }}>
+                        Konfirmasi pelunasan setelah saldo masuk ke rekening outlet.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Modal Footer Action Buttons */}
+              <div style={{ display: 'flex', gap: 10, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setSplitBillModal(p => ({ ...p, open: false }))}
+                  style={{ flex: 1, justifyContent: 'center' }}
+                >
+                  Tutup
+                </button>
+
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => {
+                    if (splitBillModal.mode === 'BY_ITEM') {
+                      handleSubmitSplitByItem();
+                    } else {
+                      handleSubmitSplitEvenly(splitBillModal.activeEqualIndex || 1, equalPartAmount);
+                    }
+                  }}
+                  disabled={!canSubmit}
+                  style={{
+                    flex: 2,
+                    justifyContent: 'center',
+                    fontWeight: 800,
+                    background: canSubmit ? 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)' : undefined,
+                    border: 'none'
+                  }}
+                >
+                  <Scissors size={14} style={{ marginRight: 6 }} />
+                  {splitBillModal.submitting
+                    ? 'Memproses Pembayaran...'
+                    : `Bayar Bagian Ini · ${rupiah(targetAmount)}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
