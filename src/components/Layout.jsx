@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Package, UtensilsCrossed, ShoppingCart,
   ArrowUpDown, ClipboardList, BarChart2, TrendingUp, DollarSign,
   AlertTriangle, LogOut, ScrollText, Menu, X, Clock,
-  Store, Send, Users, Building2, ChefHat, Trash2, Percent, Landmark, Wallet
+  Store, Send, Users, Building2, ChefHat, Trash2, Percent, Landmark, Wallet, Coins
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
@@ -31,6 +31,11 @@ export default function Layout() {
     isOwnerOutlet,
     isPegawai,
     userBusinessName,
+    coinBalance,
+    coinsPerTransaction,
+    remainingTransactions,
+    isCoinLow,
+    isCoinOut,
   } = useOutletContext();
 
   const navSections = [
@@ -39,6 +44,7 @@ export default function Layout() {
         label: 'SaaS Platform',
         items: [
           { to: '/businesses', label: 'Kelola Penyewa (SaaS)', icon: Building2 },
+          { to: '/coin-management', label: 'Top Up & Koin Platform', icon: Coins },
         ],
       },
     ] : []),
@@ -277,6 +283,32 @@ export default function Layout() {
                 </span>
               )}
             </div>
+
+            {/* Coin Balance Badge */}
+            <div
+              className="top-header-coin-badge"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '4px 12px',
+                borderRadius: 10,
+                background: isCoinOut ? 'rgba(239, 68, 68, 0.15)' : isCoinLow ? 'rgba(245, 158, 11, 0.15)' : 'rgba(139, 92, 246, 0.15)',
+                border: `1px solid ${isCoinOut ? 'rgba(239, 68, 68, 0.35)' : isCoinLow ? 'rgba(245, 158, 11, 0.35)' : 'rgba(139, 92, 246, 0.3)'}`,
+                boxShadow: isCoinLow ? '0 0 12px rgba(245, 158, 11, 0.2)' : 'none',
+              }}
+              title={`Saldo: ${coinBalance} koin (${coinsPerTransaction} koin/nota). Estimasi ${remainingTransactions} nota transaksi tersisa.`}
+            >
+              <Coins size={16} style={{ color: isCoinOut ? '#ef4444' : isCoinLow ? '#f59e0b' : 'var(--accent-bright)' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: isCoinOut ? '#f87171' : isCoinLow ? '#fbbf24' : '#ffffff' }}>
+                  {coinBalance.toLocaleString()} Koin
+                </span>
+                <span style={{ fontSize: 10, color: isCoinOut ? '#fca5a5' : isCoinLow ? '#fde68a' : 'var(--text-secondary)', fontWeight: 600 }}>
+                  ~{remainingTransactions.toLocaleString()} Nota Sisa
+                </span>
+              </div>
+            </div>
           </div>
 
           <div className="top-header-right">
@@ -323,6 +355,76 @@ export default function Layout() {
             )}
           </div>
         </div>
+
+        {/* Out of Coins Alert Banner */}
+        {isCoinOut && (
+          <div style={{
+            background: 'linear-gradient(90deg, rgba(239, 68, 68, 0.22), rgba(185, 28, 28, 0.15))',
+            border: '1px solid rgba(239, 68, 68, 0.45)',
+            borderRadius: 12,
+            padding: '12px 18px',
+            margin: '0 24px 16px 24px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            boxShadow: '0 4px 20px rgba(239, 68, 68, 0.2)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 8, background: 'rgba(239, 68, 68, 0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <AlertTriangle size={20} style={{ color: '#ef4444' }} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 800, color: '#f87171', fontSize: 14 }}>
+                  🚫 Saldo Koin Transaksi Perusahaan Habis!
+                </div>
+                <div style={{ fontSize: 12, color: '#fca5a5', marginTop: 2 }}>
+                  Sisa koin perusahaan Anda tidak mencukupi untuk memproses nota transaksi baru di kasir. Silakan segera transfer pembayaran ke <strong>Pemilik Website</strong> untuk top-up koin.
+                </div>
+              </div>
+            </div>
+            {isSuperadminPlatform && (
+              <NavLink to="/coin-management" className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap', fontWeight: 700 }}>
+                Top Up Sekarang
+              </NavLink>
+            )}
+          </div>
+        )}
+
+        {/* Low Coins Alert Banner (<= 20 Transaksi) */}
+        {!isCoinOut && isCoinLow && (
+          <div style={{
+            background: 'linear-gradient(90deg, rgba(245, 158, 11, 0.18), rgba(217, 119, 6, 0.12))',
+            border: '1px solid rgba(245, 158, 11, 0.4)',
+            borderRadius: 12,
+            padding: '12px 18px',
+            margin: '0 24px 16px 24px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            boxShadow: '0 4px 16px rgba(245, 158, 11, 0.15)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 8, background: 'rgba(245, 158, 11, 0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <AlertTriangle size={20} style={{ color: '#f59e0b' }} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 800, color: '#fbbf24', fontSize: 14 }}>
+                  ⚠️ Peringatan: Saldo Koin Menipis ({remainingTransactions} Nota Tersisa)
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                  Sisa koin perusahaan Anda tinggal <strong>{coinBalance} koin</strong> (hanya dapat digunakan untuk <strong>~{remainingTransactions} nota transaksi lagi</strong> di semua cabang). Segera transfer pembayaran ke <strong>Pemilik Website</strong> untuk top-up koin agar operasional kasir tidak terhenti.
+                </div>
+              </div>
+            </div>
+            {isSuperadminPlatform && (
+              <NavLink to="/coin-management" className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap', fontWeight: 700 }}>
+                Top Up Koin
+              </NavLink>
+            )}
+          </div>
+        )}
 
         <Outlet />
       </main>

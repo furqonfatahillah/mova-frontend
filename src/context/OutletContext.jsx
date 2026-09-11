@@ -54,6 +54,9 @@ export function OutletProvider({ children }) {
     return localStorage.getItem('pos_active_outlet_id') || (currentUser.outlet_id ? String(currentUser.outlet_id) : '1');
   });
 
+  const [coinData, setCoinData] = useState(null);
+  const [loadingCoins, setLoadingCoins] = useState(false);
+
   const fetchOutlets = useCallback(async () => {
     setLoadingOutlets(true);
     try {
@@ -97,10 +100,32 @@ export function OutletProvider({ children }) {
     }
   }, [isSuperadminPlatform, activeBusinessId, currentUser]);
 
+  const fetchCoinData = useCallback(async () => {
+    try {
+      setLoadingCoins(true);
+      const params = isSuperadminPlatform && activeBusinessId ? { business_id: activeBusinessId } : {};
+      const { data } = await api.get('/my-business/coins', { params });
+      setCoinData(data);
+    } catch (err) {
+      // Non-blocking failover
+    } finally {
+      setLoadingCoins(false);
+    }
+  }, [isSuperadminPlatform, activeBusinessId]);
+
   useEffect(() => {
     fetchOutlets();
     fetchBusinessData();
-  }, [fetchOutlets, fetchBusinessData]);
+    fetchCoinData();
+
+    const handleTxCompleted = () => {
+      fetchCoinData();
+    };
+    window.addEventListener('pos:transaction_completed', handleTxCompleted);
+    return () => {
+      window.removeEventListener('pos:transaction_completed', handleTxCompleted);
+    };
+  }, [fetchOutlets, fetchBusinessData, fetchCoinData]);
 
   const changeOutlet = (outletId) => {
     if (!isOwnerBisnis && !isSuperadminPlatform) return; // Disallow branch users from switching
@@ -122,6 +147,7 @@ export function OutletProvider({ children }) {
     const b = businesses.find(item => String(item.id) === val);
     setCurrentBusiness(b || null);
     fetchOutlets();
+    fetchCoinData();
     window.dispatchEvent(new CustomEvent('pos:business_changed', { detail: val }));
   };
 
@@ -154,6 +180,14 @@ export function OutletProvider({ children }) {
     userBusinessName: currentUser.business_name || currentBusiness?.name || 'MOVA Cloud',
     refreshOutlets: fetchOutlets,
     refreshBusiness: fetchBusinessData,
+    coinData,
+    loadingCoins,
+    coinBalance: Number(coinData?.coin_balance ?? 0),
+    coinsPerTransaction: Number(coinData?.coins_per_transaction ?? 1),
+    remainingTransactions: Number(coinData?.remaining_transactions ?? 0),
+    isCoinLow: Boolean(coinData?.is_coin_low),
+    isCoinOut: Boolean(coinData?.is_coin_out),
+    refreshCoins: fetchCoinData,
   };
 
   return <OutletContext.Provider value={value}>{children}</OutletContext.Provider>;

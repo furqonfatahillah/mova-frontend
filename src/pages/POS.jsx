@@ -8,7 +8,7 @@ import {
   Package, ShieldAlert, ArrowUpRight, Send, Bookmark, ChefHat,
   FileText, CheckCircle2, ChevronRight, PauseCircle, RefreshCw, XCircle, Users,
   Percent, Tag, Gift, Scissors, Split, Divide,
-  ShoppingBag, Briefcase, Barcode, Utensils
+  ShoppingBag, Briefcase, Barcode, Utensils, Coins
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, num, LoadingState, PageHeader } from '../components/ui';
@@ -138,7 +138,19 @@ export default function POS() {
 
 
   const currentUser = JSON.parse(localStorage.getItem('pos_user') || '{}');
-  const { activeOutletId, activeOutlet, isOwnerWebsite, changeOutlet, outlets } = useOutlet();
+  const {
+    activeOutletId,
+    activeOutlet,
+    isOwnerWebsite,
+    changeOutlet,
+    outlets,
+    coinBalance,
+    coinsPerTransaction,
+    remainingTransactions,
+    isCoinLow,
+    isCoinOut,
+    refreshCoins,
+  } = useOutlet();
 
   const currentTargetOutlet = activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all'
     ? Number(activeOutletId)
@@ -984,6 +996,8 @@ export default function POS() {
       setSplitBillModal(p => ({ ...p, open: false, submitting: false }));
       setOpenBillsModalOpen(false);
       setReceiptModalOpen(true);
+      window.dispatchEvent(new CustomEvent('pos:transaction_completed'));
+      refreshCoins?.();
       fetchAll();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Gagal memproses split bill.');
@@ -1047,6 +1061,8 @@ export default function POS() {
       setSplitBillModal(p => ({ ...p, open: false, submitting: false }));
       setOpenBillsModalOpen(false);
       setReceiptModalOpen(true);
+      window.dispatchEvent(new CustomEvent('pos:transaction_completed'));
+      refreshCoins?.();
       fetchAll();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Gagal memproses pembayaran patungan.');
@@ -1263,7 +1279,9 @@ export default function POS() {
         setOpenBillsModalOpen(false);
         setReceiptModalOpen(true);
 
-        // Refresh data
+        // Refresh data & coins
+        window.dispatchEvent(new CustomEvent('pos:transaction_completed'));
+        refreshCoins?.();
         fetchAll();
       } else {
         // Direct cart checkout
@@ -1321,6 +1339,8 @@ export default function POS() {
         setPaymentModalOpen(false);
         setReceiptModalOpen(true);
 
+        window.dispatchEvent(new CustomEvent('pos:transaction_completed'));
+        refreshCoins?.();
         fetchAll();
       }
     } catch (err) {
@@ -2697,6 +2717,43 @@ export default function POS() {
               </button>
             </div>
 
+            {/* SaaS Coin Status Indicator */}
+            <div style={{
+              background: isCoinOut
+                ? 'rgba(239, 68, 68, 0.15)'
+                : isCoinLow
+                  ? 'rgba(245, 158, 11, 0.12)'
+                  : 'rgba(139, 92, 246, 0.12)',
+              border: `1px solid ${isCoinOut ? 'rgba(239, 68, 68, 0.4)' : isCoinLow ? 'rgba(245, 158, 11, 0.35)' : 'rgba(139, 92, 246, 0.25)'}`,
+              borderRadius: 12,
+              padding: '10px 14px',
+              marginBottom: 14,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Coins size={18} style={{ color: isCoinOut ? '#ef4444' : isCoinLow ? '#f59e0b' : 'var(--accent-bright)', flexShrink: 0 }} />
+                <div style={{ lineHeight: 1.2 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: isCoinOut ? '#f87171' : isCoinLow ? '#fbbf24' : '#ffffff' }}>
+                    {isCoinOut ? 'Saldo Koin Perusahaan Habis!' : `Sisa Koin Perusahaan: ${coinBalance} koin`}
+                  </div>
+                  <div style={{ fontSize: 11, color: isCoinOut ? '#fca5a5' : 'var(--text-secondary)' }}>
+                    {isCoinOut
+                      ? 'Transaksi kasir terkunci hingga koin diisi oleh Pemilik Website.'
+                      : `Nota ini memotong ${coinsPerTransaction} koin (~${remainingTransactions} nota lagi)`
+                    }
+                  </div>
+                </div>
+              </div>
+              {isCoinLow && !isCoinOut && (
+                <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 6, background: '#f59e0b', color: '#11162d', whiteSpace: 'nowrap' }}>
+                  &le; 20 NOTA
+                </span>
+              )}
+            </div>
+
             {/* Total Display */}
             <div style={{
               background: activeOpenBillPayment
@@ -2915,10 +2972,14 @@ export default function POS() {
                 type="button"
                 className="btn btn-primary"
                 onClick={handleProcessOrder}
-                disabled={submitting || !isCashSufficient}
+                disabled={submitting || !isCashSufficient || isCoinOut || remainingTransactions < 1}
                 style={{ flex: 2, justifyContent: 'center', fontWeight: 800 }}
               >
-                {submitting ? 'Memproses...' : 'Selesaikan & Cetak Struk'}
+                {submitting
+                  ? 'Memproses...'
+                  : (isCoinOut || remainingTransactions < 1)
+                    ? 'Koin Habis - Hubungi Owner'
+                    : 'Selesaikan & Cetak Struk'}
               </button>
             </div>
           </div>

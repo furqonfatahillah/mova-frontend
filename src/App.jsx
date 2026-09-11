@@ -25,6 +25,7 @@ import WasteTracking from './pages/WasteTracking';
 import DiscountManagement from './pages/DiscountManagement';
 import ProfitLoss from './pages/ProfitLoss';
 import CashFlow from './pages/CashFlow';
+import CoinManagement from './pages/CoinManagement';
 import { OutletProvider } from './context/OutletContext';
 
 function PrivateRoute({ children }) {
@@ -63,6 +64,7 @@ export default function App() {
           <Route path="menu"       element={<MasterMenu />} />
           <Route path="outlet"     element={<OutletManagement />} />
           <Route path="businesses" element={<BusinessManagement />} />
+          <Route path="coin-management" element={<CoinManagement />} />
           <Route path="users"      element={<UserManagement />} />
           <Route path="pos"        element={<POS />} />
           <Route path="shift"      element={<ShiftManagement />} />
