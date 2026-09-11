@@ -58,6 +58,7 @@ export default function ShiftManagement() {
     closing_cash: '',
     notes: '',
   });
+  const [allowCarryOver, setAllowCarryOver] = useState(true);
   const [submittingClose, setSubmittingClose] = useState(false);
 
   useEffect(() => {
@@ -89,21 +90,8 @@ export default function ShiftManagement() {
   async function handleRefresh() {
     setRefreshing(true);
     try {
-      const targetOutlet = selectedOutlet || (outlets.find(o => o.is_main)?.id || outlets[0]?.id || 1);
-      const [activeRes, listRes] = await Promise.all([
-        api.get('/shifts/active', { params: { outlet_id: targetOutlet } }),
-        api.get('/shifts', {
-          params: {
-            status: filterStatus || undefined,
-            outlet_id: targetOutlet || undefined,
-          }
-        }),
-      ]);
-      setActiveData(activeRes.data);
-      setShifts(listRes.data);
+      await fetchData();
       toast.success('Data shift diperbarui');
-    } catch {
-      toast.error('Gagal memperbarui data shift');
     } finally {
       setRefreshing(false);
     }
@@ -112,7 +100,10 @@ export default function ShiftManagement() {
   function handleOpenModalClick() {
     setOpenForm(p => ({
       ...p,
-      outlet_id: selectedOutlet || (outlets.find(o => o.is_main)?.id || outlets[0]?.id || 1),
+      shift_name: 'Shift 1 (Pagi)',
+      initial_cash: 100000,
+      notes: '',
+      outlet_id: selectedOutlet || (outlets.find(o => o.is_main)?.id || outlets[0]?.id || 1)
     }));
     setShowOpenModal(true);
   }
@@ -121,12 +112,13 @@ export default function ShiftManagement() {
     e.preventDefault();
     setSubmittingOpen(true);
     try {
-      const payload = {
-        ...openForm,
+      const { data } = await api.post('/shifts/open', {
+        shift_name: openForm.shift_name,
+        initial_cash: Number(openForm.initial_cash),
+        notes: openForm.notes,
         outlet_id: Number(openForm.outlet_id),
-      };
-      const { data } = await api.post('/shifts/open', payload);
-      toast.success(`Shift ${data.shift_name} berhasil dibuka di ${data.outlet?.name || 'cabang'}!`);
+      });
+      toast.success(`Shift #${data.id} (${data.shift_name}) berhasil dibuka!`);
       setShowOpenModal(false);
       setOpenForm(p => ({ ...p, shift_name: 'Shift 1 (Pagi)', initial_cash: 100000, notes: '', outlet_id: selectedOutlet }));
       if (Number(data.outlet_id) !== Number(selectedOutlet)) {
@@ -145,6 +137,7 @@ export default function ShiftManagement() {
     if (!activeData?.shift) return;
     setShowCloseModal(true);
     setLoadingSummary(true);
+    setAllowCarryOver(true);
     setCloseForm({
       closing_cash: activeData.expected_cash || 0,
       notes: '',
@@ -168,8 +161,10 @@ export default function ShiftManagement() {
       const { data } = await api.post(`/shifts/${activeData.shift.id}/close`, {
         closing_cash: Number(closeForm.closing_cash),
         notes: closeForm.notes,
+        allow_carry_over: allowCarryOver,
       });
-      toast.success(`Shift #${activeData.shift.id} berhasil ditutup! ${data.movements_count} bahan dibukukan ke Kartu Stok.`);
+      const carryMsg = data.carry_over_count > 0 ? ` (${data.carry_over_count} tagihan pelanggan dialihkan ke shift berikutnya)` : '';
+      toast.success(`Shift #${activeData.shift.id} berhasil ditutup! ${data.movements_count} bahan dibukukan.${carryMsg}`);
       setShowCloseModal(false);
       fetchData();
     } catch (err) {
@@ -626,6 +621,57 @@ export default function ShiftManagement() {
             ) : (
               <form onSubmit={handleCloseShiftSubmit}>
                 <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+                  {/* Peringatan & Opsi Open Bill Pelanggan */}
+                  {closeSummary?.open_bills_count > 0 && (
+                    <div style={{
+                      background: 'rgba(245, 158, 11, 0.08)',
+                      border: '1px solid rgba(245, 158, 11, 0.3)',
+                      borderRadius: 12,
+                      padding: '14px 16px',
+                      marginBottom: 16
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, color: '#f59e0b', fontSize: 13 }}>
+                          <AlertTriangle size={16} />
+                          <span>Ada {closeSummary.open_bills_count} Tagihan Pelanggan (Open Bill) yang Masih Belum Lunas</span>
+                        </div>
+                        <span className="pill pill-warning" style={{ fontSize: 11, fontWeight: 700 }}>
+                          Total: {rupiah(closeSummary.open_bills_total)}
+                        </span>
+                      </div>
+
+                      <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 10 }}>
+                        Tagihan berikut belum diselesaikan oleh pelanggan. Anda dapat <strong>mengalihkan tagihan ke shift berikutnya</strong> agar kasir shift saat ini bisa langsung closing dan serah terima kas:
+                      </p>
+
+                      {/* Daftar Tagihan Pelanggan */}
+                      <div style={{ maxHeight: 130, overflowY: 'auto', background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: '8px 12px', marginBottom: 12 }}>
+                        {closeSummary.open_bills?.map((ob, idx) => (
+                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, padding: '5px 0', borderBottom: idx < closeSummary.open_bills.length - 1 ? '1px dashed rgba(255,255,255,0.08)' : 'none' }}>
+                            <div>
+                              <span style={{ fontWeight: 700, color: '#ffffff' }}>👤 {ob.customer_name || 'Pelanggan Walk-in'}</span>
+                              <span style={{ color: 'var(--text-muted)', marginLeft: 6, fontSize: 11 }}>({ob.order_number})</span>
+                              {ob.notes && <span style={{ color: 'var(--text-secondary)', fontSize: 11, marginLeft: 6 }}>— {ob.notes}</span>}
+                            </div>
+                            <span className="mono" style={{ fontWeight: 600, color: 'var(--accent-bright)' }}>{rupiah(ob.total_amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', color: '#ffffff' }}>
+                          <input
+                            type="checkbox"
+                            checked={allowCarryOver}
+                            onChange={e => setAllowCarryOver(e.target.checked)}
+                            style={{ width: 16, height: 16, accentColor: 'var(--accent-bright)' }}
+                          />
+                          <span>Alihkan tagihan pelanggan di atas ke shift berikutnya (Carry-Over)</span>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Rekonsiliasi Kas Card */}
                   <div style={{
                     background: 'rgba(15, 20, 42, 0.7)',
