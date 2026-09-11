@@ -136,6 +136,7 @@ export function OutletProvider({ children }) {
   const value = {
     outlets,
     loadingOutlets,
+    currentUser,
     activeOutletId,
     activeOutlet,
     changeOutlet,

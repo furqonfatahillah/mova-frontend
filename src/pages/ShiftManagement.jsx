@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Clock, Plus, CheckCircle, AlertTriangle, ArrowRight, DollarSign,
-  Receipt, ShoppingBag, Eye, Calendar, User, RefreshCw, X, FileText, Store
+  Receipt, ShoppingBag, Eye, Calendar, User, RefreshCw, X, FileText, Store,
+  Users, ShieldCheck, ShieldAlert, Lock, Unlock, Edit2, Trash2, CheckSquare,
+  Square, Settings, UserCheck, Search, Info
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, num, PageHeader, LoadingState, MiniCard } from '../components/ui';
@@ -9,7 +11,16 @@ import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 
 export default function ShiftManagement() {
-  const { activeOutletId, activeOutlet, outlets, isOwnerWebsite, isOwnerOutlet, changeOutlet } = useOutlet();
+  const {
+    activeOutletId,
+    activeOutlet,
+    outlets,
+    isOwnerWebsite,
+    isOwnerOutlet,
+    changeOutlet,
+    currentUser,
+    userBusinessName
+  } = useOutlet();
 
   const [selectedOutlet, setSelectedOutlet] = useState(() => {
     if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
@@ -25,6 +36,10 @@ export default function ShiftManagement() {
     }
   }, [activeOutletId]);
 
+  // Tab: 'operational' | 'schedules'
+  const [activeTab, setActiveTab] = useState('operational');
+
+  // Operational shifts state
   const [activeData, setActiveData] = useState(null);
   const [shifts, setShifts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -46,12 +61,15 @@ export default function ShiftManagement() {
 
   // Form Open Shift
   const [openForm, setOpenForm] = useState({
-    shift_name: 'Shift 1 (Pagi)',
+    shift_name: '',
+    shift_schedule_id: null,
     initial_cash: 100000,
     notes: '',
     outlet_id: selectedOutlet || 1,
   });
   const [submittingOpen, setSubmittingOpen] = useState(false);
+  const [outletSchedules, setOutletSchedules] = useState([]);
+  const [loadingOutletSchedules, setLoadingOutletSchedules] = useState(false);
 
   // Form Close Shift
   const [closeForm, setCloseForm] = useState({
@@ -61,9 +79,32 @@ export default function ShiftManagement() {
   const [allowCarryOver, setAllowCarryOver] = useState(true);
   const [submittingClose, setSubmittingClose] = useState(false);
 
+  // Master Shift & Roster (Owner only)
+  const [schedules, setSchedules] = useState([]);
+  const [loadingSchedules, setLoadingSchedules] = useState(false);
+  const [companyEmployees, setCompanyEmployees] = useState([]);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState(null);
+  const [scheduleForm, setScheduleForm] = useState({
+    outlet_id: selectedOutlet || 1,
+    shift_name: '',
+    start_time: '07:00',
+    end_time: '15:00',
+    assigned_user_ids: [],
+    is_strict: true,
+    active: true,
+  });
+  const [submittingSchedule, setSubmittingSchedule] = useState(false);
+  const [employeeSearch, setEmployeeSearch] = useState('');
+
   useEffect(() => {
-    fetchData();
-  }, [filterStatus, selectedOutlet]);
+    if (activeTab === 'operational') {
+      fetchData();
+    } else if (activeTab === 'schedules') {
+      fetchSchedules(selectedOutlet);
+      fetchCompanyEmployees();
+    }
+  }, [filterStatus, selectedOutlet, activeTab]);
 
   async function fetchData() {
     setLoading(true);
@@ -90,37 +131,77 @@ export default function ShiftManagement() {
   async function handleRefresh() {
     setRefreshing(true);
     try {
-      await fetchData();
+      if (activeTab === 'operational') {
+        await fetchData();
+      } else {
+        await fetchSchedules(selectedOutlet);
+        await fetchCompanyEmployees();
+      }
       toast.success('Data shift diperbarui');
     } finally {
       setRefreshing(false);
     }
   }
 
-  function handleOpenModalClick() {
-    setOpenForm(p => ({
-      ...p,
-      shift_name: 'Shift 1 (Pagi)',
+  // Fetch available shift schedules for opening a shift
+  async function fetchOutletSchedules(targetOid) {
+    setLoadingOutletSchedules(true);
+    try {
+      const { data } = await api.get('/shift-schedules', {
+        params: { outlet_id: targetOid, active: true }
+      });
+      setOutletSchedules(data || []);
+      if (data && data.length > 0) {
+        // Try to match user's scheduled shift, otherwise pick first
+        const myUserId = Number(currentUser?.id);
+        const myShift = data.find(s => s.assigned_user_ids?.includes(myUserId)) || data[0];
+        setOpenForm(p => ({
+          ...p,
+          shift_schedule_id: myShift.id,
+          shift_name: myShift.shift_name,
+        }));
+      } else {
+        setOpenForm(p => ({
+          ...p,
+          shift_schedule_id: null,
+          shift_name: p.shift_name || 'Shift 1 (Pagi)',
+        }));
+      }
+    } catch {
+      setOutletSchedules([]);
+    } finally {
+      setLoadingOutletSchedules(false);
+    }
+  }
+
+  async function handleOpenModalClick() {
+    const targetOutlet = selectedOutlet || (outlets.find(o => o.is_main)?.id || outlets[0]?.id || 1);
+    setOpenForm({
+      shift_name: '',
+      shift_schedule_id: null,
       initial_cash: 100000,
       notes: '',
-      outlet_id: selectedOutlet || (outlets.find(o => o.is_main)?.id || outlets[0]?.id || 1)
-    }));
+      outlet_id: targetOutlet,
+    });
     setShowOpenModal(true);
+    await fetchOutletSchedules(targetOutlet);
   }
 
   async function handleOpenShiftSubmit(e) {
     e.preventDefault();
     setSubmittingOpen(true);
     try {
-      const { data } = await api.post('/shifts/open', {
+      const payload = {
         shift_name: openForm.shift_name,
+        shift_schedule_id: openForm.shift_schedule_id || undefined,
         initial_cash: Number(openForm.initial_cash),
         notes: openForm.notes,
         outlet_id: Number(openForm.outlet_id),
-      });
+      };
+      const { data } = await api.post('/shifts/open', payload);
       toast.success(`Shift #${data.id} (${data.shift_name}) berhasil dibuka!`);
       setShowOpenModal(false);
-      setOpenForm(p => ({ ...p, shift_name: 'Shift 1 (Pagi)', initial_cash: 100000, notes: '', outlet_id: selectedOutlet }));
+      setOpenForm(p => ({ ...p, shift_name: 'Shift 1 (Pagi)', shift_schedule_id: null, initial_cash: 100000, notes: '', outlet_id: selectedOutlet }));
       if (Number(data.outlet_id) !== Number(selectedOutlet)) {
         setSelectedOutlet(Number(data.outlet_id));
       } else {
@@ -130,6 +211,111 @@ export default function ShiftManagement() {
       toast.error(err.response?.data?.message || 'Gagal membuka shift');
     } finally {
       setSubmittingOpen(false);
+    }
+  }
+
+  // --- Master Shift Schedule CRUD (Owner Only) ---
+  async function fetchSchedules(targetOutlet) {
+    setLoadingSchedules(true);
+    try {
+      const oid = targetOutlet !== undefined ? targetOutlet : selectedOutlet;
+      const params = oid ? { outlet_id: oid } : {};
+      const { data } = await api.get('/shift-schedules', { params });
+      setSchedules(data || []);
+    } catch {
+      toast.error('Gagal memuat daftar master shift');
+    } finally {
+      setLoadingSchedules(false);
+    }
+  }
+
+  async function fetchCompanyEmployees() {
+    try {
+      const { data } = await api.get('/shift-schedules/employees');
+      setCompanyEmployees(data || []);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  function handleOpenCreateSchedule() {
+    setEditingSchedule(null);
+    setScheduleForm({
+      outlet_id: selectedOutlet || (outlets[0]?.id || 1),
+      shift_name: '',
+      start_time: '07:00',
+      end_time: '15:00',
+      assigned_user_ids: [],
+      is_strict: true,
+      active: true,
+    });
+    setEmployeeSearch('');
+    setShowScheduleModal(true);
+    if (companyEmployees.length === 0) {
+      fetchCompanyEmployees();
+    }
+  }
+
+  function handleOpenEditSchedule(sch) {
+    setEditingSchedule(sch);
+    setScheduleForm({
+      outlet_id: sch.outlet_id,
+      shift_name: sch.shift_name,
+      start_time: sch.start_time?.slice(0, 5) || '07:00',
+      end_time: sch.end_time?.slice(0, 5) || '15:00',
+      assigned_user_ids: Array.isArray(sch.assigned_user_ids) ? [...sch.assigned_user_ids] : [],
+      is_strict: Boolean(sch.is_strict),
+      active: Boolean(sch.active),
+    });
+    setEmployeeSearch('');
+    setShowScheduleModal(true);
+    if (companyEmployees.length === 0) {
+      fetchCompanyEmployees();
+    }
+  }
+
+  async function handleSaveScheduleSubmit(e) {
+    e.preventDefault();
+    if (!scheduleForm.shift_name.trim()) {
+      toast.error('Nama shift wajib diisi');
+      return;
+    }
+    setSubmittingSchedule(true);
+    try {
+      if (editingSchedule) {
+        await api.put(`/shift-schedules/${editingSchedule.id}`, scheduleForm);
+        toast.success(`Jadwal shift '${scheduleForm.shift_name}' berhasil diperbarui!`);
+      } else {
+        await api.post('/shift-schedules', scheduleForm);
+        toast.success(`Jadwal shift '${scheduleForm.shift_name}' berhasil dibuat!`);
+      }
+      setShowScheduleModal(false);
+      fetchSchedules(selectedOutlet);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal menyimpan jadwal shift');
+    } finally {
+      setSubmittingSchedule(false);
+    }
+  }
+
+  async function handleDeleteSchedule(sch) {
+    if (!window.confirm(`Apakah Anda yakin ingin menghapus jadwal master '${sch.shift_name}'?`)) return;
+    try {
+      await api.delete(`/shift-schedules/${sch.id}`);
+      toast.success(`Jadwal shift '${sch.shift_name}' berhasil dihapus`);
+      fetchSchedules(selectedOutlet);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal menghapus jadwal shift');
+    }
+  }
+
+  async function handleToggleScheduleActive(sch) {
+    try {
+      await api.put(`/shift-schedules/${sch.id}`, { active: !sch.active });
+      toast.success(`Status shift '${sch.shift_name}' diubah menjadi ${!sch.active ? 'Aktif' : 'Nonaktif'}`);
+      fetchSchedules(selectedOutlet);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal mengubah status shift');
     }
   }
 
@@ -200,28 +386,64 @@ export default function ShiftManagement() {
   return (
     <div className="fade-in">
       <PageHeader
-        title="Manajemen Shift & Closing Kasir"
-        subtitle="Kelola sesi kasir, kontrol uang laci, dan totalkan pemakaian bahan baku otomatis ke Kartu Stok saat shift ditutup."
+        title={activeTab === 'operational' ? "Manajemen Shift & Closing Kasir" : "Pengaturan Master Shift & Jadwal Kasir"}
+        subtitle={activeTab === 'operational'
+          ? "Kelola sesi kasir, kontrol uang laci, dan totalkan pemakaian bahan baku otomatis ke Kartu Stok saat shift ditutup."
+          : `Atur kuota shift, jam operasional, dan penugasan kasir resmi untuk perusahaan ${userBusinessName || ''}.`}
         action={
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-secondary" onClick={handleRefresh} disabled={refreshing}>
               <RefreshCw size={14} className={refreshing ? 'spin' : ''} /> Segarkan
             </button>
-            {!activeShift ? (
-              <button className="btn btn-primary" onClick={handleOpenModalClick}>
-                <Plus size={15} /> Buka Shift Baru
-              </button>
+            {activeTab === 'operational' ? (
+              !activeShift ? (
+                <button className="btn btn-primary" onClick={handleOpenModalClick}>
+                  <Plus size={15} /> Buka Shift Baru
+                </button>
+              ) : (
+                <button className="btn btn-primary" onClick={handlePrepareClosing}>
+                  <CheckCircle size={15} /> Closing Shift Aktif
+                </button>
+              )
             ) : (
-              <button className="btn btn-primary" onClick={handlePrepareClosing}>
-                <CheckCircle size={15} /> Closing Shift Aktif
+              <button className="btn btn-primary" onClick={handleOpenCreateSchedule}>
+                <Plus size={15} /> Tambah Master Shift
               </button>
             )}
           </div>
         }
       />
 
-      {/* Outlet Selector Bar for Shift Operations */}
-      <div className="card mb-4" style={{
+      {/* Owner Navigation Tabs */}
+      {isOwnerWebsite && (
+        <div style={{
+          display: 'flex',
+          gap: 10,
+          marginBottom: 20,
+          borderBottom: '1px solid rgba(255,255,255,0.08)',
+          paddingBottom: 12
+        }}>
+          <button
+            className={`btn ${activeTab === 'operational' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 10 }}
+            onClick={() => setActiveTab('operational')}
+          >
+            <Clock size={16} /> Operasional & Riwayat Shift
+          </button>
+          <button
+            className={`btn ${activeTab === 'schedules' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 10 }}
+            onClick={() => setActiveTab('schedules')}
+          >
+            <Settings size={16} /> Pengaturan Master Shift & Jadwal Kasir (Khusus Owner)
+          </button>
+        </div>
+      )}
+
+      {activeTab === 'operational' && (
+        <>
+          {/* Outlet Selector Bar for Shift Operations */}
+          <div className="card mb-4" style={{
         padding: '12px 18px',
         background: 'linear-gradient(135deg, rgba(30, 27, 75, 0.45) 0%, rgba(15, 23, 42, 0.8) 100%)',
         border: '1px solid rgba(139, 92, 246, 0.3)',
@@ -492,113 +714,497 @@ export default function ShiftManagement() {
           </table>
         </div>
       </div>
+        </>
+      )}
 
-      {/* Modal Buka Shift */}
-      {showOpenModal && (
-        <div className="modal-overlay" onClick={() => setShowOpenModal(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Clock size={18} style={{ color: 'var(--accent-bright)' }} />
-                Buka Shift Kasir Baru
+      {/* Tab: Master Shift & Jadwal Kasir (Owner Only) */}
+      {activeTab === 'schedules' && (
+        <div className="fade-in">
+          {/* Single Company Security & Overview Banner */}
+          <div className="card mb-4" style={{
+            background: 'linear-gradient(135deg, rgba(88, 28, 135, 0.3) 0%, rgba(15, 23, 42, 0.9) 100%)',
+            border: '1px solid rgba(168, 85, 247, 0.35)',
+            padding: '16px 20px',
+            borderRadius: 14,
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 14 }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                  <span className="pill pill-accent mono" style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px' }}>
+                    🔒 HAK AKSES OWNER BISNIS
+                  </span>
+                  <span className="pill" style={{ fontSize: 11, background: 'rgba(59, 130, 246, 0.2)', color: '#93c5fd', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
+                    🏢 {userBusinessName || 'Perusahaan Terisolasi'}
+                  </span>
+                </div>
+                <h3 style={{ margin: '0 0 6px 0', fontSize: 17, fontWeight: 800, color: '#ffffff' }}>
+                  Pengaturan Master Shift & Jadwal Roster Kasir
+                </h3>
+                <p style={{ margin: 0, fontSize: 12.5, color: 'var(--text-secondary)', maxWidth: 780, lineHeight: 1.5 }}>
+                  Sebagai <strong>Owner Bisnis</strong>, Anda berhak menentukan jumlah shift harian, rentang jam kerja operasional cabang, dan menugaskan staf/kasir resmi yang berhak membuka kasir. Seluruh data jadwal dan staf kasir terisolasi secara ketat hanya dalam perusahaan <strong>{userBusinessName}</strong>.
+                </p>
               </div>
-              <button className="btn btn-ghost btn-icon" onClick={() => setShowOpenModal(false)}>
-                <X size={18} />
+
+              <button
+                className="btn btn-primary"
+                style={{ padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}
+                onClick={handleOpenCreateSchedule}
+              >
+                <Plus size={16} /> Tambah Master Shift
               </button>
             </div>
-            <form onSubmit={handleOpenShiftSubmit}>
-              <div className="modal-body">
-                {/* Cabang Outlet Selector */}
-                <div className="form-group mb-3">
-                  <label className="form-label" style={{ fontWeight: 700, color: '#ffffff' }}>Cabang / Outlet Penugasan *</label>
-                  <select
-                    className="form-control"
-                    style={{ fontSize: 13, fontWeight: 600, borderColor: 'var(--accent-bright)' }}
-                    value={openForm.outlet_id}
-                    onChange={e => setOpenForm(f => ({ ...f, outlet_id: Number(e.target.value) }))}
-                    disabled={isOwnerOutlet}
-                    required
-                  >
-                    {outlets.map(o => (
-                      <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
-                        {o.name} {o.is_main ? '(Pusat)' : ''}
-                      </option>
-                    ))}
-                  </select>
-                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4 }}>
-                    Shift kasir ini akan dibuka untuk operasional <strong>{outlets.find(o => Number(o.id) === Number(openForm.outlet_id))?.name || 'cabang terpilih'}</strong>.
-                  </div>
-                </div>
-
-                <div style={{ marginBottom: 14 }}>
-                  <label className="form-label" style={{ marginBottom: 8, display: 'block' }}>Pilihan Cepat Shift:</label>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {['Shift 1 (Pagi)', 'Shift 2 (Siang/Sore)', 'Shift 3 (Malam)'].map(name => (
-                      <button
-                        type="button"
-                        key={name}
-                        className={`btn btn-sm ${openForm.shift_name === name ? 'btn-primary' : 'btn-secondary'}`}
-                        onClick={() => setOpenForm(f => ({ ...f, shift_name: name }))}
-                      >
-                        {name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Nama Shift</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    required
-                    value={openForm.shift_name}
-                    onChange={e => setOpenForm(f => ({ ...f, shift_name: e.target.value }))}
-                    placeholder="Contoh: Shift 1 (Pagi)"
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Modal Awal Kas di Laci (Uang Kembalian)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={1000}
-                    className="form-control"
-                    required
-                    value={openForm.initial_cash}
-                    onChange={e => setOpenForm(f => ({ ...f, initial_cash: e.target.value }))}
-                    placeholder="100000"
-                  />
-                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4 }}>
-                    Terbaca: <strong style={{ color: 'var(--accent-bright)' }}>{rupiah(openForm.initial_cash)}</strong>
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Catatan Pembukaan (Opsional)</label>
-                  <textarea
-                    rows={2}
-                    className="form-control"
-                    value={openForm.notes}
-                    onChange={e => setOpenForm(f => ({ ...f, notes: e.target.value }))}
-                    placeholder="Kondisi laci kasir, serah terima, dll."
-                  />
-                </div>
-              </div>
-
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowOpenModal(false)}>
-                  Batal
-                </button>
-                <button type="submit" className="btn btn-primary" disabled={submittingOpen}>
-                  {submittingOpen ? 'Membuka...' : 'Konfirmasi Buka Shift'}
-                </button>
-              </div>
-            </form>
           </div>
+
+          {/* Outlet Filter Bar for Master Schedules */}
+          <div className="card mb-4" style={{
+            padding: '12px 18px',
+            background: 'rgba(15, 23, 42, 0.7)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 12
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Store size={18} style={{ color: 'var(--accent-bright)' }} />
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#ffffff' }}>Filter Cabang / Outlet:</span>
+              <select
+                className="form-control"
+                style={{ width: 'auto', minWidth: 200, fontSize: 13, fontWeight: 600 }}
+                value={selectedOutlet}
+                onChange={e => setSelectedOutlet(Number(e.target.value))}
+              >
+                {outlets.map(o => (
+                  <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
+                    {o.name} {o.is_main ? '(Pusat)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+              Total Master Shift Terdaftar: <strong style={{ color: 'var(--accent-bright)' }}>{schedules.length}</strong> Shift
+            </div>
+          </div>
+
+          {/* Schedule Cards Grid */}
+          {loadingSchedules ? (
+            <LoadingState />
+          ) : schedules.length > 0 ? (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
+              gap: 16,
+              marginBottom: 30
+            }}>
+              {schedules.map(sch => {
+                const assignedCount = sch.assigned_user_ids?.length || 0;
+                return (
+                  <div
+                    key={sch.id}
+                    className="card"
+                    style={{
+                      background: sch.active
+                        ? 'linear-gradient(145deg, rgba(26, 31, 56, 0.9) 0%, rgba(17, 22, 45, 0.95) 100%)'
+                        : 'rgba(255,255,255,0.02)',
+                      border: sch.active
+                        ? (sch.is_strict ? '1px solid rgba(245, 158, 11, 0.35)' : '1px solid rgba(139, 92, 246, 0.35)')
+                        : '1px dashed rgba(255,255,255,0.12)',
+                      padding: '18px 20px',
+                      borderRadius: 14,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      transition: 'all 0.2s',
+                      opacity: sch.active ? 1 : 0.65,
+                    }}
+                  >
+                    <div>
+                      {/* Card Header: Outlet & Status */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                        <span className="pill mono" style={{ fontSize: 11, background: 'rgba(139, 92, 246, 0.15)', color: 'var(--accent-bright)' }}>
+                          🏢 {sch.outlet?.name || 'Cabang'}
+                        </span>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          {sch.is_strict ? (
+                            <span className="pill" style={{ fontSize: 11, background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+                              <Lock size={11} style={{ marginRight: 3 }} /> Validasi Ketat
+                            </span>
+                          ) : (
+                            <span className="pill" style={{ fontSize: 11, background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa' }}>
+                              <Unlock size={11} style={{ marginRight: 3 }} /> Fleksibel
+                            </span>
+                          )}
+                          <span className={`pill ${sch.active ? 'pill-ok' : 'pill-secondary'}`} style={{ fontSize: 10.5 }}>
+                            {sch.active ? 'Aktif' : 'Nonaktif'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Title & Operating Hours */}
+                      <h4 style={{ margin: '0 0 6px 0', fontSize: 16, fontWeight: 800, color: '#ffffff' }}>
+                        {sch.shift_name}
+                      </h4>
+                      <div style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        background: 'rgba(0,0,0,0.3)',
+                        padding: '4px 10px',
+                        borderRadius: 6,
+                        fontSize: 12.5,
+                        fontWeight: 700,
+                        color: 'var(--accent-bright)',
+                        marginBottom: 14
+                      }}>
+                        <Clock size={13} />
+                        <span>{sch.start_time?.slice(0, 5)} — {sch.end_time?.slice(0, 5)} WIB</span>
+                      </div>
+
+                      {/* Assigned Cashiers List */}
+                      <div style={{
+                        borderTop: '1px solid rgba(255,255,255,0.06)',
+                        paddingTop: 12,
+                        marginBottom: 16
+                      }}>
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: 'var(--text-secondary)',
+                          marginBottom: 8
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <Users size={13} style={{ color: 'var(--accent-bright)' }} />
+                            <span>Kasir Ditugaskan ({assignedCount}):</span>
+                          </div>
+                        </div>
+
+                        {sch.assigned_users && sch.assigned_users.length > 0 ? (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 90, overflowY: 'auto' }}>
+                            {sch.assigned_users.map(user => (
+                              <div
+                                key={user.id}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                  background: 'rgba(255,255,255,0.06)',
+                                  padding: '3px 8px',
+                                  borderRadius: 20,
+                                  fontSize: 11.5,
+                                  border: '1px solid rgba(255,255,255,0.08)'
+                                }}
+                              >
+                                <div style={{
+                                  width: 18, height: 18, borderRadius: '50%',
+                                  background: 'var(--accent-bright)', color: '#000',
+                                  fontSize: 10, fontWeight: 800,
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                }}>
+                                  {user.name?.charAt(0).toUpperCase()}
+                                </div>
+                                <span style={{ color: '#ffffff', fontWeight: 600 }}>{user.name}</span>
+                                <span style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>({user.role})</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div style={{
+                            fontSize: 11.5,
+                            color: sch.is_strict ? '#fca5a5' : 'var(--text-muted)',
+                            background: sch.is_strict ? 'rgba(239,68,68,0.08)' : 'transparent',
+                            padding: sch.is_strict ? '6px 10px' : 0,
+                            borderRadius: 6
+                          }}>
+                            {sch.is_strict
+                              ? '⚠️ Belum ada kasir yang ditugaskan! Kasir tidak akan dapat membuka shift ini sampai Anda menugaskan staf.'
+                              : 'Belum ada kasir khusus (Semua kasir cabang diizinkan membuka shift ini).'}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div style={{
+                      display: 'flex',
+                      gap: 8,
+                      borderTop: '1px solid rgba(255,255,255,0.06)',
+                      paddingTop: 12
+                    }}>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
+                        onClick={() => handleOpenEditSchedule(sch)}
+                      >
+                        <Edit2 size={12} /> Edit
+                      </button>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                          color: sch.active ? '#f59e0b' : 'var(--ok)'
+                        }}
+                        onClick={() => handleToggleScheduleActive(sch)}
+                        title={sch.active ? 'Nonaktifkan shift' : 'Aktifkan shift'}
+                      >
+                        {sch.active ? 'Nonaktifkan' : 'Aktifkan'}
+                      </button>
+                      <button
+                        className="btn btn-danger btn-sm btn-icon"
+                        style={{ width: 34, height: 32, padding: 0 }}
+                        onClick={() => handleDeleteSchedule(sch)}
+                        title="Hapus master shift"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="card" style={{ textAlign: 'center', padding: '50px 20px', background: 'rgba(15, 23, 42, 0.4)' }}>
+              <Clock size={40} style={{ color: 'var(--text-muted)', margin: '0 auto 12px' }} />
+              <h4 style={{ margin: '0 0 6px 0', color: '#ffffff', fontSize: 16 }}>
+                Belum Ada Master Shift di Cabang Ini
+              </h4>
+              <p style={{ margin: '0 0 16px 0', color: 'var(--text-secondary)', fontSize: 13, maxWidth: 500, marginInline: 'auto' }}>
+                Tentukan jumlah shift per hari (contoh: Shift 1 Pagi, Shift 2 Sore) dan tetapkan kasir mana saja yang berhak membuka kasir.
+              </p>
+              <button className="btn btn-primary" onClick={handleOpenCreateSchedule}>
+                <Plus size={15} /> Buat Master Shift Sekarang
+              </button>
+            </div>
+          )}
         </div>
       )}
+
+      {/* Modal Buka Shift */}
+      {showOpenModal && (() => {
+        const selectedScheduleObj = outletSchedules.find(s => s.id === openForm.shift_schedule_id);
+        const isCurrentSelectionStrict = selectedScheduleObj?.is_strict;
+        const isUserAssignedToSelected = selectedScheduleObj?.assigned_user_ids?.includes(Number(currentUser?.id));
+        const isBlockedByStrictPolicy = isCurrentSelectionStrict && !isUserAssignedToSelected && !isOwnerWebsite;
+
+        return (
+          <div className="modal-overlay" onClick={() => setShowOpenModal(false)}>
+            <div className="modal-content" style={{ maxWidth: 580 }} onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Clock size={18} style={{ color: 'var(--accent-bright)' }} />
+                  Buka Shift Kasir Baru
+                </div>
+                <button className="btn btn-ghost btn-icon" onClick={() => setShowOpenModal(false)}>
+                  <X size={18} />
+                </button>
+              </div>
+              <form onSubmit={handleOpenShiftSubmit}>
+                <div className="modal-body" style={{ maxHeight: '72vh', overflowY: 'auto' }}>
+                  {/* Cabang Outlet Selector */}
+                  <div className="form-group mb-3">
+                    <label className="form-label" style={{ fontWeight: 700, color: '#ffffff' }}>Cabang / Outlet Penugasan *</label>
+                    <select
+                      className="form-control"
+                      style={{ fontSize: 13, fontWeight: 600, borderColor: 'var(--accent-bright)' }}
+                      value={openForm.outlet_id}
+                      onChange={e => {
+                        const newOid = Number(e.target.value);
+                        setOpenForm(f => ({ ...f, outlet_id: newOid }));
+                        fetchOutletSchedules(newOid);
+                      }}
+                      disabled={isOwnerOutlet}
+                      required
+                    >
+                      {outlets.map(o => (
+                        <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
+                          {o.name} {o.is_main ? '(Pusat)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4 }}>
+                      Shift kasir ini akan dibuka untuk operasional <strong>{outlets.find(o => Number(o.id) === Number(openForm.outlet_id))?.name || 'cabang terpilih'}</strong>.
+                    </div>
+                  </div>
+
+                  {/* Pilihan Shift: Official Master Shifts or Custom */}
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <label className="form-label" style={{ margin: 0, fontWeight: 700, color: '#ffffff' }}>
+                        Pilihan Shift Resmi ({outletSchedules.length} Terdaftar):
+                      </label>
+                      {isOwnerWebsite && (
+                        <span style={{ fontSize: 11, color: 'var(--accent-bright)' }}>
+                          Dikelola oleh Owner
+                        </span>
+                      )}
+                    </div>
+
+                    {loadingOutletSchedules ? (
+                      <div style={{ padding: '12px', fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
+                        Memeriksa jadwal master shift cabang...
+                      </div>
+                    ) : outletSchedules.length > 0 ? (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8, marginBottom: 12 }}>
+                        {outletSchedules.map(sch => {
+                          const isSelected = openForm.shift_schedule_id === sch.id;
+                          const isAssigned = sch.assigned_user_ids?.includes(Number(currentUser?.id));
+                          const isRestricted = sch.is_strict && !isAssigned && !isOwnerWebsite;
+
+                          return (
+                            <div
+                              key={sch.id}
+                              onClick={() => {
+                                setOpenForm(f => ({
+                                  ...f,
+                                  shift_schedule_id: sch.id,
+                                  shift_name: sch.shift_name,
+                                }));
+                              }}
+                              style={{
+                                padding: '10px 12px',
+                                borderRadius: 10,
+                                border: isSelected
+                                  ? (isRestricted ? '2px solid #ef4444' : '2px solid var(--accent-bright)')
+                                  : '1px solid rgba(255,255,255,0.1)',
+                                background: isSelected
+                                  ? (isRestricted ? 'rgba(239, 68, 68, 0.12)' : 'rgba(139, 92, 246, 0.15)')
+                                  : 'rgba(255,255,255,0.03)',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                                <span style={{ fontWeight: 700, fontSize: 13, color: isSelected ? '#ffffff' : 'var(--text-primary)' }}>
+                                  {sch.shift_name}
+                                </span>
+                                {sch.is_strict ? (
+                                  <span className="pill" style={{ fontSize: 9.5, background: 'rgba(245, 158, 11, 0.2)', color: '#f59e0b', padding: '1px 6px' }}>
+                                    <Lock size={9} style={{ marginRight: 2 }} /> Ketat
+                                  </span>
+                                ) : (
+                                  <span className="pill" style={{ fontSize: 9.5, background: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', padding: '1px 6px' }}>
+                                    <Unlock size={9} style={{ marginRight: 2 }} /> Bebas
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <Clock size={11} /> {sch.start_time?.slice(0, 5)} - {sch.end_time?.slice(0, 5)} WIB
+                              </div>
+                              {sch.assigned_users && sch.assigned_users.length > 0 && (
+                                <div style={{ fontSize: 11, color: isAssigned ? 'var(--ok)' : 'var(--text-muted)', marginTop: 4 }}>
+                                  {isAssigned ? '✓ Anda dijadwalkan di sini' : `Kasir: ${sch.assigned_users.map(u => u.name).join(', ')}`}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+                        {['Shift 1 (Pagi)', 'Shift 2 (Siang/Sore)', 'Shift 3 (Malam)'].map(name => (
+                          <button
+                            type="button"
+                            key={name}
+                            className={`btn btn-sm ${openForm.shift_name === name && !openForm.shift_schedule_id ? 'btn-primary' : 'btn-secondary'}`}
+                            onClick={() => setOpenForm(f => ({ ...f, shift_name: name, shift_schedule_id: null }))}
+                          >
+                            {name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Warning if blocked by strict roster policy */}
+                  {isBlockedByStrictPolicy && (
+                    <div style={{
+                      background: 'rgba(239, 68, 68, 0.15)',
+                      border: '1px solid rgba(239, 68, 68, 0.4)',
+                      borderRadius: 10,
+                      padding: '12px 14px',
+                      marginBottom: 16,
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 10,
+                      color: '#fca5a5',
+                      fontSize: 12
+                    }}>
+                      <ShieldAlert size={20} style={{ flexShrink: 0, color: '#ef4444', marginTop: 1 }} />
+                      <div>
+                        <strong style={{ color: '#ffffff', display: 'block', marginBottom: 2 }}>Akses Buka Shift Dibatasi oleh Owner</strong>
+                        Anda ({currentUser?.name}) tidak terdaftar dalam jadwal penugasan shift <strong>{selectedScheduleObj?.shift_name}</strong>. Berdasarkan kebijakan Owner perusahaan, pembukaan shift ini hanya diizinkan untuk kasir yang telah ditugaskan.
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="form-group">
+                    <label className="form-label">Nama Shift Terpilih</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      required
+                      value={openForm.shift_name}
+                      onChange={e => setOpenForm(f => ({ ...f, shift_name: e.target.value, shift_schedule_id: null }))}
+                      placeholder="Contoh: Shift 1 (Pagi)"
+                    />
+                    {openForm.shift_schedule_id && (
+                      <div style={{ fontSize: 11, color: 'var(--accent-bright)', marginTop: 4 }}>
+                        ✓ Terhubung ke master shift resmi #{openForm.shift_schedule_id}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Modal Awal Kas di Laci (Uang Kembalian)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1000}
+                      className="form-control"
+                      required
+                      value={openForm.initial_cash}
+                      onChange={e => setOpenForm(f => ({ ...f, initial_cash: e.target.value }))}
+                      placeholder="100000"
+                    />
+                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4 }}>
+                      Terbaca: <strong style={{ color: 'var(--accent-bright)' }}>{rupiah(openForm.initial_cash)}</strong>
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Catatan Pembukaan (Opsional)</label>
+                    <textarea
+                      rows={2}
+                      className="form-control"
+                      value={openForm.notes}
+                      onChange={e => setOpenForm(f => ({ ...f, notes: e.target.value }))}
+                      placeholder="Kondisi laci kasir, serah terima, dll."
+                    />
+                  </div>
+                </div>
+
+                <div className="modal-footer">
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowOpenModal(false)}>
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={submittingOpen || isBlockedByStrictPolicy}
+                    style={isBlockedByStrictPolicy ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+                  >
+                    {submittingOpen ? 'Membuka...' : (isBlockedByStrictPolicy ? 'Ditolak: Tidak Dijadwalkan' : 'Konfirmasi Buka Shift')}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Modal Closing Shift */}
       {showCloseModal && (
@@ -977,6 +1583,286 @@ export default function ShiftManagement() {
                 Tutup
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Tambah / Edit Master Shift (Owner Only) */}
+      {showScheduleModal && (
+        <div className="modal-overlay" onClick={() => setShowScheduleModal(false)}>
+          <div className="modal-content" style={{ maxWidth: 650 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Settings size={18} style={{ color: 'var(--accent-bright)' }} />
+                {editingSchedule ? 'Edit Jadwal Master Shift' : 'Tambah Master Shift & Roster Kasir'}
+              </div>
+              <button className="btn btn-ghost btn-icon" onClick={() => setShowScheduleModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveScheduleSubmit}>
+              <div className="modal-body" style={{ maxHeight: '72vh', overflowY: 'auto' }}>
+                {/* Outlet Selector */}
+                <div className="form-group mb-3">
+                  <label className="form-label" style={{ fontWeight: 700, color: '#ffffff' }}>
+                    Cabang / Outlet Penugasan *
+                  </label>
+                  <select
+                    className="form-control"
+                    value={scheduleForm.outlet_id}
+                    onChange={e => setScheduleForm(f => ({ ...f, outlet_id: Number(e.target.value) }))}
+                    required
+                  >
+                    {outlets.map(o => (
+                      <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
+                        {o.name} {o.is_main ? '(Pusat)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4 }}>
+                    Shift ini akan berlaku untuk operasional cabang terpilih dalam perusahaan Anda.
+                  </div>
+                </div>
+
+                {/* Shift Name */}
+                <div className="form-group mb-3">
+                  <label className="form-label" style={{ fontWeight: 700, color: '#ffffff' }}>
+                    Nama Shift *
+                  </label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    required
+                    placeholder="Contoh: Shift 1 (Pagi) atau Shift 2 (Sore)"
+                    value={scheduleForm.shift_name}
+                    onChange={e => setScheduleForm(f => ({ ...f, shift_name: e.target.value }))}
+                  />
+                </div>
+
+                {/* Working Hours */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+                  <div className="form-group">
+                    <label className="form-label" style={{ fontWeight: 700, color: '#ffffff' }}>
+                      Jam Mulai Operasional *
+                    </label>
+                    <input
+                      type="time"
+                      className="form-control"
+                      required
+                      value={scheduleForm.start_time}
+                      onChange={e => setScheduleForm(f => ({ ...f, start_time: e.target.value }))}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label" style={{ fontWeight: 700, color: '#ffffff' }}>
+                      Jam Selesai Operasional *
+                    </label>
+                    <input
+                      type="time"
+                      className="form-control"
+                      required
+                      value={scheduleForm.end_time}
+                      onChange={e => setScheduleForm(f => ({ ...f, end_time: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                {/* Strict Toggle */}
+                <div style={{
+                  background: scheduleForm.is_strict ? 'rgba(245, 158, 11, 0.1)' : 'rgba(255,255,255,0.03)',
+                  border: scheduleForm.is_strict ? '1px solid rgba(245, 158, 11, 0.35)' : '1px solid rgba(255,255,255,0.08)',
+                  padding: '12px 16px',
+                  borderRadius: 10,
+                  marginBottom: 16,
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 12,
+                  cursor: 'pointer'
+                }} onClick={() => setScheduleForm(f => ({ ...f, is_strict: !f.is_strict }))}>
+                  <input
+                    type="checkbox"
+                    style={{ marginTop: 3, cursor: 'pointer', width: 16, height: 16 }}
+                    checked={scheduleForm.is_strict}
+                    onChange={e => setScheduleForm(f => ({ ...f, is_strict: e.target.checked }))}
+                    onClick={e => e.stopPropagation()}
+                  />
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: scheduleForm.is_strict ? '#f59e0b' : '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Lock size={13} />
+                      <span>Wajibkan Validasi Ketat (Strict Roster Enforcement)</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 3, lineHeight: 1.4 }}>
+                      Jika dicentang, <strong>hanya staf/kasir yang namanya dipilih di bawah</strong> yang diizinkan membuka shift ini di sistem POS. Kasir lain yang tidak dijadwalkan akan otomatis diblokir sistem. (Owner tetap dapat membuka dalam kondisi darurat).
+                    </div>
+                  </div>
+                </div>
+
+                {/* Active Toggle */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  marginBottom: 16,
+                  padding: '10px 14px',
+                  borderRadius: 8,
+                  background: 'rgba(255,255,255,0.02)',
+                  border: '1px solid rgba(255,255,255,0.06)'
+                }}>
+                  <input
+                    type="checkbox"
+                    id="activeScheduleCheck"
+                    checked={scheduleForm.active}
+                    onChange={e => setScheduleForm(f => ({ ...f, active: e.target.checked }))}
+                    style={{ cursor: 'pointer', width: 16, height: 16 }}
+                  />
+                  <label htmlFor="activeScheduleCheck" style={{ fontSize: 13, fontWeight: 600, color: '#ffffff', cursor: 'pointer', margin: 0 }}>
+                    Aktifkan master shift ini (Muncul pada pilihan buka shift kasir)
+                  </label>
+                </div>
+
+                {/* Employee Roster Selection (Strict to this company) */}
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+                    <div>
+                      <label className="form-label" style={{ fontWeight: 700, color: '#ffffff', margin: 0 }}>
+                        Penugasan Kasir Perusahaan ({scheduleForm.assigned_user_ids.length} Staf Terpilih)
+                      </label>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                        Hanya staf aktif yang terdaftar di perusahaan <strong>{userBusinessName}</strong>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        style={{ fontSize: 11, padding: '3px 8px' }}
+                        onClick={() => {
+                          const allIds = companyEmployees.map(u => u.id);
+                          setScheduleForm(f => ({ ...f, assigned_user_ids: allIds }));
+                        }}
+                      >
+                        Pilih Semua
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        style={{ fontSize: 11, padding: '3px 8px' }}
+                        onClick={() => setScheduleForm(f => ({ ...f, assigned_user_ids: [] }))}
+                      >
+                        Batal Semua
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Search Box */}
+                  <div style={{ position: 'relative', marginBottom: 10 }}>
+                    <Search size={14} style={{ position: 'absolute', left: 10, top: 11, color: 'var(--text-muted)' }} />
+                    <input
+                      type="text"
+                      className="form-control"
+                      style={{ paddingLeft: 32, fontSize: 12.5 }}
+                      placeholder="Cari nama atau email staf..."
+                      value={employeeSearch}
+                      onChange={e => setEmployeeSearch(e.target.value)}
+                    />
+                  </div>
+
+                  {/* Employees Checkbox Grid */}
+                  <div style={{
+                    maxHeight: 220,
+                    overflowY: 'auto',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: 8,
+                    padding: 8,
+                    background: 'rgba(0,0,0,0.2)'
+                  }}>
+                    {companyEmployees
+                      .filter(u => {
+                        if (!employeeSearch.trim()) return true;
+                        const q = employeeSearch.toLowerCase();
+                        return u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+                      })
+                      .map(user => {
+                        const isChecked = scheduleForm.assigned_user_ids.includes(user.id);
+                        return (
+                          <div
+                            key={user.id}
+                            onClick={() => {
+                              setScheduleForm(f => {
+                                const exists = f.assigned_user_ids.includes(user.id);
+                                const nextIds = exists
+                                  ? f.assigned_user_ids.filter(id => id !== user.id)
+                                  : [...f.assigned_user_ids, user.id];
+                                return { ...f, assigned_user_ids: nextIds };
+                              });
+                            }}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '7px 10px',
+                              borderRadius: 6,
+                              cursor: 'pointer',
+                              background: isChecked ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
+                              marginBottom: 4,
+                              border: isChecked ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid transparent',
+                              transition: 'background 0.15s'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {}} // Handled by parent div
+                                style={{ cursor: 'pointer', width: 15, height: 15 }}
+                              />
+                              <div style={{
+                                width: 26, height: 26, borderRadius: '50%',
+                                background: isChecked ? 'var(--accent-bright)' : 'rgba(255,255,255,0.1)',
+                                color: isChecked ? '#000' : '#fff',
+                                fontWeight: 800, fontSize: 11,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center'
+                              }}>
+                                {user.name.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <div style={{ fontWeight: 600, fontSize: 13, color: '#ffffff' }}>{user.name}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{user.email}</div>
+                              </div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span className="pill mono" style={{ fontSize: 10, background: 'rgba(255,255,255,0.06)' }}>
+                                {user.outlet?.name || 'Semua Cabang'}
+                              </span>
+                              <span className="pill pill-secondary" style={{ fontSize: 10 }}>
+                                {user.role}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                    {companyEmployees.length === 0 && (
+                      <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12.5 }}>
+                        Memuat daftar staf perusahaan...
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={() => setShowScheduleModal(false)}>
+                  Batal
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={submittingSchedule}>
+                  {submittingSchedule ? 'Menyimpan...' : (editingSchedule ? 'Simpan Perubahan' : 'Buat Master Shift')}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
