@@ -1,5 +1,8 @@
-import { useState, useEffect } from 'react';
-import { Plus, Save, X, Edit2, Trash2, UtensilsCrossed, Check, Layers, Sliders, CheckSquare, Tag } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import {
+  Plus, Save, X, Edit2, Trash2, UtensilsCrossed, Check, Layers, Sliders,
+  CheckSquare, Tag, Package, Scissors, Sparkles, AlertCircle, RefreshCw, Barcode
+} from 'lucide-react';
 import api from '../api/client';
 import {
   rupiah, num, LoadingState, PageHeader, AuditInfo, formatDateTime,
@@ -16,11 +19,31 @@ export default function MasterMenu() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('recipe'); // 'recipe' | 'modifiers'
+  const [selectedType, setSelectedType] = useState('ALL'); // 'ALL' | 'RECIPE' | 'DIRECT' | 'SERVICE'
+
+  // Quick Restock State for Direct Product
+  const [restockModalOpen, setRestockModalOpen] = useState(false);
+  const [restockQty, setRestockQty] = useState(10);
+  const [restockCost, setRestockCost] = useState('');
+  const [restocking, setRestocking] = useState(false);
 
   // Modal State for Add/Edit Menu
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState('create'); // 'create' | 'edit'
-  const [menuForm, setMenuForm] = useState({ code: '', name: '', category: 'Main', price: '' });
+  const [menuForm, setMenuForm] = useState({
+    code: '',
+    barcode: '',
+    name: '',
+    description: '',
+    category: 'Main',
+    item_type: 'RECIPE', // 'RECIPE' | 'DIRECT' | 'SERVICE'
+    track_stock: true,
+    stock: 0,
+    min_stock: 5,
+    price: '',
+    cost_price: '',
+    unit: 'porsi',
+  });
 
   // Modal State for Modifier Group
   const [groupModalOpen, setGroupModalOpen] = useState(false);
@@ -79,9 +102,17 @@ export default function MasterMenu() {
     setModalMode('create');
     setMenuForm({
       code: getNextMenuCode(),
+      barcode: '',
       name: '',
+      description: '',
       category: 'Main',
+      item_type: 'RECIPE',
+      track_stock: true,
+      stock: 0,
+      min_stock: 5,
       price: '',
+      cost_price: '',
+      unit: 'porsi',
     });
     setModalOpen(true);
   }
@@ -90,9 +121,17 @@ export default function MasterMenu() {
     setModalMode('edit');
     setMenuForm({
       code: menu.code,
+      barcode: menu.barcode || '',
       name: menu.name,
+      description: menu.description || '',
       category: menu.category || 'Main',
+      item_type: menu.item_type || 'RECIPE',
+      track_stock: menu.track_stock !== false,
+      stock: menu.stock ?? 0,
+      min_stock: menu.min_stock ?? 5,
       price: menu.price,
+      cost_price: menu.cost_price ?? '',
+      unit: menu.unit || (menu.item_type === 'DIRECT' ? 'pcs' : (menu.item_type === 'SERVICE' ? 'layanan' : 'porsi')),
     });
     setModalOpen(true);
   }
@@ -100,41 +139,69 @@ export default function MasterMenu() {
   async function handleSaveMenu(e) {
     e.preventDefault();
     if (!menuForm.name.trim()) {
-      toast.error('Nama menu wajib diisi');
+      toast.error('Nama produk/menu wajib diisi');
       return;
     }
-    if (!menuForm.price || Number(menuForm.price) < 0) {
-      toast.error('Harga menu tidak valid');
+    if (menuForm.price === '' || Number(menuForm.price) < 0) {
+      toast.error('Harga jual tidak valid');
       return;
     }
 
     setSaving(true);
     try {
+      const payload = {
+        ...menuForm,
+        price: Number(menuForm.price),
+        cost_price: menuForm.cost_price !== '' ? Number(menuForm.cost_price) : 0,
+        stock: Number(menuForm.stock) || 0,
+        min_stock: Number(menuForm.min_stock) || 0,
+      };
+
       if (modalMode === 'create') {
-        const { data } = await api.post('/menus', {
-          ...menuForm,
-          price: Number(menuForm.price),
-        });
-        toast.success(`Menu "${data.name}" berhasil ditambahkan!`);
+        const { data } = await api.post('/menus', payload);
+        toast.success(`Produk "${data.name}" berhasil ditambahkan!`);
         setModalOpen(false);
         await fetchAll(data.id);
-        // Otomatis ajak buat resep pertama
-        setDraft([{ ingredient_id: ingredients[0]?.id || 1, qty: 100, unit: ingredients[0]?.unit_pakai || 'gram', waste_std: 0 }]);
+        // Otomatis ajak buat resep pertama hanya jika tipe RECIPE
+        if (data.item_type === 'RECIPE') {
+          setDraft([{ ingredient_id: ingredients[0]?.id || 1, qty: 100, unit: ingredients[0]?.unit_pakai || 'gram', waste_std: 0 }]);
+        }
       } else {
-        const { data } = await api.put(`/menus/${selected.id}`, {
-          ...menuForm,
-          price: Number(menuForm.price),
-        });
-        toast.success(`Menu "${data.name}" berhasil diperbarui!`);
+        const { data } = await api.put(`/menus/${selected.id}`, payload);
+        toast.success(`Produk "${data.name}" berhasil diperbarui!`);
         setModalOpen(false);
         await fetchAll(data.id);
       }
     } catch (err) {
       const errors = err.response?.data?.errors;
       if (errors) Object.values(errors).flat().forEach(m => toast.error(m));
-      else toast.error(err.response?.data?.message || 'Gagal menyimpan menu');
+      else toast.error(err.response?.data?.message || 'Gagal menyimpan produk');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleQuickRestockDirect(e) {
+    e.preventDefault();
+    if (!selected) return;
+    if (!restockQty || Number(restockQty) <= 0) {
+      toast.error('Jumlah restock harus lebih dari 0');
+      return;
+    }
+
+    setRestocking(true);
+    try {
+      await api.post(`/menus/${selected.id}/restock`, {
+        qty: Number(restockQty),
+        cost_price: restockCost !== '' ? Number(restockCost) : null,
+      });
+      toast.success(`Stok "${selected.name}" bertambah +${num(restockQty)} ${selected.unit || 'pcs'}!`);
+      setRestockModalOpen(false);
+      await fetchAll(selected.id);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal menambah stok produk');
+    } finally {
+      setRestocking(false);
     }
   }
 
@@ -303,12 +370,20 @@ export default function MasterMenu() {
 
   const activeRecipe = selected?.recipes?.[0]; // version desc
 
-  const hpp = activeRecipe
-    ? (activeRecipe.items || []).reduce((sum, it) => {
-        const ing = ingredients.find(i => i.id === it.ingredient_id);
-        return ing ? sum + it.qty * (ing.harga / (ing.konversi || 1)) : sum;
-      }, 0)
-    : 0;
+  const isDirect = selected?.item_type === 'DIRECT';
+  const isService = selected?.item_type === 'SERVICE';
+  const isRecipe = !isDirect && !isService;
+
+  const hpp = isDirect || isService
+    ? Number(selected?.cost_price || 0)
+    : (activeRecipe
+        ? (activeRecipe.items || []).reduce((sum, it) => {
+            const ing = ingredients.find(i => i.id === it.ingredient_id);
+            return ing ? sum + it.qty * (ing.harga / (ing.konversi || 1)) : sum;
+          }, 0)
+        : Number(selected?.cost_price || 0));
+
+  const marginPct = selected?.price > 0 ? Math.round(((selected.price - hpp) / selected.price) * 100) : 0;
 
   function startEdit() {
     if (activeRecipe?.items?.length) {
@@ -356,16 +431,23 @@ export default function MasterMenu() {
     }
   }
 
+  const filteredMenus = useMemo(() => {
+    return menus.filter(m => {
+      if (selectedType === 'ALL') return true;
+      return (m.item_type || 'RECIPE') === selectedType;
+    });
+  }, [menus, selectedType]);
+
   if (loading) return <LoadingState />;
 
   return (
     <div className="fade-in">
       <PageHeader
-        title="Master Menu & Recipe (BOM)"
-        subtitle="Setiap menu wajib punya BOM. Perubahan gramasi otomatis membuat versi baru."
+        title="Master Produk & Menu (Universal POS)"
+        subtitle="Kelola produk olahan resep (F&B/BOM), barang jadi retail langsung (stok & modal), dan jasa layanan non-stok."
         action={
           <button className="btn btn-primary" onClick={openCreateModal}>
-            <Plus size={15} /> Tambah Menu Baru
+            <Plus size={15} /> Tambah Produk / Menu
           </button>
         }
       />
@@ -373,9 +455,39 @@ export default function MasterMenu() {
       <div className="grid-sidebar">
         {/* Menu List */}
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, padding: '0 4px' }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Daftar Menu ({menus.length})
+          {/* Type Filter Tabs */}
+          <div style={{ display: 'flex', gap: 4, marginBottom: 10, background: 'rgba(255,255,255,0.03)', padding: 3, borderRadius: 8, border: '1px solid var(--border)' }}>
+            {[
+              { id: 'ALL', label: 'Semua' },
+              { id: 'RECIPE', label: 'Resep' },
+              { id: 'DIRECT', label: 'Retail' },
+              { id: 'SERVICE', label: 'Jasa' },
+            ].map(t => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setSelectedType(t.id)}
+                style={{
+                  flex: 1,
+                  padding: '5px 2px',
+                  borderRadius: 6,
+                  border: 'none',
+                  background: selectedType === t.id ? 'var(--accent)' : 'transparent',
+                  color: selectedType === t.id ? '#ffffff' : 'var(--text-secondary)',
+                  fontSize: 11,
+                  fontWeight: selectedType === t.id ? 700 : 500,
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, padding: '0 4px' }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Daftar Produk ({filteredMenus.length})
             </span>
             <button
               className="btn btn-ghost btn-sm"
@@ -385,25 +497,74 @@ export default function MasterMenu() {
               <Plus size={12} /> Tambah
             </button>
           </div>
+
           <div className="recipe-list">
-            {menus.map(m => (
-              <button
-                key={m.id}
-                className={`recipe-item${selected?.id === m.id ? ' active' : ''}`}
-                onClick={() => { setSelected(m); setDraft(null); }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div className="recipe-item-name">{m.name}</div>
-                  <span style={{ fontSize: 10.5, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.05)', padding: '1px 6px', borderRadius: 4 }}>
-                    {m.code}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
-                  <span className="recipe-item-price">{rupiah(m.price)}</span>
-                  <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{m.category || 'Main'}</span>
-                </div>
-              </button>
-            ))}
+            {filteredMenus.map(m => {
+              const mIsDirect = m.item_type === 'DIRECT';
+              const mIsService = m.item_type === 'SERVICE';
+              const mStock = m.current_stock ?? m.stock ?? 0;
+
+              return (
+                <button
+                  key={m.id}
+                  className={`recipe-item${selected?.id === m.id ? ' active' : ''}`}
+                  onClick={() => { setSelected(m); setDraft(null); }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div className="recipe-item-name" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {mIsDirect && <Package size={13} color="#60a5fa" />}
+                      {mIsService && <Scissors size={13} color="#c084fc" />}
+                      {!mIsDirect && !mIsService && <UtensilsCrossed size={13} color="#34d399" />}
+                      <span>{m.name}</span>
+                    </div>
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.05)', padding: '1px 5px', borderRadius: 4 }}>
+                      {m.code}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                    <span className="recipe-item-price">{rupiah(m.price)}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      {mIsDirect && (
+                        <span style={{
+                          fontSize: 9.5,
+                          background: mStock <= (m.min_stock || 0) ? 'rgba(244, 63, 94, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                          color: mStock <= (m.min_stock || 0) ? '#f43f5e' : '#93c5fd',
+                          border: `1px solid ${mStock <= (m.min_stock || 0) ? 'rgba(244, 63, 94, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
+                          padding: '0 4px',
+                          borderRadius: 4
+                        }}>
+                          Stok: {num(mStock)} {m.unit || 'pcs'}
+                        </span>
+                      )}
+                      {mIsService && (
+                        <span style={{
+                          fontSize: 9.5,
+                          background: 'rgba(168, 85, 247, 0.15)',
+                          color: '#e9d5ff',
+                          border: '1px solid rgba(168, 85, 247, 0.3)',
+                          padding: '0 4px',
+                          borderRadius: 4
+                        }}>
+                          Jasa
+                        </span>
+                      )}
+                      {!mIsDirect && !mIsService && (
+                        <span style={{
+                          fontSize: 9.5,
+                          background: 'rgba(16, 185, 129, 0.15)',
+                          color: '#6ee7b7',
+                          border: '1px solid rgba(16, 185, 129, 0.3)',
+                          padding: '0 4px',
+                          borderRadius: 4
+                        }}>
+                          Resep
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -434,10 +595,20 @@ export default function MasterMenu() {
                 <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 4 }}>
                   Kode: <span className="mono" style={{ color: 'var(--accent)' }}>{selected.code}</span> ·
                   Kategori: {selected.category || 'Main'} ·
-                  Harga Jual: <span className="mono" style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{rupiah(selected.price)}</span> ·
-                  Resep aktif: <span className="mono" style={{ color: activeRecipe ? 'var(--ok)' : 'var(--warn)' }}>
-                    {activeRecipe ? `Versi ${activeRecipe.version}` : 'Belum ada resep'}
-                  </span>
+                  Tipe: <span className="mono" style={{ color: isDirect ? '#60a5fa' : (isService ? '#c084fc' : '#34d399'), fontWeight: 700 }}>
+                    {isDirect ? 'Barang Jadi (Retail)' : (isService ? 'Jasa / Layanan' : 'Olahan Resep (BOM)')}
+                  </span> ·
+                  Harga Jual: <span className="mono" style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{rupiah(selected.price)}</span>
+                  {isRecipe && (
+                    <> · Resep aktif: <span className="mono" style={{ color: activeRecipe ? 'var(--ok)' : 'var(--warn)' }}>
+                      {activeRecipe ? `Versi ${activeRecipe.version}` : 'Belum ada resep'}
+                    </span></>
+                  )}
+                  {isDirect && (
+                    <> · Stok: <strong className="mono" style={{ color: (selected.current_stock ?? selected.stock ?? 0) <= (selected.min_stock || 0) ? 'var(--danger)' : 'var(--ok)' }}>
+                      {num(selected.current_stock ?? selected.stock ?? 0)} {selected.unit || 'pcs'}
+                    </strong></>
+                  )}
                 </div>
                 <div style={{ marginTop: 10, padding: '8px 12px', background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid var(--border-soft)', maxWidth: 460 }}>
                   <AuditInfo
@@ -564,6 +735,136 @@ export default function MasterMenu() {
                           </button>
                         </div>
                       </>
+                    ) : isDirect ? (
+                      <div style={{
+                        padding: '28px 24px',
+                        background: 'rgba(59, 130, 246, 0.05)',
+                        border: '1px solid rgba(59, 130, 246, 0.25)',
+                        borderRadius: 12,
+                        marginBottom: 16
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+                          <div style={{ width: 44, height: 44, borderRadius: 10, background: 'rgba(59, 130, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#60a5fa' }}>
+                            <Package size={24} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 16, fontWeight: 700, color: '#ffffff' }}>
+                              Produk Barang Jadi / Retail (Direct Stock)
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                              Produk ini tidak memerlukan resep bahan baku. Stok produk dipotong langsung setiap transaksi kasir.
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 18 }}>
+                          <div style={{ background: 'rgba(0,0,0,0.3)', padding: 12, borderRadius: 8, border: '1px solid var(--border)' }}>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Stok Saat Ini</div>
+                            <div className="mono" style={{ fontSize: 18, fontWeight: 800, color: (selected.current_stock ?? selected.stock ?? 0) <= (selected.min_stock || 0) ? '#f43f5e' : '#34d399', marginTop: 2 }}>
+                              {num(selected.current_stock ?? selected.stock ?? 0)} {selected.unit || 'pcs'}
+                            </div>
+                          </div>
+                          <div style={{ background: 'rgba(0,0,0,0.3)', padding: 12, borderRadius: 8, border: '1px solid var(--border)' }}>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Stok Minimum Alert</div>
+                            <div className="mono" style={{ fontSize: 18, fontWeight: 800, color: '#fbbf24', marginTop: 2 }}>
+                              {num(selected.current_min_stock ?? selected.min_stock ?? 0)} {selected.unit || 'pcs'}
+                            </div>
+                          </div>
+                          <div style={{ background: 'rgba(0,0,0,0.3)', padding: 12, borderRadius: 8, border: '1px solid var(--border)' }}>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Harga Modal Beli (HPP)</div>
+                            <div className="mono" style={{ fontSize: 18, fontWeight: 800, color: '#60a5fa', marginTop: 2 }}>
+                              {rupiah(selected.cost_price || 0)}
+                            </div>
+                          </div>
+                          <div style={{ background: 'rgba(0,0,0,0.3)', padding: 12, borderRadius: 8, border: '1px solid var(--border)' }}>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Profit Kotor / Unit</div>
+                            <div className="mono" style={{ fontSize: 18, fontWeight: 800, color: '#10b981', marginTop: 2 }}>
+                              {rupiah(selected.price - (selected.cost_price || 0))} ({marginPct}%)
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                          <button
+                            type="button"
+                            className="btn btn-primary"
+                            onClick={() => {
+                              setRestockQty(10);
+                              setRestockCost(selected.cost_price || '');
+                              setRestockModalOpen(true);
+                            }}
+                          >
+                            <Plus size={14} /> Tambah Stok Cepat (Restock)
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={() => openEditModal(selected)}
+                          >
+                            <Edit2 size={14} /> Ubah Data Retail
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            onClick={startEdit}
+                            style={{ fontSize: 12 }}
+                            title="Jika ingin menambahkan komposisi bahan baku opsional"
+                          >
+                            + Tambah Resep Bahan (Opsional)
+                          </button>
+                        </div>
+                      </div>
+                    ) : isService ? (
+                      <div style={{
+                        padding: '28px 24px',
+                        background: 'rgba(168, 85, 247, 0.05)',
+                        border: '1px solid rgba(168, 85, 247, 0.25)',
+                        borderRadius: 12,
+                        marginBottom: 16
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+                          <div style={{ width: 44, height: 44, borderRadius: 10, background: 'rgba(168, 85, 247, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#c084fc' }}>
+                            <Scissors size={24} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 16, fontWeight: 700, color: '#ffffff' }}>
+                              Produk Jasa & Layanan (Non-Stok Fisik)
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                              Layanan ini tidak memiliki batasan stok fisik. Selalu tersedia di kasir untuk transaksi langsung.
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 18 }}>
+                          <div style={{ background: 'rgba(0,0,0,0.3)', padding: 12, borderRadius: 8, border: '1px solid var(--border)' }}>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Tarif / Harga Jual</div>
+                            <div className="mono" style={{ fontSize: 18, fontWeight: 800, color: 'var(--ok)', marginTop: 2 }}>
+                              {rupiah(selected.price)}
+                            </div>
+                          </div>
+                          <div style={{ background: 'rgba(0,0,0,0.3)', padding: 12, borderRadius: 8, border: '1px solid var(--border)' }}>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Biaya Modal / Fee Petugas</div>
+                            <div className="mono" style={{ fontSize: 18, fontWeight: 800, color: '#c084fc', marginTop: 2 }}>
+                              {rupiah(selected.cost_price || 0)}
+                            </div>
+                          </div>
+                          <div style={{ background: 'rgba(0,0,0,0.3)', padding: 12, borderRadius: 8, border: '1px solid var(--border)' }}>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Status Ketersediaan</div>
+                            <div className="mono" style={{ fontSize: 16, fontWeight: 800, color: '#38bdf8', marginTop: 2 }}>
+                              ✓ Selalu Tersedia
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() => openEditModal(selected)}
+                        >
+                          <Edit2 size={14} /> Ubah Data Layanan
+                        </button>
+                      </div>
                     ) : (
                       <div style={{
                         padding: '36px 20px',
@@ -978,23 +1279,107 @@ export default function MasterMenu() {
 
             <form onSubmit={handleSaveMenu}>
               <div className="modal-body">
-                <div className="form-group">
-                  <label className="form-label">Kode Menu</label>
-                  <input
-                    type="text"
-                    className="form-control mono"
-                    required
-                    value={menuForm.code}
-                    onChange={e => setMenuForm(f => ({ ...f, code: e.target.value.toUpperCase() }))}
-                    placeholder="MN-004"
-                  />
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                    Kode unik pengenal menu (contoh: MN-001, MN-002).
-                  </span>
+                {/* Product Type Selector */}
+                <div className="form-group mb-3">
+                  <label className="form-label" style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Sparkles size={14} color="var(--accent)" /> Tipe Produk / Penjualan
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 4 }}>
+                    <button
+                      type="button"
+                      onClick={() => setMenuForm(f => ({ ...f, item_type: 'RECIPE', unit: 'porsi' }))}
+                      style={{
+                        padding: '10px 8px',
+                        borderRadius: 8,
+                        border: '1px solid',
+                        borderColor: (menuForm.item_type || 'RECIPE') === 'RECIPE' ? 'var(--accent-bright)' : 'var(--border)',
+                        background: (menuForm.item_type || 'RECIPE') === 'RECIPE' ? 'var(--accent-dim)' : 'rgba(255,255,255,0.02)',
+                        color: (menuForm.item_type || 'RECIPE') === 'RECIPE' ? 'var(--accent-bright)' : 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        textAlign: 'center',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      <UtensilsCrossed size={16} />
+                      <span style={{ fontSize: 11.5, fontWeight: 700 }}>Olahan Resep</span>
+                      <span style={{ fontSize: 9.5, opacity: 0.7 }}>Bahan Baku / Dapur</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMenuForm(f => ({ ...f, item_type: 'DIRECT', unit: 'pcs' }))}
+                      style={{
+                        padding: '10px 8px',
+                        borderRadius: 8,
+                        border: '1px solid',
+                        borderColor: menuForm.item_type === 'DIRECT' ? '#60a5fa' : 'var(--border)',
+                        background: menuForm.item_type === 'DIRECT' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255,255,255,0.02)',
+                        color: menuForm.item_type === 'DIRECT' ? '#93c5fd' : 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        textAlign: 'center',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      <Package size={16} />
+                      <span style={{ fontSize: 11.5, fontWeight: 700 }}>Barang Jadi</span>
+                      <span style={{ fontSize: 9.5, opacity: 0.7 }}>Retail / Siap Jual</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMenuForm(f => ({ ...f, item_type: 'SERVICE', unit: 'layanan' }))}
+                      style={{
+                        padding: '10px 8px',
+                        borderRadius: 8,
+                        border: '1px solid',
+                        borderColor: menuForm.item_type === 'SERVICE' ? '#c084fc' : 'var(--border)',
+                        background: menuForm.item_type === 'SERVICE' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(255,255,255,0.02)',
+                        color: menuForm.item_type === 'SERVICE' ? '#e9d5ff' : 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        textAlign: 'center',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      <Scissors size={16} />
+                      <span style={{ fontSize: 11.5, fontWeight: 700 }}>Jasa / Layanan</span>
+                      <span style={{ fontSize: 9.5, opacity: 0.7 }}>Non-Stok / Bebas</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 12 }}>
+                  <div className="form-group">
+                    <label className="form-label">Kode Produk / Menu</label>
+                    <input
+                      type="text"
+                      className="form-control mono"
+                      required
+                      value={menuForm.code}
+                      onChange={e => setMenuForm(f => ({ ...f, code: e.target.value.toUpperCase() }))}
+                      placeholder="MN-004"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Barcode / SKU (Opsional)</label>
+                    <input
+                      type="text"
+                      className="form-control mono"
+                      value={menuForm.barcode}
+                      onChange={e => setMenuForm(f => ({ ...f, barcode: e.target.value }))}
+                      placeholder="Contoh: 8991234567"
+                    />
+                  </div>
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Nama Menu</label>
+                  <label className="form-label">Nama Produk / Menu</label>
                   <input
                     type="text"
                     className="form-control"
@@ -1002,43 +1387,126 @@ export default function MasterMenu() {
                     autoFocus
                     value={menuForm.name}
                     onChange={e => setMenuForm(f => ({ ...f, name: e.target.value }))}
-                    placeholder="Contoh: Ayam Bakar Madu"
+                    placeholder={menuForm.item_type === 'DIRECT' ? 'Contoh: Air Mineral 600ml / Kripik Singkong' : (menuForm.item_type === 'SERVICE' ? 'Contoh: Jasa Potong Rambut / Servis' : 'Contoh: Ayam Bakar Madu')}
                   />
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label">Kategori</label>
-                  <select
-                    className="form-control"
-                    value={menuForm.category}
-                    onChange={e => setMenuForm(f => ({ ...f, category: e.target.value }))}
-                  >
-                    <option value="Main">Main Course (Makanan Utama)</option>
-                    <option value="Minuman">Minuman (Beverage)</option>
-                    <option value="Snack">Snack / Cemilan</option>
-                    <option value="Dessert">Dessert</option>
-                    <option value="Paket">Paket Hemat</option>
-                  </select>
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 12 }}>
+                  <div className="form-group">
+                    <label className="form-label">Kategori</label>
+                    <select
+                      className="form-control"
+                      value={menuForm.category}
+                      onChange={e => setMenuForm(f => ({ ...f, category: e.target.value }))}
+                    >
+                      <option value="Main">Makanan Utama (Main Course)</option>
+                      <option value="Minuman">Minuman (Beverage)</option>
+                      <option value="Snack">Snack / Cemilan / Retail</option>
+                      <option value="Retail">Barang Jadi / Retail</option>
+                      <option value="Jasa">Jasa & Layanan</option>
+                      <option value="Dessert">Dessert</option>
+                      <option value="Paket">Paket Hemat</option>
+                      <option value="Lainnya">Lainnya</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Satuan Jual</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={menuForm.unit}
+                      onChange={e => setMenuForm(f => ({ ...f, unit: e.target.value }))}
+                      placeholder={menuForm.item_type === 'DIRECT' ? 'pcs / botol' : (menuForm.item_type === 'SERVICE' ? 'layanan' : 'porsi')}
+                    />
+                  </div>
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label">Harga Jual (Rp)</label>
-                  <input
-                    type="number"
-                    className="form-control mono"
-                    required
-                    min="0"
-                    step="500"
-                    value={menuForm.price}
-                    onChange={e => setMenuForm(f => ({ ...f, price: e.target.value }))}
-                    placeholder="25000"
-                  />
-                  {menuForm.price > 0 && (
-                    <span style={{ fontSize: 12, color: 'var(--accent)', marginTop: 2 }}>
-                      Format: {rupiah(Number(menuForm.price))}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div className="form-group">
+                    <label className="form-label" style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Harga Jual Kasir (Rp)</label>
+                    <input
+                      type="number"
+                      className="form-control mono"
+                      required
+                      min="0"
+                      step="100"
+                      value={menuForm.price}
+                      onChange={e => setMenuForm(f => ({ ...f, price: e.target.value }))}
+                      placeholder="25000"
+                    />
+                    {menuForm.price > 0 && (
+                      <span style={{ fontSize: 11, color: 'var(--ok)', marginTop: 2, display: 'block' }}>
+                        Jual: {rupiah(Number(menuForm.price))}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label" style={{ color: '#60a5fa', fontWeight: 600 }}>
+                      {menuForm.item_type === 'DIRECT' ? 'Harga Beli Modal / HPP (Rp)' : (menuForm.item_type === 'SERVICE' ? 'Biaya Modal Jasa (Rp)' : 'Estimasi HPP Dasar (Rp)')}
+                    </label>
+                    <input
+                      type="number"
+                      className="form-control mono"
+                      min="0"
+                      step="100"
+                      value={menuForm.cost_price}
+                      onChange={e => setMenuForm(f => ({ ...f, cost_price: e.target.value }))}
+                      placeholder="Contoh: 15000"
+                    />
+                    {menuForm.cost_price > 0 && (
+                      <span style={{ fontSize: 11, color: '#60a5fa', marginTop: 2, display: 'block' }}>
+                        Modal: {rupiah(Number(menuForm.cost_price))}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Direct Retail Stock Controls */}
+                {menuForm.item_type === 'DIRECT' && (
+                  <div style={{
+                    background: 'rgba(59, 130, 246, 0.08)',
+                    border: '1px solid rgba(59, 130, 246, 0.25)',
+                    borderRadius: 8,
+                    padding: '12px 14px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 10
+                  }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#93c5fd', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Package size={14} /> Saldo Stok Retail Barang Jadi
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      <div>
+                        <label className="form-label" style={{ fontSize: 11.5 }}>
+                          {modalMode === 'create' ? 'Stok Awal' : 'Saldo Stok Produk'}
+                        </label>
+                        <input
+                          type="number"
+                          className="form-control mono"
+                          min="0"
+                          value={menuForm.stock}
+                          onChange={e => setMenuForm(f => ({ ...f, stock: e.target.value }))}
+                          placeholder="0"
+                        />
+                      </div>
+                      <div>
+                        <label className="form-label" style={{ fontSize: 11.5 }}>Stok Minimum Alert</label>
+                        <input
+                          type="number"
+                          className="form-control mono"
+                          min="0"
+                          value={menuForm.min_stock}
+                          onChange={e => setMenuForm(f => ({ ...f, min_stock: e.target.value }))}
+                          placeholder="5"
+                        />
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                      Setiap penjualan kasir untuk produk ini akan memotong saldo stok produk secara otomatis.
                     </span>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
 
               <div className="modal-footer">
@@ -1322,6 +1790,79 @@ export default function MasterMenu() {
                   disabled={saving}
                 >
                   <Check size={14} /> {saving ? 'Menyimpan...' : (editingGroup ? 'Update Kelompok Modifier' : 'Simpan Kelompok Modifier')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Modal Quick Restock Produk Retail */}
+      {restockModalOpen && selected && (
+        <div className="modal-overlay" onClick={() => setRestockModalOpen(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <div className="modal-header">
+              <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Package size={18} color="#60a5fa" />
+                Tambah Stok Retail: {selected.name}
+              </div>
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{ padding: 4 }}
+                onClick={() => setRestockModalOpen(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleQuickRestockDirect}>
+              <div className="modal-body">
+                <div style={{ background: 'rgba(59, 130, 246, 0.08)', padding: '10px 12px', borderRadius: 8, marginBottom: 14, fontSize: 12.5 }}>
+                  Stok saat ini: <strong className="mono" style={{ color: '#60a5fa' }}>{num(selected.current_stock ?? selected.stock ?? 0)} {selected.unit || 'pcs'}</strong>
+                </div>
+
+                <div className="form-group mb-3">
+                  <label className="form-label">Jumlah Tambahan ({selected.unit || 'pcs'})</label>
+                  <input
+                    type="number"
+                    className="form-control mono"
+                    min="1"
+                    step="1"
+                    required
+                    value={restockQty}
+                    onChange={e => setRestockQty(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group mb-3">
+                  <label className="form-label">Harga Modal Beli Baru (Rp) (Opsional)</label>
+                  <input
+                    type="number"
+                    className="form-control mono"
+                    min="0"
+                    step="100"
+                    value={restockCost}
+                    onChange={e => setRestockCost(e.target.value)}
+                    placeholder={`Saat ini: ${rupiah(selected.cost_price || 0)}`}
+                  />
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    Jika diisi, modal pokok (HPP) produk akan diperbarui.
+                  </span>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => setRestockModalOpen(false)}
+                  disabled={restocking}
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={restocking}
+                >
+                  <Check size={14} /> {restocking ? 'Menambah...' : 'Konfirmasi Restock'}
                 </button>
               </div>
             </form>

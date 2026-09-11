@@ -3,11 +3,12 @@ import { Link } from 'react-router-dom';
 import {
   ShoppingCart, Receipt, Clock, AlertTriangle, ArrowRight,
   Search, X, Plus, Minus, Trash2, CheckCircle, Printer,
-  CreditCard, QrCode, Banknote, Utensils, Coffee, Pizza,
+  CreditCard, QrCode, Banknote, Coffee, Pizza,
   Sparkles, User, Table, Store, Calendar, RotateCcw, Eye,
   Package, ShieldAlert, ArrowUpRight, Send, Bookmark, ChefHat,
   FileText, CheckCircle2, ChevronRight, PauseCircle, RefreshCw, XCircle, Users,
-  Percent, Tag, Gift, Scissors, Split, Divide
+  Percent, Tag, Gift, Scissors, Split, Divide,
+  ShoppingBag, Briefcase, Barcode, Utensils
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, num, LoadingState, PageHeader } from '../components/ui';
@@ -26,11 +27,11 @@ export default function POS() {
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
+  const [selectedType, setSelectedType] = useState('ALL'); // 'ALL' | 'RECIPE' | 'DIRECT' | 'SERVICE'
 
   // Cart State
   const [cart, setCart] = useState([]);
-  const [orderType, setOrderType] = useState('DINE_IN');
-  const [tableNumber, setTableNumber] = useState('');
+
   const [customerName, setCustomerName] = useState('');
   const [orderDate, setOrderDate] = useState(new Date().toISOString().slice(0, 10));
 
@@ -64,14 +65,19 @@ export default function POS() {
     status: null,
   });
 
-  // Quick Restock Modal State
+  // Quick Restock Modal State (supports both raw ingredients & direct retail items)
   const [restockModal, setRestockModal] = useState({
     open: false,
+    isDirectProduct: false,
+    menuId: null,
+    menuName: '',
+    unit: 'pcs',
+    currentStock: 0,
     ingredientId: '',
-    qty: 1,
+    qty: 10,
     unitType: 'BELI', // 'BELI' or 'PAKAI'
     unitPrice: '',
-    notes: 'Pembelian darurat kasir',
+    notes: 'Restok Cepat Kasir',
     submitting: false,
   });
 
@@ -80,7 +86,7 @@ export default function POS() {
   const [openBillsModalOpen, setOpenBillsModalOpen] = useState(false);
   const [activeOpenBillPayment, setActiveOpenBillPayment] = useState(null);
   const [appendModeBill, setAppendModeBill] = useState(null);
-  const [showTableStrip, setShowTableStrip] = useState(true);
+
   const [mobileActiveTab, setMobileActiveTab] = useState('catalog');
 
   // Printing & Chit Modals
@@ -129,11 +135,7 @@ export default function POS() {
     name: 'Diskon Kasir',
   });
 
-  const standardTables = [
-    'Meja 01', 'Meja 02', 'Meja 03', 'Meja 04', 'Meja 05', 'Meja 06',
-    'Meja 07', 'Meja 08', 'Meja 09', 'Meja 10', 'VIP 01', 'VIP 02',
-    'Outdoor 01', 'Outdoor 02'
-  ];
+
 
   const currentUser = JSON.parse(localStorage.getItem('pos_user') || '{}');
   const { activeOutletId, activeOutlet, isOwnerWebsite, changeOutlet, outlets } = useOutlet();
@@ -187,16 +189,65 @@ export default function POS() {
     return ['ALL', ...Array.from(cats)];
   }, [menus]);
 
-  // Calculate available servings and sold-out status for a menu
+  // Calculate available servings and stock status for any product type
   function getMenuStockStatus(menu) {
+    const itemType = menu.item_type || (menu.recipes && menu.recipes.length > 0 ? 'RECIPE' : (menu.track_stock ? 'DIRECT' : 'RECIPE'));
+
+    // 1. Jasa / Layanan (SERVICE) - Tidak ada stok fisik & tidak butuh resep
+    if (itemType === 'SERVICE') {
+      return {
+        itemType: 'SERVICE',
+        hasRecipe: false,
+        isService: true,
+        availableServings: 9999,
+        isSoldOut: false,
+        isLowStock: false,
+        reason: null,
+        limitingIngredient: null,
+        details: [],
+      };
+    }
+
+    // 2. Retail / Barang Jadi (DIRECT) - Stok langsung per produk / outlet
+    if (itemType === 'DIRECT') {
+      const directStock = Number(menu.current_stock ?? menu.stock ?? 0);
+      const trackStock = menu.track_stock !== false;
+      const isSoldOut = trackStock && directStock <= 0;
+      const minStock = Number(menu.current_min_stock ?? menu.min_stock ?? 5);
+      const isLowStock = trackStock && !isSoldOut && directStock <= minStock;
+
+      return {
+        itemType: 'DIRECT',
+        hasRecipe: false,
+        isDirect: true,
+        availableServings: directStock,
+        trackStock,
+        isSoldOut,
+        isLowStock,
+        reason: isSoldOut ? 'Stok produk habis' : null,
+        limitingIngredient: null,
+        details: [{
+          id: menu.id,
+          name: menu.name,
+          required: 1,
+          unit: menu.unit || 'pcs',
+          stock: directStock,
+          possibleServings: directStock,
+          isDeficit: isSoldOut,
+        }],
+      };
+    }
+
+    // 3. Olahan Resep / F&B (RECIPE)
     const recipe = menu.recipes?.[0];
     if (!recipe || !recipe.items || recipe.items.length === 0) {
       return {
+        itemType: 'RECIPE',
         hasRecipe: false,
-        availableServings: 0,
-        isSoldOut: true,
+        availableServings: 9999,
+        isSoldOut: false,
         isLowStock: false,
-        reason: 'Belum ada resep aktif',
+        reason: 'Belum ada resep aktif (Penjualan Bebas)',
         limitingIngredient: null,
         details: [],
       };
@@ -240,6 +291,7 @@ export default function POS() {
     const isLowStock = !isSoldOut && availableServings <= 5;
 
     return {
+      itemType: 'RECIPE',
       hasRecipe: true,
       availableServings,
       isSoldOut,
@@ -253,16 +305,21 @@ export default function POS() {
   const filteredMenus = useMemo(() => {
     return menus
       .filter(m => {
+        const itemType = m.item_type || 'RECIPE';
+        const matchType = selectedType === 'ALL' || itemType === selectedType;
         const matchCat = selectedCategory === 'ALL' || (m.category || 'Lainnya') === selectedCategory;
-        const matchSearch = m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (m.code && m.code.toLowerCase().includes(searchQuery.toLowerCase()));
-        return matchCat && matchSearch;
+        const q = searchQuery.toLowerCase().trim();
+        const matchSearch = !q ||
+          m.name.toLowerCase().includes(q) ||
+          (m.code && m.code.toLowerCase().includes(q)) ||
+          (m.barcode && m.barcode.toLowerCase().includes(q));
+        return matchType && matchCat && matchSearch;
       })
       .map(m => ({
         ...m,
         stockStatus: getMenuStockStatus(m),
       }));
-  }, [menus, selectedCategory, searchQuery, ingredients]);
+  }, [menus, selectedCategory, selectedType, searchQuery, ingredients]);
 
   // Cart calculations (supporting modifier addon prices & discounts)
   const cartGrossSubtotal = useMemo(() => {
@@ -382,24 +439,39 @@ export default function POS() {
 
   // Handle card click
   function handleMenuCardClick(menu, status) {
-    if (!status.hasRecipe) {
-      toast.error(`Menu "${menu.name}" belum memiliki resep aktif.`);
-      return;
-    }
+    const currentStatus = status || getMenuStockStatus(menu);
 
-    // If ingredient is out of stock, trigger confirmation dialog
-    if (status.isSoldOut) {
-      setStockAlertModal({
-        open: true,
-        menu,
-        status,
-      });
-      return;
+    // If out of stock, trigger quick restock for direct items or ingredient alert for recipes
+    if (currentStatus.isSoldOut) {
+      if (currentStatus.itemType === 'DIRECT') {
+        setRestockModal({
+          open: true,
+          isDirectProduct: true,
+          menuId: menu.id,
+          menuName: menu.name,
+          unit: menu.unit || 'pcs',
+          currentStock: currentStatus.availableServings,
+          ingredientId: '',
+          qty: 10,
+          unitType: 'PAKAI',
+          unitPrice: menu.cost_price || '',
+          notes: 'Restok Cepat Kasir',
+          submitting: false,
+        });
+        return;
+      } else {
+        setStockAlertModal({
+          open: true,
+          menu,
+          status: currentStatus,
+        });
+        return;
+      }
     }
 
     // If menu has modifier groups, open modifier modal
     if (menu.modifier_groups && menu.modifier_groups.length > 0) {
-      openModifierModal(menu, status);
+      openModifierModal(menu, currentStatus);
       return;
     }
 
@@ -598,14 +670,56 @@ export default function POS() {
     });
   }
 
-  // Submit Quick Restock
+  // Handle Barcode Scanner / Enter in search bar
+  function handleSearchKeyDown(e) {
+    if (e.key === 'Enter' && searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      const exactMatch = filteredMenus.find(m =>
+        (m.barcode && m.barcode.toLowerCase() === q) ||
+        (m.code && m.code.toLowerCase() === q) ||
+        m.name.toLowerCase() === q
+      ) || filteredMenus[0];
+
+      if (exactMatch) {
+        handleMenuCardClick(exactMatch, exactMatch.stockStatus);
+        setSearchQuery('');
+        toast.success(`"${exactMatch.name}" ditambahkan ke pesanan`);
+      }
+    }
+  }
+
+  // Submit Quick Restock (handles both direct retail products & raw ingredients)
   async function handleSubmitRestock(e) {
     e.preventDefault();
-    const ing = ingredients.find(i => i.id === Number(restockModal.ingredientId));
-    if (!ing) return;
-
     setRestockModal(p => ({ ...p, submitting: true }));
     try {
+      if (restockModal.isDirectProduct && restockModal.menuId) {
+        await api.post(`/menus/${restockModal.menuId}/restock`, {
+          qty: Number(restockModal.qty),
+          cost_price: restockModal.unitPrice !== '' ? Number(restockModal.unitPrice) : undefined,
+          outlet_id: currentTargetOutlet,
+          notes: restockModal.notes || 'Restok barang retail kasir',
+        });
+
+        toast.success(`Stok "${restockModal.menuName}" bertambah +${num(restockModal.qty)} ${restockModal.unit || 'pcs'}!`);
+
+        const [m, s] = await Promise.all([
+          api.get('/menus', { params: { outlet_id: currentTargetOutlet } }),
+          api.get('/shifts/active', { params: { outlet_id: currentTargetOutlet } }),
+        ]);
+        setMenus(m.data.filter(x => x.active));
+        setActiveShift(s.data);
+
+        setRestockModal(p => ({ ...p, open: false, submitting: false }));
+        if (stockAlertModal.open) {
+          setStockAlertModal({ open: false, menu: null, status: null });
+        }
+        return;
+      }
+
+      const ing = ingredients.find(i => i.id === Number(restockModal.ingredientId));
+      if (!ing) return;
+
       const conversion = Number(ing.konversi) || 1;
       const netQty = restockModal.unitType === 'BELI'
         ? Number(restockModal.qty) * conversion
@@ -637,7 +751,7 @@ export default function POS() {
         setStockAlertModal({ open: false, menu: null, status: null });
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Gagal menambah stok bahan.');
+      toast.error(err.response?.data?.message || 'Gagal menambah stok.');
       setRestockModal(p => ({ ...p, submitting: false }));
     }
   }
@@ -680,7 +794,6 @@ export default function POS() {
     if (window.confirm('Kosongkan semua pesanan di keranjang?')) {
       setCart([]);
       setCustomerName('');
-      setTableNumber('');
       setOrderNotes('');
       setAppliedDiscount(null);
       setPromoCodeInput('');
@@ -852,9 +965,7 @@ export default function POS() {
         split_index: data.split_index,
         split_type: 'BY_ITEM',
         date: data.date || new Date().toISOString().slice(0, 10),
-        customer_name: data.customer_name || 'Tamu',
-        order_type: 'DINE_IN',
-        table_number: data.table_number,
+        customer_name: data.customer_name || 'Pelanggan',
         payment_method: data.payment_method,
         amount_paid: data.amount_paid,
         change_amount: data.change_amount,
@@ -918,8 +1029,6 @@ export default function POS() {
         split_type: 'EQUAL',
         date: data.date || new Date().toISOString().slice(0, 10),
         customer_name: data.customer_name,
-        order_type: 'DINE_IN',
-        table_number: data.table_number,
         payment_method: data.payment_method,
         amount_paid: data.amount_paid,
         change_amount: data.change_amount,
@@ -952,38 +1061,11 @@ export default function POS() {
       return;
     }
 
-    const currentTable = tableNumber.trim();
-    if (orderType === 'DINE_IN' && !currentTable) {
-      toast.error('Pilih atau ketik Nomor Meja untuk pesanan Dine-In sebelum Hold Bill!');
-      return;
-    }
-
-    // Check if table is already occupied
-    const occupiedBill = openBills.find(b =>
-      b.table_number?.toLowerCase() === currentTable.toLowerCase() ||
-      b.table_number?.toLowerCase() === currentTable.replace('Meja ', '').toLowerCase()
-    );
-
-    if (occupiedBill) {
-      const confirmAppend = window.confirm(
-        `${currentTable} sudah memiliki tagihan terbuka (${occupiedBill.order_number} - ${rupiah(occupiedBill.total_price)}).\n\nApakah Anda ingin menambahkan pesanan ini ke tagihan meja yang sudah ada?`
-      );
-      if (confirmAppend) {
-        setAppendModeBill(occupiedBill);
-        handleSubmitAppendItems(occupiedBill);
-        return;
-      } else {
-        return;
-      }
-    }
-
     setSubmitting(true);
     try {
       const payload = {
         date: orderDate,
         customer_name: customerName || undefined,
-        order_type: orderType,
-        table_number: currentTable || undefined,
         status: 'HOLD',
         notes: orderNotes || undefined,
         shift_id: activeShift?.shift?.id || undefined,
@@ -1004,18 +1086,16 @@ export default function POS() {
 
       const { data } = await api.post('/transactions', payload);
 
-      toast.success(`Tagihan ${currentTable || data.order_number} berhasil disimpan (Open Bill)!`);
+      toast.success(`Tagihan ${data.order_number} berhasil disimpan (Open Bill)!`);
 
       // Open Kitchen Chit Modal automatically
       setKitchenChitModal({
         open: true,
         bill: {
           order_number: data.order_number,
-          table_number: data.table_number || currentTable,
-          order_type: data.order_type || orderType,
-          customer_name: data.customer_name || customerName || 'Tamu Resto',
+          customer_name: data.customer_name || customerName || 'Pelanggan',
           cashier: currentUser.name || 'Kasir',
-          outlet_name: activeOutlet?.name || 'Cabang MOVA',
+          outlet_name: activeOutlet?.name || 'Outlet',
           created_at: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
         },
         items: data.items || cart.map(i => ({ menu_name: i.menu.name, qty: i.qty, notes: i.notes, modifiers: i.selectedModifiers })),
@@ -1025,7 +1105,6 @@ export default function POS() {
       // Clear cart
       setCart([]);
       setCustomerName('');
-      setTableNumber('');
       setOrderNotes('');
       setAppliedDiscount(null);
       setPromoCodeInput('');
@@ -1039,15 +1118,14 @@ export default function POS() {
     }
   }
 
+
   // Start append mode for an open bill
   function handleStartAppendItems(bill) {
     setAppendModeBill(bill);
-    setOrderType('DINE_IN');
-    setTableNumber(bill.table_number || '');
     setCustomerName(bill.customer_name || '');
     setCart([]);
     setOpenBillsModalOpen(false);
-    toast.success(`Mode Tambah Menu aktif untuk ${bill.table_number}. Silakan pilih menu di katalog.`);
+    toast.success(`Mode Tambah Menu aktif untuk ${bill.order_number}. Silakan pilih menu di katalog.`);
   }
 
   // Submit append items to existing open bill
@@ -1073,18 +1151,16 @@ export default function POS() {
 
       const { data } = await api.post(`/transactions/${activeTarget.order_number}/add-items`, payload);
 
-      toast.success(`Pesanan tambahan berhasil dikirim ke Meja ${activeTarget.table_number}!`);
+      toast.success(`Pesanan tambahan berhasil dikirim untuk ${activeTarget.order_number}!`);
 
       // Open Kitchen Chit for newly added items only
       setKitchenChitModal({
         open: true,
         bill: {
           order_number: activeTarget.order_number,
-          table_number: activeTarget.table_number,
-          order_type: activeTarget.order_type || 'DINE_IN',
-          customer_name: activeTarget.customer_name || 'Tamu Resto',
+          customer_name: activeTarget.customer_name || 'Pelanggan',
           cashier: currentUser.name || 'Kasir',
-          outlet_name: activeOutlet?.name || 'Cabang MOVA',
+          outlet_name: activeOutlet?.name || 'Outlet',
           created_at: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
         },
         items: data.added_items || cart.map(i => ({ menu_name: i.menu.name, qty: i.qty, notes: i.notes, modifiers: i.selectedModifiers })),
@@ -1093,7 +1169,6 @@ export default function POS() {
 
       setCart([]);
       setAppendModeBill(null);
-      setTableNumber('');
       setCustomerName('');
       fetchOpenBills();
     } catch (err) {
@@ -1117,11 +1192,9 @@ export default function POS() {
       open: true,
       bill: {
         order_number: bill.order_number,
-        table_number: bill.table_number,
-        order_type: bill.order_type || 'DINE_IN',
-        customer_name: bill.customer_name || 'Tamu Resto',
+        customer_name: bill.customer_name || 'Pelanggan',
         cashier: bill.cashier?.name || currentUser.name || 'Kasir',
-        outlet_name: activeOutlet?.name || bill.outlet_name || 'Cabang MOVA',
+        outlet_name: activeOutlet?.name || bill.outlet_name || 'Outlet',
         created_at: bill.created_at || new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
       },
       items: bill.items || [],
@@ -1137,7 +1210,7 @@ export default function POS() {
       await api.post(`/transactions/${cancelBillModal.bill.order_number}/cancel`, {
         reason: cancelBillModal.reason || undefined,
       });
-      toast.success(`Tagihan Meja ${cancelBillModal.bill.table_number} (${cancelBillModal.bill.order_number}) berhasil dibatalkan.`);
+      toast.success(`Tagihan ${cancelBillModal.bill.order_number} berhasil dibatalkan.`);
       setCancelBillModal({ open: false, bill: null, reason: '', submitting: false });
       fetchOpenBills();
     } catch (err) {
@@ -1170,8 +1243,6 @@ export default function POS() {
           order_number: data.order_number,
           date: data.paid_at || new Date().toISOString().slice(0, 10),
           customer_name: data.customer_name || 'Pelanggan Umum',
-          order_type: 'DINE_IN',
-          table_number: data.table_number,
           payment_method: data.payment_method,
           amount_paid: data.amount_paid,
           change_amount: data.change_amount,
@@ -1186,7 +1257,7 @@ export default function POS() {
           created_at: data.paid_at || new Date().toLocaleString('id-ID'),
         });
 
-        toast.success(`Pembayaran ${data.order_number} (Meja ${data.table_number}) berhasil lunas!`);
+        toast.success(`Pembayaran ${data.order_number} berhasil lunas!`);
         setActiveOpenBillPayment(null);
         setPaymentModalOpen(false);
         setOpenBillsModalOpen(false);
@@ -1199,8 +1270,6 @@ export default function POS() {
         const payload = {
           date: orderDate,
           customer_name: customerName || undefined,
-          order_type: orderType,
-          table_number: orderType === 'DINE_IN' ? tableNumber : undefined,
           payment_method: paymentMethod,
           amount_paid: paymentMethod === 'CASH' ? parsedCash : cartTotal,
           change_amount: paymentMethod === 'CASH' ? changeAmount : 0,
@@ -1227,8 +1296,6 @@ export default function POS() {
           order_number: data.order_number,
           date: data.date,
           customer_name: data.customer_name || 'Pelanggan Umum',
-          order_type: data.order_type,
-          table_number: data.table_number,
           payment_method: data.payment_method,
           amount_paid: data.amount_paid,
           change_amount: data.change_amount,
@@ -1248,7 +1315,6 @@ export default function POS() {
         // Reset cart and modals
         setCart([]);
         setCustomerName('');
-        setTableNumber('');
         setOrderNotes('');
         setAppliedDiscount(null);
         setPromoCodeInput('');
@@ -1278,8 +1344,6 @@ export default function POS() {
       order_number: trx.order_number || `TRX-${trx.id}`,
       date: trx.date,
       customer_name: trx.customer_name || 'Pelanggan Umum',
-      order_type: trx.order_type || 'DINE_IN',
-      table_number: trx.table_number || '-',
       payment_method: trx.payment_method || 'CASH',
       amount_paid: trx.amount_paid || trx.total_price,
       change_amount: trx.change_amount || 0,
@@ -1337,7 +1401,7 @@ export default function POS() {
                 fontWeight: openBills.length > 0 ? 700 : 500,
                 boxShadow: openBills.length > 0 ? '0 0 15px rgba(245, 158, 11, 0.2)' : 'none'
               }}
-              title="Kelola pesanan tersimpan / tagihan meja (Hold Order)"
+              title="Kelola pesanan tersimpan / tagihan terbuka (Hold Order)"
             >
               <Clock size={14} style={{ color: openBills.length > 0 ? '#fbbf24' : 'inherit' }} />
               <span>Tagihan Terbuka</span>
@@ -1539,7 +1603,7 @@ export default function POS() {
                       </td>
                       <td>
                         <span className="badge badge-info" style={{ fontSize: 11 }}>
-                          {t.order_type || 'DINE_IN'} {t.table_number ? `(${t.table_number})` : ''}
+                          {t.customer_name || 'Pelanggan Umum'}
                         </span>
                       </td>
                       <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{t.user?.name || '-'}</td>
@@ -1562,370 +1626,358 @@ export default function POS() {
         </div>
       ) : (
         <>
-        {/* ========================================================
+          {/* ========================================================
             VIEW 2: POS CASHIER (GRID MENU & INTERACTIVE CART)
            ======================================================== */}
-        {/* Mobile Tab Switcher (Katalog Menu vs Keranjang) */}
-        <div className="pos-mobile-tabs">
-          <button
-            type="button"
-            className={`pos-mobile-tab-btn ${mobileActiveTab === 'catalog' ? 'active' : ''}`}
-            onClick={() => setMobileActiveTab('catalog')}
-          >
-            <Utensils size={15} />
-            <span>Katalog Menu</span>
-            <span className="badge-count">{filteredMenus.length}</span>
-          </button>
-          <button
-            type="button"
-            className={`pos-mobile-tab-btn ${mobileActiveTab === 'cart' ? 'active' : ''}`}
-            onClick={() => setMobileActiveTab('cart')}
-          >
-            <ShoppingCart size={15} />
-            <span>Keranjang</span>
-            {cart.length > 0 && (
-              <span className="badge-count cart-active">{cart.reduce((sum, item) => sum + item.qty, 0)}</span>
-            )}
-          </button>
-        </div>
-
-        <div className="pos-container">
-          {/* SISI KIRI: KATALOG MENU */}
-          <div className={`pos-catalog-column ${mobileActiveTab === 'cart' ? 'mobile-hidden' : ''}`}>
-            {/* Table Management & Occupancy Bar */}
-            <div className="pos-table-strip">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700, color: '#ffffff' }}>
-                  <Table size={15} style={{ color: 'var(--accent-bright)' }} />
-                  <span>Denah Meja Dine-In</span>
-                  <span style={{
-                    fontSize: 11,
-                    background: 'rgba(245, 158, 11, 0.15)',
-                    color: '#fbbf24',
-                    border: '1px solid rgba(245, 158, 11, 0.3)',
-                    padding: '1px 7px',
-                    borderRadius: 10,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 4
-                  }}>
-                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#f59e0b' }} />
-                    {openBills.length} Terisi
-                  </span>
-                  <span style={{
-                    fontSize: 11,
-                    background: 'rgba(16, 185, 129, 0.12)',
-                    color: '#34d399',
-                    border: '1px solid rgba(16, 185, 129, 0.25)',
-                    padding: '1px 7px',
-                    borderRadius: 10,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 4
-                  }}>
-                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
-                    {Math.max(0, standardTables.length - openBills.length)} Kosong
-                  </span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {openBills.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setOpenBillsModalOpen(true)}
-                      className="btn btn-sm btn-outline"
-                      style={{ fontSize: 11, padding: '3px 9px', color: '#fbbf24', borderColor: 'rgba(245,158,11,0.4)', display: 'flex', alignItems: 'center', gap: 4 }}
-                    >
-                      <Clock size={12} /> Kelola Open Bills ({openBills.length})
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setShowTableStrip(!showTableStrip)}
-                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 11.5 }}
-                  >
-                    {showTableStrip ? 'Sembunyikan' : 'Tampilkan'}
-                  </button>
-                </div>
-              </div>
-
-              {showTableStrip && (
-                <div className="pos-table-grid">
-                  {standardTables.map(tbl => {
-                    const bill = openBills.find(b =>
-                      b.table_number?.toLowerCase() === tbl.toLowerCase() ||
-                      b.table_number?.toLowerCase() === tbl.replace('Meja ', '').toLowerCase()
-                    );
-                    const isOccupied = !!bill;
-                    const isSelected = tableNumber === tbl && !isOccupied;
-
-                    return (
-                      <div
-                        key={tbl}
-                        className={`pos-table-chip ${isOccupied ? 'occupied' : 'vacant'} ${isSelected ? 'selected' : ''}`}
-                        onClick={() => {
-                          if (isOccupied) {
-                            setOpenBillsModalOpen(true);
-                          } else {
-                            setOrderType('DINE_IN');
-                            setTableNumber(tbl);
-                            toast.success(`${tbl} dipilih.`);
-                          }
-                        }}
-                        title={isOccupied ? `${tbl}: Terisi (${rupiah(bill.total_price)} - ${bill.duration_mins}m lalu). Klik untuk kelola.` : `Pilih ${tbl} untuk pesanan baru`}
-                      >
-                        <span style={{
-                          width: 7, height: 7, borderRadius: '50%',
-                          background: isOccupied ? '#f59e0b' : '#10b981',
-                          boxShadow: isOccupied ? '0 0 6px #f59e0b' : '0 0 6px #10b981'
-                        }} />
-                        <span>{tbl}</span>
-                        {isOccupied && (
-                          <span style={{ fontSize: 10, opacity: 0.9, marginLeft: 2, background: 'rgba(0,0,0,0.3)', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>
-                            {bill.duration_mins}m · {rupiah(bill.total_price)}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+          {/* Mobile Tab Switcher (Katalog Menu vs Keranjang) */}
+          <div className="pos-mobile-tabs">
+            <button
+              type="button"
+              className={`pos-mobile-tab-btn ${mobileActiveTab === 'catalog' ? 'active' : ''}`}
+              onClick={() => setMobileActiveTab('catalog')}
+            >
+              <Utensils size={15} />
+              <span>Katalog Menu</span>
+              <span className="badge-count">{filteredMenus.length}</span>
+            </button>
+            <button
+              type="button"
+              className={`pos-mobile-tab-btn ${mobileActiveTab === 'cart' ? 'active' : ''}`}
+              onClick={() => setMobileActiveTab('cart')}
+            >
+              <ShoppingCart size={15} />
+              <span>Keranjang</span>
+              {cart.length > 0 && (
+                <span className="badge-count cart-active">{cart.reduce((sum, item) => sum + item.qty, 0)}</span>
               )}
-            </div>
-
-            {/* Search & Category Tabs */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
-              {/* Search Bar */}
-              <div style={{ position: 'relative' }}>
-                <Search size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                <input
-                  type="text"
-                  className="form-control"
-                  placeholder="Cari nama menu atau kode..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  style={{ paddingLeft: 40, paddingRight: searchQuery ? 36 : 14, borderRadius: 12 }}
-                />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
-                  >
-                    <X size={15} />
-                  </button>
-                )}
-              </div>
-
-              {/* Category Pills */}
-              <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
-                {categories.map(cat => {
-                  const count = cat === 'ALL' ? menus.length : menus.filter(m => (m.category || 'Lainnya') === cat).length;
-                  return (
-                    <button
-                      key={cat}
-                      className={`pos-category-pill ${selectedCategory === cat ? 'active' : ''}`}
-                      onClick={() => setSelectedCategory(cat)}
-                    >
-                      {cat === 'ALL' ? 'Semua Menu' : cat}
-                      <span style={{
-                        fontSize: 10,
-                        background: selectedCategory === cat ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)',
-                        padding: '1px 6px',
-                        borderRadius: 10
-                      }}>
-                        {count}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Menu Cards Grid */}
-            <div className="pos-menu-grid">
-              {filteredMenus.length === 0 ? (
-                <div className="card center" style={{ gridColumn: '1 / -1', padding: 40 }}>
-                  <p style={{ color: 'var(--text-secondary)' }}>Tidak ada menu yang cocok dengan pencarian.</p>
-                </div>
-              ) : (
-                filteredMenus.map(menu => {
-                  const cartItem = cart.find(it => it.menu.id === menu.id);
-                  const status = menu.stockStatus;
-                  const isDrink = (menu.category || '').toLowerCase().includes('minum');
-
-                  return (
-                    <div
-                      key={menu.id}
-                      className={`pos-menu-card ${cartItem ? 'in-cart' : ''} ${status.isSoldOut ? 'sold-out' : ''}`}
-                      onClick={() => handleMenuCardClick(menu, status)}
-                    >
-                      {/* Badge if in cart */}
-                      {cartItem && (
-                        <div className="pos-menu-badge">
-                          x{cartItem.qty}
-                        </div>
-                      )}
-
-                      <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                          <div className="pos-menu-icon" style={{
-                            background: status.isSoldOut ? 'rgba(244, 63, 94, 0.15)' : undefined,
-                            borderColor: status.isSoldOut ? 'rgba(244, 63, 94, 0.3)' : undefined,
-                            color: status.isSoldOut ? '#fb7185' : undefined,
-                          }}>
-                            {isDrink ? <Coffee size={22} /> : <Utensils size={22} />}
-                          </div>
-
-                          {/* Stock Status Badge */}
-                          {status.isSoldOut ? (
-                            <span className="pos-stock-badge sold-out">
-                              Habis
-                            </span>
-                          ) : status.isLowStock ? (
-                            <span className="pos-stock-badge low-stock">
-                              Sisa {status.availableServings}
-                            </span>
-                          ) : (
-                            <span className="pos-stock-badge in-stock">
-                              ~{status.availableServings} porsi
-                            </span>
-                          )}
-                        </div>
-
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, marginBottom: 2 }}>
-                          <span style={{ fontSize: 11, color: 'var(--accent-bright)', fontWeight: 600 }}>
-                            {menu.category || 'Menu'}
-                          </span>
-                          {menu.modifier_groups && menu.modifier_groups.length > 0 && (
-                            <span style={{
-                              fontSize: 10,
-                              fontWeight: 700,
-                              background: 'rgba(139, 92, 246, 0.18)',
-                              color: '#c4b5fd',
-                              border: '1px solid rgba(139, 92, 246, 0.35)',
-                              padding: '1px 6px',
-                              borderRadius: 4,
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 3
-                            }}>
-                              <Sparkles size={9} /> {menu.modifier_groups.length} Varian
-                            </span>
-                          )}
-                        </div>
-                        <h4 style={{
-                          fontSize: 14,
-                          fontWeight: 700,
-                          color: status.isSoldOut ? '#fca5a5' : '#ffffff',
-                          marginBottom: 4,
-                          lineHeight: 1.3
-                        }}>
-                          {menu.name}
-                        </h4>
-                      </div>
-
-                      <div style={{ marginTop: 12, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span className="mono" style={{ fontWeight: 800, color: status.isSoldOut ? '#fb7185' : 'var(--ok)', fontSize: 13.5 }}>
-                          {rupiah(menu.price)}
-                        </span>
-                        {status.isSoldOut ? (
-                          <span style={{ fontSize: 10, color: 'var(--danger)', fontWeight: 600 }}>
-                            {status.limitingIngredient ? `${status.limitingIngredient.name} Habis` : '! Habis'}
-                          </span>
-                        ) : (
-                          <span style={{ fontSize: 10, color: 'var(--text-muted)' }} title="Resep Aktif">
-                            ✓ Resep
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
+            </button>
           </div>
 
-          {/* SISI KANAN: KERANJANG PESANAN (CART PANEL) */}
-          <div className={`pos-cart-panel ${mobileActiveTab === 'catalog' ? 'mobile-hidden' : ''}`}>
-            {/* Header Keranjang */}
-            <div className="pos-cart-header">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <div style={{ fontWeight: 800, fontSize: 15, display: 'flex', alignItems: 'center', gap: 8, color: '#ffffff' }}>
-                  <ShoppingCart size={18} style={{ color: 'var(--accent)' }} />
-                  Pesanan Pelanggan
-                </div>
-                {cart.length > 0 && (
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    onClick={clearCart}
-                    style={{ fontSize: 11, color: 'var(--danger)', padding: '2px 8px' }}
-                  >
-                    <RotateCcw size={12} style={{ marginRight: 4 }} /> Kosongkan
-                  </button>
-                )}
-              </div>
-
-              {/* Order Type Selector */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 10 }}>
-                {[
-                  { key: 'DINE_IN', label: 'Dine In' },
-                  { key: 'TAKEAWAY', label: 'Take Away' },
-                  { key: 'DELIVERY', label: 'Delivery' },
-                ].map(type => (
-                  <button
-                    key={type.key}
-                    type="button"
-                    onClick={() => setOrderType(type.key)}
-                    style={{
-                      padding: '6px 8px',
-                      borderRadius: 8,
-                      fontSize: 11.5,
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      border: '1px solid',
-                      borderColor: orderType === type.key ? 'var(--accent-bright)' : 'var(--border)',
-                      background: orderType === type.key ? 'var(--accent-gradient)' : 'rgba(255,255,255,0.04)',
-                      color: '#ffffff',
-                      transition: 'all 0.15s ease'
-                    }}
-                  >
-                    {type.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Append Mode Active Banner */}
-              {appendModeBill && (
+          <div className="pos-container">
+            {/* SISI KIRI: KATALOG MENU */}
+            <div className={`pos-catalog-column ${mobileActiveTab === 'cart' ? 'mobile-hidden' : ''}`}>
+              {/* Open Bills Bar */}
+              {openBills.length > 0 && (
                 <div style={{
-                  background: 'rgba(245, 158, 11, 0.15)',
-                  border: '1px solid rgba(245, 158, 11, 0.35)',
-                  borderRadius: 8,
-                  padding: '8px 10px',
-                  marginBottom: 10,
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  gap: 8
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  background: 'rgba(245, 158, 11, 0.08)',
+                  border: '1px solid rgba(245, 158, 11, 0.2)',
+                  borderRadius: 10, padding: '8px 14px', marginBottom: 12
                 }}>
-                  <div style={{ fontSize: 11.5, color: '#fcd34d' }}>
-                    <strong>Tambah Menu:</strong> {appendModeBill.table_number} <span className="mono">({appendModeBill.order_number})</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700, color: '#fbbf24' }}>
+                    <Clock size={15} />
+                    <span>{openBills.length} Tagihan Terbuka</span>
                   </div>
                   <button
                     type="button"
-                    onClick={() => {
-                      setAppendModeBill(null);
-                      setCart([]);
-                      setTableNumber('');
-                      setCustomerName('');
-                    }}
-                    className="btn btn-ghost btn-sm"
-                    style={{ padding: '2px 6px', fontSize: 10.5, color: '#fb7185' }}
+                    onClick={() => setOpenBillsModalOpen(true)}
+                    className="btn btn-sm btn-outline"
+                    style={{ fontSize: 11, padding: '3px 9px', color: '#fbbf24', borderColor: 'rgba(245,158,11,0.4)', display: 'flex', alignItems: 'center', gap: 4 }}
                   >
-                    Batal
+                    <Clock size={12} /> Kelola Open Bills
                   </button>
                 </div>
               )}
 
-              {/* Customer & Table details */}
-              <div style={{ display: 'grid', gridTemplateColumns: orderType === 'DINE_IN' ? '1fr 90px' : '1fr', gap: 8 }}>
+
+              {/* Search & Type & Category Tabs */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+                {/* Search Bar with Barcode scanner support */}
+                <div style={{ position: 'relative' }}>
+                  <Search size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Cari menu, barcode retail, atau jasa (Enter untuk scan)..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    onKeyDown={handleSearchKeyDown}
+                    style={{ paddingLeft: 40, paddingRight: searchQuery ? 65 : 40, borderRadius: 12 }}
+                  />
+                  <div style={{ position: 'absolute', right: searchQuery ? 34 : 14, top: '50%', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', color: 'var(--text-muted)', pointerEvents: 'none' }}>
+                    <Barcode size={18} title="Dukungan Barcode Scanner" />
+                  </div>
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+                    >
+                      <X size={15} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Product Type Filter Tabs */}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {[
+                    { id: 'ALL', label: 'Semua Tipe' },
+                    { id: 'RECIPE', label: 'Resep (F&B)' },
+                    { id: 'DIRECT', label: 'Retail / Barang Jadi' },
+                    { id: 'SERVICE', label: 'Jasa / Layanan' },
+                  ].map(t => {
+                    const isAct = selectedType === t.id;
+                    const count = t.id === 'ALL'
+                      ? menus.length
+                      : menus.filter(m => (m.item_type || 'RECIPE') === t.id).length;
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setSelectedType(t.id)}
+                        style={{
+                          padding: '4px 10px',
+                          borderRadius: 8,
+                          fontSize: 11.5,
+                          fontWeight: isAct ? 800 : 500,
+                          background: isAct ? 'var(--accent)' : 'rgba(255,255,255,0.04)',
+                          color: isAct ? '#fff' : 'var(--text-secondary)',
+                          border: '1px solid',
+                          borderColor: isAct ? 'var(--accent)' : 'var(--border)',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        {t.label}
+                        <span style={{
+                          fontSize: 10,
+                          padding: '1px 5px',
+                          borderRadius: 6,
+                          background: isAct ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)',
+                          color: isAct ? '#fff' : 'var(--text-muted)'
+                        }}>
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Category Pills */}
+                <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+                  {categories.map(cat => {
+                    const count = cat === 'ALL'
+                      ? (selectedType === 'ALL' ? menus.length : menus.filter(m => (m.item_type || 'RECIPE') === selectedType).length)
+                      : menus.filter(m => (m.category || 'Lainnya') === cat && (selectedType === 'ALL' || (m.item_type || 'RECIPE') === selectedType)).length;
+                    return (
+                      <button
+                        key={cat}
+                        className={`pos-category-pill ${selectedCategory === cat ? 'active' : ''}`}
+                        onClick={() => setSelectedCategory(cat)}
+                      >
+                        {cat === 'ALL' ? 'Semua Kategori' : cat}
+                        <span style={{
+                          fontSize: 10,
+                          background: selectedCategory === cat ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)',
+                          padding: '1px 6px',
+                          borderRadius: 10
+                        }}>
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Menu Cards Grid */}
+              <div className="pos-menu-grid">
+                {filteredMenus.length === 0 ? (
+                  <div className="card center" style={{ gridColumn: '1 / -1', padding: 40 }}>
+                    <p style={{ color: 'var(--text-secondary)' }}>Tidak ada menu yang cocok dengan pencarian.</p>
+                  </div>
+                ) : (
+                  filteredMenus.map(menu => {
+                    const cartItem = cart.find(it => it.menu.id === menu.id);
+                    const status = menu.stockStatus;
+                    const isDrink = (menu.category || '').toLowerCase().includes('minum');
+
+                    return (
+                      <div
+                        key={menu.id}
+                        className={`pos-menu-card ${cartItem ? 'in-cart' : ''} ${status.isSoldOut ? 'sold-out' : ''}`}
+                        onClick={() => handleMenuCardClick(menu, status)}
+                      >
+                        {/* Badge if in cart */}
+                        {cartItem && (
+                          <div className="pos-menu-badge">
+                            x{cartItem.qty}
+                          </div>
+                        )}
+
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <div className="pos-menu-icon" style={{
+                              background: status.isSoldOut ? 'rgba(244, 63, 94, 0.15)' : (
+                                menu.item_type === 'SERVICE' ? 'rgba(168, 85, 247, 0.15)' :
+                                menu.item_type === 'DIRECT' ? 'rgba(59, 130, 246, 0.15)' : undefined
+                              ),
+                              borderColor: status.isSoldOut ? 'rgba(244, 63, 94, 0.3)' : (
+                                menu.item_type === 'SERVICE' ? 'rgba(168, 85, 247, 0.3)' :
+                                menu.item_type === 'DIRECT' ? 'rgba(59, 130, 246, 0.3)' : undefined
+                              ),
+                              color: status.isSoldOut ? '#fb7185' : (
+                                menu.item_type === 'SERVICE' ? '#c084fc' :
+                                menu.item_type === 'DIRECT' ? '#60a5fa' : undefined
+                              ),
+                            }}>
+                              {menu.item_type === 'SERVICE' ? <Briefcase size={22} /> :
+                               menu.item_type === 'DIRECT' ? <ShoppingBag size={22} /> :
+                               (isDrink ? <Coffee size={22} /> : <Utensils size={22} />)}
+                            </div>
+
+                            {/* Stock Status Badge */}
+                            {menu.item_type === 'SERVICE' ? (
+                              <span className="pos-stock-badge in-stock" style={{ background: 'rgba(168, 85, 247, 0.15)', borderColor: 'rgba(168, 85, 247, 0.35)', color: '#c084fc' }}>
+                                Layanan
+                              </span>
+                            ) : menu.item_type === 'DIRECT' ? (
+                              status.isSoldOut ? (
+                                <span className="pos-stock-badge sold-out">
+                                  Habis
+                                </span>
+                              ) : status.isLowStock ? (
+                                <span className="pos-stock-badge low-stock">
+                                  Sisa {status.availableServings} {menu.unit || 'pcs'}
+                                </span>
+                              ) : (
+                                <span className="pos-stock-badge in-stock" style={{ background: 'rgba(59, 130, 246, 0.15)', borderColor: 'rgba(59, 130, 246, 0.35)', color: '#93c5fd' }}>
+                                  Stok {status.availableServings} {menu.unit || 'pcs'}
+                                </span>
+                              )
+                            ) : (
+                              status.isSoldOut ? (
+                                <span className="pos-stock-badge sold-out">
+                                  Habis
+                                </span>
+                              ) : status.isLowStock ? (
+                                <span className="pos-stock-badge low-stock">
+                                  Sisa {status.availableServings}
+                                </span>
+                              ) : (
+                                <span className="pos-stock-badge in-stock">
+                                  ~{status.availableServings} porsi
+                                </span>
+                              )
+                            )}
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, marginBottom: 2 }}>
+                            <span style={{ fontSize: 11, color: 'var(--accent-bright)', fontWeight: 600 }}>
+                              {menu.category || 'Menu'}
+                            </span>
+                            {menu.modifier_groups && menu.modifier_groups.length > 0 && (
+                              <span style={{
+                                fontSize: 10,
+                                fontWeight: 700,
+                                background: 'rgba(139, 92, 246, 0.18)',
+                                color: '#c4b5fd',
+                                border: '1px solid rgba(139, 92, 246, 0.35)',
+                                padding: '1px 6px',
+                                borderRadius: 4,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 3
+                              }}>
+                                <Sparkles size={9} /> {menu.modifier_groups.length} Varian
+                              </span>
+                            )}
+                          </div>
+                          <h4 style={{
+                            fontSize: 14,
+                            fontWeight: 700,
+                            color: status.isSoldOut ? '#fca5a5' : '#ffffff',
+                            marginBottom: 4,
+                            lineHeight: 1.3
+                          }}>
+                            {menu.name}
+                          </h4>
+                        </div>
+
+                        <div style={{ marginTop: 12, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span className="mono" style={{ fontWeight: 800, color: status.isSoldOut ? '#fb7185' : 'var(--ok)', fontSize: 13.5 }}>
+                            {rupiah(menu.price)}
+                          </span>
+                          {status.isSoldOut ? (
+                            <span style={{ fontSize: 10, color: 'var(--danger)', fontWeight: 600 }}>
+                              {status.limitingIngredient ? `${status.limitingIngredient.name} Habis` : (menu.item_type === 'DIRECT' ? '+ Klik Restok' : '! Habis')}
+                            </span>
+                          ) : menu.item_type === 'SERVICE' ? (
+                            <span style={{ fontSize: 10, color: '#c084fc', fontWeight: 700 }}>
+                              ⚡ Jasa
+                            </span>
+                          ) : menu.item_type === 'DIRECT' ? (
+                            <span style={{ fontSize: 10, color: '#60a5fa', fontWeight: 700 }}>
+                              📦 Retail
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: 10, color: status.hasRecipe ? 'var(--text-muted)' : '#f59e0b', fontWeight: 600 }} title={status.hasRecipe ? 'Resep Aktif' : 'Bebas Resep'}>
+                              {status.hasRecipe ? '✓ Resep' : '⚡ Bebas'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* SISI KANAN: KERANJANG PESANAN (CART PANEL) */}
+            <div className={`pos-cart-panel ${mobileActiveTab === 'catalog' ? 'mobile-hidden' : ''}`}>
+              {/* Header Keranjang */}
+              <div className="pos-cart-header">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <div style={{ fontWeight: 800, fontSize: 15, display: 'flex', alignItems: 'center', gap: 8, color: '#ffffff' }}>
+                    <ShoppingCart size={18} style={{ color: 'var(--accent)' }} />
+                    Pesanan Pelanggan
+                  </div>
+                  {cart.length > 0 && (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={clearCart}
+                      style={{ fontSize: 11, color: 'var(--danger)', padding: '2px 8px' }}
+                    >
+                      <RotateCcw size={12} style={{ marginRight: 4 }} /> Kosongkan
+                    </button>
+                  )}
+                </div>
+
+                {/* Append Mode Active Banner */}
+                {appendModeBill && (
+                  <div style={{
+                    background: 'rgba(245, 158, 11, 0.15)',
+                    border: '1px solid rgba(245, 158, 11, 0.35)',
+                    borderRadius: 8,
+                    padding: '8px 10px',
+                    marginBottom: 10,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 8
+                  }}>
+                    <div style={{ fontSize: 11.5, color: '#fcd34d' }}>
+                      <strong>Tambah Menu:</strong> <span className="mono">({appendModeBill.order_number})</span>
+                      {appendModeBill.customer_name && ` · ${appendModeBill.customer_name}`}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAppendModeBill(null);
+                        setCart([]);
+                        setCustomerName('');
+                      }}
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: '2px 6px', fontSize: 10.5, color: '#fb7185' }}
+                    >
+                      Batal
+                    </button>
+                  </div>
+                )}
+
+                {/* Customer Name */}
                 <input
                   type="text"
                   className="form-control"
@@ -1934,397 +1986,386 @@ export default function POS() {
                   onChange={e => setCustomerName(e.target.value)}
                   style={{ fontSize: 12, padding: '7px 10px', borderRadius: 8 }}
                 />
-                {orderType === 'DINE_IN' && (
-                  <input
-                    type="text"
-                    className="form-control"
-                    placeholder="No. Meja"
-                    value={tableNumber}
-                    onChange={e => setTableNumber(e.target.value)}
-                    style={{ fontSize: 12, padding: '7px 10px', borderRadius: 8 }}
-                  />
+              </div>
+
+
+              {/* Cart Item List */}
+              <div className="pos-cart-list">
+                {cart.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '36px 14px', color: 'var(--text-muted)' }}>
+                    <div style={{
+                      width: 50, height: 50, borderRadius: '50%',
+                      background: 'rgba(255,255,255,0.04)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      margin: '0 auto 12px', color: 'var(--text-muted)'
+                    }}>
+                      <ShoppingCart size={24} />
+                    </div>
+                    <strong style={{ display: 'block', color: '#ffffff', fontSize: 13, marginBottom: 4 }}>
+                      Keranjang Kosong
+                    </strong>
+                    <span style={{ fontSize: 11.5 }}>
+                      Klik menu di katalog sisi kiri untuk memasukkan pesanan.
+                    </span>
+                  </div>
+                ) : (
+                  cart.map(item => {
+                    const status = getMenuStockStatus(item.menu);
+                    const itemKey = item.cartKey || item.menu.id;
+                    const effectiveUnitPrice = item.unitPrice ?? item.menu.price;
+
+                    return (
+                      <div key={itemKey} className="pos-cart-item">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                          <div style={{ flex: 1, paddingRight: 8 }}>
+                            <div style={{ fontWeight: 700, fontSize: 13, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              <span>{item.menu.name}</span>
+                              {status.isSoldOut && (
+                                <span style={{ fontSize: 10, color: 'var(--danger)', background: 'rgba(244,63,94,0.15)', padding: '1px 5px', borderRadius: 4 }}>
+                                  ⚠️ Stok Habis
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Selected Modifiers Pills */}
+                            {item.selectedModifiers && item.selectedModifiers.length > 0 && (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                                {item.selectedModifiers.map((mod, mIdx) => (
+                                  <span key={mIdx} style={{
+                                    fontSize: 10,
+                                    background: 'rgba(139, 92, 246, 0.15)',
+                                    border: '1px solid rgba(139, 92, 246, 0.3)',
+                                    color: '#c4b5fd',
+                                    padding: '1px 6px',
+                                    borderRadius: 4,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 3
+                                  }}>
+                                    <span>{mod.name}</span>
+                                    {Number(mod.price) > 0 && (
+                                      <strong style={{ color: '#a78bfa' }}>+{rupiah(mod.price)}</strong>
+                                    )}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+
+                            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>
+                              {rupiah(effectiveUnitPrice)} {item.selectedModifiers?.length > 0 && `(Dasar ${rupiah(item.menu.price)})`}
+                            </div>
+                          </div>
+                          <div className="mono" style={{ fontWeight: 700, fontSize: 13, color: 'var(--ok)' }}>
+                            {rupiah(effectiveUnitPrice * item.qty)}
+                          </div>
+                        </div>
+
+                        {/* Controls & Item Note */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <button
+                              type="button"
+                              className="pos-qty-btn"
+                              onClick={() => updateQty(itemKey, -1)}
+                            >
+                              <Minus size={12} />
+                            </button>
+                            <span className="mono" style={{ minWidth: 20, textAlign: 'center', fontWeight: 700, fontSize: 13, color: '#ffffff' }}>
+                              {item.qty}
+                            </span>
+                            <button
+                              type="button"
+                              className="pos-qty-btn"
+                              onClick={() => updateQty(itemKey, 1)}
+                            >
+                              <Plus size={12} />
+                            </button>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <input
+                              type="text"
+                              placeholder="Catatan..."
+                              value={item.notes || ''}
+                              onChange={e => updateItemNotes(itemKey, e.target.value)}
+                              style={{
+                                background: 'rgba(0,0,0,0.2)',
+                                border: '1px solid var(--border)',
+                                borderRadius: 6,
+                                padding: '3px 6px',
+                                fontSize: 11,
+                                color: '#ffffff',
+                                width: 110,
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeFromCart(itemKey)}
+                              style={{
+                                background: 'none', border: 'none',
+                                color: 'var(--danger)', cursor: 'pointer',
+                                padding: 4, display: 'flex', alignItems: 'center'
+                              }}
+                              title="Hapus menu ini"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
                 )}
               </div>
-            </div>
 
-            {/* Cart Item List */}
-            <div className="pos-cart-list">
-              {cart.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '36px 14px', color: 'var(--text-muted)' }}>
+              {/* Cart Footer / Checkout Action */}
+              <div style={{ padding: 16, borderTop: '1px solid var(--border)', background: 'rgba(15, 23, 42, 0.6)' }}>
+                {/* Discount & Voucher Section */}
+                {!appendModeBill && (
                   <div style={{
-                    width: 50, height: 50, borderRadius: '50%',
-                    background: 'rgba(255,255,255,0.04)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    margin: '0 auto 12px', color: 'var(--text-muted)'
+                    marginBottom: 12,
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    border: '1px dashed rgba(255, 255, 255, 0.15)',
                   }}>
-                    <ShoppingCart size={24} />
-                  </div>
-                  <strong style={{ display: 'block', color: '#ffffff', fontSize: 13, marginBottom: 4 }}>
-                    Keranjang Kosong
-                  </strong>
-                  <span style={{ fontSize: 11.5 }}>
-                    Klik menu di katalog sisi kiri untuk memasukkan pesanan.
-                  </span>
-                </div>
-              ) : (
-                cart.map(item => {
-                  const status = getMenuStockStatus(item.menu);
-                  const itemKey = item.cartKey || item.menu.id;
-                  const effectiveUnitPrice = item.unitPrice ?? item.menu.price;
-
-                  return (
-                    <div key={itemKey} className="pos-cart-item">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
-                        <div style={{ flex: 1, paddingRight: 8 }}>
-                          <div style={{ fontWeight: 700, fontSize: 13, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                            <span>{item.menu.name}</span>
-                            {status.isSoldOut && (
-                              <span style={{ fontSize: 10, color: 'var(--danger)', background: 'rgba(244,63,94,0.15)', padding: '1px 5px', borderRadius: 4 }}>
-                                ⚠️ Stok Habis
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Selected Modifiers Pills */}
-                          {item.selectedModifiers && item.selectedModifiers.length > 0 && (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
-                              {item.selectedModifiers.map((mod, mIdx) => (
-                                <span key={mIdx} style={{
-                                  fontSize: 10,
-                                  background: 'rgba(139, 92, 246, 0.15)',
-                                  border: '1px solid rgba(139, 92, 246, 0.3)',
-                                  color: '#c4b5fd',
-                                  padding: '1px 6px',
-                                  borderRadius: 4,
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: 3
-                                }}>
-                                  <span>{mod.name}</span>
-                                  {Number(mod.price) > 0 && (
-                                    <strong style={{ color: '#a78bfa' }}>+{rupiah(mod.price)}</strong>
-                                  )}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-
-                          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>
-                            {rupiah(effectiveUnitPrice)} {item.selectedModifiers?.length > 0 && `(Dasar ${rupiah(item.menu.price)})`}
-                          </div>
-                        </div>
-                        <div className="mono" style={{ fontWeight: 700, fontSize: 13, color: 'var(--ok)' }}>
-                          {rupiah(effectiveUnitPrice * item.qty)}
-                        </div>
-                      </div>
-
-                      {/* Controls & Item Note */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <button
-                            type="button"
-                            className="pos-qty-btn"
-                            onClick={() => updateQty(itemKey, -1)}
-                          >
-                            <Minus size={12} />
-                          </button>
-                          <span className="mono" style={{ minWidth: 20, textAlign: 'center', fontWeight: 700, fontSize: 13, color: '#ffffff' }}>
-                            {item.qty}
-                          </span>
-                          <button
-                            type="button"
-                            className="pos-qty-btn"
-                            onClick={() => updateQty(itemKey, 1)}
-                          >
-                            <Plus size={12} />
-                          </button>
-                        </div>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <input
-                            type="text"
-                            placeholder="Catatan..."
-                            value={item.notes || ''}
-                            onChange={e => updateItemNotes(itemKey, e.target.value)}
-                            style={{
-                              background: 'rgba(0,0,0,0.2)',
-                              border: '1px solid var(--border)',
-                              borderRadius: 6,
-                              padding: '3px 6px',
-                              fontSize: 11,
-                              color: '#ffffff',
-                              width: 110,
-                            }}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => removeFromCart(itemKey)}
-                            style={{
-                              background: 'none', border: 'none',
-                              color: 'var(--danger)', cursor: 'pointer',
-                              padding: 4, display: 'flex', alignItems: 'center'
-                            }}
-                            title="Hapus menu ini"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            {/* Cart Footer / Checkout Action */}
-            <div style={{ padding: 16, borderTop: '1px solid var(--border)', background: 'rgba(15, 23, 42, 0.6)' }}>
-              {/* Discount & Voucher Section */}
-              {!appendModeBill && (
-                <div style={{
-                  marginBottom: 12,
-                  padding: '8px 10px',
-                  borderRadius: 8,
-                  background: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px dashed rgba(255, 255, 255, 0.15)',
-                }}>
-                  {appliedDiscount ? (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{
-                          background: 'rgba(16, 185, 129, 0.18)',
-                          color: '#34d399',
-                          padding: '2px 6px',
-                          borderRadius: 4,
-                          fontSize: 10.5,
-                          fontWeight: 800,
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 3
-                        }}>
-                          <Tag size={11} />
-                          {appliedDiscount.type === 'PERCENTAGE' ? `${appliedDiscount.value ?? appliedDiscount.rate}%` : 'Rp'}
-                        </span>
-                        <div>
-                          <div style={{ fontSize: 11.5, fontWeight: 700, color: '#ffffff' }}>
-                            {appliedDiscount.name}
-                          </div>
-                          <div style={{ fontSize: 10, color: '#34d399', fontWeight: 600 }}>
-                            Hemat -{rupiah(cartDiscountAmount)}
-                          </div>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleRemoveDiscount}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--text-muted)',
-                          cursor: 'pointer',
-                          padding: 4,
-                          display: 'flex',
-                          alignItems: 'center'
-                        }}
-                        title="Hapus diskon"
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                  ) : (
-                    <div>
-                      <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-                        <div style={{ position: 'relative', flex: 1 }}>
-                          <Tag size={12} style={{ position: 'absolute', left: 8, top: 8, color: 'var(--text-muted)' }} />
-                          <input
-                            type="text"
-                            placeholder="Kode Voucher..."
-                            value={promoCodeInput}
-                            onChange={e => setPromoCodeInput(e.target.value.toUpperCase())}
-                            onKeyDown={e => { if (e.key === 'Enter') handleApplyVoucherCode(); }}
-                            style={{
-                              width: '100%',
-                              padding: '5px 8px 5px 26px',
-                              background: 'rgba(0, 0, 0, 0.25)',
-                              border: '1px solid var(--border)',
-                              borderRadius: 6,
-                              fontSize: 11,
-                              color: '#ffffff',
-                              textTransform: 'uppercase',
-                              fontWeight: 700,
-                              letterSpacing: '0.04em'
-                            }}
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          onClick={handleApplyVoucherCode}
-                          disabled={validatingPromo || !promoCodeInput.trim()}
-                          style={{ fontSize: 11, padding: '4px 8px' }}
-                        >
-                          {validatingPromo ? 'Cek...' : 'Terapkan'}
-                        </button>
-                      </div>
-
+                    {appliedDiscount ? (
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <button
-                          type="button"
-                          onClick={() => setPromoModalOpen(true)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: 'var(--accent-bright)',
-                            cursor: 'pointer',
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{
+                            background: 'rgba(16, 185, 129, 0.18)',
+                            color: '#34d399',
+                            padding: '2px 6px',
+                            borderRadius: 4,
                             fontSize: 10.5,
-                            fontWeight: 600,
+                            fontWeight: 800,
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: 4,
-                            padding: 0
-                          }}
-                        >
-                          <Gift size={11} /> Promo Tersedia ({availableDiscounts.length})
-                        </button>
+                            gap: 3
+                          }}>
+                            <Tag size={11} />
+                            {appliedDiscount.type === 'PERCENTAGE' ? `${appliedDiscount.value ?? appliedDiscount.rate}%` : 'Rp'}
+                          </span>
+                          <div>
+                            <div style={{ fontSize: 11.5, fontWeight: 700, color: '#ffffff' }}>
+                              {appliedDiscount.name}
+                            </div>
+                            <div style={{ fontSize: 10, color: '#34d399', fontWeight: 600 }}>
+                              Hemat -{rupiah(cartDiscountAmount)}
+                            </div>
+                          </div>
+                        </div>
                         <button
                           type="button"
-                          onClick={() => setCustomDiscountModal(p => ({ ...p, open: true }))}
+                          onClick={handleRemoveDiscount}
                           style={{
                             background: 'none',
                             border: 'none',
                             color: 'var(--text-muted)',
                             cursor: 'pointer',
-                            fontSize: 10.5,
-                            padding: 0
+                            padding: 4,
+                            display: 'flex',
+                            alignItems: 'center'
                           }}
+                          title="Hapus diskon"
                         >
-                          + Diskon Kasir
+                          <X size={14} />
                         </button>
                       </div>
-                    </div>
-                  )}
-                </div>
-              )}
+                    ) : (
+                      <div>
+                        <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                          <div style={{ position: 'relative', flex: 1 }}>
+                            <Tag size={12} style={{ position: 'absolute', left: 8, top: 8, color: 'var(--text-muted)' }} />
+                            <input
+                              type="text"
+                              placeholder="Kode Voucher..."
+                              value={promoCodeInput}
+                              onChange={e => setPromoCodeInput(e.target.value.toUpperCase())}
+                              onKeyDown={e => { if (e.key === 'Enter') handleApplyVoucherCode(); }}
+                              style={{
+                                width: '100%',
+                                padding: '5px 8px 5px 26px',
+                                background: 'rgba(0, 0, 0, 0.25)',
+                                border: '1px solid var(--border)',
+                                borderRadius: 6,
+                                fontSize: 11,
+                                color: '#ffffff',
+                                textTransform: 'uppercase',
+                                fontWeight: 700,
+                                letterSpacing: '0.04em'
+                              }}
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={handleApplyVoucherCode}
+                            disabled={validatingPromo || !promoCodeInput.trim()}
+                            style={{ fontSize: 11, padding: '4px 8px' }}
+                          >
+                            {validatingPromo ? 'Cek...' : 'Terapkan'}
+                          </button>
+                        </div>
 
-              {/* Subtotal, Diskon, Total breakdown */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 11.5, color: 'var(--text-secondary)' }}>
-                <span>Subtotal ({cartItemCount} menu):</span>
-                <span className="mono">{rupiah(cartGrossSubtotal)}</span>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={() => setPromoModalOpen(true)}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: 'var(--accent-bright)',
+                              cursor: 'pointer',
+                              fontSize: 10.5,
+                              fontWeight: 600,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              padding: 0
+                            }}
+                          >
+                            <Gift size={11} /> Promo Tersedia ({availableDiscounts.length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCustomDiscountModal(p => ({ ...p, open: true }))}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: 'var(--text-muted)',
+                              cursor: 'pointer',
+                              fontSize: 10.5,
+                              padding: 0
+                            }}
+                          >
+                            + Diskon Kasir
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Subtotal, Diskon, Total breakdown */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                  <span>Subtotal ({cartItemCount} menu):</span>
+                  <span className="mono">{rupiah(cartGrossSubtotal)}</span>
+                </div>
+                {cartDiscountAmount > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 11.5, color: '#34d399', fontWeight: 600 }}>
+                    <span>Potongan Diskon:</span>
+                    <span className="mono">-{rupiah(cartDiscountAmount)}</span>
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14, alignItems: 'baseline', paddingTop: 4, borderTop: '1px dashed rgba(255,255,255,0.08)' }}>
+                  <span style={{ fontWeight: 700, fontSize: 14, color: '#ffffff' }}>
+                    {appendModeBill ? 'Tambahan Tagihan:' : 'Total Tagihan:'}
+                  </span>
+                  <span className="mono" style={{ fontSize: 19, fontWeight: 800, color: appendModeBill ? '#fbbf24' : 'var(--ok)' }}>
+                    {rupiah(cartTotal)}
+                  </span>
+                </div>
+
+                {appendModeBill ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <button
+                      type="button"
+                      className="btn w-full"
+                      onClick={() => handleSubmitAppendItems()}
+                      disabled={cart.length === 0 || submitting}
+                      style={{
+                        background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)',
+                        color: '#ffffff',
+                        justifyContent: 'center',
+                        padding: '12px',
+                        fontSize: 13.5,
+                        fontWeight: 800,
+                        boxShadow: cart.length > 0 ? '0 4px 20px rgba(217, 119, 6, 0.4)' : 'none'
+                      }}
+                    >
+                      <ChefHat size={16} style={{ marginRight: 6 }} />
+                      Kirim Tambahan ke Dapur ({rupiah(cartTotal)})
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => {
+                        setAppendModeBill(null);
+                        setCart([]);
+                        setCustomerName('');
+                      }}
+                      style={{ justifyContent: 'center' }}
+                    >
+                      Batal Mode Tambah
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.05fr 1.35fr', gap: 8 }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={handleHoldOrder}
+                      disabled={cart.length === 0 || submitting}
+                      style={{
+                        justifyContent: 'center',
+                        padding: '12px 6px',
+                        fontSize: 12.5,
+                        fontWeight: 700,
+                        background: 'rgba(245, 158, 11, 0.12)',
+                        borderColor: 'rgba(245, 158, 11, 0.35)',
+                        color: '#fbbf24',
+                      }}
+                      title="Simpan pesanan belum bayar / tagihan terbuka (Hold Order)"
+                    >
+                      <Bookmark size={14} style={{ marginRight: 4 }} />
+                      Hold Bill
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={handleOpenPayment}
+                      disabled={cart.length === 0}
+                      style={{
+                        justifyContent: 'center',
+                        padding: '12px 6px',
+                        fontSize: 12.5,
+                        fontWeight: 800,
+                        boxShadow: cart.length > 0 ? '0 4px 20px var(--accent-glow)' : 'none'
+                      }}
+                    >
+                      Bayar ({rupiah(cartTotal)}) <ArrowRight size={14} style={{ marginLeft: 4 }} />
+                    </button>
+                  </div>
+                )}
               </div>
-              {cartDiscountAmount > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 11.5, color: '#34d399', fontWeight: 600 }}>
-                  <span>Potongan Diskon:</span>
-                  <span className="mono">-{rupiah(cartDiscountAmount)}</span>
-                </div>
-              )}
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14, alignItems: 'baseline', paddingTop: 4, borderTop: '1px dashed rgba(255,255,255,0.08)' }}>
-                <span style={{ fontWeight: 700, fontSize: 14, color: '#ffffff' }}>
-                  {appendModeBill ? 'Tambahan Tagihan:' : 'Total Tagihan:'}
-                </span>
-                <span className="mono" style={{ fontSize: 19, fontWeight: 800, color: appendModeBill ? '#fbbf24' : 'var(--ok)' }}>
-                  {rupiah(cartTotal)}
-                </span>
-              </div>
-
-              {appendModeBill ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <button
-                    type="button"
-                    className="btn w-full"
-                    onClick={() => handleSubmitAppendItems()}
-                    disabled={cart.length === 0 || submitting}
-                    style={{
-                      background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)',
-                      color: '#ffffff',
-                      justifyContent: 'center',
-                      padding: '12px',
-                      fontSize: 13.5,
-                      fontWeight: 800,
-                      boxShadow: cart.length > 0 ? '0 4px 20px rgba(217, 119, 6, 0.4)' : 'none'
-                    }}
-                  >
-                    <ChefHat size={16} style={{ marginRight: 6 }} />
-                    Kirim Tambahan ke Dapur ({rupiah(cartTotal)})
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => {
-                      setAppendModeBill(null);
-                      setCart([]);
-                      setTableNumber('');
-                      setCustomerName('');
-                    }}
-                    style={{ justifyContent: 'center' }}
-                  >
-                    Batal Mode Tambah
-                  </button>
-                </div>
-              ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: '1.05fr 1.35fr', gap: 8 }}>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={handleHoldOrder}
-                    disabled={cart.length === 0 || submitting}
-                    style={{
-                      justifyContent: 'center',
-                      padding: '12px 6px',
-                      fontSize: 12.5,
-                      fontWeight: 700,
-                      background: 'rgba(245, 158, 11, 0.12)',
-                      borderColor: 'rgba(245, 158, 11, 0.35)',
-                      color: '#fbbf24',
-                    }}
-                    title="Simpan pesanan belum bayar / buka tagihan meja (Hold Order)"
-                  >
-                    <Bookmark size={14} style={{ marginRight: 4 }} />
-                    Hold Bill
-                  </button>
-
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={handleOpenPayment}
-                    disabled={cart.length === 0}
-                    style={{
-                      justifyContent: 'center',
-                      padding: '12px 6px',
-                      fontSize: 12.5,
-                      fontWeight: 800,
-                      boxShadow: cart.length > 0 ? '0 4px 20px var(--accent-glow)' : 'none'
-                    }}
-                  >
-                    Bayar ({rupiah(cartTotal)}) <ArrowRight size={14} style={{ marginLeft: 4 }} />
-                  </button>
-                </div>
-              )}
             </div>
           </div>
-        </div>
 
-        {/* Floating Mobile Cart Bar (Sticky at bottom on narrow screens) */}
-        {cart.length > 0 && mobileActiveTab === 'catalog' && (
-          <div className="pos-floating-mobile-bar">
-            <div className="pos-floating-bar-info">
-              <div className="pos-floating-bar-badge">
-                <ShoppingCart size={15} />
-                <span>{cart.reduce((sum, item) => sum + item.qty, 0)} item</span>
+          {/* Floating Mobile Cart Bar (Sticky at bottom on narrow screens) */}
+          {cart.length > 0 && mobileActiveTab === 'catalog' && (
+            <div className="pos-floating-mobile-bar">
+              <div className="pos-floating-bar-info">
+                <div className="pos-floating-bar-badge">
+                  <ShoppingCart size={15} />
+                  <span>{cart.reduce((sum, item) => sum + item.qty, 0)} item</span>
+                </div>
+                <div className="pos-floating-bar-price">
+                  <span style={{ fontSize: 10.5, color: 'var(--text-secondary)' }}>Total:</span>
+                  <strong className="mono" style={{ fontSize: 14.5, color: '#34d399' }}>{rupiah(cartTotal)}</strong>
+                </div>
               </div>
-              <div className="pos-floating-bar-price">
-                <span style={{ fontSize: 10.5, color: 'var(--text-secondary)' }}>Total:</span>
-                <strong className="mono" style={{ fontSize: 14.5, color: '#34d399' }}>{rupiah(cartTotal)}</strong>
-              </div>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => setMobileActiveTab('cart')}
+                style={{ fontWeight: 800, padding: '8px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                Lihat Keranjang <ArrowRight size={14} />
+              </button>
             </div>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={() => setMobileActiveTab('cart')}
-              style={{ fontWeight: 800, padding: '8px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6 }}
-            >
-              Lihat Keranjang <ArrowRight size={14} />
-            </button>
-          </div>
-        )}
+          )}
         </>
       )}
 
@@ -2450,11 +2491,12 @@ export default function POS() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <div>
                 <h3 style={{ fontSize: 16, fontWeight: 800, color: '#ffffff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Package size={18} style={{ color: 'var(--accent)' }} />
-                  Tambah Stok Cepat Bahan Baku
+                  {restockModal.isDirectProduct ? <ShoppingBag size={18} style={{ color: '#60a5fa' }} /> : <Package size={18} style={{ color: 'var(--accent)' }} />}
+                  {restockModal.isDirectProduct ? `Restok Cepat Produk Retail` : 'Tambah Stok Cepat Bahan Baku'}
                 </h3>
                 <span style={{ fontSize: 11.5, color: 'var(--accent-bright)', fontWeight: 600 }}>
                   📍 Cabang: {activeOutlet?.name || 'Cabang Aktif'}
+                  {restockModal.isDirectProduct && ` · ${restockModal.menuName} (Sisa: ${num(restockModal.currentStock)} ${restockModal.unit})`}
                 </span>
               </div>
               <button
@@ -2466,80 +2508,137 @@ export default function POS() {
             </div>
 
             <form onSubmit={handleSubmitRestock}>
-              {/* Select Ingredient */}
-              <div className="form-group mb-3">
-                <label className="form-label">Pilih Bahan Baku</label>
-                <select
-                  className="form-control"
-                  value={restockModal.ingredientId}
-                  onChange={e => setRestockModal(p => ({ ...p, ingredientId: e.target.value }))}
-                  required
-                >
-                  {ingredients.map(ing => (
-                    <option key={ing.id} value={ing.id}>
-                      {ing.code} - {ing.name} (Sisa: {num(ing.current_stock ?? ing.stok_awal)} {ing.unit_pakai})
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {restockModal.isDirectProduct ? (
+                <>
+                  {/* Direct Retail Restock */}
+                  <div className="form-group mb-3">
+                    <label className="form-label">Nama Produk Retail</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={restockModal.menuName}
+                      disabled
+                      style={{ background: 'rgba(255,255,255,0.05)', color: '#ffffff', fontWeight: 700 }}
+                    />
+                  </div>
 
-              {/* Quantity and Unit Mode */}
-              <div className="form-group mb-3">
-                <label className="form-label">Jumlah Penambahan</label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 8 }}>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0.001"
-                    className="form-control"
-                    value={restockModal.qty}
-                    onChange={e => setRestockModal(p => ({ ...p, qty: e.target.value }))}
-                    required
-                  />
-                  <select
-                    className="form-control"
-                    value={restockModal.unitType}
-                    onChange={e => setRestockModal(p => ({ ...p, unitType: e.target.value }))}
-                  >
-                    <option value="BELI">
-                      {restockSelectedIng?.unit_beli || 'Satuan Beli'} ({restockSelectedIng?.konversi || 1000}x)
-                    </option>
-                    <option value="PAKAI">
-                      {restockSelectedIng?.unit_pakai || 'Satuan Pakai'}
-                    </option>
-                  </select>
-                </div>
-                {restockSelectedIng && restockModal.unitType === 'BELI' && (
-                  <span style={{ fontSize: 11, color: 'var(--accent-bright)', marginTop: 4, display: 'block' }}>
-                    = {num(Number(restockModal.qty) * (Number(restockSelectedIng.konversi) || 1))} {restockSelectedIng.unit_pakai}
-                  </span>
-                )}
-              </div>
+                  <div className="form-group mb-3">
+                    <label className="form-label">Jumlah Penambahan ({restockModal.unit || 'pcs'})</label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="1"
+                      className="form-control"
+                      value={restockModal.qty}
+                      onChange={e => setRestockModal(p => ({ ...p, qty: e.target.value }))}
+                      required
+                      placeholder="Contoh: 10"
+                      autoFocus
+                    />
+                  </div>
 
-              {/* Purchase Price (Moving Average Costing) */}
-              <div className="form-group mb-3">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <label className="form-label" style={{ color: '#34d399', fontWeight: 600 }}>
-                    Harga Beli Satuan (Rp)
-                  </label>
-                  <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
-                    per {restockModal.unitType === 'BELI' ? restockSelectedIng?.unit_beli : restockSelectedIng?.unit_pakai}
-                  </span>
-                </div>
-                <input
-                  type="number"
-                  step="any"
-                  min="0"
-                  className="form-control mono"
-                  style={{ borderColor: 'rgba(16, 185, 129, 0.4)' }}
-                  placeholder={`Standar: ${restockModal.unitType === 'BELI' ? restockSelectedIng?.harga : Number((Number(restockSelectedIng?.harga || 0) / Number(restockSelectedIng?.konversi || 1)).toFixed(2))}`}
-                  value={restockModal.unitPrice}
-                  onChange={e => setRestockModal(p => ({ ...p, unitPrice: e.target.value }))}
-                />
-                <span style={{ fontSize: 10.5, color: 'var(--text-secondary)', marginTop: 3, display: 'block' }}>
-                  ⚡ Sistem otomatis mengupdate HPP menu menggunakan metode <strong>Moving Average</strong>.
-                </span>
-              </div>
+                  <div className="form-group mb-3">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <label className="form-label" style={{ color: '#34d399', fontWeight: 600 }}>
+                        Harga Modal / Beli Satuan (Rp)
+                      </label>
+                      <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
+                        per {restockModal.unit || 'pcs'}
+                      </span>
+                    </div>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      className="form-control mono"
+                      style={{ borderColor: 'rgba(16, 185, 129, 0.4)' }}
+                      placeholder="Harga beli modal per satuan"
+                      value={restockModal.unitPrice}
+                      onChange={e => setRestockModal(p => ({ ...p, unitPrice: e.target.value }))}
+                    />
+                    <span style={{ fontSize: 10.5, color: 'var(--text-secondary)', marginTop: 3, display: 'block' }}>
+                      ⚡ Nilai modal digunakan sebagai HPP untuk perhitungan laba kotor toko retail.
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Select Ingredient */}
+                  <div className="form-group mb-3">
+                    <label className="form-label">Pilih Bahan Baku</label>
+                    <select
+                      className="form-control"
+                      value={restockModal.ingredientId}
+                      onChange={e => setRestockModal(p => ({ ...p, ingredientId: e.target.value }))}
+                      required
+                    >
+                      {ingredients.map(ing => (
+                        <option key={ing.id} value={ing.id}>
+                          {ing.code} - {ing.name} (Sisa: {num(ing.current_stock ?? ing.stok_awal)} {ing.unit_pakai})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Quantity and Unit Mode */}
+                  <div className="form-group mb-3">
+                    <label className="form-label">Jumlah Penambahan</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 8 }}>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0.001"
+                        className="form-control"
+                        value={restockModal.qty}
+                        onChange={e => setRestockModal(p => ({ ...p, qty: e.target.value }))}
+                        required
+                      />
+                      <select
+                        className="form-control"
+                        value={restockModal.unitType}
+                        onChange={e => setRestockModal(p => ({ ...p, unitType: e.target.value }))}
+                      >
+                        <option value="BELI">
+                          {restockSelectedIng?.unit_beli || 'Satuan Beli'} ({restockSelectedIng?.konversi || 1000}x)
+                        </option>
+                        <option value="PAKAI">
+                          {restockSelectedIng?.unit_pakai || 'Satuan Pakai'}
+                        </option>
+                      </select>
+                    </div>
+                    {restockSelectedIng && restockModal.unitType === 'BELI' && (
+                      <span style={{ fontSize: 11, color: 'var(--accent-bright)', marginTop: 4, display: 'block' }}>
+                        = {num(Number(restockModal.qty) * (Number(restockSelectedIng.konversi) || 1))} {restockSelectedIng.unit_pakai}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Purchase Price (Moving Average Costing) */}
+                  <div className="form-group mb-3">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <label className="form-label" style={{ color: '#34d399', fontWeight: 600 }}>
+                        Harga Beli Satuan (Rp)
+                      </label>
+                      <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
+                        per {restockModal.unitType === 'BELI' ? restockSelectedIng?.unit_beli : restockSelectedIng?.unit_pakai}
+                      </span>
+                    </div>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      className="form-control mono"
+                      style={{ borderColor: 'rgba(16, 185, 129, 0.4)' }}
+                      placeholder={`Standar: ${restockModal.unitType === 'BELI' ? restockSelectedIng?.harga : Number((Number(restockSelectedIng?.harga || 0) / Number(restockSelectedIng?.konversi || 1)).toFixed(2))}`}
+                      value={restockModal.unitPrice}
+                      onChange={e => setRestockModal(p => ({ ...p, unitPrice: e.target.value }))}
+                    />
+                    <span style={{ fontSize: 10.5, color: 'var(--text-secondary)', marginTop: 3, display: 'block' }}>
+                      ⚡ Sistem otomatis mengupdate HPP menu menggunakan metode <strong>Moving Average</strong>.
+                    </span>
+                  </div>
+                </>
+              )}
 
               {/* Note */}
               <div className="form-group mb-3">
@@ -2549,7 +2648,7 @@ export default function POS() {
                   className="form-control"
                   value={restockModal.notes}
                   onChange={e => setRestockModal(p => ({ ...p, notes: e.target.value }))}
-                  placeholder="Misal: Beli di pasar lokal / Masuk kiriman"
+                  placeholder="Misal: Beli di pasar lokal / Masuk kiriman supplier"
                 />
               </div>
 
@@ -2607,16 +2706,16 @@ export default function POS() {
               marginBottom: 18
             }}>
               <span style={{ fontSize: 11.5, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
-                {activeOpenBillPayment ? 'Total Tagihan Meja' : 'Total Tagihan Pembayaran'}
+                {activeOpenBillPayment ? 'Total Tagihan Terbuka' : 'Total Tagihan Pembayaran'}
               </span>
               <div className="mono" style={{ fontSize: 26, fontWeight: 900, color: '#ffffff', marginTop: 4 }}>
                 {rupiah(payableTotal)}
               </div>
               <div style={{ fontSize: 12, color: activeOpenBillPayment ? '#fcd34d' : 'var(--accent-bright)', marginTop: 4 }}>
                 {activeOpenBillPayment ? (
-                  `Meja: ${activeOpenBillPayment.table_number || '-'} · No: ${activeOpenBillPayment.order_number} (${activeOpenBillPayment.total_items || activeOpenBillPayment.items?.length || 0} item)`
+                  `No: ${activeOpenBillPayment.order_number}${activeOpenBillPayment.customer_name ? ` · ${activeOpenBillPayment.customer_name}` : ''} (${activeOpenBillPayment.total_items || activeOpenBillPayment.items?.length || 0} item)`
                 ) : (
-                  `${orderType === 'DINE_IN' ? `Dine In ${tableNumber ? `· Meja ${tableNumber}` : ''}` : orderType}${customerName ? ` · ${customerName}` : ''} (${cartItemCount} item)`
+                  `${customerName ? `${customerName} · ` : ''}${cartItemCount} item`
                 )}
               </div>
 
@@ -2891,19 +2990,13 @@ export default function POS() {
                   <span>Kasir / Shift:</span>
                   <span>{completedOrder.cashier} ({completedOrder.shift_name})</span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Tipe / Meja:</span>
-                  <span>
-                    {completedOrder.order_type}
-                    {completedOrder.table_number ? ` - Meja ${completedOrder.table_number}` : ''}
-                  </span>
-                </div>
                 {completedOrder.customer_name && (
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span>Pelanggan:</span>
                     <span>{completedOrder.customer_name}</span>
                   </div>
                 )}
+
               </div>
 
               <div style={{ borderBottom: '1px dashed #000', margin: '8px 0' }} />
@@ -2980,7 +3073,7 @@ export default function POS() {
                     borderTop: '1px dotted #000',
                     fontWeight: 800
                   }}>
-                    <span>{completedOrder.is_table_closed ? 'STATUS MEJA:' : 'SISA TAGIHAN MEJA:'}</span>
+                    <span>{completedOrder.is_table_closed ? 'STATUS:' : 'SISA TAGIHAN:'}</span>
                     <span>{completedOrder.is_table_closed ? 'LUNAS (SELESAI)' : rupiah(completedOrder.remaining_total)}</span>
                   </div>
                 )}
@@ -3035,11 +3128,11 @@ export default function POS() {
                     padding: '2px 8px',
                     borderRadius: 12
                   }}>
-                    {openBills.length} Meja
+                    {openBills.length} Tagihan
                   </span>
                 </h3>
                 <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '4px 0 0' }}>
-                  Tagihan pesanan meja dine-in yang sedang berjalan. Belum memotong stok & belum masuk closing kasir.
+                  Tagihan pesanan yang sedang berjalan. Belum memotong stok & belum masuk closing kasir.
                 </p>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -3076,7 +3169,7 @@ export default function POS() {
                     Tidak Ada Tagihan Terbuka
                   </h4>
                   <p style={{ color: 'var(--text-secondary)', fontSize: 12.5, maxWidth: 360, margin: '0 auto 16px' }}>
-                    Semua pesanan saat ini sudah diselesaikan (lunas) atau meja sedang kosong.
+                    Semua pesanan saat ini sudah diselesaikan (lunas).
                   </p>
                   <button
                     type="button"
@@ -3105,8 +3198,8 @@ export default function POS() {
                               alignItems: 'center',
                               gap: 5
                             }}>
-                              <Table size={14} />
-                              {bill.table_number || 'Tanpa Meja'}
+                              <Receipt size={14} />
+                              {bill.order_number}
                             </div>
                             <span style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
                               {bill.customer_name ? `(${bill.customer_name})` : ''}
@@ -3249,7 +3342,7 @@ export default function POS() {
                           className="btn btn-sm btn-primary"
                           onClick={() => handleOpenPayOpenBill(bill)}
                           style={{ flex: 1.2, minWidth: 110, fontSize: 11.5, fontWeight: 800, padding: '5px 10px', justifyContent: 'center' }}
-                          title="Selesaikan pembayaran tagihan meja ini"
+                          title="Selesaikan pembayaran tagihan ini"
                         >
                           <Banknote size={13} style={{ marginRight: 4 }} /> Bayar Lunas
                         </button>
@@ -3259,7 +3352,7 @@ export default function POS() {
                           className="btn btn-sm btn-ghost"
                           onClick={() => setCancelBillModal({ open: true, bill, reason: '', submitting: false })}
                           style={{ padding: '5px 8px', color: 'var(--danger)', fontSize: 11 }}
-                          title="Batalkan / Void tagihan meja ini"
+                          title="Batalkan / Void tagihan ini"
                         >
                           <Trash2 size={12} />
                         </button>
@@ -3327,14 +3420,14 @@ export default function POS() {
                 borderRadius: 4
               }}>
                 <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  NOMOR MEJA:
+                  NOMOR ORDER:
                 </div>
                 <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: '0.05em' }}>
-                  {kitchenChitModal.bill.table_number || 'DINE IN'}
+                  {kitchenChitModal.bill.order_number}
                 </div>
                 {kitchenChitModal.bill.customer_name && (
                   <div style={{ fontSize: 10, marginTop: 2 }}>
-                    Tamu: <strong>{kitchenChitModal.bill.customer_name}</strong>
+                    Pelanggan: <strong>{kitchenChitModal.bill.customer_name}</strong>
                   </div>
                 )}
               </div>
@@ -3392,7 +3485,7 @@ export default function POS() {
               <button
                 type="button"
                 className="btn btn-primary"
-                onClick={() => printElement('printable-kitchen-chit', `Kitchen Chit - ${kitchenChitModal.bill.table_number || ''}`, { isThermal: true, pageSize: '80mm auto' })}
+                onClick={() => printElement('printable-kitchen-chit', `Kitchen Chit - ${kitchenChitModal.bill.order_number || ''}`, { isThermal: true, pageSize: '80mm auto' })}
                 style={{ flex: 1.5, justifyContent: 'center', fontWeight: 800, background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)' }}
               >
                 <Printer size={15} style={{ marginRight: 6 }} /> Cetak ke Dapur
@@ -3443,8 +3536,8 @@ export default function POS() {
                   <strong>{prebillModal.bill.order_number}</strong>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Meja / Tamu:</span>
-                  <strong>{prebillModal.bill.table_number || '-'} {prebillModal.bill.customer_name ? `(${prebillModal.bill.customer_name})` : ''}</strong>
+                  <span>Pelanggan:</span>
+                  <strong>{prebillModal.bill.customer_name || '-'}</strong>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span>Waktu Pesan:</span>
@@ -3495,7 +3588,7 @@ export default function POS() {
 
               <div style={{ textAlign: 'center', fontSize: 9.5, marginTop: 8 }}>
                 <div>Mohon periksa kembali pesanan Anda.</div>
-                <div>Silakan selesaikan pembayaran di meja kasir.</div>
+                <div>Silakan selesaikan pembayaran di kasir.</div>
               </div>
             </div>
 
@@ -3512,7 +3605,7 @@ export default function POS() {
               <button
                 type="button"
                 className="btn btn-primary"
-                onClick={() => printElement('printable-prebill', `Pre-Bill - ${prebillModal.bill.table_number || ''}`, { isThermal: true, pageSize: '80mm auto' })}
+                onClick={() => printElement('printable-prebill', `Pre-Bill - ${prebillModal.bill.order_number || ''}`, { isThermal: true, pageSize: '80mm auto' })}
                 style={{ flex: 1.5, justifyContent: 'center', fontWeight: 800 }}
               >
                 <Printer size={15} style={{ marginRight: 6 }} /> Cetak Lembar Tagihan
@@ -3543,13 +3636,13 @@ export default function POS() {
                   Batalkan Tagihan Terbuka?
                 </h3>
                 <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                  Meja {cancelBillModal.bill.table_number} ({cancelBillModal.bill.order_number})
+                  {cancelBillModal.bill.order_number}{cancelBillModal.bill.customer_name ? ` (${cancelBillModal.bill.customer_name})` : ''}
                 </span>
               </div>
             </div>
 
             <p style={{ fontSize: 12.5, color: 'var(--text-primary)', lineHeight: 1.5, marginBottom: 14 }}>
-              Apakah Anda yakin ingin membatalkan tagihan sebesar <strong>{rupiah(cancelBillModal.bill.total_price)}</strong>? Tagihan ini akan diberi status <strong>CANCELLED</strong> dan meja akan kembali kosong.
+              Apakah Anda yakin ingin membatalkan tagihan sebesar <strong>{rupiah(cancelBillModal.bill.total_price)}</strong>? Tagihan ini akan diberi status <strong>CANCELLED</strong>.
             </p>
 
             <div className="form-group mb-3">
@@ -3557,7 +3650,7 @@ export default function POS() {
               <input
                 type="text"
                 className="form-control"
-                placeholder="Misal: Tamu batal / Salah input nomor meja"
+                placeholder="Misal: Pelanggan batal / Salah input"
                 value={cancelBillModal.reason}
                 onChange={e => setCancelBillModal(p => ({ ...p, reason: e.target.value }))}
               />
@@ -4083,7 +4176,7 @@ export default function POS() {
       )}
 
       {/* ========================================================
-          MODAL: SPLIT BILL (PISAH TAGIHAN MEJA)
+           MODAL: SPLIT BILL (PISAH TAGIHAN)
          ======================================================== */}
       {splitBillModal.open && splitBillModal.bill && (() => {
         const bill = splitBillModal.bill;
@@ -4145,11 +4238,11 @@ export default function POS() {
                       fontWeight: 700,
                       border: '1px solid rgba(192, 132, 252, 0.4)'
                     }}>
-                      Meja {bill.table_number || 'Dine-In'}
+                      {bill.order_number}
                     </span>
                   </h3>
                   <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 3 }}>
-                    Nota Induk: <span className="mono" style={{ color: '#fff' }}>{bill.order_number}</span> · Total Tagihan Meja: <strong className="mono" style={{ color: '#fbbf24' }}>{rupiah(billTotal)}</strong>
+                    Nota Induk: <span className="mono" style={{ color: '#fff' }}>{bill.order_number}</span> · Total Tagihan: <strong className="mono" style={{ color: '#fbbf24' }}>{rupiah(billTotal)}</strong>
                   </div>
                 </div>
                 <button
@@ -4295,7 +4388,7 @@ export default function POS() {
                                 {it.menu_name}
                               </div>
                               <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
-                                {rupiah(unitPrice)} / porsi · Tersisa di meja: <strong style={{ color: '#fbbf24' }}>{it.qty} porsi</strong>
+                                {rupiah(unitPrice)} / porsi · Tersisa: <strong style={{ color: '#fbbf24' }}>{it.qty} porsi</strong>
                               </div>
                               {it.modifiers && it.modifiers.length > 0 && (
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginTop: 3 }}>
@@ -4380,9 +4473,9 @@ export default function POS() {
                         </div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: 10.5, color: 'var(--text-secondary)' }}>Sisa Tagihan Meja Nanti:</div>
+                        <div style={{ fontSize: 10.5, color: 'var(--text-secondary)' }}>Sisa Tagihan Nanti:</div>
                         <div className="mono" style={{ fontSize: 15, fontWeight: 800, color: remainingAfterItemSplit === 0 ? 'var(--ok)' : '#fbbf24' }}>
-                          {remainingAfterItemSplit === 0 ? 'Lunas (Meja Ditutup)' : rupiah(remainingAfterItemSplit)}
+                          {remainingAfterItemSplit === 0 ? 'Lunas (Selesai)' : rupiah(remainingAfterItemSplit)}
                         </div>
                       </div>
                     </div>
@@ -4516,7 +4609,7 @@ export default function POS() {
                       <input
                         type="text"
                         className="form-control form-control-sm"
-                        placeholder="Contoh: Split bill meja 07"
+                        placeholder="Contoh: Split bill pesanan"
                         value={splitBillModal.notes}
                         onChange={e => setSplitBillModal(p => ({ ...p, notes: e.target.value }))}
                       />
