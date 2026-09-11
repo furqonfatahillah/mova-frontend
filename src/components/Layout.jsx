@@ -109,13 +109,13 @@ export default function Layout() {
     try {
       const { data } = await api.get('/users?status=pending');
       setPendingCount(data.counts?.pending || 0);
-    } catch {}
+    } catch { }
   }
 
   async function handleLogout() {
     try {
       await api.post('/logout');
-    } catch {}
+    } catch { }
     localStorage.removeItem('pos_token');
     localStorage.removeItem('pos_user');
     toast.success('Berhasil keluar');

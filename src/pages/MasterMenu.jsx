@@ -377,11 +377,11 @@ export default function MasterMenu() {
   const hpp = isDirect || isService
     ? Number(selected?.cost_price || 0)
     : (activeRecipe
-        ? (activeRecipe.items || []).reduce((sum, it) => {
-            const ing = ingredients.find(i => i.id === it.ingredient_id);
-            return ing ? sum + it.qty * (ing.harga / (ing.konversi || 1)) : sum;
-          }, 0)
-        : Number(selected?.cost_price || 0));
+      ? (activeRecipe.items || []).reduce((sum, it) => {
+        const ing = ingredients.find(i => i.id === it.ingredient_id);
+        return ing ? sum + it.qty * (ing.harga / (ing.konversi || 1)) : sum;
+      }, 0)
+      : Number(selected?.cost_price || 0));
 
   const marginPct = selected?.price > 0 ? Math.round(((selected.price - hpp) / selected.price) * 100) : 0;
 
