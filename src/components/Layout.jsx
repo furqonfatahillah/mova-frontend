@@ -74,7 +74,7 @@ export default function Layout() {
         { to: '/batch-prep', label: 'Produksi Batch (Prep)', icon: ChefHat },
         { to: '/waste', label: 'Bahan Terbuang (Waste)', icon: Trash2 },
         { to: '/diskon', label: 'Promo & Diskon', icon: Percent },
-        { to: '/transfer', label: 'Transfer Bahan', icon: Send },
+        { to: '/transfer', label: 'Transfer Stok / Barang', icon: Send },
         { to: '/kartu-stok', label: 'Kartu Stok', icon: ScrollText },
         { to: '/movement', label: 'Riwayat Mutasi', icon: ArrowUpDown },
         { to: '/opname', label: 'Stock Opname', icon: ClipboardList },

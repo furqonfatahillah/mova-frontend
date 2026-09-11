@@ -2453,7 +2453,10 @@ export default function POS() {
                   Batal
                 </button>
                 <Link
-                  to={`/transfer?destination_outlet_id=${currentTargetOutlet}&ingredient_id=${stockAlertModal.status.limitingIngredient?.id || ''}`}
+                  to={stockAlertModal.menu?.item_type === 'DIRECT'
+                    ? `/transfer?destination_outlet_id=${currentTargetOutlet}&menu_id=${stockAlertModal.menu.id}&item_type=PRODUCT`
+                    : `/transfer?destination_outlet_id=${currentTargetOutlet}&ingredient_id=${stockAlertModal.status.limitingIngredient?.id || ''}`
+                  }
                   className="btn btn-outline"
                   style={{ flex: 1.5, minWidth: 140, justifyContent: 'center', fontWeight: 700, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }}
                 >
