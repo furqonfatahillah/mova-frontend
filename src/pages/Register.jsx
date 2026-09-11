@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   User, Mail, Lock, ArrowRight, Clock, Store, Shield,
-  Building2, Phone, MapPin, CheckCircle2, Sparkles
+  Building2, Phone, MapPin, CheckCircle2, Sparkles, Gift
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
@@ -23,6 +23,7 @@ export default function Register() {
     business_phone: '',
     business_address: '',
     first_outlet_name: 'Outlet Pusat',
+    referral_code: '',
   });
 
   // Form for Staff
@@ -41,6 +42,10 @@ export default function Register() {
 
   useEffect(() => {
     fetchPublicBusinesses();
+    const refParam = new URLSearchParams(window.location.search).get('ref');
+    if (refParam) {
+      setBusinessForm(p => ({ ...p, referral_code: refParam.toUpperCase().trim() }));
+    }
   }, []);
 
   async function fetchPublicBusinesses() {
@@ -390,6 +395,24 @@ export default function Register() {
                   onChange={e => setBusinessForm({ ...businessForm, password_confirmation: e.target.value })}
                 />
               </div>
+            </div>
+
+            <div className="form-group" style={{ marginTop: 4 }}>
+              <label className="form-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span><Gift size={12} style={{ display: 'inline', marginRight: 5, color: '#f59e0b' }} />Kode Referral Mitra (Opsional)</span>
+                <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Ada rekomendasi?</span>
+              </label>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Contoh: REF-A8K2M9"
+                style={{ textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, color: '#fbbf24' }}
+                value={businessForm.referral_code}
+                onChange={e => setBusinessForm({ ...businessForm, referral_code: e.target.value.toUpperCase() })}
+              />
+              <span style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginTop: 3 }}>
+                Jika Anda mendaftar atas rekomendasi rekan / mitra MOVA POS, masukkan kodenya di sini.
+              </span>
             </div>
 
             <button type="submit" className="btn btn-primary w-full" style={{ marginTop: 10, justifyContent: 'center' }} disabled={loading}>

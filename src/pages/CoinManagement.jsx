@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   Coins, Plus, Search, Shield, Building2, Store, ArrowUpRight, ArrowDownLeft,
   Calendar, CheckCircle2, AlertTriangle, XCircle, Clock, Edit3, RefreshCw,
-  TrendingUp, CreditCard, Banknote, FileText, Check, X, AlertCircle
+  TrendingUp, CreditCard, Banknote, FileText, Check, X, AlertCircle, Gift
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
@@ -179,7 +179,10 @@ export default function CoinManagement() {
     const matchSearch =
       b.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (b.owner_name && b.owner_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (b.slug && b.slug.toLowerCase().includes(searchTerm.toLowerCase()));
+      (b.slug && b.slug.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (b.referral_code_used && b.referral_code_used.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (b.referred_by?.name && b.referred_by.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (b.referred_by?.referral_code && b.referred_by.referral_code.toLowerCase().includes(searchTerm.toLowerCase()));
 
     if (!matchSearch) return false;
 
@@ -391,6 +394,17 @@ export default function CoinManagement() {
                         <td>
                           <div style={{ fontSize: 13, fontWeight: 600, color: '#ffffff' }}>{b.owner_name || '-'}</div>
                           <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{b.phone || b.email || 'Tanpa Kontak'}</div>
+                          {b.referred_by ? (
+                            <div style={{ marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 7px', borderRadius: 4, background: 'rgba(236, 72, 153, 0.12)', border: '1px solid rgba(236, 72, 153, 0.25)', fontSize: 11, color: '#f472b6' }}>
+                              <Gift size={11} />
+                              <span>Ref: <strong>{b.referred_by.name}</strong> ({b.referral_code_used || b.referred_by.referral_code})</span>
+                            </div>
+                          ) : b.referral_code_used ? (
+                            <div style={{ marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 7px', borderRadius: 4, background: 'rgba(236, 72, 153, 0.12)', border: '1px solid rgba(236, 72, 153, 0.25)', fontSize: 11, color: '#f472b6' }}>
+                              <Gift size={11} />
+                              <span>Ref: <strong>{b.referral_code_used}</strong></span>
+                            </div>
+                          ) : null}
                         </td>
                         <td style={{ textAlign: 'center' }}>
                           <span style={{

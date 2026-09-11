@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   Building2, Plus, Search, Shield, Store, Users, Calendar,
   CheckCircle2, AlertTriangle, XCircle, Clock, Edit3, ExternalLink,
-  RefreshCw, Package, Phone, Mail, MapPin, Check, X
+  RefreshCw, Package, Phone, Mail, MapPin, Check, X, Gift
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
@@ -15,6 +15,7 @@ export default function BusinessManagement() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [referralFilter, setReferralFilter] = useState('ALL'); // 'ALL' | 'YES' | 'NO'
 
   // Modals
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -133,17 +134,27 @@ export default function BusinessManagement() {
       b.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (b.owner_name && b.owner_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (b.email && b.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (b.slug && b.slug.toLowerCase().includes(searchTerm.toLowerCase()));
+      (b.slug && b.slug.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (b.referral_code_used && b.referral_code_used.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (b.referred_by?.name && b.referred_by.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (b.referred_by?.referral_code && b.referred_by.referral_code.toLowerCase().includes(searchTerm.toLowerCase()));
 
     const matchesStatus = statusFilter === 'ALL' || b.status === statusFilter;
+    const matchesReferral =
+      referralFilter === 'ALL'
+        ? true
+        : referralFilter === 'YES'
+        ? Boolean(b.referred_by_id || b.referral_code_used)
+        : !b.referred_by_id && !b.referral_code_used;
 
-    return matchesSearch && matchesStatus;
+    return matchesSearch && matchesStatus && matchesReferral;
   });
 
   // Calculate statistics
   const totalTenants = businesses.length;
   const activeTenants = businesses.filter(b => b.status === 'active').length;
   const trialTenants = businesses.filter(b => b.status === 'trial').length;
+  const referralTenants = businesses.filter(b => b.referred_by_id || b.referral_code_used).length;
   const totalOutletsCount = businesses.reduce((acc, b) => acc + (b.outlets_count || 0), 0);
 
   function getStatusBadge(status) {
@@ -204,7 +215,7 @@ export default function BusinessManagement() {
       />
 
       {/* Stats Summary Cards */}
-      <div className="grid-cards" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', marginBottom: 24 }}>
+      <div className="grid-cards" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', marginBottom: 24 }}>
         <MiniCard
           label="Total Bisnis Penyewa"
           value={`${totalTenants} Usaha`}
@@ -227,6 +238,13 @@ export default function BusinessManagement() {
           color="info"
         />
         <MiniCard
+          label="Via Referral Mitra"
+          value={`${referralTenants} Usaha`}
+          sub="Rekomendasi kode referral"
+          icon={<Gift size={22} />}
+          color="accent"
+        />
+        <MiniCard
           label="Total Cabang Terhubung"
           value={`${totalOutletsCount} Cabang`}
           sub="Di seluruh tenant bisnis"
@@ -245,18 +263,18 @@ export default function BusinessManagement() {
                 type="text"
                 className="form-control"
                 style={{ paddingLeft: 36 }}
-                placeholder="Cari nama bisnis, pemilik, email, atau slug..."
+                placeholder="Cari bisnis, pemilik, email, atau kode referral..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Status:</span>
             <select
               className="form-control"
-              style={{ width: 'auto', minWidth: 150 }}
+              style={{ width: 'auto', minWidth: 140 }}
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
             >
@@ -266,6 +284,19 @@ export default function BusinessManagement() {
               <option value="suspended">Suspended</option>
               <option value="expired">Expired</option>
             </select>
+
+            <span style={{ fontSize: 13, color: 'var(--text-secondary)', marginLeft: 6 }}>Sumber:</span>
+            <select
+              className="form-control"
+              style={{ width: 'auto', minWidth: 160 }}
+              value={referralFilter}
+              onChange={(e) => setReferralFilter(e.target.value)}
+            >
+              <option value="ALL">Semua Pendaftaran</option>
+              <option value="YES">Via Referral Mitra</option>
+              <option value="NO">Organik (Tanpa Ref)</option>
+            </select>
+
             <button className="btn btn-secondary btn-sm" onClick={fetchBusinesses} title="Segarkan data">
               <RefreshCw size={14} />
             </button>
@@ -346,6 +377,21 @@ export default function BusinessManagement() {
                           </span>
                         )}
                       </div>
+                      {b.referred_by ? (
+                        <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 6, background: 'rgba(236, 72, 153, 0.12)', border: '1px solid rgba(236, 72, 153, 0.3)', fontSize: 11.5, color: '#f472b6' }}>
+                          <Gift size={12} />
+                          <span>Ref: <strong>{b.referred_by.name}</strong> ({b.referral_code_used || b.referred_by.referral_code})</span>
+                        </div>
+                      ) : b.referral_code_used ? (
+                        <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 6, background: 'rgba(236, 72, 153, 0.12)', border: '1px solid rgba(236, 72, 153, 0.3)', fontSize: 11.5, color: '#f472b6' }}>
+                          <Gift size={12} />
+                          <span>Ref: <strong>{b.referral_code_used}</strong></span>
+                        </div>
+                      ) : (
+                        <div style={{ marginTop: 4, fontSize: 11, color: 'var(--text-muted)' }}>
+                          Organik (Tanpa Referral)
+                        </div>
+                      )}
                     </td>
                     <td>{getPackageBadge(b.package_type)}</td>
                     <td>

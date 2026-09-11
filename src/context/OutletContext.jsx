@@ -9,13 +9,29 @@ export function OutletProvider({ children }) {
   const [businesses, setBusinesses] = useState([]);
   const [currentBusiness, setCurrentBusiness] = useState(null);
 
-  const currentUser = useMemo(() => {
+  const [currentUser, setCurrentUser] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('pos_user') || '{}');
     } catch {
       return {};
     }
+  });
+
+  const refreshCurrentUser = useCallback(async () => {
+    try {
+      const { data } = await api.get('/me');
+      if (data) {
+        setCurrentUser(data);
+        localStorage.setItem('pos_user', JSON.stringify(data));
+      }
+    } catch {}
   }, []);
+
+  useEffect(() => {
+    if (localStorage.getItem('pos_token')) {
+      refreshCurrentUser();
+    }
+  }, [refreshCurrentUser]);
 
   const isSuperadminPlatform =
     currentUser.role === 'superadmin_platform' ||
@@ -188,6 +204,8 @@ export function OutletProvider({ children }) {
     isCoinLow: Boolean(coinData?.is_coin_low),
     isCoinOut: Boolean(coinData?.is_coin_out),
     refreshCoins: fetchCoinData,
+    userReferralCode: currentUser?.referral_code,
+    refreshUser: refreshCurrentUser,
   };
 
   return <OutletContext.Provider value={value}>{children}</OutletContext.Provider>;

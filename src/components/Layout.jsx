@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Package, UtensilsCrossed, ShoppingCart,
   ArrowUpDown, ClipboardList, BarChart2, TrendingUp, DollarSign,
   AlertTriangle, LogOut, ScrollText, Menu, X, Clock,
-  Store, Send, Users, Building2, ChefHat, Trash2, Percent, Landmark, Wallet, Coins
+  Store, Send, Users, Building2, ChefHat, Trash2, Percent, Landmark, Wallet, Coins, Gift, Copy, Check
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
@@ -36,6 +36,7 @@ export default function Layout() {
     remainingTransactions,
     isCoinLow,
     isCoinOut,
+    userReferralCode,
   } = useOutletContext();
 
   const navSections = [
@@ -225,6 +226,39 @@ export default function Layout() {
 
         {/* Footer User Info */}
         <div className="sidebar-footer">
+          {/* User Referral Code Card */}
+          {(userReferralCode || user.referral_code) && (
+            <div
+              style={{
+                marginBottom: 10,
+                padding: '7px 10px',
+                borderRadius: 8,
+                background: 'rgba(245, 158, 11, 0.08)',
+                border: '1px solid rgba(245, 158, 11, 0.25)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+              onClick={() => {
+                const code = userReferralCode || user.referral_code;
+                navigator.clipboard.writeText(code);
+                toast.success(`Kode referral Anda (${code}) disalin! Bagikan ke rekan Anda.`);
+              }}
+              title="Klik untuk menyalin kode referral Anda"
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Gift size={13} style={{ color: '#f59e0b' }} />
+                <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Kode Ref:</span>
+                <strong style={{ fontSize: 12, color: '#fbbf24', letterSpacing: '0.05em' }}>
+                  {userReferralCode || user.referral_code}
+                </strong>
+              </div>
+              <Copy size={12} style={{ color: '#f59e0b', opacity: 0.8 }} />
+            </div>
+          )}
+
           <div className="sidebar-user">
             <div className="sidebar-avatar">
               {user.name?.[0]?.toUpperCase() || 'A'}
@@ -309,6 +343,36 @@ export default function Layout() {
                 </span>
               </div>
             </div>
+
+            {/* User Referral Badge in Header */}
+            {(userReferralCode || user.referral_code) && (
+              <div
+                className="top-header-referral-badge"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '5px 12px',
+                  borderRadius: 10,
+                  background: 'rgba(245, 158, 11, 0.1)',
+                  border: '1px solid rgba(245, 158, 11, 0.25)',
+                  cursor: 'pointer',
+                }}
+                onClick={() => {
+                  const code = userReferralCode || user.referral_code;
+                  navigator.clipboard.writeText(code);
+                  toast.success(`Kode referral Anda (${code}) disalin!`);
+                }}
+                title="Klik untuk menyalin kode referral Anda"
+              >
+                <Gift size={14} style={{ color: '#f59e0b' }} />
+                <span style={{ color: 'var(--text-secondary)', fontSize: 11.5 }}>Ref:</span>
+                <strong style={{ color: '#fbbf24', fontSize: 12.5, letterSpacing: '0.05em' }}>
+                  {userReferralCode || user.referral_code}
+                </strong>
+                <Copy size={12} style={{ color: '#f59e0b', opacity: 0.8 }} />
+              </div>
+            )}
           </div>
 
           <div className="top-header-right">
