@@ -10,8 +10,10 @@ import api from '../api/client';
 import toast from 'react-hot-toast';
 import { PageHeader, LoadingState, AuditInfo, MiniCard, num } from '../components/ui';
 import { printElement } from '../utils/print';
+import { useOutlet } from '../context/OutletContext';
 
 export default function TransferBahan() {
+  const { currentBusiness, userBusinessName } = useOutlet();
   const [searchParams] = useSearchParams();
   const [transfers, setTransfers] = useState([]);
   const [outlets, setOutlets] = useState([]);
@@ -151,18 +153,18 @@ export default function TransferBahan() {
 
   // Open Create Modal cleanly
   function openCreateModal() {
-    const mainOut = outlets.find(o => o.is_main) || outlets[0];
-    const otherOut = outlets.find(o => o.id !== mainOut?.id);
+    const firstOut = outlets[0];
+    const secondOut = outlets.length > 1 ? outlets[1] : null;
     const firstIng = ingredients[0];
     const defaultUnit = firstIng?.unit_beli || firstIng?.unit_pakai || 'gram';
 
     setFormData({
       date: new Date().toISOString().slice(0, 10),
       source_mode: 'OUTLET',
-      source_outlet_id: mainOut ? String(mainOut.id) : '',
+      source_outlet_id: firstOut ? String(firstOut.id) : '',
       source_name: '',
       destination_mode: 'OUTLET',
-      destination_outlet_id: otherOut ? String(otherOut.id) : '',
+      destination_outlet_id: secondOut ? String(secondOut.id) : '',
       destination_name: '',
       driver_name: '',
       vehicle_no: '',
@@ -356,7 +358,8 @@ export default function TransferBahan() {
     } else {
       const ing = ingredients.find(i => i.id === Number(item.ingredient_id));
       if (!ing) return null;
-      const availStock = Number(ing.current_stock ?? ing.stok_awal ?? 0);
+      const outStock = ing.outlet_stocks?.find(os => os.outlet_id === sourceOutletId);
+      const availStock = outStock ? Number(outStock.current) : Number(ing.current_stock ?? ing.stok_awal ?? 0);
       const neededBaseQty = Number(item.qty || 0);
       return {
         stock: availStock,
@@ -537,11 +540,11 @@ export default function TransferBahan() {
   return (
     <div className="fade-in">
       <PageHeader
-        title="Transfer Barang & Stok Antar Lokasi"
-        subtitle="Distribusi bahan baku dan produk retail antar cabang, dari gudang pusat, maupun lokasi luar dengan bukti surat jalan."
+        title="Transfer Barang Antar Cabang"
+        subtitle={`Distribusi bahan baku dan produk retail langsung antar cabang di dalam ${userBusinessName || 'perusahaan Anda'} dengan bukti surat jalan.`}
         action={
           <button className="btn btn-primary" onClick={openCreateModal}>
-            <Send size={15} /> Buat Transfer Barang
+            <Send size={15} /> Buat Transfer Antar Cabang
           </button>
         }
       />
@@ -616,8 +619,8 @@ export default function TransferBahan() {
               <tr>
                 <th style={{ width: 145 }}>No. Surat Jalan</th>
                 <th style={{ width: 95 }}>Tanggal</th>
-                <th style={{ minWidth: 160 }}>Dari (Asal)</th>
-                <th style={{ minWidth: 160 }}>Ke (Tujuan)</th>
+                <th style={{ minWidth: 160 }}>Cabang Pengirim (Asal)</th>
+                <th style={{ minWidth: 160 }}>Cabang Penerima (Tujuan)</th>
                 <th style={{ minWidth: 220 }}>Rincian Barang & Bahan</th>
                 <th style={{ minWidth: 130 }}>Kurir / Supir</th>
                 <th style={{ width: 95 }} className="center">Status</th>
@@ -752,10 +755,10 @@ export default function TransferBahan() {
                 <Send size={18} color="var(--accent-bright)" />
                 <div>
                   <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>
-                    Form Transfer Barang & Bahan Antar Lokasi
+                    Form Transfer Barang Antar Cabang
                   </h3>
                   <span style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
-                    Bisa kirim dari/ke outlet terdaftar, gudang pusat, maupun lokasi luar.
+                    Kirim stok bahan baku maupun produk retail langsung antar cabang dalam perusahaan Anda.
                   </span>
                 </div>
               </div>
@@ -769,39 +772,53 @@ export default function TransferBahan() {
             </div>
 
             <form onSubmit={handleCreateTransfer}>
-              {/* SOURCE & DESTINATION WITH 1-CLICK SWAP */}
+              {/* COMPANY SCOPE & BRANCH-TO-BRANCH SELECTOR WITH 1-CLICK SWAP */}
               <div style={{
-                background: 'rgba(255,255,255,0.02)',
-                border: '1px solid var(--border)',
+                background: 'rgba(99, 102, 241, 0.04)',
+                border: '1px solid rgba(99, 102, 241, 0.18)',
                 borderRadius: 12,
                 padding: 14,
                 marginBottom: 14
               }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 44px 1fr', gap: 10, alignItems: 'center' }}>
-                  {/* ASAL (SOURCE) */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: 'var(--accent-bright)' }}>
+                    <Store size={14} />
+                    <span>Internal Transfer Antar Cabang:</span>
+                    <span className="pill pill-primary" style={{ fontSize: 10.5, padding: '2px 8px' }}>
+                      🏢 {userBusinessName || currentBusiness?.name || 'Perusahaan Aktif'}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    🔒 Bebas dari cabang mana saja ke cabang mana saja dalam 1 perusahaan
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 48px 1fr', gap: 10, alignItems: 'center' }}>
+                  {/* CABANG PENGIRIM (ASAL) */}
                   <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                      <label className="form-label mb-0" style={{ fontWeight: 700, color: '#93c5fd' }}>
-                        📍 DARI (LOKASI ASAL) *
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                      <label className="form-label mb-0" style={{ fontWeight: 700, color: '#93c5fd', fontSize: 12 }}>
+                        📍 CABANG PENGIRIM (ASAL) *
                       </label>
-                      <div style={{ display: 'flex', gap: 4 }}>
+                      {formData.source_mode === 'CUSTOM' ? (
                         <button
                           type="button"
-                          className={`btn btn-xs ${formData.source_mode === 'OUTLET' ? 'btn-primary' : 'btn-ghost'}`}
+                          className="btn btn-ghost btn-xs"
                           style={{ fontSize: 10, padding: '1px 6px' }}
-                          onClick={() => setFormData(p => ({ ...p, source_mode: 'OUTLET' }))}
+                          onClick={() => setFormData(p => ({ ...p, source_mode: 'OUTLET', source_name: '' }))}
                         >
-                          Cabang
+                          Pilih Cabang
                         </button>
+                      ) : (
                         <button
                           type="button"
-                          className={`btn btn-xs ${formData.source_mode === 'CUSTOM' ? 'btn-primary' : 'btn-ghost'}`}
-                          style={{ fontSize: 10, padding: '1px 6px' }}
-                          onClick={() => setFormData(p => ({ ...p, source_mode: 'CUSTOM' }))}
+                          className="btn btn-ghost btn-xs"
+                          style={{ fontSize: 10, padding: '1px 6px', color: 'var(--text-muted)' }}
+                          onClick={() => setFormData(p => ({ ...p, source_mode: 'CUSTOM', source_outlet_id: '' }))}
                         >
-                          Gudang Luar
+                          + Gudang Internal
                         </button>
-                      </div>
+                      )}
                     </div>
 
                     {formData.source_mode === 'OUTLET' ? (
@@ -811,18 +828,26 @@ export default function TransferBahan() {
                         onChange={e => setFormData(p => ({ ...p, source_outlet_id: e.target.value }))}
                         required
                       >
-                        <option value="" disabled>-- Pilih Outlet Pengirim --</option>
-                        {outlets.map(o => (
-                          <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
-                            {o.name} {o.is_main ? '(Pusat)' : ''}
-                          </option>
-                        ))}
+                        <option value="" disabled>-- Pilih Cabang Pengirim --</option>
+                        {outlets.map(o => {
+                          const isSelectedAsDest = String(o.id) === String(formData.destination_outlet_id);
+                          return (
+                            <option
+                              key={o.id}
+                              value={o.id}
+                              disabled={isSelectedAsDest}
+                              style={{ background: '#11162d', color: isSelectedAsDest ? '#64748b' : '#ffffff' }}
+                            >
+                              {o.name} {isSelectedAsDest ? '(Sudah dipilih sebagai tujuan)' : ''}
+                            </option>
+                          );
+                        })}
                       </select>
                     ) : (
                       <input
                         type="text"
                         className="form-control"
-                        placeholder="Contoh: Gudang Pusat Cikini / Pemasok Utama"
+                        placeholder="Contoh: Ruang Simpan / Gudang Internal Perusahaan"
                         value={formData.source_name}
                         onChange={e => setFormData(p => ({ ...p, source_name: e.target.value }))}
                         required
@@ -832,46 +857,47 @@ export default function TransferBahan() {
                   </div>
 
                   {/* 1-CLICK SWAP BUTTON */}
-                  <div style={{ textAlign: 'center', paddingTop: 18 }}>
+                  <div style={{ textAlign: 'center', paddingTop: 16 }}>
                     <button
                       type="button"
                       className="btn btn-secondary btn-icon"
                       onClick={handleSwapLocations}
-                      title="Tukar Asal dan Tujuan (Swap)"
+                      title="Tukar Cabang Pengirim dan Penerima (Swap ⇄)"
                       style={{
-                        width: 36, height: 36, borderRadius: '50%',
+                        width: 38, height: 38, borderRadius: '50%',
                         margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        background: 'rgba(99, 102, 241, 0.15)', borderColor: 'var(--accent)', color: '#fff'
+                        background: 'rgba(99, 102, 241, 0.2)', borderColor: 'var(--accent)', color: '#fff'
                       }}
                     >
-                      <ArrowLeftRight size={15} />
+                      <ArrowLeftRight size={16} />
                     </button>
                   </div>
 
-                  {/* TUJUAN (DESTINATION) */}
+                  {/* CABANG PENERIMA (TUJUAN) */}
                   <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                      <label className="form-label mb-0" style={{ fontWeight: 700, color: '#c084fc' }}>
-                        🏁 KE (LOKASI TUJUAN) *
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                      <label className="form-label mb-0" style={{ fontWeight: 700, color: '#c084fc', fontSize: 12 }}>
+                        🏁 CABANG PENERIMA (TUJUAN) *
                       </label>
-                      <div style={{ display: 'flex', gap: 4 }}>
+                      {formData.destination_mode === 'CUSTOM' ? (
                         <button
                           type="button"
-                          className={`btn btn-xs ${formData.destination_mode === 'OUTLET' ? 'btn-primary' : 'btn-ghost'}`}
+                          className="btn btn-ghost btn-xs"
                           style={{ fontSize: 10, padding: '1px 6px' }}
-                          onClick={() => setFormData(p => ({ ...p, destination_mode: 'OUTLET' }))}
+                          onClick={() => setFormData(p => ({ ...p, destination_mode: 'OUTLET', destination_name: '' }))}
                         >
-                          Cabang
+                          Pilih Cabang
                         </button>
+                      ) : (
                         <button
                           type="button"
-                          className={`btn btn-xs ${formData.destination_mode === 'CUSTOM' ? 'btn-primary' : 'btn-ghost'}`}
-                          style={{ fontSize: 10, padding: '1px 6px' }}
-                          onClick={() => setFormData(p => ({ ...p, destination_mode: 'CUSTOM' }))}
+                          className="btn btn-ghost btn-xs"
+                          style={{ fontSize: 10, padding: '1px 6px', color: 'var(--text-muted)' }}
+                          onClick={() => setFormData(p => ({ ...p, destination_mode: 'CUSTOM', destination_outlet_id: '' }))}
                         >
-                          Gudang Luar
+                          + Gudang Internal
                         </button>
-                      </div>
+                      )}
                     </div>
 
                     {formData.destination_mode === 'OUTLET' ? (
@@ -881,18 +907,26 @@ export default function TransferBahan() {
                         onChange={e => setFormData(p => ({ ...p, destination_outlet_id: e.target.value }))}
                         required
                       >
-                        <option value="" disabled>-- Pilih Outlet Penerima --</option>
-                        {outlets.map(o => (
-                          <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
-                            {o.name} {o.is_main ? '(Pusat)' : ''}
-                          </option>
-                        ))}
+                        <option value="" disabled>-- Pilih Cabang Penerima --</option>
+                        {outlets.map(o => {
+                          const isSelectedAsSource = String(o.id) === String(formData.source_outlet_id);
+                          return (
+                            <option
+                              key={o.id}
+                              value={o.id}
+                              disabled={isSelectedAsSource}
+                              style={{ background: '#11162d', color: isSelectedAsSource ? '#64748b' : '#ffffff' }}
+                            >
+                              {o.name} {isSelectedAsSource ? '(Sudah dipilih sebagai asal)' : ''}
+                            </option>
+                          );
+                        })}
                       </select>
                     ) : (
                       <input
                         type="text"
                         className="form-control"
-                        placeholder="Contoh: Event Booth / Gudang Konsinyasi"
+                        placeholder="Contoh: Ruang Simpan / Gudang Internal Perusahaan"
                         value={formData.destination_name}
                         onChange={e => setFormData(p => ({ ...p, destination_name: e.target.value }))}
                         required
@@ -1244,15 +1278,15 @@ export default function TransferBahan() {
               <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #0f172a', paddingBottom: 14, marginBottom: 16 }}>
                 <div>
                   <div style={{ fontWeight: 800, fontSize: 18, color: '#1e1b4b', letterSpacing: '-0.02em' }}>
-                    MOVA POS — KITCHEN, RETAIL & INVENTORY
+                    {userBusinessName || currentBusiness?.name || 'MOVA POS'}
                   </div>
                   <div style={{ fontSize: 12, color: '#475569' }}>
-                    Sistem Kontrol & Distribusi Stok Barang Antar Lokasi
+                    Dokumen Resmi Transfer Barang Antar Cabang Internal Perusahaan
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontWeight: 800, fontSize: 15, color: '#4f46e5' }}>
-                    SURAT JALAN TRANSFER
+                    SURAT JALAN TRANSFER ANTAR CABANG
                   </div>
                   <div style={{ fontSize: 13, fontWeight: 700, fontFamily: 'monospace', color: '#0f172a' }}>
                     {selectedTransfer.transfer_no}
@@ -1264,31 +1298,31 @@ export default function TransferBahan() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, fontSize: 12.5, marginBottom: 16 }}>
                 <div style={{ padding: '10px 12px', background: '#f8fafc', borderRadius: 6, border: '1px solid #e2e8f0' }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: 4 }}>
-                    Pengirim (Lokasi Asal)
+                    Cabang Pengirim (Asal)
                   </div>
                   <div style={{ fontWeight: 700, color: '#0f172a', fontSize: 13.5 }}>
-                    {selectedTransfer.source_display_name || selectedTransfer.source_outlet?.name || selectedTransfer.source_name || 'Gudang Asal'}
+                    {selectedTransfer.source_display_name || selectedTransfer.source_outlet?.name || selectedTransfer.source_name || 'Cabang Asal'}
                   </div>
                   <div style={{ color: '#475569', fontSize: 12, marginTop: 2 }}>
-                    PIC: {selectedTransfer.source_outlet?.pic_name || 'Kepala Gudang / Pengirim'} · Telp: {selectedTransfer.source_outlet?.phone || '—'}
+                    PIC: {selectedTransfer.source_outlet?.pic_name || 'Kepala Cabang / Pengirim'} · Telp: {selectedTransfer.source_outlet?.phone || '—'}
                   </div>
                   <div style={{ color: '#64748b', fontSize: 11.5, marginTop: 2 }}>
-                    {selectedTransfer.source_outlet?.address || 'Makassar'}
+                    {selectedTransfer.source_outlet?.address || ''}
                   </div>
                 </div>
 
                 <div style={{ padding: '10px 12px', background: '#eef2ff', borderRadius: 6, border: '1px solid #c7d2fe' }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: '#4f46e5', textTransform: 'uppercase', marginBottom: 4 }}>
-                    Penerima (Lokasi Tujuan)
+                    Cabang Penerima (Tujuan)
                   </div>
                   <div style={{ fontWeight: 700, color: '#1e1b4b', fontSize: 13.5 }}>
-                    {selectedTransfer.destination_display_name || selectedTransfer.destination_outlet?.name || selectedTransfer.destination_name || 'Lokasi Tujuan'}
+                    {selectedTransfer.destination_display_name || selectedTransfer.destination_outlet?.name || selectedTransfer.destination_name || 'Cabang Tujuan'}
                   </div>
                   <div style={{ color: '#334155', fontSize: 12, marginTop: 2 }}>
                     PIC: {selectedTransfer.destination_outlet?.pic_name || 'Store Manager / Penerima'} · Telp: {selectedTransfer.destination_outlet?.phone || '—'}
                   </div>
                   <div style={{ color: '#64748b', fontSize: 11.5, marginTop: 2 }}>
-                    {selectedTransfer.destination_outlet?.address || 'Makassar'}
+                    {selectedTransfer.destination_outlet?.address || ''}
                   </div>
                 </div>
               </div>
@@ -1373,9 +1407,9 @@ export default function TransferBahan() {
                 <div>
                   <div style={{ color: '#64748b', marginBottom: 45 }}>Diserahkan Oleh,</div>
                   <div style={{ fontWeight: 700, borderTop: '1px solid #94a3b8', paddingTop: 4, color: '#0f172a' }}>
-                    ( {selectedTransfer.source_outlet?.pic_name || 'Petugas Gudang'} )
+                    ( {selectedTransfer.source_outlet?.pic_name || 'Petugas Cabang'} )
                   </div>
-                  <div style={{ fontSize: 11, color: '#64748b' }}>Pengirim / Lokasi Asal</div>
+                  <div style={{ fontSize: 11, color: '#64748b' }}>Pengirim (Cabang Asal)</div>
                 </div>
 
                 <div>
@@ -1391,7 +1425,7 @@ export default function TransferBahan() {
                   <div style={{ fontWeight: 700, borderTop: '1px solid #94a3b8', paddingTop: 4, color: '#0f172a' }}>
                     ( {selectedTransfer.destination_outlet?.pic_name || 'Store Manager'} )
                   </div>
-                  <div style={{ fontSize: 11, color: '#64748b' }}>Penerima / Lokasi Tujuan</div>
+                  <div style={{ fontSize: 11, color: '#64748b' }}>Penerima (Cabang Tujuan)</div>
                 </div>
               </div>
             </div>
