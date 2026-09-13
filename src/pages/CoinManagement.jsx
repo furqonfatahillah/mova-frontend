@@ -847,7 +847,11 @@ export default function CoinManagement() {
                 <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                   <AlertCircle size={16} style={{ color: 'var(--accent-bright)', flexShrink: 0, marginTop: 2 }} />
                   <div>
-                    Setiap transaksi kasir berstatus <strong>PAID</strong> (baik pesanan langsung atau pelunasan tagihan terbuka / open bill) di seluruh cabang perusahaan ini akan memotong koin sejumlah tarif di atas secara otomatis.
+                    Setiap transaksi kasir berstatus <strong>PAID</strong> di seluruh cabang perusahaan ini akan memotong koin sejumlah tarif di atas.
+                    <br /><br />
+                    <span style={{ color: '#34d399', fontWeight: 600 }}>
+                      ℹ️ Catatan Penting: Perubahan tarif ini hanya berlaku untuk transaksi kasir ke depan. Riwayat pengurangan koin pada transaksi yang sudah berlalu (history) tetap tersimpan aman dan tidak akan berubah.
+                    </span>
                   </div>
                 </div>
               </div>
