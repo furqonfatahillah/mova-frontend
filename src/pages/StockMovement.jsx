@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Trash2, Filter, Store, TrendingUp, TrendingDown, Sparkles, Calculator } from 'lucide-react';
+import { Plus, Trash2, Filter, Store, TrendingUp, TrendingDown, Sparkles, Calculator, X } from 'lucide-react';
 import api from '../api/client';
 import { num, rupiah, LoadingState, PageHeader, AuditInfo } from '../components/ui';
 import toast from 'react-hot-toast';
@@ -42,6 +42,7 @@ export default function StockMovement() {
   const [loading, setLoading] = useState(true);
   const [filterIng, setFilterIng] = useState('ALL');
   const [filterType, setFilterType] = useState('ALL');
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const { activeOutletId, activeOutlet, isOwnerWebsite, outlets } = useOutlet();
 
@@ -163,6 +164,7 @@ export default function StockMovement() {
       const { data } = await api.post('/movements', payload);
       setMovements(prev => [data, ...prev]);
       setForm(f => ({ ...f, qty: '', note: '' }));
+      setIsModalOpen(false);
       toast.success(
         form.type === 'PURCHASE'
           ? `Pembelian berhasil! Harga rata-rata bergerak terupdate: ${rupiah(data.cost_after * conversion)}/${selectedIng?.unit_beli}`
@@ -194,209 +196,20 @@ export default function StockMovement() {
       <PageHeader
         title="Stock Movement & Waste Log"
         subtitle="Ledger seluruh mutasi stok bahan baku: pembelian, pemakaian penjualan (POS), pencatatan kerusakan/waste terpisah, transfer, dan adjustment."
+        rightContent={
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="btn btn-primary"
+            style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}
+          >
+            <Plus size={16} />
+            Catat Pergerakan Manual
+          </button>
+        }
       />
 
-      <div className="grid-sidebar">
-        {/* Form */}
-        <div className="card">
-          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Plus size={16} color="var(--accent)" />
-            <span>Catat Pergerakan Manual</span>
-          </div>
-
-          <form onSubmit={handleSubmit}>
-            <div className="form-group">
-              <label className="form-label">Bahan Baku</label>
-              <select className="form-control" value={form.ingredient_id}
-                onChange={e => setForm(f => ({ ...f, ingredient_id: e.target.value }))}>
-                {ingredients.map(i => <option key={i.id} value={i.id}>{i.name} ({i.unit_pakai})</option>)}
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Tipe Pergerakan</label>
-              <select className="form-control" value={form.type}
-                onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
-                {MOVEMENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
-            </div>
-
-            {/* Waste Reason Dropdown for Cost Control */}
-            {form.type === 'WASTE' && (
-              <div className="form-group fade-in" style={{ background: 'rgba(244, 63, 94, 0.08)', padding: 12, borderRadius: 8, border: '1px solid rgba(244, 63, 94, 0.2)' }}>
-                <label className="form-label" style={{ color: '#fb7185', fontWeight: 600 }}>
-                  ⚠️ Alasan Kerusakan / Waste
-                </label>
-                <select className="form-control" value={form.waste_reason}
-                  onChange={e => setForm(f => ({ ...f, waste_reason: e.target.value }))}>
-                  {WASTE_REASONS.map(wr => (
-                    <option key={wr.value} value={wr.value}>{wr.label}</option>
-                  ))}
-                </select>
-                <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>
-                  Data ini dipisahkan di Cost Control agar tidak rancu dengan selisih tak terjelaskan.
-                </div>
-              </div>
-            )}
-
-            {/* Qty & Unit Selection */}
-            <div className="form-group">
-              <label className="form-label">
-                Jumlah Qty {form.type === 'PURCHASE' ? 'Pembelian' : `(${selectedIng?.unit_pakai || 'satuan'})`}
-              </label>
-              {form.type === 'PURCHASE' ? (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 130px', gap: 8 }}>
-                  <input
-                    type="number"
-                    className="form-control"
-                    min="0.001"
-                    step="any"
-                    placeholder="0"
-                    value={form.qty}
-                    onChange={e => setForm(f => ({ ...f, qty: e.target.value }))}
-                  />
-                  <select
-                    className="form-control"
-                    value={form.unit_type}
-                    onChange={e => {
-                      const newUnit = e.target.value;
-                      setForm(f => ({
-                        ...f,
-                        unit_type: newUnit,
-                        unit_price: selectedIng
-                          ? (newUnit === 'BELI' ? selectedIng.harga : Number((selectedIng.harga / (selectedIng.konversi || 1)).toFixed(2)))
-                          : f.unit_price
-                      }));
-                    }}
-                  >
-                    <option value="BELI">{selectedIng?.unit_beli || 'Satuan Beli'} ({selectedIng?.konversi || 1000}x)</option>
-                    <option value="PAKAI">{selectedIng?.unit_pakai || 'Satuan Pakai'}</option>
-                  </select>
-                </div>
-              ) : (
-                <input
-                  type="number"
-                  className="form-control"
-                  min="0.001"
-                  step="any"
-                  placeholder="0"
-                  value={form.qty}
-                  onChange={e => setForm(f => ({ ...f, qty: e.target.value }))}
-                />
-              )}
-            </div>
-
-            {/* PURCHASE ONLY: Purchase Price & Moving Average Simulation */}
-            {form.type === 'PURCHASE' && (
-              <div className="form-group fade-in" style={{
-                background: 'linear-gradient(135deg, rgba(30, 27, 75, 0.3) 0%, rgba(16, 185, 129, 0.08) 100%)',
-                padding: '12px 14px',
-                borderRadius: 10,
-                border: '1px solid rgba(16, 185, 129, 0.25)',
-                marginBottom: 16
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <label className="form-label" style={{ color: '#34d399', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}>
-                    <Calculator size={14} /> Harga Beli Satuan Baru (Rp)
-                  </label>
-                  <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
-                    per {form.unit_type === 'BELI' ? selectedIng?.unit_beli : selectedIng?.unit_pakai}
-                  </span>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  <div>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0"
-                      className="form-control mono"
-                      style={{ fontSize: 13, fontWeight: 700, borderColor: 'rgba(16, 185, 129, 0.4)' }}
-                      placeholder="Harga satuan beli..."
-                      value={form.unit_price}
-                      onChange={e => setForm(f => ({ ...f, unit_price: e.target.value }))}
-                    />
-                  </div>
-
-                  <div>
-                    <div style={{
-                      padding: '8px 10px',
-                      background: 'rgba(255, 255, 255, 0.04)',
-                      borderRadius: 8,
-                      border: '1px solid var(--border)',
-                      height: '100%',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'center'
-                    }}>
-                      <div style={{ fontSize: 10, color: 'var(--text-secondary)' }}>Total Nilai Pembelian</div>
-                      <div className="mono" style={{ fontSize: 13, fontWeight: 700, color: '#34d399' }}>
-                        {liveMovingAverage?.totalBeliValue ? rupiah(liveMovingAverage.totalBeliValue) : 'Rp 0'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Live Moving Average Result Box */}
-                {liveMovingAverage?.newHargaBeli !== null && liveMovingAverage?.newHargaBeli !== undefined && (
-                  <div style={{
-                    marginTop: 10,
-                    padding: '8px 10px',
-                    borderRadius: 8,
-                    background: 'rgba(99, 102, 241, 0.1)',
-                    border: '1px solid rgba(99, 102, 241, 0.3)',
-                    fontSize: 11.5
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>Harga Rata-Rata Saat Ini:</span>
-                      <span className="mono" style={{ color: 'var(--text-muted)' }}>{rupiah(liveMovingAverage.currentHargaBeli)}/{selectedIng?.unit_beli}</span>
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, paddingTop: 4, borderTop: '1px dashed rgba(255,255,255,0.1)' }}>
-                      <span style={{ fontWeight: 700, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <Sparkles size={13} color="var(--accent-bright)" /> Estimasi Rata-Rata Baru:
-                      </span>
-                      <div style={{ textAlign: 'right' }}>
-                        <span className="mono" style={{ fontWeight: 800, color: 'var(--accent-bright)', fontSize: 13 }}>
-                          {rupiah(liveMovingAverage.newHargaBeli)}/{selectedIng?.unit_beli}
-                        </span>
-                        {liveMovingAverage.deltaHarga !== 0 && (
-                          <span style={{
-                            marginLeft: 6,
-                            fontSize: 10,
-                            fontWeight: 700,
-                            color: liveMovingAverage.deltaHarga > 0 ? '#fb7185' : '#34d399'
-                          }}>
-                            ({liveMovingAverage.deltaHarga > 0 ? '+' : ''}{rupiah(liveMovingAverage.deltaHarga)})
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="form-group">
-              <label className="form-label">Tanggal Mutasi</label>
-              <input type="date" className="form-control" value={form.date}
-                onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Catatan Tambahan</label>
-              <input className="form-control" value={form.note} placeholder="Misal: Beli di pasar lokal, supplier restock, dll."
-                onChange={e => setForm(f => ({ ...f, note: e.target.value }))} />
-            </div>
-
-            <button type="submit" className={`btn ${form.type === 'WASTE' ? 'btn-danger' : 'btn-primary'} w-full`} style={{ justifyContent: 'center' }} disabled={saving}>
-              <Plus size={14} /> {saving ? 'Menyimpan...' : form.type === 'WASTE' ? 'Catat Waste' : form.type === 'PURCHASE' ? 'Simpan Pembelian & Update Moving Avg' : 'Simpan Mutasi'}
-            </button>
-          </form>
-        </div>
-
-        {/* Ledger Table */}
-        <div className="card">
+      {/* Ledger Table (Full Width) */}
+      <div className="card">
           <div className="flex-between mb-4 flex-wrap gap-2">
             <div>
               <div style={{ fontWeight: 700, fontSize: 14 }}>Ledger Mutasi Stok</div>
@@ -518,6 +331,223 @@ export default function StockMovement() {
           </div>
         </div>
       </div>
+
+      {/* MODAL: CATAT PERGERAKAN MANUAL */}
+      {isModalOpen && (
+        <div className="modal-backdrop" onClick={() => setIsModalOpen(false)}>
+          <div className="modal card" onClick={e => e.stopPropagation()} style={{ maxWidth: 540, width: '100%', padding: 24, maxHeight: '92vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(99, 102, 241, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-bright)' }}>
+                  <Plus size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>Catat Pergerakan Manual</h3>
+                  <p style={{ margin: 0, fontSize: 12, color: 'var(--text-secondary)' }}>Input mutasi stok: pembelian, waste, adjustment, atau transfer.</p>
+                </div>
+              </div>
+              <button onClick={() => setIsModalOpen(false)} className="btn btn-ghost btn-icon btn-sm">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit}>
+              <div className="form-group">
+                <label className="form-label">Bahan Baku</label>
+                <select className="form-control" value={form.ingredient_id}
+                  onChange={e => setForm(f => ({ ...f, ingredient_id: e.target.value }))}>
+                  {ingredients.map(i => <option key={i.id} value={i.id}>{i.name} ({i.unit_pakai})</option>)}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Tipe Pergerakan</label>
+                <select className="form-control" value={form.type}
+                  onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
+                  {MOVEMENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
+              </div>
+
+              {/* Waste Reason Dropdown */}
+              {form.type === 'WASTE' && (
+                <div className="form-group fade-in" style={{ background: 'rgba(244, 63, 94, 0.08)', padding: 12, borderRadius: 8, border: '1px solid rgba(244, 63, 94, 0.2)' }}>
+                  <label className="form-label" style={{ color: '#fb7185', fontWeight: 600 }}>
+                    ⚠️ Alasan Kerusakan / Waste
+                  </label>
+                  <select className="form-control" value={form.waste_reason}
+                    onChange={e => setForm(f => ({ ...f, waste_reason: e.target.value }))}>
+                    {WASTE_REASONS.map(wr => (
+                      <option key={wr.value} value={wr.value}>{wr.label}</option>
+                    ))}
+                  </select>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>
+                    Data ini dipisahkan di Cost Control agar tidak rancu dengan selisih tak terjelaskan.
+                  </div>
+                </div>
+              )}
+
+              {/* Qty & Unit Selection */}
+              <div className="form-group">
+                <label className="form-label">
+                  Jumlah Qty {form.type === 'PURCHASE' ? 'Pembelian' : `(${selectedIng?.unit_pakai || 'satuan'})`}
+                </label>
+                {form.type === 'PURCHASE' ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 130px', gap: 8 }}>
+                    <input
+                      type="number"
+                      className="form-control"
+                      min="0.001"
+                      step="any"
+                      placeholder="0"
+                      value={form.qty}
+                      onChange={e => setForm(f => ({ ...f, qty: e.target.value }))}
+                    />
+                    <select
+                      className="form-control"
+                      value={form.unit_type}
+                      onChange={e => {
+                        const newUnit = e.target.value;
+                        setForm(f => ({
+                          ...f,
+                          unit_type: newUnit,
+                          unit_price: selectedIng
+                            ? (newUnit === 'BELI' ? selectedIng.harga : Number((selectedIng.harga / (selectedIng.konversi || 1)).toFixed(2)))
+                            : f.unit_price
+                        }));
+                      }}
+                    >
+                      <option value="BELI">{selectedIng?.unit_beli || 'Satuan Beli'} ({selectedIng?.konversi || 1000}x)</option>
+                      <option value="PAKAI">{selectedIng?.unit_pakai || 'Satuan Pakai'}</option>
+                    </select>
+                  </div>
+                ) : (
+                  <input
+                    type="number"
+                    className="form-control"
+                    min="0.001"
+                    step="any"
+                    placeholder="0"
+                    value={form.qty}
+                    onChange={e => setForm(f => ({ ...f, qty: e.target.value }))}
+                  />
+                )}
+              </div>
+
+              {/* PURCHASE ONLY: Purchase Price & Moving Average Simulation */}
+              {form.type === 'PURCHASE' && (
+                <div className="form-group fade-in" style={{
+                  background: 'linear-gradient(135deg, rgba(30, 27, 75, 0.3) 0%, rgba(16, 185, 129, 0.08) 100%)',
+                  padding: '12px 14px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(16, 185, 129, 0.25)',
+                  marginBottom: 16
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <label className="form-label" style={{ color: '#34d399', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}>
+                      <Calculator size={14} /> Harga Beli Satuan Baru (Rp)
+                    </label>
+                    <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
+                      per {form.unit_type === 'BELI' ? selectedIng?.unit_beli : selectedIng?.unit_pakai}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <div>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        className="form-control mono"
+                        style={{ fontSize: 13, fontWeight: 700, borderColor: 'rgba(16, 185, 129, 0.4)' }}
+                        placeholder="Harga satuan beli..."
+                        value={form.unit_price}
+                        onChange={e => setForm(f => ({ ...f, unit_price: e.target.value }))}
+                      />
+                    </div>
+
+                    <div>
+                      <div style={{
+                        padding: '8px 10px',
+                        background: 'rgba(255, 255, 255, 0.04)',
+                        borderRadius: 8,
+                        border: '1px solid var(--border)',
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'center'
+                      }}>
+                        <div style={{ fontSize: 10, color: 'var(--text-secondary)' }}>Total Nilai Pembelian</div>
+                        <div className="mono" style={{ fontSize: 13, fontWeight: 700, color: '#34d399' }}>
+                          {liveMovingAverage?.totalBeliValue ? rupiah(liveMovingAverage.totalBeliValue) : 'Rp 0'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Live Moving Average Result Box */}
+                  {liveMovingAverage?.newHargaBeli !== null && liveMovingAverage?.newHargaBeli !== undefined && (
+                    <div style={{
+                      marginTop: 10,
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      background: 'rgba(99, 102, 241, 0.1)',
+                      border: '1px solid rgba(99, 102, 241, 0.3)',
+                      fontSize: 11.5
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Harga Rata-Rata Saat Ini:</span>
+                        <span className="mono" style={{ color: 'var(--text-muted)' }}>{rupiah(liveMovingAverage.currentHargaBeli)}/{selectedIng?.unit_beli}</span>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, paddingTop: 4, borderTop: '1px dashed rgba(255,255,255,0.1)' }}>
+                        <span style={{ fontWeight: 700, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <Sparkles size={13} color="var(--accent-bright)" /> Estimasi Rata-Rata Baru:
+                        </span>
+                        <div style={{ textAlign: 'right' }}>
+                          <span className="mono" style={{ fontWeight: 800, color: 'var(--accent-bright)', fontSize: 13 }}>
+                            {rupiah(liveMovingAverage.newHargaBeli)}/{selectedIng?.unit_beli}
+                          </span>
+                          {liveMovingAverage.deltaHarga !== 0 && (
+                            <span style={{
+                              marginLeft: 6,
+                              fontSize: 10,
+                              fontWeight: 700,
+                              color: liveMovingAverage.deltaHarga > 0 ? '#fb7185' : '#34d399'
+                            }}>
+                              ({liveMovingAverage.deltaHarga > 0 ? '+' : ''}{rupiah(liveMovingAverage.deltaHarga)})
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="form-group">
+                <label className="form-label">Tanggal Mutasi</label>
+                <input type="date" className="form-control" value={form.date}
+                  onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 20 }}>
+                <label className="form-label">Catatan Tambahan</label>
+                <input className="form-control" value={form.note} placeholder="Misal: Beli di pasar lokal, supplier restock, dll."
+                  onChange={e => setForm(f => ({ ...f, note: e.target.value }))} />
+              </div>
+
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => setIsModalOpen(false)} className="btn btn-secondary">
+                  Batal
+                </button>
+                <button type="submit" className={`btn ${form.type === 'WASTE' ? 'btn-danger' : 'btn-primary'}`} disabled={saving} style={{ fontWeight: 700 }}>
+                  <Plus size={14} /> {saving ? 'Menyimpan...' : form.type === 'WASTE' ? 'Catat Waste' : form.type === 'PURCHASE' ? 'Simpan Pembelian & Update Moving Avg' : 'Simpan Mutasi'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
