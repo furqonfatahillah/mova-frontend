@@ -16,8 +16,14 @@ export default function Login() {
       const { data } = await api.post('/login', form);
       localStorage.setItem('pos_token', data.token);
       localStorage.setItem('pos_user', JSON.stringify(data.user));
-      toast.success(`Selamat datang, ${data.user.name}!`);
-      navigate('/');
+      const u = data.user;
+      const isSuperadminPlatform = u.role === 'superadmin_platform' || u.role === 'superadmin' || Boolean(u.is_superadmin_platform);
+      const isOwnerWebsite = isSuperadminPlatform || u.role === 'owner_website' || Boolean(u.is_owner_website);
+      const isOwnerBisnis = isOwnerWebsite || u.role === 'owner_bisnis' || u.role === 'owner' || u.role === 'admin' || Boolean(u.is_owner_bisnis);
+      const isOwnerOutlet = u.role === 'owner_outlet' || u.role === 'manager_outlet' || Boolean(u.is_owner_outlet);
+      const isPegawai = !isSuperadminPlatform && !isOwnerWebsite && !isOwnerBisnis && !isOwnerOutlet;
+
+      navigate(isPegawai ? '/pos' : '/');
     } catch (err) {
       if (!err.response) {
         toast.error('Tidak dapat terhubung ke backend (pastikan php artisan serve berjalan).');
