@@ -36,28 +36,26 @@ export function OutletProvider({ children }) {
   const isSuperadminPlatform =
     currentUser.role === 'superadmin_platform' ||
     currentUser.role === 'superadmin' ||
+    Boolean(currentUser.is_superadmin_platform);
+
+  const isOwnerWebsite =
+    isSuperadminPlatform ||
     currentUser.role === 'owner_website' ||
-    currentUser.role === 'owner_bisnis' ||
-    currentUser.role === 'owner' ||
-    currentUser.role === 'admin' ||
-    Boolean(currentUser.is_superadmin_platform) ||
-    Boolean(currentUser.is_owner_bisnis) ||
     Boolean(currentUser.is_owner_website);
 
   const isOwnerBisnis =
+    isOwnerWebsite ||
     currentUser.role === 'owner_bisnis' ||
-    currentUser.role === 'owner_website' ||
     currentUser.role === 'owner' ||
     currentUser.role === 'admin' ||
-    Boolean(currentUser.is_owner_bisnis) ||
-    Boolean(currentUser.is_owner_website);
+    Boolean(currentUser.is_owner_bisnis);
 
   const isOwnerOutlet =
     currentUser.role === 'owner_outlet' ||
     currentUser.role === 'manager_outlet' ||
     Boolean(currentUser.is_owner_outlet);
 
-  const isPegawai = !isSuperadminPlatform && !isOwnerBisnis && !isOwnerOutlet;
+  const isPegawai = !isSuperadminPlatform && !isOwnerWebsite && !isOwnerBisnis && !isOwnerOutlet;
 
   // Active business ID for Superadmin
   const [activeBusinessId, setActiveBusinessIdState] = useState(() => {
@@ -193,8 +191,8 @@ export function OutletProvider({ children }) {
     activeBusinessId,
     changeBusiness,
     isSuperadminPlatform,
+    isOwnerWebsite,
     isOwnerBisnis,
-    isOwnerWebsite: isOwnerBisnis || isSuperadminPlatform,
     isOwnerOutlet,
     isPegawai,
     userOutletId: currentUser.outlet_id,

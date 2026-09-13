@@ -9,9 +9,11 @@ import { PageHeader, LoadingState, MiniCard, formatDateTime } from '../component
 
 export default function UserManagement() {
   const currentUser = JSON.parse(localStorage.getItem('pos_user') || '{}');
-  const isOwnerOutlet = currentUser.role === 'owner_outlet' || Boolean(currentUser.is_owner_outlet);
-  const isOwnerWebsite = currentUser.role === 'owner_website' || currentUser.role === 'owner_bisnis' || currentUser.role === 'owner' || currentUser.role === 'admin' || Boolean(currentUser.is_owner_website);
-  const isPegawai = !isOwnerOutlet && !isOwnerWebsite;
+  const isSuperadminPlatform = currentUser.role === 'superadmin_platform' || currentUser.role === 'superadmin' || Boolean(currentUser.is_superadmin_platform);
+  const isOwnerWebsite = isSuperadminPlatform || currentUser.role === 'owner_website' || Boolean(currentUser.is_owner_website);
+  const isOwnerBisnis = isOwnerWebsite || currentUser.role === 'owner_bisnis' || currentUser.role === 'owner' || currentUser.role === 'admin' || Boolean(currentUser.is_owner_bisnis);
+  const isOwnerOutlet = currentUser.role === 'owner_outlet' || currentUser.role === 'manager_outlet' || Boolean(currentUser.is_owner_outlet);
+  const isPegawai = !isSuperadminPlatform && !isOwnerWebsite && !isOwnerBisnis && !isOwnerOutlet;
 
   const [users, setUsers] = useState([]);
   const [counts, setCounts] = useState({ total: 0, pending: 0, active: 0, rejected: 0, suspended: 0 });
@@ -251,6 +253,12 @@ export default function UserManagement() {
 
   // Filtered users
   const filteredUsers = users.filter(u => {
+    // Hide owner_bisnis, owner_website, superadmin accounts when viewed by owner_bisnis
+    if (!isOwnerWebsite && !isSuperadminPlatform) {
+      const isOwnerRole = ['owner_bisnis', 'owner_website', 'superadmin_platform', 'superadmin', 'owner', 'admin'].includes(u.role);
+      if (isOwnerRole) return false;
+    }
+
     // Status tab filter
     if (activeTab === 'pending' && u.status !== 'pending') return false;
     if (activeTab === 'active' && u.status !== 'active') return false;
@@ -441,7 +449,8 @@ export default function UserManagement() {
               ) : (
                 filteredUsers.map(u => {
                   const isSelf = u.id === currentUser.id;
-                  const isUserOwnerWeb = u.role === 'owner_website' || u.role === 'owner_bisnis' || u.role === 'owner' || u.role === 'admin';
+                  const isUserOwnerWeb = u.role === 'owner_website' || u.role === 'superadmin_platform' || u.role === 'superadmin';
+                  const isUserOwnerBis = u.role === 'owner_bisnis' || u.role === 'owner' || u.role === 'admin';
                   const isUserOwnerOut = u.role === 'owner_outlet';
 
                   return (
@@ -620,15 +629,17 @@ export default function UserManagement() {
                           {/* Active User Actions */}
                           {u.status === 'active' && (
                             <>
-                              <button
-                                className="btn btn-ghost btn-sm"
-                                onClick={() => openEdit(u)}
-                                title="Edit Pengguna"
-                                style={{ padding: '4px 8px' }}
-                              >
-                                <Edit2 size={13} />
-                              </button>
-                              {!isSelf && !isUserOwnerWeb && (
+                              {(!isUserOwnerWeb && !isUserOwnerBis || isOwnerWebsite || isSuperadminPlatform) && (
+                                <button
+                                  className="btn btn-ghost btn-sm"
+                                  onClick={() => openEdit(u)}
+                                  title="Edit Pengguna"
+                                  style={{ padding: '4px 8px' }}
+                                >
+                                  <Edit2 size={13} />
+                                </button>
+                              )}
+                              {!isSelf && (!isUserOwnerWeb && !isUserOwnerBis || isOwnerWebsite || isSuperadminPlatform) && (
                                 <button
                                   className="btn btn-ghost btn-sm"
                                   onClick={() => handleSuspend(u)}
@@ -654,7 +665,7 @@ export default function UserManagement() {
                           )}
 
                           {/* Delete Action */}
-                          {!isSelf && !isUserOwnerWeb && (
+                          {!isSelf && (!isUserOwnerWeb && !isUserOwnerBis || isOwnerWebsite || isSuperadminPlatform) && (
                             <button
                               className="btn btn-ghost btn-sm"
                               onClick={() => handleDelete(u)}
@@ -744,8 +755,12 @@ export default function UserManagement() {
                     >
                       <option value="pegawai" style={{ background: '#11162d', color: '#ffffff' }}>Pegawai (Kasir & Operasional Cabang)</option>
                       <option value="owner_outlet" style={{ background: '#11162d', color: '#ffffff' }}>Owner Outlet (Pemilik Cabang)</option>
-                      <option value="owner_bisnis" style={{ background: '#11162d', color: '#ffffff' }}>Owner Bisnis (Pemilik Usaha)</option>
-                      <option value="owner_website" style={{ background: '#11162d', color: '#ffffff' }}>Owner Website</option>
+                      {isOwnerWebsite && (
+                        <>
+                          <option value="owner_bisnis" style={{ background: '#11162d', color: '#ffffff' }}>Owner Bisnis (Pemilik Usaha)</option>
+                          <option value="owner_website" style={{ background: '#11162d', color: '#ffffff' }}>Owner Website</option>
+                        </>
+                      )}
                     </select>
                   </div>
 
@@ -882,8 +897,12 @@ export default function UserManagement() {
                     >
                       <option value="pegawai" style={{ background: '#11162d', color: '#ffffff' }}>Pegawai Cabang</option>
                       <option value="owner_outlet" style={{ background: '#11162d', color: '#ffffff' }}>Owner Outlet</option>
-                      <option value="owner_bisnis" style={{ background: '#11162d', color: '#ffffff' }}>Owner Bisnis</option>
-                      <option value="owner_website" style={{ background: '#11162d', color: '#ffffff' }}>Owner Website</option>
+                      {isOwnerWebsite && (
+                        <>
+                          <option value="owner_bisnis" style={{ background: '#11162d', color: '#ffffff' }}>Owner Bisnis</option>
+                          <option value="owner_website" style={{ background: '#11162d', color: '#ffffff' }}>Owner Website</option>
+                        </>
+                      )}
                     </select>
                   </div>
 
@@ -1001,8 +1020,12 @@ export default function UserManagement() {
                     >
                       <option value="pegawai" style={{ background: '#11162d', color: '#ffffff' }}>Pegawai</option>
                       <option value="owner_outlet" style={{ background: '#11162d', color: '#ffffff' }}>Owner Outlet</option>
-                      <option value="owner_bisnis" style={{ background: '#11162d', color: '#ffffff' }}>Owner Bisnis</option>
-                      <option value="owner_website" style={{ background: '#11162d', color: '#ffffff' }}>Owner Website</option>
+                      {isOwnerWebsite && (
+                        <>
+                          <option value="owner_bisnis" style={{ background: '#11162d', color: '#ffffff' }}>Owner Bisnis</option>
+                          <option value="owner_website" style={{ background: '#11162d', color: '#ffffff' }}>Owner Website</option>
+                        </>
+                      )}
                     </select>
                   </div>
 
