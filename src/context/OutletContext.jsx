@@ -37,7 +37,12 @@ export function OutletProvider({ children }) {
     currentUser.role === 'superadmin_platform' ||
     currentUser.role === 'superadmin' ||
     currentUser.role === 'owner_website' ||
-    Boolean(currentUser.is_superadmin_platform);
+    currentUser.role === 'owner_bisnis' ||
+    currentUser.role === 'owner' ||
+    currentUser.role === 'admin' ||
+    Boolean(currentUser.is_superadmin_platform) ||
+    Boolean(currentUser.is_owner_bisnis) ||
+    Boolean(currentUser.is_owner_website);
 
   const isOwnerBisnis =
     currentUser.role === 'owner_bisnis' ||
