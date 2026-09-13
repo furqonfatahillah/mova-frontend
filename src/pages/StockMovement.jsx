@@ -330,7 +330,6 @@ export default function StockMovement() {
             </table>
           </div>
         </div>
-      </div>
 
       {/* MODAL: CATAT PERGERAKAN MANUAL */}
       {isModalOpen && (
