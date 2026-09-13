@@ -333,8 +333,8 @@ export default function StockMovement() {
 
       {/* MODAL: CATAT PERGERAKAN MANUAL */}
       {isModalOpen && (
-        <div className="modal-backdrop" onClick={() => setIsModalOpen(false)}>
-          <div className="modal card" onClick={e => e.stopPropagation()} style={{ maxWidth: 540, width: '100%', padding: 24, maxHeight: '92vh', overflowY: 'auto' }}>
+        <div className="modal-overlay" onClick={() => setIsModalOpen(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 540, width: '100%', padding: 24, maxHeight: '92vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(99, 102, 241, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-bright)' }}>

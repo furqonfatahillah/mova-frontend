@@ -1249,12 +1249,13 @@ textarea.form-control {
 }
 
 /* ===================== MODAL ===================== */
-.modal-overlay {
+.modal-overlay,
+.modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(4, 7, 18, 0.8);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: rgba(4, 7, 18, 0.82);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1263,18 +1264,22 @@ textarea.form-control {
   animation: fadeIn 0.15s ease-out;
 }
 
-.modal-content {
+.modal-content,
+.modal.card,
+.modal-card {
   background: #11162d;
   border: 1px solid var(--border-strong);
   border-radius: 16px;
   width: 100%;
-  max-width: 480px;
+  max-width: 520px;
   max-height: 90vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.7), 0 0 30px rgba(124, 58, 237, 0.18);
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.75), 0 0 30px rgba(124, 58, 237, 0.2);
   overflow: hidden;
   animation: slideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  z-index: 2001;
 }
 
 .modal-content form {

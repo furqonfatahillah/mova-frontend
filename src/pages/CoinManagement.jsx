@@ -634,8 +634,8 @@ export default function CoinManagement() {
 
       {/* MODAL 1: TOP UP KOIN */}
       {topUpModal.open && topUpModal.business && (
-        <div className="modal-backdrop">
-          <div className="modal card" style={{ maxWidth: 520, width: '100%', padding: 24 }}>
+        <div className="modal-overlay" onClick={() => setTopUpModal(p => ({ ...p, open: false }))}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 520, width: '100%', padding: 24, maxHeight: '92vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(139, 92, 246, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a78bfa' }}>
@@ -798,8 +798,8 @@ export default function CoinManagement() {
 
       {/* MODAL 2: ATUR TARIF KOIN */}
       {rateModal.open && rateModal.business && (
-        <div className="modal-backdrop">
-          <div className="modal card" style={{ maxWidth: 460, width: '100%', padding: 24 }}>
+        <div className="modal-overlay" onClick={() => setRateModal(p => ({ ...p, open: false }))}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 460, width: '100%', padding: 24, maxHeight: '92vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(59, 130, 246, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#60a5fa' }}>
