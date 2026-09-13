@@ -26,7 +26,7 @@ export default function CoinManagement() {
   const [topUpModal, setTopUpModal] = useState({
     open: false,
     business: null,
-    coins: 100,
+    coins: 10000,
     paymentAmount: '',
     paymentReference: '',
     notes: '',
@@ -80,7 +80,7 @@ export default function CoinManagement() {
     setTopUpModal({
       open: true,
       business,
-      coins: 100,
+      coins: 10000,
       paymentAmount: '',
       paymentReference: '',
       notes: `Top-up koin untuk ${business.name}`,
@@ -109,7 +109,7 @@ export default function CoinManagement() {
       });
 
       toast.success(`Berhasil menambahkan +${num(coins)} koin ke ${business.name}!`);
-      setTopUpModal({ open: false, business: null, coins: 100, paymentAmount: '', paymentReference: '', notes: '', submitting: false });
+      setTopUpModal({ open: false, business: null, coins: 10000, paymentAmount: '', paymentReference: '', notes: '', submitting: false });
       fetchOverview();
       if (activeTab === 'history') fetchHistory();
       refreshCoins();
@@ -680,15 +680,15 @@ export default function CoinManagement() {
               <div style={{ marginBottom: 16 }}>
                 <label className="form-label" style={{ fontSize: 12 }}>Pilihan Cepat Jumlah Koin</label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
-                  {[50, 100, 250, 500, 1000].map(amt => (
+                  {[10000, 15000, 20000, 25000, 30000].map(amt => (
                     <button
                       key={amt}
                       type="button"
                       onClick={() => setTopUpModal(p => ({ ...p, coins: amt }))}
-                      className={`btn btn-sm ${topUpModal.coins === amt ? 'btn-primary' : 'btn-secondary'}`}
-                      style={{ fontSize: 12, fontWeight: 700 }}
+                      className={`btn btn-sm ${Number(topUpModal.coins) === amt ? 'btn-primary' : 'btn-secondary'}`}
+                      style={{ fontSize: 11.5, fontWeight: 700, padding: '6px 4px' }}
                     >
-                      +{amt}
+                      +{num(amt)}
                     </button>
                   ))}
                 </div>
