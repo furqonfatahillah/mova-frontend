@@ -506,32 +506,20 @@ export default function UserManagement() {
                       </td>
 
                       <td>
-                        {isUserOwnerWeb ? (
-                          <span
-                            style={{
-                              fontSize: 11,
-                              padding: '3px 8px',
-                              borderRadius: 4,
-                              fontWeight: 700,
-                              background: 'rgba(168, 85, 247, 0.15)',
-                              color: '#c084fc',
-                              border: '1px solid rgba(168, 85, 247, 0.3)'
-                            }}
-                          >
+                        {u.role === 'superadmin_platform' || u.role === 'superadmin' ? (
+                          <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, fontWeight: 700, background: 'rgba(236, 72, 153, 0.15)', color: '#f472b6', border: '1px solid rgba(236, 72, 153, 0.3)' }}>
+                            Superadmin Platform
+                          </span>
+                        ) : u.role === 'owner_bisnis' || u.role === 'owner' ? (
+                          <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, fontWeight: 700, background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', border: '1px solid rgba(168, 85, 247, 0.3)' }}>
+                            Owner Bisnis
+                          </span>
+                        ) : u.role === 'owner_website' ? (
+                          <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, fontWeight: 700, background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', border: '1px solid rgba(168, 85, 247, 0.3)' }}>
                             Owner Website
                           </span>
                         ) : isUserOwnerOut ? (
-                          <span
-                            style={{
-                              fontSize: 11,
-                              padding: '3px 8px',
-                              borderRadius: 4,
-                              fontWeight: 700,
-                              background: 'rgba(56, 189, 248, 0.15)',
-                              color: '#38bdf8',
-                              border: '1px solid rgba(56, 189, 248, 0.3)'
-                            }}
-                          >
+                          <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, fontWeight: 700, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
                             Owner Outlet
                           </span>
                         ) : (

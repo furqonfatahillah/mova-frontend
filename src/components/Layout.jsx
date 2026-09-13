@@ -266,7 +266,11 @@ export default function Layout() {
             <div className="sidebar-user-info">
               <div className="sidebar-user-name">{user.name || 'User'}</div>
               <div className="sidebar-user-role" style={{ fontSize: 11, color: 'var(--accent-bright)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 140 }}>
-                {isOwnerWebsite ? 'Owner Website' : isOwnerOutlet ? `Owner (${user.outlet_name || 'Outlet'})` : `Pegawai (${user.outlet_name || 'Kasir'})`}
+                {user.role === 'superadmin_platform' || user.role === 'superadmin' ? 'Superadmin Platform' :
+                 user.role === 'owner_bisnis' || user.role === 'owner' ? 'Owner Bisnis' :
+                 user.role === 'owner_website' ? 'Owner Website' :
+                 isOwnerOutlet ? `Owner (${user.outlet_name || 'Outlet'})` :
+                 `Pegawai (${user.outlet_name || 'Kasir'})`}
               </div>
             </div>
             <button
