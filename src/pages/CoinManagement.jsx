@@ -102,6 +102,7 @@ export default function CoinManagement() {
       await api.post('/platform/coins/topup', {
         business_id: business.id,
         coins: Number(coins),
+        amount_coins: Number(coins),
         payment_amount: paymentAmount ? Number(paymentAmount) : undefined,
         payment_reference: paymentReference || undefined,
         notes: notes || undefined,
