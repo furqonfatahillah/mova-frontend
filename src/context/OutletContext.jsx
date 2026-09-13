@@ -24,7 +24,7 @@ export function OutletProvider({ children }) {
         setCurrentUser(data);
         localStorage.setItem('pos_user', JSON.stringify(data));
       }
-    } catch {}
+    } catch { }
   }, []);
 
   useEffect(() => {
@@ -36,6 +36,7 @@ export function OutletProvider({ children }) {
   const isSuperadminPlatform =
     currentUser.role === 'superadmin_platform' ||
     currentUser.role === 'superadmin' ||
+    currentUser.role === 'owner_website' ||
     Boolean(currentUser.is_superadmin_platform);
 
   const isOwnerBisnis =
