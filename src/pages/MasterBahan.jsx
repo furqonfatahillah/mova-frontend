@@ -119,6 +119,7 @@ export default function MasterBahan() {
     return ingredients.filter(i => {
       if (typeFilter === 'RAW') return i.type !== 'SEMI_FINISHED';
       if (typeFilter === 'SEMI_FINISHED') return i.type === 'SEMI_FINISHED';
+      if (typeFilter === 'LOW_STOCK') return Number(i.current_stock ?? 0) <= Number(i.current_stok_min ?? i.stok_min ?? 0);
       return true;
     });
   }, [ingredients, typeFilter]);
@@ -343,6 +344,18 @@ export default function MasterBahan() {
           style={{ display: 'flex', alignItems: 'center', gap: 5 }}
         >
           🟣 Bahan Olahan / Prep ({ingredients.filter(i => i.type === 'SEMI_FINISHED').length})
+        </button>
+        <button
+          className={`btn btn-sm ${typeFilter === 'LOW_STOCK' ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() => setTypeFilter('LOW_STOCK')}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 5,
+            background: typeFilter === 'LOW_STOCK' ? '#f43f5e' : undefined,
+            color: typeFilter === 'LOW_STOCK' ? '#ffffff' : '#f43f5e',
+            borderColor: 'rgba(244, 63, 94, 0.4)'
+          }}
+        >
+          ⚠️ Stok Menipis ({ingredients.filter(i => Number(i.current_stock ?? 0) <= Number(i.current_stok_min ?? i.stok_min ?? 0)).length})
         </button>
       </div>
 
