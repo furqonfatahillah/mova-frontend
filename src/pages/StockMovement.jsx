@@ -46,6 +46,19 @@ export default function StockMovement() {
 
   const { activeOutletId, activeOutlet, isOwnerWebsite, outlets } = useOutlet();
 
+  const [filterOutlet, setFilterOutlet] = useState(() => {
+    if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
+      return String(activeOutletId);
+    }
+    return 'ALL';
+  });
+
+  useEffect(() => {
+    if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
+      setFilterOutlet(String(activeOutletId));
+    }
+  }, [activeOutletId]);
+
   const [form, setForm] = useState({
     ingredient_id: '',
     outlet_id: activeOutletId && activeOutletId !== 'ALL' ? activeOutletId : '1',
@@ -66,18 +79,16 @@ export default function StockMovement() {
     return { from: firstDay, to: lastDay };
   });
 
-  useEffect(() => { fetchAll(); }, [filterIng, filterType, activeOutletId, period]);
+  useEffect(() => { fetchAll(); }, [filterIng, filterType, filterOutlet, period]);
 
   async function fetchAll() {
     try {
       const params = {};
       if (filterIng !== 'ALL') params.ingredient_id = filterIng;
       if (filterType !== 'ALL') params.type = filterType;
+      if (filterOutlet !== 'ALL' && filterOutlet !== 'all') params.outlet_id = filterOutlet;
       if (period.from) params.from = period.from;
       if (period.to) params.to = period.to;
-      if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
-        params.outlet_id = activeOutletId;
-      }
 
       const [m, i] = await Promise.all([
         api.get('/movements', { params }),
@@ -229,6 +240,20 @@ export default function StockMovement() {
 
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <PeriodPicker from={period.from} to={period.to} onChange={setPeriod} align="right" />
+
+              <select
+                className="form-control"
+                style={{ width: 'auto', padding: '6px 10px', fontSize: 12, fontWeight: 600 }}
+                value={filterOutlet}
+                onChange={e => setFilterOutlet(e.target.value)}
+              >
+                <option value="ALL">🏢 Semua Gudang / Cabang</option>
+                {outlets.map(o => (
+                  <option key={o.id} value={o.id}>
+                    {o.is_main ? '🏢 ' : '📍 '} {o.name}
+                  </option>
+                ))}
+              </select>
 
               <select className="form-control" style={{ width: 'auto', padding: '6px 10px', fontSize: 12 }}
                 value={filterType} onChange={e => setFilterType(e.target.value)}>
