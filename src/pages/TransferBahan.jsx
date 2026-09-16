@@ -4,7 +4,7 @@ import {
   Send, Plus, Eye, Printer, X, Check, Trash2,
   Calendar, Store, Truck, FileText, AlertCircle, RefreshCw,
   ArrowLeftRight, ShoppingBag, Package, MapPin, Building,
-  Search, ArrowRight, ShieldCheck, CheckCircle2
+  Search, ArrowRight, ShieldCheck, CheckCircle2, PackageCheck, Clock
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
@@ -30,6 +30,12 @@ export default function TransferBahan() {
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState(null);
   const [saving, setSaving] = useState(false);
+
+  // Modal Receive state
+  const [receiveModalOpen, setReceiveModalOpen] = useState(false);
+  const [receiveTargetTransfer, setReceiveTargetTransfer] = useState(null);
+  const [receivedNotesInput, setReceivedNotesInput] = useState('');
+  const [receiving, setReceiving] = useState(false);
 
   // Form state
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -78,7 +84,6 @@ export default function TransferBahan() {
       setMenus((menuRes.data || []).filter(m => m.active));
 
       const mainOut = outRes.data.find(o => o.is_main) || outRes.data[0];
-      const otherOut = outRes.data.find(o => o.id !== mainOut?.id);
 
       // Check URL query params for quick prefill from POS
       const destParam = searchParams.get('destination_outlet_id');
@@ -283,7 +288,7 @@ export default function TransferBahan() {
           current.ingredient_id = firstIng ? firstIng.id : '';
           current.menu_id = '';
           current.input_unit = firstIng?.unit_beli || firstIng?.unit_pakai || 'gram';
-          current.unit = firstIng?.unit_pakai || 'gram';
+          current.unit = firstIng ? firstIng.unit_pakai : 'gram';
           current.qty = current.input_qty || '';
         }
       } else if (field === 'menu_id') {
@@ -326,7 +331,7 @@ export default function TransferBahan() {
           const factor = Number(selected?.konversi) || 1;
           const isConvertible = selected && ub && selected.unit_pakai && ub.toLowerCase() !== selected.unit_pakai.toLowerCase() && factor > 1;
           const isBeli = isConvertible && value && value.toLowerCase() === ub.toLowerCase();
-          current.qty = isBeli ? (Number(current.input_qty || 0) * factor) : Number(current.input_qty || 0);
+          current.qty = isBeli ? (Number(current.input_qty || 0) * factor) : Number(value || 0);
         }
       } else {
         current[field] = value;
@@ -438,6 +443,7 @@ export default function TransferBahan() {
         destination_name: destName || undefined,
         driver_name: formData.driver_name || null,
         vehicle_no: formData.vehicle_no || null,
+        status: 'IN_TRANSIT',
         notes: formData.notes || null,
         items: formData.items.map(it => {
           if (it.item_type === 'PRODUCT') {
@@ -478,7 +484,7 @@ export default function TransferBahan() {
       const { data } = await api.post('/transfers', payload);
       setTransfers(prev => [data, ...prev]);
       setCreateModalOpen(false);
-      toast.success(`Surat Jalan ${data.transfer_no} berhasil dibuat dan diproses!`);
+      toast.success(`Surat Jalan ${data.transfer_no} berhasil dikirim! Menunggu konfirmasi terima di cabang tujuan.`);
 
       // Open detail modal immediately for user convenience (print ready)
       setSelectedTransfer(data);
@@ -492,6 +498,38 @@ export default function TransferBahan() {
       }
     } finally {
       setSaving(false);
+    }
+  }
+
+  // Open Receive Modal
+  function openReceiveModal(trf) {
+    setReceiveTargetTransfer(trf);
+    setReceivedNotesInput('Barang diterima lengkap dan sesuai kondisi.');
+    setReceiveModalOpen(true);
+  }
+
+  // Submit Receive Transfer
+  async function handleConfirmReceive(e) {
+    e?.preventDefault();
+    if (!receiveTargetTransfer) return;
+
+    setReceiving(true);
+    try {
+      const { data } = await api.post(`/transfers/${receiveTargetTransfer.id}/receive`, {
+        received_notes: receivedNotesInput
+      });
+
+      setTransfers(prev => prev.map(t => (t.id === data.transfer.id ? data.transfer : t)));
+      if (selectedTransfer?.id === data.transfer.id) {
+        setSelectedTransfer(data.transfer);
+      }
+
+      setReceiveModalOpen(false);
+      toast.success(data.message || 'Transfer berhasil diterima!');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal memproses penerimaan transfer');
+    } finally {
+      setReceiving(false);
     }
   }
 
@@ -521,7 +559,11 @@ export default function TransferBahan() {
   // Filtered transfers
   const filteredTransfers = useMemo(() => {
     return transfers.filter(t => {
-      const matchStatus = filterStatus === 'ALL' || t.status === filterStatus;
+      let matchStatus = false;
+      if (filterStatus === 'ALL') matchStatus = true;
+      else if (filterStatus === 'IN_TRANSIT') matchStatus = t.status === 'IN_TRANSIT' || t.status === 'PENDING';
+      else matchStatus = t.status === filterStatus;
+
       const q = searchQuery.toLowerCase().trim();
       const matchSearch = !q ||
         t.transfer_no.toLowerCase().includes(q) ||
@@ -534,6 +576,7 @@ export default function TransferBahan() {
 
   if (loading) return <LoadingState />;
 
+  const inTransitCount = transfers.filter(t => t.status === 'IN_TRANSIT' || t.status === 'PENDING').length;
   const completedCount = transfers.filter(t => t.status === 'COMPLETED').length;
   const totalItemsCount = transfers.reduce((acc, t) => acc + (t.total_items || t.items?.length || 0), 0);
 
@@ -541,7 +584,7 @@ export default function TransferBahan() {
     <div className="fade-in">
       <PageHeader
         title="Transfer Barang Antar Cabang"
-        subtitle={`Distribusi bahan baku dan produk retail langsung antar cabang di dalam ${userBusinessName || 'perusahaan Anda'} dengan bukti surat jalan.`}
+        subtitle={`Distribusi bahan baku dan produk retail langsung antar cabang di dalam ${userBusinessName || 'perusahaan Anda'} dengan bukti surat jalan dan fitur penerimaan.`}
         action={
           <button className="btn btn-primary" onClick={openCreateModal}>
             <Send size={15} /> Buat Transfer Antar Cabang
@@ -550,14 +593,19 @@ export default function TransferBahan() {
       />
 
       {/* Stats Cards */}
-      <div className="grid-3 mb-6">
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }} className="mb-6">
         <MiniCard
           label="Total Dokumen Transfer"
           value={`${transfers.length} Dokumen`}
           color="var(--accent)"
         />
         <MiniCard
-          label="Transfer Selesai / Terkirim"
+          label="Dalam Perjalanan (Transit)"
+          value={`${inTransitCount} Menunggu Terima`}
+          color="var(--warning)"
+        />
+        <MiniCard
+          label="Transfer Selesai / Diterima"
           value={`${completedCount} Selesai`}
           color="var(--ok)"
         />
@@ -584,9 +632,10 @@ export default function TransferBahan() {
           </div>
 
           {/* Status Tabs */}
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {[
               { id: 'ALL', label: 'Semua' },
+              { id: 'IN_TRANSIT', label: `Transit (${inTransitCount})` },
               { id: 'COMPLETED', label: 'Selesai' },
               { id: 'CANCELLED', label: 'Dibatalkan' },
             ].map(tab => (
@@ -623,9 +672,9 @@ export default function TransferBahan() {
                 <th style={{ minWidth: 160 }}>Cabang Penerima (Tujuan)</th>
                 <th style={{ minWidth: 220 }}>Rincian Barang & Bahan</th>
                 <th style={{ minWidth: 130 }}>Kurir / Supir</th>
-                <th style={{ width: 95 }} className="center">Status</th>
+                <th style={{ width: 110 }} className="center">Status</th>
                 <th style={{ minWidth: 150 }}>Riwayat Audit</th>
-                <th style={{ width: 110 }} className="center">Aksi</th>
+                <th style={{ width: 140 }} className="center">Aksi</th>
               </tr>
             </thead>
             <tbody>
@@ -638,6 +687,7 @@ export default function TransferBahan() {
               ) : (
                 filteredTransfers.map(trf => {
                   const isCancelled = trf.status === 'CANCELLED';
+                  const isInTransit = trf.status === 'IN_TRANSIT' || trf.status === 'PENDING';
                   const sourceText = trf.source_display_name || trf.source_outlet?.name || trf.source_name || 'Lokasi Asal';
                   const destText = trf.destination_display_name || trf.destination_outlet?.name || trf.destination_name || 'Lokasi Tujuan';
 
@@ -696,8 +746,14 @@ export default function TransferBahan() {
                       <td className="center">
                         {isCancelled ? (
                           <span className="pill pill-danger" style={{ fontSize: 10.5 }}>BATAL</span>
+                        ) : isInTransit ? (
+                          <span className="pill pill-warning" style={{ fontSize: 10.5, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <Truck size={11} /> TRANSIT
+                          </span>
                         ) : (
-                          <span className="pill pill-ok" style={{ fontSize: 10.5 }}>SELESAI</span>
+                          <span className="pill pill-ok" style={{ fontSize: 10.5, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <CheckCircle2 size={11} /> SELESAI
+                          </span>
                         )}
                       </td>
                       <td>
@@ -709,7 +765,28 @@ export default function TransferBahan() {
                         />
                       </td>
                       <td className="center">
-                        <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'center' }}>
+                          {isInTransit && (
+                            <button
+                              className="btn btn-sm"
+                              onClick={() => openReceiveModal(trf)}
+                              title="Terima Transfer & Masukkan Stok ke Cabang Tujuan"
+                              style={{
+                                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                                color: '#ffffff',
+                                padding: '4px 8px',
+                                fontSize: 11,
+                                fontWeight: 700,
+                                border: 'none',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)',
+                              }}
+                            >
+                              <CheckCircle2 size={12} /> Terima
+                            </button>
+                          )}
                           <button
                             className="btn btn-ghost btn-sm"
                             onClick={() => {
@@ -741,6 +818,94 @@ export default function TransferBahan() {
           </table>
         </div>
       </div>
+
+      {/* Modal Confirm Receive Transfer */}
+      {receiveModalOpen && receiveTargetTransfer && (
+        <div className="modal-backdrop" onClick={() => setReceiveModalOpen(false)}>
+          <div
+            className="modal-content card"
+            style={{ maxWidth: 540, width: '100%', margin: '20px' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex-between mb-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <CheckCircle2 size={20} color="var(--ok)" />
+                <div>
+                  <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>
+                    Konfirmasi Penerimaan Transfer Barang
+                  </h3>
+                  <span style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                    No. Surat Jalan: <strong className="mono" style={{ color: 'var(--accent-bright)' }}>{receiveTargetTransfer.transfer_no}</strong>
+                  </span>
+                </div>
+              </div>
+              <button
+                className="btn btn-ghost btn-icon"
+                onClick={() => setReceiveModalOpen(false)}
+                style={{ padding: 4 }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmReceive}>
+              <div style={{
+                background: 'rgba(16, 185, 129, 0.06)',
+                border: '1px solid rgba(16, 185, 129, 0.25)',
+                borderRadius: 10,
+                padding: 14,
+                marginBottom: 16
+              }}>
+                <div style={{ fontSize: 12.5, color: 'var(--text-primary)', marginBottom: 6 }}>
+                  📦 Cabang Penerima (Tujuan): <strong>{receiveTargetTransfer.destination_display_name || receiveTargetTransfer.destination_name}</strong>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                  Dengan mengonfirmasi penerimaan ini, seluruh stok <strong>{receiveTargetTransfer.items?.length || receiveTargetTransfer.total_items} jenis barang/bahan</strong> akan otomatis masuk dan menambah saldo inventaris cabang tujuan.
+                </div>
+              </div>
+
+              <div className="form-group mb-4">
+                <label className="form-label" style={{ fontWeight: 600 }}>Catatan Penerimaan / Kondisi Barang</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Contoh: Barang diterima lengkap dan sesuai kondisi"
+                  value={receivedNotesInput}
+                  onChange={e => setReceivedNotesInput(e.target.value)}
+                />
+              </div>
+
+              <div className="flex-between">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setReceiveModalOpen(false)}
+                  disabled={receiving}
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="btn"
+                  disabled={receiving}
+                  style={{
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    color: '#ffffff',
+                    fontWeight: 800,
+                    padding: '8px 18px'
+                  }}
+                >
+                  {receiving ? 'Memproses Penerimaan...' : (
+                    <>
+                      <CheckCircle2 size={15} /> Konfirmasi & Tambah Stok
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Modal Buat Transfer Fleksibel */}
       {createModalOpen && (
@@ -798,78 +963,72 @@ export default function TransferBahan() {
                   <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
                       <label className="form-label mb-0" style={{ fontWeight: 700, color: '#93c5fd', fontSize: 12 }}>
-                        📍 CABANG PENGIRIM (ASAL) *
+                        Cabang Asal (Pengirim)
                       </label>
-                      {formData.source_mode === 'CUSTOM' ? (
+                      <div style={{ display: 'flex', gap: 4 }}>
                         <button
                           type="button"
-                          className="btn btn-ghost btn-xs"
+                          className={`btn btn-xs ${formData.source_mode === 'OUTLET' ? 'btn-primary' : 'btn-ghost'}`}
+                          onClick={() => setFormData(p => ({ ...p, source_mode: 'OUTLET' }))}
                           style={{ fontSize: 10, padding: '1px 6px' }}
-                          onClick={() => setFormData(p => ({ ...p, source_mode: 'OUTLET', source_name: '' }))}
                         >
-                          Pilih Cabang
+                          Cabang
                         </button>
-                      ) : (
                         <button
                           type="button"
-                          className="btn btn-ghost btn-xs"
-                          style={{ fontSize: 10, padding: '1px 6px', color: 'var(--text-muted)' }}
-                          onClick={() => setFormData(p => ({ ...p, source_mode: 'CUSTOM', source_outlet_id: '' }))}
+                          className={`btn btn-xs ${formData.source_mode === 'CUSTOM' ? 'btn-primary' : 'btn-ghost'}`}
+                          onClick={() => setFormData(p => ({ ...p, source_mode: 'CUSTOM' }))}
+                          style={{ fontSize: 10, padding: '1px 6px' }}
                         >
-                          + Gudang Internal
+                          Manual
                         </button>
-                      )}
+                      </div>
                     </div>
 
                     {formData.source_mode === 'OUTLET' ? (
                       <select
                         className="form-control"
-                        value={formData.source_outlet_id || ''}
+                        style={{ fontWeight: 600 }}
+                        value={formData.source_outlet_id}
                         onChange={e => setFormData(p => ({ ...p, source_outlet_id: e.target.value }))}
                         required
                       >
-                        <option value="" disabled>-- Pilih Cabang Pengirim --</option>
-                        {outlets.map(o => {
-                          const isSelectedAsDest = String(o.id) === String(formData.destination_outlet_id);
-                          return (
-                            <option
-                              key={o.id}
-                              value={o.id}
-                              disabled={isSelectedAsDest}
-                              style={{ background: '#11162d', color: isSelectedAsDest ? '#64748b' : '#ffffff' }}
-                            >
-                              {o.name} {isSelectedAsDest ? '(Sudah dipilih sebagai tujuan)' : ''}
-                            </option>
-                          );
-                        })}
+                        <option value="">-- Pilih Cabang Pengirim --</option>
+                        {outlets.map(o => (
+                          <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
+                            {o.name} {o.is_main ? '(Pusat)' : ''}
+                          </option>
+                        ))}
                       </select>
                     ) : (
                       <input
                         type="text"
                         className="form-control"
-                        placeholder="Contoh: Ruang Simpan / Gudang Internal Perusahaan"
+                        placeholder="Misal: Gudang Utama / Supplier A"
                         value={formData.source_name}
                         onChange={e => setFormData(p => ({ ...p, source_name: e.target.value }))}
                         required
-                        autoFocus
                       />
                     )}
                   </div>
 
                   {/* 1-CLICK SWAP BUTTON */}
-                  <div style={{ textAlign: 'center', paddingTop: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 16 }}>
                     <button
                       type="button"
                       className="btn btn-secondary btn-icon"
                       onClick={handleSwapLocations}
-                      title="Tukar Cabang Pengirim dan Penerima (Swap ⇄)"
+                      title="Tukar Lokasi Asal <-> Tujuan"
                       style={{
-                        width: 38, height: 38, borderRadius: '50%',
-                        margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        background: 'rgba(99, 102, 241, 0.2)', borderColor: 'var(--accent)', color: '#fff'
+                        borderRadius: '50%',
+                        width: 36,
+                        height: 36,
+                        padding: 0,
+                        border: '1px solid var(--accent)',
+                        color: 'var(--accent-bright)'
                       }}
                     >
-                      <ArrowLeftRight size={16} />
+                      <ArrowLeftRight size={15} />
                     </button>
                   </div>
 
@@ -877,56 +1036,48 @@ export default function TransferBahan() {
                   <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
                       <label className="form-label mb-0" style={{ fontWeight: 700, color: '#c084fc', fontSize: 12 }}>
-                        🏁 CABANG PENERIMA (TUJUAN) *
+                        Cabang Tujuan (Penerima)
                       </label>
-                      {formData.destination_mode === 'CUSTOM' ? (
+                      <div style={{ display: 'flex', gap: 4 }}>
                         <button
                           type="button"
-                          className="btn btn-ghost btn-xs"
+                          className={`btn btn-xs ${formData.destination_mode === 'OUTLET' ? 'btn-primary' : 'btn-ghost'}`}
+                          onClick={() => setFormData(p => ({ ...p, destination_mode: 'OUTLET' }))}
                           style={{ fontSize: 10, padding: '1px 6px' }}
-                          onClick={() => setFormData(p => ({ ...p, destination_mode: 'OUTLET', destination_name: '' }))}
                         >
-                          Pilih Cabang
+                          Cabang
                         </button>
-                      ) : (
                         <button
                           type="button"
-                          className="btn btn-ghost btn-xs"
-                          style={{ fontSize: 10, padding: '1px 6px', color: 'var(--text-muted)' }}
-                          onClick={() => setFormData(p => ({ ...p, destination_mode: 'CUSTOM', destination_outlet_id: '' }))}
+                          className={`btn btn-xs ${formData.destination_mode === 'CUSTOM' ? 'btn-primary' : 'btn-ghost'}`}
+                          onClick={() => setFormData(p => ({ ...p, destination_mode: 'CUSTOM' }))}
+                          style={{ fontSize: 10, padding: '1px 6px' }}
                         >
-                          + Gudang Internal
+                          Manual
                         </button>
-                      )}
+                      </div>
                     </div>
 
                     {formData.destination_mode === 'OUTLET' ? (
                       <select
                         className="form-control"
-                        value={formData.destination_outlet_id || ''}
+                        style={{ fontWeight: 600 }}
+                        value={formData.destination_outlet_id}
                         onChange={e => setFormData(p => ({ ...p, destination_outlet_id: e.target.value }))}
                         required
                       >
-                        <option value="" disabled>-- Pilih Cabang Penerima --</option>
-                        {outlets.map(o => {
-                          const isSelectedAsSource = String(o.id) === String(formData.source_outlet_id);
-                          return (
-                            <option
-                              key={o.id}
-                              value={o.id}
-                              disabled={isSelectedAsSource}
-                              style={{ background: '#11162d', color: isSelectedAsSource ? '#64748b' : '#ffffff' }}
-                            >
-                              {o.name} {isSelectedAsSource ? '(Sudah dipilih sebagai asal)' : ''}
-                            </option>
-                          );
-                        })}
+                        <option value="">-- Pilih Cabang Penerima --</option>
+                        {outlets.map(o => (
+                          <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
+                            {o.name} {o.is_main ? '(Pusat)' : ''}
+                          </option>
+                        ))}
                       </select>
                     ) : (
                       <input
                         type="text"
                         className="form-control"
-                        placeholder="Contoh: Ruang Simpan / Gudang Internal Perusahaan"
+                        placeholder="Misal: Cabang Baru / Event Booth"
                         value={formData.destination_name}
                         onChange={e => setFormData(p => ({ ...p, destination_name: e.target.value }))}
                         required
@@ -936,78 +1087,63 @@ export default function TransferBahan() {
                 </div>
               </div>
 
-              {/* Date & Logistics Info */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 16 }}>
-                <div className="form-group">
-                  <label className="form-label">Tanggal Pengiriman *</label>
+              {/* LOGISTIK & TANGGAL */}
+              <div className="grid-3 gap-3 mb-4">
+                <div>
+                  <label className="form-label">Tanggal Pengiriman</label>
                   <input
                     type="date"
-                    className="form-control mono"
+                    className="form-control"
                     value={formData.date}
                     onChange={e => setFormData(p => ({ ...p, date: e.target.value }))}
                     required
                   />
                 </div>
-
-                <div className="form-group">
-                  <label className="form-label">Nama Supir / Kurir</label>
+                <div>
+                  <label className="form-label">Nama Kurir / Supir</label>
                   <input
                     type="text"
                     className="form-control"
-                    placeholder="Contoh: Pak Budi / Ekspedisi"
+                    placeholder="Misal: Budi (Kurir Internal)"
                     value={formData.driver_name}
                     onChange={e => setFormData(p => ({ ...p, driver_name: e.target.value }))}
                   />
                 </div>
-
-                <div className="form-group">
-                  <label className="form-label">No. Kendaraan</label>
+                <div>
+                  <label className="form-label">Plat / No. Kendaraan</label>
                   <input
                     type="text"
-                    className="form-control mono"
-                    placeholder="Contoh: B 1234 XYZ"
+                    className="form-control"
+                    placeholder="Misal: B 1234 CD"
                     value={formData.vehicle_no}
                     onChange={e => setFormData(p => ({ ...p, vehicle_no: e.target.value }))}
                   />
                 </div>
               </div>
 
-              {/* Items List (Mixed Ingredients & Retail Products) */}
-              <div
-                style={{
-                  background: 'rgba(255,255,255,0.02)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 10,
-                  padding: 14,
-                  marginBottom: 16
-                }}
-              >
-                <div className="flex-between mb-3">
-                  <div>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
-                      Daftar Barang & Bahan yang Ditransfer ({formData.items.length})
-                    </span>
-                    <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                      Mendukung campuran bahan baku resep dan barang jadi retail dalam satu dokumen.
-                    </div>
-                  </div>
+              {/* DAFTAR BARANG YANG DITRANSFER */}
+              <div className="card mb-4" style={{ background: 'var(--bg-card-subtle)', padding: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <span style={{ fontWeight: 700, fontSize: 13.5 }}>Rincian Barang & Bahan Baku:</span>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button
                       type="button"
-                      className="btn btn-outline btn-sm"
-                      style={{ fontSize: 11.5, padding: '3px 8px' }}
+                      className="btn btn-secondary btn-sm"
                       onClick={() => handleAddItem('INGREDIENT')}
-                    >
-                      <Plus size={13} /> + Bahan Baku
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm"
                       style={{ fontSize: 11.5, padding: '3px 8px' }}
-                      onClick={() => handleAddItem('PRODUCT')}
                     >
-                      <ShoppingBag size={13} /> + Produk Retail
+                      <Plus size={13} /> Tambah Bahan Baku
                     </button>
+                    {directMenus.length > 0 && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => handleAddItem('PRODUCT')}
+                        style={{ fontSize: 11.5, padding: '3px 8px', color: 'var(--accent-bright)' }}
+                      >
+                        <Plus size={13} /> Tambah Produk Retail
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -1015,56 +1151,37 @@ export default function TransferBahan() {
                   {formData.items.map((item, idx) => {
                     const isProd = item.item_type === 'PRODUCT';
                     const stockInfo = getSourceStockInfo(item);
-
-                    // Ingredient calculations
-                    const selIng = !isProd ? ingredients.find(i => i.id === Number(item.ingredient_id)) : null;
-                    const ub = (selIng?.unit_beli || '').trim();
-                    const up = (selIng?.unit_pakai || '').trim();
-                    const factor = Number(selIng?.konversi) || 1;
-                    const isConvertible = Boolean(ub && up && ub.toLowerCase() !== up.toLowerCase() && factor > 1);
+                    const selectedIng = !isProd ? ingredients.find(i => i.id === Number(item.ingredient_id)) : null;
+                    const ub = selectedIng ? (selectedIng.unit_beli || '').trim() : '';
+                    const up = selectedIng ? (selectedIng.unit_pakai || '').trim() : '';
+                    const factor = selectedIng ? (Number(selectedIng.konversi) || 1) : 1;
+                    const isConvertible = selectedIng && ub && up && ub.toLowerCase() !== up.toLowerCase() && factor > 1;
                     const isUsingUnitBeli = isConvertible && item.input_unit && item.input_unit.toLowerCase() === ub.toLowerCase();
-                    const liveBaseQty = isUsingUnitBeli ? (Number(item.input_qty || 0) * factor) : Number(item.input_qty || item.qty || 0);
+                    const liveBaseQty = isUsingUnitBeli ? (Number(item.input_qty || 0) * factor) : Number(item.input_qty || 0);
 
                     return (
                       <div
                         key={idx}
                         style={{
-                          padding: '10px 12px',
-                          background: isProd ? 'rgba(59, 130, 246, 0.05)' : 'rgba(255,255,255,0.03)',
-                          border: '1px solid',
-                          borderColor: isProd ? 'rgba(59, 130, 246, 0.3)' : 'var(--border-soft)',
-                          borderRadius: 8
+                          padding: 10,
+                          borderRadius: 8,
+                          background: 'var(--bg-main)',
+                          border: '1px solid var(--border-soft)'
                         }}
                       >
-                        <div
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns: '120px 2fr 1.1fr 1.3fr 1.3fr 36px',
-                            gap: 8,
-                            alignItems: 'center',
-                          }}
-                        >
-                          {/* Type Switcher Pill */}
-                          <div style={{ display: 'flex', gap: 2, background: 'rgba(0,0,0,0.3)', padding: 2, borderRadius: 6 }}>
-                            <button
-                              type="button"
-                              className={`btn btn-xs ${!isProd ? 'btn-primary' : 'btn-ghost'}`}
-                              style={{ flex: 1, fontSize: 10, padding: '2px 4px' }}
-                              onClick={() => handleItemChange(idx, 'item_type', 'INGREDIENT')}
-                            >
-                              Bahan
-                            </button>
-                            <button
-                              type="button"
-                              className={`btn btn-xs ${isProd ? 'btn-primary' : 'btn-ghost'}`}
-                              style={{ flex: 1, fontSize: 10, padding: '2px 4px' }}
-                              onClick={() => handleItemChange(idx, 'item_type', 'PRODUCT')}
-                            >
-                              Retail
-                            </button>
-                          </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr 110px 100px 1fr 32px', gap: 8, alignItems: 'center' }}>
+                          {/* Item Type */}
+                          <select
+                            className="form-control"
+                            style={{ padding: '6px 8px', fontSize: 11.5, fontWeight: 700 }}
+                            value={item.item_type}
+                            onChange={e => handleItemChange(idx, 'item_type', e.target.value)}
+                          >
+                            <option value="INGREDIENT" style={{ background: '#11162d', color: '#ffffff' }}>🧪 Bahan</option>
+                            <option value="PRODUCT" style={{ background: '#11162d', color: '#ffffff' }}>📦 Produk</option>
+                          </select>
 
-                          {/* Item Select (Product or Ingredient) */}
+                          {/* Item Selector */}
                           {isProd ? (
                             <select
                               className="form-control"
@@ -1073,10 +1190,10 @@ export default function TransferBahan() {
                               onChange={e => handleItemChange(idx, 'menu_id', e.target.value)}
                               required
                             >
-                              <option value="" disabled>-- Pilih Produk Retail --</option>
-                              {(directMenus.length > 0 ? directMenus : menus).map(m => (
+                              <option value="">-- Pilih Produk Retail --</option>
+                              {directMenus.map(m => (
                                 <option key={m.id} value={m.id} style={{ background: '#11162d', color: '#ffffff' }}>
-                                  📦 {m.name} ({m.code || 'MNU'})
+                                  {m.name} ({m.code || 'PRD'})
                                 </option>
                               ))}
                             </select>
@@ -1088,10 +1205,10 @@ export default function TransferBahan() {
                               onChange={e => handleItemChange(idx, 'ingredient_id', e.target.value)}
                               required
                             >
-                              <option value="" disabled>-- Pilih Bahan Baku --</option>
-                              {ingredients.map(ing => (
-                                <option key={ing.id} value={ing.id} style={{ background: '#11162d', color: '#ffffff' }}>
-                                  🧪 {ing.name} ({ing.code})
+                              <option value="">-- Pilih Bahan Baku --</option>
+                              {ingredients.map(i => (
+                                <option key={i.id} value={i.id} style={{ background: '#11162d', color: '#ffffff' }}>
+                                  {i.name} ({i.code || 'BB'})
                                 </option>
                               ))}
                             </select>
@@ -1219,7 +1336,7 @@ export default function TransferBahan() {
                 >
                   {saving ? 'Mengirim & Memproses...' : (
                     <>
-                      <Check size={14} /> Kirim & Cetak Surat Jalan
+                      <Send size={14} /> Kirim & Cetak Surat Jalan
                     </>
                   )}
                 </button>
@@ -1234,7 +1351,7 @@ export default function TransferBahan() {
         <div className="modal-backdrop" onClick={() => setDetailModalOpen(false)}>
           <div
             className="modal-content card"
-            style={{ maxWidth: 720, width: '100%', margin: '20px', maxHeight: '92vh', overflowY: 'auto' }}
+            style={{ maxWidth: 740, width: '100%', margin: '20px', maxHeight: '92vh', overflowY: 'auto' }}
             onClick={e => e.stopPropagation()}
           >
             {/* Modal Actions Header */}
@@ -1246,6 +1363,22 @@ export default function TransferBahan() {
                 </span>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
+                {(selectedTransfer.status === 'IN_TRANSIT' || selectedTransfer.status === 'PENDING') && (
+                  <button
+                    className="btn btn-sm"
+                    onClick={() => {
+                      setDetailModalOpen(false);
+                      openReceiveModal(selectedTransfer);
+                    }}
+                    style={{
+                      background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                      color: '#ffffff',
+                      fontWeight: 700
+                    }}
+                  >
+                    <CheckCircle2 size={14} /> Terima Transfer
+                  </button>
+                )}
                 <button
                   className="btn btn-primary btn-sm"
                   onClick={printDeliveryOrder}
@@ -1332,8 +1465,24 @@ export default function TransferBahan() {
                 <div><strong>Tanggal Kirim:</strong> {selectedTransfer.date}</div>
                 <div><strong>Supir / Kurir:</strong> {selectedTransfer.driver_name || 'Kurir Internal'}</div>
                 <div><strong>No. Kendaraan:</strong> {selectedTransfer.vehicle_no || '—'}</div>
-                <div><strong>Status:</strong> <span style={{ fontWeight: 700, color: selectedTransfer.status === 'CANCELLED' ? '#ef4444' : '#16a34a' }}>{selectedTransfer.status}</span></div>
+                <div>
+                  <strong>Status:</strong>{' '}
+                  <span style={{
+                    fontWeight: 700,
+                    color: selectedTransfer.status === 'CANCELLED' ? '#ef4444' : selectedTransfer.status === 'COMPLETED' ? '#16a34a' : '#d97706'
+                  }}>
+                    {selectedTransfer.status === 'IN_TRANSIT' ? 'DALAM PERJALANAN (TRANSIT)' : selectedTransfer.status}
+                  </span>
+                </div>
               </div>
+
+              {/* Audit Receive Info if completed */}
+              {selectedTransfer.received_at && (
+                <div style={{ fontSize: 11.5, color: '#047857', padding: '8px 12px', background: '#ecfdf5', borderRadius: 6, border: '1px solid #a7f3d0', marginBottom: 14 }}>
+                  ✓ <strong>Telah Diterima Pada:</strong> {new Date(selectedTransfer.received_at).toLocaleString('id-ID')} oleh <strong>{selectedTransfer.received_by_name || 'Kasir/Staf Cabang Tujuan'}</strong>
+                  {selectedTransfer.received_notes && <div style={{ marginTop: 2 }}><strong>Catatan Penerimaan:</strong> {selectedTransfer.received_notes}</div>}
+                </div>
+              )}
 
               {/* Items Table */}
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, marginBottom: 20 }}>
@@ -1423,7 +1572,7 @@ export default function TransferBahan() {
                 <div>
                   <div style={{ color: '#64748b', marginBottom: 45 }}>Diterima Oleh,</div>
                   <div style={{ fontWeight: 700, borderTop: '1px solid #94a3b8', paddingTop: 4, color: '#0f172a' }}>
-                    ( {selectedTransfer.destination_outlet?.pic_name || 'Store Manager'} )
+                    ( {selectedTransfer.received_by_name || selectedTransfer.destination_outlet?.pic_name || 'Store Manager'} )
                   </div>
                   <div style={{ fontSize: 11, color: '#64748b' }}>Penerima (Cabang Tujuan)</div>
                 </div>

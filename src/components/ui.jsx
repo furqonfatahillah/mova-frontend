@@ -1,3 +1,5 @@
+import DateRangePicker from './DateRangePicker';
+
 export function rupiah(n) {
   const v = Math.round(n || 0);
   const neg = v < 0;
@@ -47,20 +49,16 @@ export function EmptyState({ title = 'Tidak ada data', desc }) {
   );
 }
 
-export function PeriodPicker({ from, to, onChange }) {
+export function PeriodPicker({ from, to, onChange, label = 'Periode', align = 'left', style = {} }) {
   return (
-    <div className="period-picker">
-      <span>Periode</span>
-      <input
-        type="date" value={from}
-        onChange={e => onChange({ from: e.target.value, to })}
-      />
-      <span style={{ color: 'var(--text-muted)' }}>—</span>
-      <input
-        type="date" value={to}
-        onChange={e => onChange({ from, to: e.target.value })}
-      />
-    </div>
+    <DateRangePicker
+      from={from}
+      to={to}
+      onChange={onChange}
+      label={label}
+      align={align}
+      style={style}
+    />
   );
 }
 
