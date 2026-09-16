@@ -113,6 +113,7 @@ export default function MasterMenu() {
       price: '',
       cost_price: '',
       unit: 'porsi',
+      bundle_items: [],
     });
     setModalOpen(true);
   }
@@ -131,9 +132,53 @@ export default function MasterMenu() {
       min_stock: menu.min_stock ?? 5,
       price: menu.price,
       cost_price: menu.cost_price ?? '',
-      unit: menu.unit || (menu.item_type === 'DIRECT' ? 'pcs' : (menu.item_type === 'SERVICE' ? 'layanan' : 'porsi')),
+      unit: menu.unit || (menu.item_type === 'DIRECT' ? 'pcs' : (menu.item_type === 'SERVICE' ? 'layanan' : (menu.item_type === 'BUNDLE' ? 'paket' : 'porsi'))),
+      bundle_items: (menu.bundle_items || menu.bundleItems || []).map(bi => ({
+        bundled_menu_id: bi.bundled_menu_id || bi.bundledMenu?.id || '',
+        ingredient_id: bi.ingredient_id || '',
+        qty: bi.qty || 1,
+        unit: bi.unit || 'porsi'
+      })),
     });
     setModalOpen(true);
+  }
+
+  function addBundleItem() {
+    const firstOther = menus.find(m => m.id !== selected?.id) || menus[0];
+    setMenuForm(f => ({
+      ...f,
+      bundle_items: [
+        ...(f.bundle_items || []),
+        {
+          bundled_menu_id: firstOther ? firstOther.id : '',
+          ingredient_id: '',
+          qty: 1,
+          unit: firstOther ? (firstOther.unit || 'porsi') : 'porsi'
+        }
+      ]
+    }));
+  }
+
+  function removeBundleItem(idx) {
+    setMenuForm(f => ({
+      ...f,
+      bundle_items: (f.bundle_items || []).filter((_, i) => i !== idx)
+    }));
+  }
+
+  function updateBundleItem(idx, field, val) {
+    setMenuForm(f => ({
+      ...f,
+      bundle_items: (f.bundle_items || []).map((bi, i) => {
+        if (i !== idx) return bi;
+        const updated = { ...bi, [field]: field === 'qty' ? Number(val) : val };
+        if (field === 'bundled_menu_id') {
+          const m = menus.find(item => item.id === Number(val));
+          if (m) updated.unit = m.unit || 'porsi';
+        }
+        return updated;
+      })
+    }));
   }
 
   async function handleSaveMenu(e) {
@@ -146,6 +191,13 @@ export default function MasterMenu() {
       toast.error('Harga jual tidak valid');
       return;
     }
+    if (menuForm.item_type === 'BUNDLE') {
+      const validItems = (menuForm.bundle_items || []).filter(bi => bi.bundled_menu_id || bi.ingredient_id);
+      if (validItems.length === 0) {
+        toast.error('Menu paket bundling harus memiliki minimal 1 item produk yang disertakan');
+        return;
+      }
+    }
 
     setSaving(true);
     try {
@@ -155,6 +207,12 @@ export default function MasterMenu() {
         cost_price: menuForm.cost_price !== '' ? Number(menuForm.cost_price) : 0,
         stock: Number(menuForm.stock) || 0,
         min_stock: Number(menuForm.min_stock) || 0,
+        bundle_items: menuForm.item_type === 'BUNDLE' ? (menuForm.bundle_items || []).map(bi => ({
+          bundled_menu_id: bi.bundled_menu_id ? Number(bi.bundled_menu_id) : null,
+          ingredient_id: bi.ingredient_id ? Number(bi.ingredient_id) : null,
+          qty: Number(bi.qty) || 1,
+          unit: bi.unit || null,
+        })) : undefined,
       };
 
       if (modalMode === 'create') {
@@ -372,16 +430,31 @@ export default function MasterMenu() {
 
   const isDirect = selected?.item_type === 'DIRECT';
   const isService = selected?.item_type === 'SERVICE';
-  const isRecipe = !isDirect && !isService;
+  const isBundle = selected?.item_type === 'BUNDLE';
+  const isRecipe = !isDirect && !isService && !isBundle;
 
-  const hpp = isDirect || isService
-    ? Number(selected?.cost_price || 0)
-    : (activeRecipe
-      ? (activeRecipe.items || []).reduce((sum, it) => {
-        const ing = ingredients.find(i => i.id === it.ingredient_id);
-        return ing ? sum + it.qty * (ing.harga / (ing.konversi || 1)) : sum;
+  const hpp = isBundle
+    ? (selected?.bundle_items || selected?.bundleItems || []).reduce((sum, bi) => {
+        const bm = menus.find(m => m.id === (bi.bundled_menu_id || bi.bundledMenu?.id));
+        if (bm) {
+          const bmHpp = bm.item_type === 'DIRECT' || bm.item_type === 'SERVICE'
+            ? Number(bm.cost_price || 0)
+            : (bm.recipes?.[0] ? (bm.recipes[0].items || []).reduce((s, it) => {
+                const ing = ingredients.find(i => i.id === it.ingredient_id);
+                return ing ? s + it.qty * (ing.harga / (ing.konversi || 1)) : s;
+              }, 0) : Number(bm.cost_price || 0));
+          return sum + (Number(bi.qty || 1) * bmHpp);
+        }
+        return sum;
       }, 0)
-      : Number(selected?.cost_price || 0));
+    : (isDirect || isService
+      ? Number(selected?.cost_price || 0)
+      : (activeRecipe
+        ? (activeRecipe.items || []).reduce((sum, it) => {
+          const ing = ingredients.find(i => i.id === it.ingredient_id);
+          return ing ? sum + it.qty * (ing.harga / (ing.konversi || 1)) : sum;
+        }, 0)
+        : Number(selected?.cost_price || 0)));
 
   const marginPct = selected?.price > 0 ? Math.round(((selected.price - hpp) / selected.price) * 100) : 0;
 
@@ -514,7 +587,8 @@ export default function MasterMenu() {
                     <div className="recipe-item-name" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       {mIsDirect && <Package size={13} color="#60a5fa" />}
                       {mIsService && <Scissors size={13} color="#c084fc" />}
-                      {!mIsDirect && !mIsService && <UtensilsCrossed size={13} color="#34d399" />}
+                      {m.item_type === 'BUNDLE' && <Layers size={13} color="#f43f5e" />}
+                      {!mIsDirect && !mIsService && m.item_type !== 'BUNDLE' && <UtensilsCrossed size={13} color="#34d399" />}
                       <span>{m.name}</span>
                     </div>
                     <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.05)', padding: '1px 5px', borderRadius: 4 }}>
@@ -548,7 +622,19 @@ export default function MasterMenu() {
                           Jasa
                         </span>
                       )}
-                      {!mIsDirect && !mIsService && (
+                      {m.item_type === 'BUNDLE' && (
+                        <span style={{
+                          fontSize: 9.5,
+                          background: 'rgba(244, 63, 94, 0.15)',
+                          color: '#fda4af',
+                          border: '1px solid rgba(244, 63, 94, 0.3)',
+                          padding: '0 4px',
+                          borderRadius: 4
+                        }}>
+                          🎁 Bundling
+                        </span>
+                      )}
+                      {!mIsDirect && !mIsService && m.item_type !== 'BUNDLE' && (
                         <span style={{
                           fontSize: 9.5,
                           background: 'rgba(16, 185, 129, 0.15)',
@@ -595,8 +681,8 @@ export default function MasterMenu() {
                 <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 4 }}>
                   Kode: <span className="mono" style={{ color: 'var(--accent)' }}>{selected.code}</span> ·
                   Kategori: {selected.category || 'Main'} ·
-                  Tipe: <span className="mono" style={{ color: isDirect ? '#60a5fa' : (isService ? '#c084fc' : '#34d399'), fontWeight: 700 }}>
-                    {isDirect ? 'Barang Jadi (Retail)' : (isService ? 'Jasa / Layanan' : 'Olahan Resep (BOM)')}
+                  Tipe: <span className="mono" style={{ color: isDirect ? '#60a5fa' : (isService ? '#c084fc' : (isBundle ? '#f43f5e' : '#34d399')), fontWeight: 700 }}>
+                    {isDirect ? 'Barang Jadi (Retail)' : (isService ? 'Jasa / Layanan' : (isBundle ? '🎁 Menu Bundling / Buy 1 Get 1' : 'Olahan Resep (BOM)'))}
                   </span> ·
                   Harga Jual: <span className="mono" style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{rupiah(selected.price)}</span>
                   {isRecipe && (
@@ -735,6 +821,80 @@ export default function MasterMenu() {
                           </button>
                         </div>
                       </>
+                    ) : isBundle ? (
+                      <div style={{
+                        padding: '24px 20px',
+                        background: 'rgba(244, 63, 94, 0.05)',
+                        border: '1px solid rgba(244, 63, 94, 0.25)',
+                        borderRadius: 12,
+                        marginBottom: 16
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                          <div style={{ width: 44, height: 44, borderRadius: 10, background: 'rgba(244, 63, 94, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#f43f5e' }}>
+                            <Layers size={22} />
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 800, fontSize: 16, color: '#ffffff' }}>
+                              🎁 Menu Paket Bundling / Promo Buy 1 Get 1
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                              Paket bundling ini berisi beberapa item produk. Setiap kali paket ini dipesan di kasir POS, sistem otomatis menelusuri resep & memotong stok bahan baku dari seluruh item di dalamnya.
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, color: '#ffffff' }}>
+                          Rincian Komponen Produk Dalam Paket:
+                        </div>
+
+                        {(!selected.bundle_items && !selected.bundleItems) || (selected.bundle_items || selected.bundleItems).length === 0 ? (
+                          <div style={{ padding: 18, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                            Belum ada item di dalam paket bundling ini. Klik "Edit Menu" di atas untuk menambahkan komponen paket.
+                          </div>
+                        ) : (
+                          <div className="table-wrap mb-3">
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th>Item Komponen</th>
+                                  <th className="center" style={{ width: 100 }}>Tipe Item</th>
+                                  <th className="right" style={{ width: 110 }}>Jumlah Qty</th>
+                                  <th className="right" style={{ width: 130 }}>Estimasi HPP/Cost</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(selected.bundle_items || selected.bundleItems || []).map((bi, idx) => {
+                                  const bm = bi.bundledMenu || menus.find(m => m.id === bi.bundled_menu_id);
+                                  const bmHpp = bm ? (bm.item_type === 'DIRECT' || bm.item_type === 'SERVICE' ? Number(bm.cost_price || 0) : (bm.recipes?.[0] ? (bm.recipes[0].items || []).reduce((s, it) => {
+                                    const ing = ingredients.find(i => i.id === it.ingredient_id);
+                                    return ing ? s + it.qty * (ing.harga / (ing.konversi || 1)) : s;
+                                  }, 0) : Number(bm.cost_price || 0))) : 0;
+                                  const totalBiHpp = (Number(bi.qty || 1) * bmHpp);
+
+                                  return (
+                                    <tr key={idx}>
+                                      <td style={{ fontWeight: 600, color: '#ffffff' }}>
+                                        {bm ? bm.name : (bi.ingredient?.name || `Item #${bi.bundled_menu_id || bi.ingredient_id}`)}
+                                      </td>
+                                      <td className="center">
+                                        <span className="pill" style={{ fontSize: 9.5, background: bm?.item_type === 'DIRECT' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(16, 185, 129, 0.15)', color: bm?.item_type === 'DIRECT' ? '#93c5fd' : '#6ee7b7' }}>
+                                          {bm?.item_type === 'DIRECT' ? 'Retail' : 'Olahan'}
+                                        </span>
+                                      </td>
+                                      <td className="mono right" style={{ fontWeight: 700 }}>
+                                        {num(bi.qty)} {bi.unit || bm?.unit || 'porsi'}
+                                      </td>
+                                      <td className="mono right" style={{ color: 'var(--accent-bright)', fontWeight: 600 }}>
+                                        {rupiah(totalBiHpp)}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
                     ) : isDirect ? (
                       <div style={{
                         padding: '28px 24px',
@@ -1284,12 +1444,12 @@ export default function MasterMenu() {
                   <label className="form-label" style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
                     <Sparkles size={14} color="var(--accent)" /> Tipe Produk / Penjualan
                   </label>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 4 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginTop: 4 }}>
                     <button
                       type="button"
                       onClick={() => setMenuForm(f => ({ ...f, item_type: 'RECIPE', unit: 'porsi' }))}
                       style={{
-                        padding: '10px 8px',
+                        padding: '10px 6px',
                         borderRadius: 8,
                         border: '1px solid',
                         borderColor: (menuForm.item_type || 'RECIPE') === 'RECIPE' ? 'var(--accent-bright)' : 'var(--border)',
@@ -1304,14 +1464,14 @@ export default function MasterMenu() {
                       }}
                     >
                       <UtensilsCrossed size={16} />
-                      <span style={{ fontSize: 11.5, fontWeight: 700 }}>Olahan Resep</span>
-                      <span style={{ fontSize: 9.5, opacity: 0.7 }}>Bahan Baku / Dapur</span>
+                      <span style={{ fontSize: 11, fontWeight: 700 }}>Olahan Resep</span>
+                      <span style={{ fontSize: 9, opacity: 0.7 }}>Bahan Baku</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setMenuForm(f => ({ ...f, item_type: 'DIRECT', unit: 'pcs' }))}
                       style={{
-                        padding: '10px 8px',
+                        padding: '10px 6px',
                         borderRadius: 8,
                         border: '1px solid',
                         borderColor: menuForm.item_type === 'DIRECT' ? '#60a5fa' : 'var(--border)',
@@ -1326,14 +1486,14 @@ export default function MasterMenu() {
                       }}
                     >
                       <Package size={16} />
-                      <span style={{ fontSize: 11.5, fontWeight: 700 }}>Barang Jadi</span>
-                      <span style={{ fontSize: 9.5, opacity: 0.7 }}>Retail / Siap Jual</span>
+                      <span style={{ fontSize: 11, fontWeight: 700 }}>Barang Jadi</span>
+                      <span style={{ fontSize: 9, opacity: 0.7 }}>Retail Direct</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setMenuForm(f => ({ ...f, item_type: 'SERVICE', unit: 'layanan' }))}
                       style={{
-                        padding: '10px 8px',
+                        padding: '10px 6px',
                         borderRadius: 8,
                         border: '1px solid',
                         borderColor: menuForm.item_type === 'SERVICE' ? '#c084fc' : 'var(--border)',
@@ -1348,11 +1508,115 @@ export default function MasterMenu() {
                       }}
                     >
                       <Scissors size={16} />
-                      <span style={{ fontSize: 11.5, fontWeight: 700 }}>Jasa / Layanan</span>
-                      <span style={{ fontSize: 9.5, opacity: 0.7 }}>Non-Stok / Bebas</span>
+                      <span style={{ fontSize: 11, fontWeight: 700 }}>Jasa / Layanan</span>
+                      <span style={{ fontSize: 9, opacity: 0.7 }}>Non-Stok</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMenuForm(f => ({ ...f, item_type: 'BUNDLE', unit: 'paket' }))}
+                      style={{
+                        padding: '10px 6px',
+                        borderRadius: 8,
+                        border: '1px solid',
+                        borderColor: menuForm.item_type === 'BUNDLE' ? '#f43f5e' : 'var(--border)',
+                        background: menuForm.item_type === 'BUNDLE' ? 'rgba(244, 63, 94, 0.15)' : 'rgba(255,255,255,0.02)',
+                        color: menuForm.item_type === 'BUNDLE' ? '#fda4af' : 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        textAlign: 'center',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      <Layers size={16} />
+                      <span style={{ fontSize: 11, fontWeight: 700 }}>🎁 Bundling</span>
+                      <span style={{ fontSize: 9, opacity: 0.7 }}>Buy 1 Get 1</span>
                     </button>
                   </div>
                 </div>
+
+                {menuForm.item_type === 'BUNDLE' && (
+                  <div className="card mb-4" style={{ padding: 14, background: 'rgba(244, 63, 94, 0.05)', border: '1px solid rgba(244, 63, 94, 0.25)' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#ffffff', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Layers size={15} color="#f43f5e" /> Rincian Isi Paket Bundling / Buy 1 Get 1
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                      Tentukan item-item yang termasuk dalam paket promo ini. Saat paket dipesan di kasir POS, sistem otomatis menelusuri resep & memotong stok bahan baku seluruh item di dalamnya.
+                    </div>
+
+                    <div className="table-wrap" style={{ marginBottom: 10 }}>
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Item Produk Disertakan</th>
+                            <th className="right" style={{ width: 110 }}>Jumlah Qty</th>
+                            <th style={{ width: 90 }}>Satuan</th>
+                            <th style={{ width: 45 }}></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(!menuForm.bundle_items || menuForm.bundle_items.length === 0) ? (
+                            <tr>
+                              <td colSpan={4} style={{ textAlign: 'center', padding: '16px 0', color: 'var(--text-muted)', fontSize: 12 }}>
+                                Belum ada item di dalam paket. Klik "Tambah Item Paket" di bawah.
+                              </td>
+                            </tr>
+                          ) : (
+                            menuForm.bundle_items.map((bi, idx) => (
+                              <tr key={idx}>
+                                <td>
+                                  <select
+                                    className="form-control"
+                                    style={{ padding: '5px 8px', fontSize: 12 }}
+                                    value={bi.bundled_menu_id || ''}
+                                    onChange={e => updateBundleItem(idx, 'bundled_menu_id', e.target.value)}
+                                  >
+                                    <option value="">-- Pilih Menu Disertakan --</option>
+                                    {menus.filter(m => m.id !== selected?.id && m.item_type !== 'BUNDLE').map(m => (
+                                      <option key={m.id} value={m.id}>
+                                        {m.code} - {m.name} ({rupiah(m.price)})
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td>
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    min="0.001"
+                                    className="form-control mono right"
+                                    style={{ padding: '5px 8px', fontSize: 12 }}
+                                    value={bi.qty}
+                                    onChange={e => updateBundleItem(idx, 'qty', e.target.value)}
+                                    placeholder="1"
+                                  />
+                                </td>
+                                <td className="mono" style={{ fontSize: 12 }}>
+                                  {bi.unit || 'porsi'}
+                                </td>
+                                <td className="center">
+                                  <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    style={{ color: 'var(--danger)', padding: '3px 6px' }}
+                                    onClick={() => removeBundleItem(idx)}
+                                  >
+                                    <X size={14} />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={addBundleItem}>
+                      <Plus size={12} /> Tambah Item Paket
+                    </button>
+                  </div>
+                )}
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 12 }}>
                   <div className="form-group">
