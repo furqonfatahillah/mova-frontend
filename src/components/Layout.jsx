@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Package, UtensilsCrossed, ShoppingCart,
   ArrowUpDown, ClipboardList, BarChart2, TrendingUp, DollarSign,
   AlertTriangle, LogOut, ScrollText, Menu, X, Clock,
-  Store, Send, Users, Building2, ChefHat, Trash2, Percent, Landmark, Wallet, Coins, Gift, Copy, Check
+  Store, Send, Users, Building2, ChefHat, Trash2, Percent, Landmark, Wallet, Coins, Gift, Copy, Check, Receipt
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
@@ -85,6 +85,7 @@ export default function Layout() {
         { to: '/kartu-stok', label: 'Kartu Stok', icon: ScrollText },
         { to: '/movement', label: 'Riwayat Mutasi', icon: ArrowUpDown },
         { to: '/opname', label: 'Stock Opname', icon: ClipboardList },
+        { to: '/opex', label: 'Biaya Operasional (OPEX)', icon: Receipt },
       ],
     },
     {

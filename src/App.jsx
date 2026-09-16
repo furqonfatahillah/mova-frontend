@@ -26,6 +26,7 @@ import DiscountManagement from './pages/DiscountManagement';
 import ProfitLoss from './pages/ProfitLoss';
 import CashFlow from './pages/CashFlow';
 import CoinManagement from './pages/CoinManagement';
+import OpexManagement from './pages/OpexManagement';
 import { OutletProvider } from './context/OutletContext';
 
 function PrivateRoute({ children }) {
@@ -105,6 +106,8 @@ export default function App() {
           <Route path="kartu-stok" element={<RoleRoute roles={['pegawai']}><KartuStok /></RoleRoute>} />
           <Route path="movement"   element={<RoleRoute roles={['pegawai']}><StockMovement /></RoleRoute>} />
           <Route path="opname"     element={<RoleRoute roles={['pegawai']}><StockOpname /></RoleRoute>} />
+          <Route path="opex"       element={<RoleRoute roles={['pegawai']}><OpexManagement /></RoleRoute>} />
+          <Route path="expenses"   element={<RoleRoute roles={['pegawai']}><OpexManagement /></RoleRoute>} />
 
           {/* Analitik & Keuangan */}
           <Route path="variance/bahan" element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'owner_website', 'superadmin']}><VarianceBahan /></RoleRoute>} />
