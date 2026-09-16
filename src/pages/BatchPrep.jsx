@@ -29,6 +29,7 @@ export default function BatchPrep() {
   // Modal Masak Batch
   const [cookModalOpen, setCookModalOpen] = useState(false);
   const [selectedRecipeId, setSelectedRecipeId] = useState('');
+  const [selectedCookOutletId, setSelectedCookOutletId] = useState('');
   const [batchMultiplier, setBatchMultiplier] = useState(1);
   const [actualOutputQty, setActualOutputQty] = useState('');
   const [cookDate, setCookDate] = useState(new Date().toISOString().slice(0, 10));
@@ -78,35 +79,34 @@ export default function BatchPrep() {
       const todayStr = new Date().toISOString().slice(0, 10);
       const todayBatches = bchs.filter(b => b.date === todayStr);
       const semiFinishedIngs = ings.filter(i => i.type === 'SEMI_FINISHED');
-      const lowStockCount = semiFinishedIngs.filter(i => (i.current_stock ?? 0) <= (i.current_stok_min ?? i.stok_min ?? 0)).length;
-      const todayTotalCost = todayBatches.reduce((sum, b) => sum + Number(b.total_cost || 0), 0);
+      const lowStockCount = semiFinishedIngs.filter(i => Number(i.current_stock ?? 0) <= Number(i.current_stok_min ?? i.stok_min ?? 0)).length;
 
       setStats({
         totalOlahan: semiFinishedIngs.length,
         batchHariIni: todayBatches.length,
-        nilaiProduksiHariIni: todayTotalCost,
+        nilaiProduksiHariIni: todayBatches.reduce((acc, b) => acc + (Number(b.total_cost) || 0), 0),
         stokMenipis: lowStockCount,
       });
-    } catch (err) {
-      toast.error('Gagal memuat data batch prep');
+    } catch {
+      toast.error('Gagal memuat data bahan olahan');
     } finally {
       setLoading(false);
     }
   }
 
-  // Handle recipe selection & preview calculation
+  // Fetch preview calculation when recipe, multiplier, outlet, or modal state changes
   useEffect(() => {
-    if (!cookModalOpen || !selectedRecipeId) {
+    if (!selectedRecipeId || !cookModalOpen) {
       setBatchPreview(null);
       return;
     }
-    fetchPreview(selectedRecipeId, batchMultiplier);
-  }, [selectedRecipeId, batchMultiplier, activeOutletId, cookModalOpen]);
+    fetchPreview(selectedRecipeId, batchMultiplier, selectedCookOutletId);
+  }, [selectedRecipeId, batchMultiplier, selectedCookOutletId, cookModalOpen]);
 
-  async function fetchPreview(recipeId, mult) {
+  async function fetchPreview(recipeId, mult, outletId) {
     setPreviewLoading(true);
     try {
-      const targetOutlet = activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all' ? activeOutletId : undefined;
+      const targetOutlet = outletId || (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all' ? activeOutletId : (outlets[0]?.id || 1));
       const { data } = await api.get('/batch-preps/preview', {
         params: {
           prep_recipe_id: recipeId,
@@ -126,6 +126,11 @@ export default function BatchPrep() {
   }
 
   function openCookModal(recipe = null) {
+    const defaultOutlet = activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all'
+      ? String(activeOutletId)
+      : String(outlets[0]?.id || '1');
+    setSelectedCookOutletId(defaultOutlet);
+
     if (recipe) {
       setSelectedRecipeId(recipe.id);
       setBatchMultiplier(1);
@@ -152,7 +157,7 @@ export default function BatchPrep() {
 
     setCooking(true);
     try {
-      const targetOutlet = activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all' ? activeOutletId : (outlets[0]?.id || 1);
+      const targetOutlet = selectedCookOutletId || (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all' ? activeOutletId : (outlets[0]?.id || 1));
       const payload = {
         prep_recipe_id: Number(selectedRecipeId),
         outlet_id: Number(targetOutlet),
@@ -723,7 +728,25 @@ export default function BatchPrep() {
                 </div>
               ) : (
                 <>
-                  {/* Step 1: Select Recipe & Multiplier */}
+                  {/* Step 1: Select Outlet, Recipe & Multiplier */}
+                  <div className="form-group mb-3">
+                    <label className="form-label" style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      Gudang / Cabang Dapur Pelaksana:
+                    </label>
+                    <select
+                      className="form-control"
+                      style={{ fontSize: 13, fontWeight: 700, background: 'var(--card-bg)', color: '#ffffff' }}
+                      value={selectedCookOutletId}
+                      onChange={e => setSelectedCookOutletId(e.target.value)}
+                    >
+                      {outlets.map(o => (
+                        <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
+                          {o.is_main ? '🏢 ' : '📍 '} {o.name} ({o.code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14, marginBottom: 16 }}>
                     <div>
                       <label className="form-label" style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
