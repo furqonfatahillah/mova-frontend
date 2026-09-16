@@ -63,8 +63,11 @@ export default function KartuStok() {
     outlet_id: '',
     date: new Date().toISOString().slice(0, 10),
     type: 'PURCHASE',
+    unit_type: 'BELI',
+    unit_price: '',
     qty: '',
     note: '',
+    waste_reason: 'SPOILED',
   });
   const [saving, setSaving] = useState(false);
 
@@ -169,15 +172,19 @@ export default function KartuStok() {
     setSaving(true);
     try {
       const targetOutlet = mutationForm.outlet_id || selectedOutletId || 1;
-      await api.post('/movements', {
+      const payload = {
         ...mutationForm,
-        ingredient_id: Number(mutationForm.ingredient_id),
+        ingredient_id: Number(mutationForm.ingredient_id || ingredients[0]?.id),
         qty: Number(mutationForm.qty),
         outlet_id: Number(targetOutlet),
-      });
+        unit_type: mutationForm.type === 'PURCHASE' ? (mutationForm.unit_type || 'BELI') : 'PAKAI',
+        unit_price: mutationForm.type === 'PURCHASE' && mutationForm.unit_price !== '' ? Number(mutationForm.unit_price) : undefined,
+        waste_reason: mutationForm.type === 'WASTE' ? (mutationForm.waste_reason || 'SPOILED') : undefined,
+      };
+      await api.post('/movements', payload);
       toast.success('Mutasi stok berhasil dicatat!');
       setModalOpen(false);
-      setMutationForm(f => ({ ...f, qty: '', note: '' }));
+      setMutationForm(f => ({ ...f, qty: '', note: '', unit_price: '' }));
       // Refresh data
       fetchSummary();
       if (selectedIngId) fetchStockCard();
@@ -203,6 +210,7 @@ export default function KartuStok() {
 
   const currentOutlet = outlets.find(o => String(o.id) === String(selectedOutletId));
   const selectedIng = ingredients.find(i => i.id === Number(selectedIngId));
+  const activeModalIng = ingredients.find(i => Number(i.id) === Number(mutationForm.ingredient_id));
 
   // Available categories in current summary
   const availableCategories = useMemo(() => {
@@ -293,13 +301,18 @@ export default function KartuStok() {
             <button
               className="btn btn-primary"
               onClick={() => {
+                const targetIngId = selectedIngId || (ingredients[0]?.id || '');
+                const targetIng = ingredients.find(i => String(i.id) === String(targetIngId));
                 setMutationForm({
-                  ingredient_id: selectedIngId || (ingredients[0]?.id || ''),
+                  ingredient_id: targetIngId,
                   outlet_id: selectedOutletId,
                   date: new Date().toISOString().slice(0, 10),
                   type: 'PURCHASE',
+                  unit_type: 'BELI',
+                  unit_price: targetIng?.harga || '',
                   qty: '',
                   note: '',
+                  waste_reason: 'SPOILED',
                 });
                 setModalOpen(true);
               }}
@@ -927,7 +940,15 @@ export default function KartuStok() {
                   <select
                     className="form-control"
                     value={mutationForm.ingredient_id}
-                    onChange={e => setMutationForm(f => ({ ...f, ingredient_id: Number(e.target.value) }))}
+                    onChange={e => {
+                      const newId = Number(e.target.value);
+                      const ing = ingredients.find(i => i.id === newId);
+                      setMutationForm(f => ({
+                        ...f,
+                        ingredient_id: newId,
+                        unit_price: f.type === 'PURCHASE' ? (ing?.harga || '') : f.unit_price
+                      }));
+                    }}
                   >
                     {ingredients.map(i => (
                       <option key={i.id} value={i.id} style={{ background: '#11162d', color: '#ffffff' }}>
@@ -968,7 +989,14 @@ export default function KartuStok() {
                   <select
                     className="form-control"
                     value={mutationForm.type}
-                    onChange={e => setMutationForm(f => ({ ...f, type: e.target.value }))}
+                    onChange={e => {
+                      const newType = e.target.value;
+                      setMutationForm(f => ({
+                        ...f,
+                        type: newType,
+                        unit_price: newType === 'PURCHASE' && !f.unit_price ? (activeModalIng?.harga || '') : f.unit_price
+                      }));
+                    }}
                   >
                     <option value="PURCHASE">Pembelian Bahan (Masuk +)</option>
                     <option value="WASTE">Waste / Bahan Rusak (Keluar -)</option>
@@ -979,21 +1007,117 @@ export default function KartuStok() {
                   </select>
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label">
-                    Jumlah / Qty ({ingredients.find(i => i.id === Number(mutationForm.ingredient_id))?.unit_pakai || 'satuan pakai'})
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0.001"
-                    className="form-control mono"
-                    required
-                    placeholder="Contoh: 5000"
-                    value={mutationForm.qty}
-                    onChange={e => setMutationForm(f => ({ ...f, qty: e.target.value }))}
-                  />
-                </div>
+                {mutationForm.type === 'PURCHASE' && (
+                  <>
+                    <div className="form-group">
+                      <label className="form-label">Satuan Input Qty & Harga</label>
+                      <div style={{ display: 'flex', gap: 16, marginTop: 4, background: 'rgba(255,255,255,0.04)', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }}>
+                          <input
+                            type="radio"
+                            name="unit_type"
+                            value="BELI"
+                            checked={mutationForm.unit_type === 'BELI'}
+                            onChange={e => setMutationForm(f => ({ ...f, unit_type: e.target.value }))}
+                          />
+                          Satuan Beli ({activeModalIng?.unit_beli || 'Kg'})
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }}>
+                          <input
+                            type="radio"
+                            name="unit_type"
+                            value="PAKAI"
+                            checked={mutationForm.unit_type === 'PAKAI'}
+                            onChange={e => setMutationForm(f => ({ ...f, unit_type: e.target.value }))}
+                          />
+                          Satuan Pakai ({activeModalIng?.unit_pakai || 'gram'})
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">
+                        Jumlah / Qty Pembelian ({mutationForm.unit_type === 'BELI' ? (activeModalIng?.unit_beli || 'satuan beli') : (activeModalIng?.unit_pakai || 'satuan pakai')})
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0.001"
+                        className="form-control mono"
+                        required
+                        placeholder={mutationForm.unit_type === 'BELI' ? 'Contoh: 5' : 'Contoh: 5000'}
+                        value={mutationForm.qty}
+                        onChange={e => setMutationForm(f => ({ ...f, qty: e.target.value }))}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">
+                        Harga Beli Satuan (Rp per {mutationForm.unit_type === 'BELI' ? (activeModalIng?.unit_beli || 'unit beli') : (activeModalIng?.unit_pakai || 'unit pakai')})
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        className="form-control mono"
+                        placeholder="Contoh: 25000"
+                        value={mutationForm.unit_price}
+                        onChange={e => setMutationForm(f => ({ ...f, unit_price: e.target.value }))}
+                      />
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, display: 'block' }}>
+                        ⚡ Kosongkan jika ingin menggunakan harga Moving Average saat ini ({rupiah(activeModalIng?.harga || 0)}/{activeModalIng?.unit_beli}).
+                      </span>
+                    </div>
+
+                    {Number(mutationForm.qty) > 0 && Number(mutationForm.unit_price) > 0 && (
+                      <div style={{ padding: '10px 14px', background: 'rgba(124, 58, 237, 0.12)', border: '1px solid var(--border-accent)', borderRadius: 8, marginBottom: 14 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Estimasi Total Nilai Pembelian:</div>
+                        <div className="mono" style={{ fontSize: 16, fontWeight: 700, color: 'var(--accent-bright)', marginTop: 2 }}>
+                          {rupiah(Number(mutationForm.qty) * Number(mutationForm.unit_price))}
+                        </div>
+                        <div style={{ fontSize: 10.5, color: '#38bdf8', marginTop: 4 }}>
+                          ⚡ HPP Moving Average akan dihitung ulang secara otomatis oleh sistem saat mutasi disimpan.
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {mutationForm.type !== 'PURCHASE' && (
+                  <div className="form-group">
+                    <label className="form-label">
+                      Jumlah / Qty ({activeModalIng?.unit_pakai || 'satuan pakai'})
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0.001"
+                      className="form-control mono"
+                      required
+                      placeholder="Contoh: 500"
+                      value={mutationForm.qty}
+                      onChange={e => setMutationForm(f => ({ ...f, qty: e.target.value }))}
+                    />
+                  </div>
+                )}
+
+                {mutationForm.type === 'WASTE' && (
+                  <div className="form-group">
+                    <label className="form-label">Alasan Waste / Rusak</label>
+                    <select
+                      className="form-control"
+                      value={mutationForm.waste_reason || 'SPOILED'}
+                      onChange={e => setMutationForm(f => ({ ...f, waste_reason: e.target.value }))}
+                    >
+                      <option value="SPOILED">Basi / Kedaluwarsa</option>
+                      <option value="BURNT_MISTAKE">Gosong / Kesalahan Masak</option>
+                      <option value="SPILLED_DROPPED">Tumpah / Jatuh / Rusak</option>
+                      <option value="QUALITY_REJECT">Sortir Kualitas / Trimming</option>
+                      <option value="SUPPLIER_DEFECT">Cacat Penerimaan Suplier</option>
+                      <option value="OTHER">Lainnya</option>
+                    </select>
+                  </div>
+                )}
 
                 <div className="form-group">
                   <label className="form-label">No. Referensi / Catatan</label>
