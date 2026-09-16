@@ -4,7 +4,8 @@ import {
   Send, Plus, Eye, Printer, X, Check, Trash2,
   Calendar, Store, Truck, FileText, AlertCircle, RefreshCw,
   ArrowLeftRight, ShoppingBag, Package, MapPin, Building,
-  Search, ArrowRight, ShieldCheck, CheckCircle2, PackageCheck, Clock
+  Search, ArrowRight, ShieldCheck, CheckCircle2, PackageCheck, Clock,
+  RotateCcw, AlertTriangle
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
@@ -36,6 +37,15 @@ export default function TransferBahan() {
   const [receiveTargetTransfer, setReceiveTargetTransfer] = useState(null);
   const [receivedNotesInput, setReceivedNotesInput] = useState('');
   const [receiving, setReceiving] = useState(false);
+
+  // Modal Return state
+  const [returnModalOpen, setReturnModalOpen] = useState(false);
+  const [returnTargetTransfer, setReturnTargetTransfer] = useState(null);
+  const [returnDisposition, setReturnDisposition] = useState('RECORD_AS_WASTE');
+  const [returnReason, setReturnReason] = useState('Barang rusak saat pengiriman / rusak di jalan');
+  const [returnNotes, setReturnNotes] = useState('');
+  const [returnItems, setReturnItems] = useState([]);
+  const [returning, setReturning] = useState(false);
 
   // Form state
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -540,6 +550,83 @@ export default function TransferBahan() {
     }
   }
 
+  // Open Return Modal
+  function openReturnModal(trf) {
+    setReturnTargetTransfer(trf);
+    setReturnDisposition('RECORD_AS_WASTE');
+    setReturnReason('Barang rusak saat pengiriman / rusak di jalan');
+    setReturnNotes('');
+
+    const initialItems = (trf.items || []).map(it => {
+      const isProd = it.item_type === 'PRODUCT';
+      const name = isProd ? (it.menu?.name || it.item_name || 'Produk') : (it.ingredient?.name || it.item_name || 'Bahan');
+      const origQty = Number(it.input_qty || it.qty || 0);
+      return {
+        id: it.id,
+        name,
+        unit: it.input_unit || it.unit || 'satuan',
+        input_qty: origQty,
+        returned_qty: Number(it.returned_qty || 0) > 0 ? Number(it.returned_qty) : origQty,
+        reason: it.return_reason || ''
+      };
+    });
+    setReturnItems(initialItems);
+    setReturnModalOpen(true);
+  }
+
+  // Submit Return Transfer
+  async function handleConfirmReturn(e) {
+    e?.preventDefault();
+    if (!returnTargetTransfer) return;
+
+    let totalRet = 0;
+    for (const item of returnItems) {
+      const retQ = Number(item.returned_qty || 0);
+      if (retQ < 0) {
+        toast.error(`Jumlah retur untuk ${item.name} tidak boleh minus!`);
+        return;
+      }
+      if (retQ > item.input_qty) {
+        toast.error(`Jumlah retur untuk ${item.name} (${retQ}) melebihi jumlah dikirim (${item.input_qty})!`);
+        return;
+      }
+      totalRet += retQ;
+    }
+
+    if (totalRet <= 0) {
+      toast.error('Masukkan jumlah barang yang diretur (minimal 1 item > 0)!');
+      return;
+    }
+
+    setReturning(true);
+    try {
+      const payload = {
+        return_disposition: returnDisposition,
+        return_reason: returnReason,
+        return_notes: returnNotes || null,
+        items: returnItems.map(it => ({
+          id: it.id,
+          returned_qty: Number(it.returned_qty || 0),
+          reason: it.reason || null
+        }))
+      };
+
+      const { data } = await api.post(`/transfers/${returnTargetTransfer.id}/return`, payload);
+
+      setTransfers(prev => prev.map(t => (t.id === data.transfer.id ? data.transfer : t)));
+      if (selectedTransfer?.id === data.transfer.id) {
+        setSelectedTransfer(data.transfer);
+      }
+
+      setReturnModalOpen(false);
+      toast.success(data.message || 'Retur transfer berhasil diproses!');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal memproses retur transfer');
+    } finally {
+      setReturning(false);
+    }
+  }
+
   // Cancel Transfer
   async function handleCancelTransfer(transfer) {
     if (transfer.status === 'CANCELLED') return;
@@ -647,6 +734,8 @@ export default function TransferBahan() {
               { id: 'ALL', label: 'Semua' },
               { id: 'IN_TRANSIT', label: `Transit (${inTransitCount})` },
               { id: 'COMPLETED', label: 'Selesai' },
+              { id: 'PARTIALLY_RETURNED', label: 'Retur Parsial' },
+              { id: 'RETURNED', label: 'Retur Total' },
               { id: 'CANCELLED', label: 'Dibatalkan' },
             ].map(tab => (
               <button
@@ -682,9 +771,9 @@ export default function TransferBahan() {
                 <th style={{ minWidth: 160 }}>Cabang Penerima (Tujuan)</th>
                 <th style={{ minWidth: 220 }}>Rincian Barang & Bahan</th>
                 <th style={{ minWidth: 130 }}>Kurir / Supir</th>
-                <th style={{ width: 110 }} className="center">Status</th>
+                <th style={{ width: 120 }} className="center">Status</th>
                 <th style={{ minWidth: 150 }}>Riwayat Audit</th>
-                <th style={{ width: 140 }} className="center">Aksi</th>
+                <th style={{ width: 170 }} className="center">Aksi</th>
               </tr>
             </thead>
             <tbody>
@@ -697,6 +786,8 @@ export default function TransferBahan() {
               ) : (
                 filteredTransfers.map(trf => {
                   const isCancelled = trf.status === 'CANCELLED';
+                  const isReturned = trf.status === 'RETURNED';
+                  const isPartialReturned = trf.status === 'PARTIALLY_RETURNED';
                   const isInTransit = trf.status === 'IN_TRANSIT' || trf.status === 'PENDING';
                   const sourceText = trf.source_display_name || trf.source_outlet?.name || trf.source_name || 'Lokasi Asal';
                   const destText = trf.destination_display_name || trf.destination_outlet?.name || trf.destination_name || 'Lokasi Tujuan';
@@ -734,10 +825,15 @@ export default function TransferBahan() {
                               const name = isProd ? (it.menu?.name || it.item_name || 'Produk') : (it.ingredient?.name || it.item_name || 'Bahan');
                               const hasConv = !isProd && it.input_unit && it.unit && it.input_unit !== it.unit && it.input_qty;
                               const badge = isProd ? '📦 ' : '🧪 ';
-                              return hasConv
-                                ? `${badge}${name} (${num(it.input_qty)} ${it.input_unit} ≈ ${num(it.qty)} ${it.unit})`
-                                : `${badge}${name} (${num(it.input_qty || it.qty)} ${it.input_unit || it.unit})`;
-                            }).join(', ') || '—'}
+                              const hasRet = Number(it.returned_qty) > 0;
+                              return (
+                                <span key={it.id || name}>
+                                  {badge}{name} ({num(it.input_qty || it.qty)} {it.input_unit || it.unit})
+                                  {hasRet && <strong style={{ color: '#fb7185' }}> [Retur {num(it.returned_qty)}]</strong>}
+                                  {', '}
+                                </span>
+                              );
+                            })}
                           </span>
                         </div>
                       </td>
@@ -756,6 +852,14 @@ export default function TransferBahan() {
                       <td className="center">
                         {isCancelled ? (
                           <span className="pill pill-danger" style={{ fontSize: 10.5 }}>BATAL</span>
+                        ) : isReturned ? (
+                          <span className="pill" style={{ fontSize: 10.5, display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(239, 68, 68, 0.2)', color: '#fca5a5', border: '1px solid rgba(239, 68, 68, 0.4)' }}>
+                            <RotateCcw size={11} /> RETUR TOTAL
+                          </span>
+                        ) : isPartialReturned ? (
+                          <span className="pill" style={{ fontSize: 10.5, display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(245, 158, 11, 0.2)', color: '#fcd34d', border: '1px solid rgba(245, 158, 11, 0.4)' }}>
+                            <RotateCcw size={11} /> RETUR PARSIAL
+                          </span>
                         ) : isInTransit ? (
                           <span className="pill pill-warning" style={{ fontSize: 10.5, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                             <Truck size={11} /> TRANSIT
@@ -775,7 +879,7 @@ export default function TransferBahan() {
                         />
                       </td>
                       <td className="center">
-                        <div style={{ display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', gap: 5, justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' }}>
                           {isInTransit && (
                             <button
                               className="btn btn-sm"
@@ -795,6 +899,27 @@ export default function TransferBahan() {
                               }}
                             >
                               <CheckCircle2 size={12} /> Terima
+                            </button>
+                          )}
+                          {!isCancelled && !isReturned && (
+                            <button
+                              className="btn btn-sm"
+                              onClick={() => openReturnModal(trf)}
+                              title="Retur Barang Transfer (Rusak di Jalan / Dikembalikan)"
+                              style={{
+                                background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                                color: '#ffffff',
+                                padding: '4px 8px',
+                                fontSize: 11,
+                                fontWeight: 700,
+                                border: 'none',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                boxShadow: '0 2px 8px rgba(245, 158, 11, 0.3)',
+                              }}
+                            >
+                              <RotateCcw size={12} /> Retur
                             </button>
                           )}
                           <button
@@ -908,6 +1033,203 @@ export default function TransferBahan() {
                   {receiving ? 'Memproses Penerimaan...' : (
                     <>
                       <CheckCircle2 size={15} /> Konfirmasi & Tambah Stok
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Retur Transfer Barang (Rusak di Jalan / Pengembalian ke Asal) */}
+      {returnModalOpen && returnTargetTransfer && (
+        <div className="modal-backdrop" onClick={() => setReturnModalOpen(false)}>
+          <div
+            className="modal-content card"
+            style={{ maxWidth: 680, width: '100%', margin: '20px', maxHeight: '92vh', overflowY: 'auto' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex-between mb-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <RotateCcw size={20} color="var(--warning)" />
+                <div>
+                  <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>
+                    Form Retur Barang Transfer
+                  </h3>
+                  <span style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                    No. Surat Jalan: <strong className="mono" style={{ color: 'var(--accent-bright)' }}>{returnTargetTransfer.transfer_no}</strong>
+                  </span>
+                </div>
+              </div>
+              <button
+                className="btn btn-ghost btn-icon"
+                onClick={() => setReturnModalOpen(false)}
+                style={{ padding: 4 }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmReturn}>
+              {/* DISPOSISI RETUR SELECTION */}
+              <div className="form-group mb-4">
+                <label className="form-label" style={{ fontWeight: 700 }}>Pilih Penanganan / Disposisi Retur</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div
+                    onClick={() => setReturnDisposition('RECORD_AS_WASTE')}
+                    style={{
+                      padding: 12,
+                      borderRadius: 10,
+                      cursor: 'pointer',
+                      border: returnDisposition === 'RECORD_AS_WASTE' ? '2px solid #f59e0b' : '1px solid var(--border)',
+                      background: returnDisposition === 'RECORD_AS_WASTE' ? 'rgba(245, 158, 11, 0.1)' : 'var(--bg-main)',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <div style={{ fontWeight: 700, fontSize: 13, color: '#f59e0b', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <AlertTriangle size={15} /> 💥 Rusak di Jalan (Kerugian Waste)
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                      Barang hancur / pecah / rusak saat perjalanan. Otomatis dicatat ke <strong>Kerugian Waste (Laba Rugi)</strong>. Stok tidak dikembalikan.
+                    </div>
+                  </div>
+
+                  <div
+                    onClick={() => setReturnDisposition('RETURN_TO_SOURCE')}
+                    style={{
+                      padding: 12,
+                      borderRadius: 10,
+                      cursor: 'pointer',
+                      border: returnDisposition === 'RETURN_TO_SOURCE' ? '2px solid #6366f1' : '1px solid var(--border)',
+                      background: returnDisposition === 'RETURN_TO_SOURCE' ? 'rgba(99, 102, 241, 0.1)' : 'var(--bg-main)',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <div style={{ fontWeight: 700, fontSize: 13, color: '#818cf8', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <RotateCcw size={15} /> ↩️ Retur ke Cabang Asal
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                      Barang dikembalikan & stok <strong>dipulihkan ke inventaris cabang pengirim</strong> ({returnTargetTransfer.source_display_name}).
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ALASAN UTAMA RETUR */}
+              <div className="form-group mb-4">
+                <label className="form-label" style={{ fontWeight: 600 }}>Alasan Utama Retur / Kerusakan</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Misal: Barang pecah di jalan / kemasan bocor saat pengiriman"
+                  value={returnReason}
+                  onChange={e => setReturnReason(e.target.value)}
+                  required
+                />
+              </div>
+
+              {/* TABEL ITEM YANG DIRETUR */}
+              <div className="card mb-4" style={{ background: 'var(--bg-card-subtle)', padding: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: 'var(--text-primary)' }}>
+                  Rincian Barang yang Diretur:
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {returnItems.map((item, idx) => (
+                    <div
+                      key={item.id}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 130px 180px',
+                        gap: 10,
+                        alignItems: 'center',
+                        padding: '8px 10px',
+                        background: 'var(--bg-main)',
+                        borderRadius: 8,
+                        border: '1px solid var(--border-soft)'
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 12.5 }}>{item.name}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                          Dikirim: <strong>{num(item.input_qty)} {item.unit}</strong>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: 10.5, color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>Jumlah Retur</label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <input
+                            type="number"
+                            step="any"
+                            min="0"
+                            max={item.input_qty}
+                            className="form-control mono right"
+                            style={{ padding: '4px 6px', fontSize: 12 }}
+                            value={item.returned_qty}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setReturnItems(prev => prev.map((it, i) => i === idx ? { ...it, returned_qty: val } : it));
+                            }}
+                          />
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.unit}</span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: 10.5, color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>Keterangan / Kerusakan</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          style={{ padding: '4px 6px', fontSize: 11.5 }}
+                          placeholder="Catatan item (opsional)"
+                          value={item.reason}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setReturnItems(prev => prev.map((it, i) => i === idx ? { ...it, reason: val } : it));
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* CATATAN RETUR TAMBAHAN */}
+              <div className="form-group mb-4">
+                <label className="form-label">Catatan Tambahan (Opsional)</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Misal: Sudah dikonfirmasi dengan driver pengantar"
+                  value={returnNotes}
+                  onChange={e => setReturnNotes(e.target.value)}
+                />
+              </div>
+
+              <div className="flex-between">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setReturnModalOpen(false)}
+                  disabled={returning}
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="btn"
+                  disabled={returning}
+                  style={{
+                    background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                    color: '#ffffff',
+                    fontWeight: 800,
+                    padding: '8px 18px'
+                  }}
+                >
+                  {returning ? 'Memproses Retur...' : (
+                    <>
+                      <RotateCcw size={15} /> Proses Retur Barang
                     </>
                   )}
                 </button>
@@ -1389,6 +1711,22 @@ export default function TransferBahan() {
                     <CheckCircle2 size={14} /> Terima Transfer
                   </button>
                 )}
+                {selectedTransfer.status !== 'CANCELLED' && selectedTransfer.status !== 'RETURNED' && (
+                  <button
+                    className="btn btn-sm"
+                    onClick={() => {
+                      setDetailModalOpen(false);
+                      openReturnModal(selectedTransfer);
+                    }}
+                    style={{
+                      background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                      color: '#ffffff',
+                      fontWeight: 700
+                    }}
+                  >
+                    <RotateCcw size={14} /> Retur Barang
+                  </button>
+                )}
                 <button
                   className="btn btn-primary btn-sm"
                   onClick={printDeliveryOrder}
@@ -1479,7 +1817,7 @@ export default function TransferBahan() {
                   <strong>Status:</strong>{' '}
                   <span style={{
                     fontWeight: 700,
-                    color: selectedTransfer.status === 'CANCELLED' ? '#ef4444' : selectedTransfer.status === 'COMPLETED' ? '#16a34a' : '#d97706'
+                    color: selectedTransfer.status === 'CANCELLED' ? '#ef4444' : selectedTransfer.status === 'COMPLETED' ? '#16a34a' : selectedTransfer.status === 'RETURNED' || selectedTransfer.status === 'PARTIALLY_RETURNED' ? '#d97706' : '#3b82f6'
                   }}>
                     {selectedTransfer.status === 'IN_TRANSIT' ? 'DALAM PERJALANAN (TRANSIT)' : selectedTransfer.status}
                   </span>
@@ -1494,6 +1832,17 @@ export default function TransferBahan() {
                 </div>
               )}
 
+              {/* Audit Return Info if returned */}
+              {selectedTransfer.returned_at && (
+                <div style={{ fontSize: 11.5, color: '#991b1b', padding: '8px 12px', background: '#fef2f2', borderRadius: 6, border: '1px solid #fecaca', marginBottom: 14 }}>
+                  ⚠️ <strong>Pencatatan Retur Barang:</strong> {new Date(selectedTransfer.returned_at).toLocaleString('id-ID')} oleh <strong>{selectedTransfer.returned_by_name || 'Petugas Retur'}</strong>
+                  <div style={{ marginTop: 2 }}>
+                    <strong>Alasan Utama:</strong> {selectedTransfer.return_reason || '—'} · <strong>Disposisi:</strong> {selectedTransfer.return_disposition === 'RECORD_AS_WASTE' ? '💥 Kerugian Waste (Barang Rusak)' : '↩️ Retur ke Cabang Asal'}
+                  </div>
+                  {selectedTransfer.return_notes && <div style={{ marginTop: 2 }}><strong>Catatan Retur:</strong> {selectedTransfer.return_notes}</div>}
+                </div>
+              )}
+
               {/* Items Table */}
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, marginBottom: 20 }}>
                 <thead>
@@ -1505,7 +1854,7 @@ export default function TransferBahan() {
                     <th style={{ padding: '8px 10px', textAlign: 'right', width: 90 }}>Jumlah</th>
                     <th style={{ padding: '8px 10px', textAlign: 'left', width: 80 }}>Satuan</th>
                     <th style={{ padding: '8px 10px', textAlign: 'right', width: 130 }}>Konversi Stok</th>
-                    <th style={{ padding: '8px 10px', textAlign: 'left' }}>Catatan</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'left' }}>Catatan / Retur</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1514,6 +1863,7 @@ export default function TransferBahan() {
                     const code = isProd ? (it.menu?.code || 'PRD') : (it.ingredient?.code || 'BB');
                     const name = isProd ? (it.menu?.name || it.item_name) : (it.ingredient?.name || it.item_name);
                     const hasConv = !isProd && it.input_unit && it.unit && it.input_unit !== it.unit;
+                    const retQty = Number(it.returned_qty || 0);
 
                     return (
                       <tr key={it.id || idx} style={{ borderBottom: '1px solid #e2e8f0', background: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
@@ -1538,6 +1888,11 @@ export default function TransferBahan() {
                         </td>
                         <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, fontFamily: 'monospace' }}>
                           {num(it.input_qty || it.qty)}
+                          {retQty > 0 && (
+                            <div style={{ fontSize: 10, color: '#dc2626', fontWeight: 700 }}>
+                              Diretur: {num(retQty)}
+                            </div>
+                          )}
                         </td>
                         <td style={{ padding: '8px 10px', color: '#0f172a', fontWeight: 600 }}>
                           {it.input_unit || it.unit}
@@ -1547,6 +1902,11 @@ export default function TransferBahan() {
                         </td>
                         <td style={{ padding: '8px 10px', color: '#64748b', fontSize: 11.5 }}>
                           {it.notes || '—'}
+                          {retQty > 0 && (
+                            <div style={{ color: '#dc2626', fontWeight: 600, fontSize: 11 }}>
+                              ⚠️ Retur: {it.return_reason || 'Barang rusak'}
+                            </div>
+                          )}
                         </td>
                       </tr>
                     );
