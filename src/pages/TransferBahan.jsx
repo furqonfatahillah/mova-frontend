@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
-import { PageHeader, LoadingState, AuditInfo, MiniCard, num } from '../components/ui';
+import { PageHeader, LoadingState, AuditInfo, MiniCard, num, PeriodPicker } from '../components/ui';
 import { printElement } from '../utils/print';
 import { useOutlet } from '../context/OutletContext';
 
@@ -64,16 +64,23 @@ export default function TransferBahan() {
     ]
   });
 
+  const [period, setPeriod] = useState(() => {
+    const today = new Date();
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10);
+    return { from: firstDay, to: lastDay };
+  });
+
   // Load all initial data
   useEffect(() => {
     loadAllData();
-  }, []);
+  }, [period]);
 
   async function loadAllData() {
     setLoading(true);
     try {
       const [trfRes, outRes, ingRes, menuRes] = await Promise.all([
-        api.get('/transfers'),
+        api.get('/transfers', { params: { from: period.from, to: period.to } }),
         api.get('/outlets'),
         api.get('/ingredients'),
         api.get('/menus').catch(() => ({ data: [] })),
@@ -619,16 +626,19 @@ export default function TransferBahan() {
       {/* Filters & Search Bar */}
       <div className="card mb-4" style={{ padding: '12px 16px' }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-          <div style={{ position: 'relative', flex: 1, minWidth: 260 }}>
-            <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-            <input
-              type="text"
-              className="form-control"
-              placeholder="Cari no surat jalan, cabang asal, cabang tujuan, atau kurir..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              style={{ paddingLeft: 36, fontSize: 13 }}
-            />
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flex: '1 1 300px', flexWrap: 'wrap' }}>
+            <PeriodPicker from={period.from} to={period.to} onChange={setPeriod} align="left" />
+            <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+              <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Cari no surat jalan, cabang asal, cabang tujuan, atau kurir..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                style={{ paddingLeft: 36, fontSize: 13 }}
+              />
+            </div>
           </div>
 
           {/* Status Tabs */}
