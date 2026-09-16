@@ -14,7 +14,22 @@ export default function StockOpname() {
   const [activeTab, setActiveTab] = useState('INPUT'); // 'INPUT' | 'HISTORY'
   const { activeOutletId, activeOutlet, isOwnerBisnis, isSuperadminPlatform, outlets } = useOutlet();
 
-  const targetOutlet = activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all' ? Number(activeOutletId) : 1;
+  const [selectedOutletId, setSelectedOutletId] = useState(() => {
+    if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
+      return String(activeOutletId);
+    }
+    return '';
+  });
+
+  const targetOutlet = useMemo(() => {
+    if (selectedOutletId && selectedOutletId !== 'ALL' && selectedOutletId !== 'all') {
+      return Number(selectedOutletId);
+    }
+    if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
+      return Number(activeOutletId);
+    }
+    return outlets?.[0]?.id || 1;
+  }, [selectedOutletId, activeOutletId, outlets]);
 
   // --- TAB 1: INPUT OPNAME STATE ---
   const [period, setPeriod] = useState({ from: '2026-08-01', to: '2026-08-31' });
@@ -42,14 +57,14 @@ export default function StockOpname() {
   const [sessionDetail, setSessionDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  // Load input data when period or activeOutlet changes
+  // Load input data when period, targetOutlet, historyOutlet, or activeTab changes
   useEffect(() => {
     if (activeTab === 'INPUT') {
       fetchInputData();
     } else if (activeTab === 'HISTORY') {
       fetchSessions();
     }
-  }, [period, activeOutletId, activeTab]);
+  }, [period, targetOutlet, historyOutlet, activeTab]);
 
   async function fetchInputData() {
     setLoading(true);
@@ -269,10 +284,25 @@ export default function StockOpname() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, alignItems: 'center' }}>
               <div>
                 <label className="form-label" style={{ fontSize: 11.5 }}>Gudang / Cabang Pelaksana</label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13.5, color: '#ffffff' }}>
-                  <Store size={15} color="var(--accent-bright)" />
-                  <span>{activeOutlet?.name || 'Gudang Utama (Pusat)'}</span>
-                </div>
+                {outlets && outlets.length > 0 ? (
+                  <select
+                    className="form-control"
+                    style={{ fontSize: 13, fontWeight: 700, background: 'var(--card-bg)', color: '#ffffff', cursor: 'pointer' }}
+                    value={targetOutlet}
+                    onChange={e => setSelectedOutletId(e.target.value)}
+                  >
+                    {outlets.map(o => (
+                      <option key={o.id} value={o.id}>
+                        {o.is_main ? '🏢 ' : '📍 '} {o.name} ({o.code})
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13.5, color: '#ffffff' }}>
+                    <Store size={15} color="var(--accent-bright)" />
+                    <span>{activeOutlet?.name || 'Gudang Utama (Pusat)'}</span>
+                  </div>
+                )}
               </div>
 
               <div>
