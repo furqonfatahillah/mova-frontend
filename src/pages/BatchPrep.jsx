@@ -694,31 +694,60 @@ export default function BatchPrep() {
             </div>
 
             <div style={{ padding: 20 }}>
-              {/* Step 1: Select Recipe & Multiplier */}
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14, marginBottom: 16 }}>
-                <div>
-                  <label className="form-label" style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
-                    Pilih Bahan Olahan / Resep:
-                  </label>
-                  <select
-                    className="form-control"
-                    style={{ fontSize: 13 }}
-                    value={selectedRecipeId}
-                    onChange={e => {
-                      setSelectedRecipeId(e.target.value);
-                      const rec = recipes.find(r => r.id === Number(e.target.value));
-                      if (rec) {
-                        setActualOutputQty(rec.output_qty * batchMultiplier);
-                      }
+              {recipes.length === 0 ? (
+                <div style={{
+                  padding: 20,
+                  borderRadius: 10,
+                  background: 'rgba(234, 179, 8, 0.08)',
+                  border: '1px solid rgba(234, 179, 8, 0.3)',
+                  marginBottom: 16,
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: '#fde047', marginBottom: 6 }}>
+                    ⚠️ Belum Ada Resep Bahan Olahan Terdaftar
+                  </div>
+                  <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', maxWidth: 450, margin: '0 auto 14px', lineHeight: 1.5 }}>
+                    Anda belum mendaftarkan komposisi resep olahan. Buat resep olahan (Sub-Recipe) terlebih dahulu untuk menentukan bahan mentah yang akan dipotong.
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => {
+                      setCookModalOpen(false);
+                      openSubRecipeEditor(null);
                     }}
+                    style={{ fontWeight: 700 }}
                   >
-                    {recipes.map(r => (
-                      <option key={r.id} value={r.id}>
-                        {r.ingredient?.name || r.name} ({r.output_qty} {r.output_unit}/batch)
-                      </option>
-                    ))}
-                  </select>
+                    <Plus size={14} /> + Buat Resep Bahan Olahan Sekarang
+                  </button>
                 </div>
+              ) : (
+                <>
+                  {/* Step 1: Select Recipe & Multiplier */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14, marginBottom: 16 }}>
+                    <div>
+                      <label className="form-label" style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                        Pilih Bahan Olahan / Resep:
+                      </label>
+                      <select
+                        className="form-control"
+                        style={{ fontSize: 13, fontWeight: 600 }}
+                        value={selectedRecipeId}
+                        onChange={e => {
+                          setSelectedRecipeId(e.target.value);
+                          const rec = recipes.find(r => r.id === Number(e.target.value));
+                          if (rec) {
+                            setActualOutputQty(rec.output_qty * batchMultiplier);
+                          }
+                        }}
+                      >
+                        {recipes.map(r => (
+                          <option key={r.id} value={r.id} style={{ background: '#11162d', color: '#ffffff' }}>
+                            {r.ingredient?.name || r.name} ({r.output_qty} {r.output_unit}/batch)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
                 <div>
                   <label className="form-label" style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
@@ -934,6 +963,8 @@ export default function BatchPrep() {
                     {rupiah(batchPreview.total_estimated_cost / Number(actualOutputQty))} <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)' }}>/{batchPreview.output_unit}</span>
                   </div>
                 </div>
+              )}
+                </>
               )}
             </div>
 
