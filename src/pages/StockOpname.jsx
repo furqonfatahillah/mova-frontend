@@ -124,7 +124,13 @@ export default function StockOpname() {
     }
   }
 
-  async function handleSave() {
+  async function handleSave(actionType = 'DRAFT') {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (sessionForm.opname_date < todayStr) {
+      toast.error('Tanggal pelaksanaan opname tidak boleh di-inputkan tanggal mundur (sebelum hari ini)!');
+      return;
+    }
+
     const items = Object.entries(actuals)
       .filter(([, v]) => v !== '' && v !== undefined)
       .map(([ingId, qty]) => ({
@@ -149,20 +155,38 @@ export default function StockOpname() {
         opname_date: sessionForm.opname_date,
         approver: sessionForm.approver || null,
         notes: sessionForm.notes || null,
+        action: actionType, // 'DRAFT' or 'RELEASE'
         items,
       });
 
-      toast.success(`Sesi Opname ${data.opname_no || ''} berhasil dibukukan!`);
+      toast.success(data.message || `Sesi Opname ${data.opname_no || ''} berhasil disimpan!`);
       fetchInputData();
 
-      // Offer to open detail Berita Acara immediately
       if (data.opname_no) {
         openSessionDetail(data.opname_no);
       }
-    } catch {
-      toast.error('Gagal menyimpan hasil stock opname');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal menyimpan hasil stock opname');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleReleaseSession(opnameNo) {
+    if (!window.confirm(`Apakah Anda yakin ingin merilis (Release) & menyetujui Sesi Opname "${opnameNo}"?\nDokumen akan dikunci.`)) {
+      return;
+    }
+    try {
+      const { data } = await api.post(`/opnames/sessions/${opnameNo}/release`, {
+        approver: sessionForm.approver || undefined,
+        notes: sessionForm.notes || undefined,
+      });
+      toast.success(data.message || `Sesi Opname ${opnameNo} berhasil di-release & disetujui!`);
+      openSessionDetail(opnameNo);
+      if (activeTab === 'HISTORY') fetchSessions();
+      else fetchInputData();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal merilis sesi opname');
     }
   }
 
@@ -316,6 +340,7 @@ export default function StockOpname() {
                   type="date"
                   className="form-control mono"
                   style={{ fontSize: 12.5 }}
+                  min={new Date().toISOString().slice(0, 10)}
                   value={sessionForm.opname_date}
                   onChange={e => setSessionForm(p => ({ ...p, opname_date: e.target.value }))}
                 />
@@ -343,13 +368,26 @@ export default function StockOpname() {
                   Formulir Hitung Fisik Bahan Baku — {activeOutlet?.name || 'Cabang'}
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-                  Ketikkan angka timbangan fisik pada kolom <strong>Stok Akhir Fisik</strong>. Sistem menghitung variance & status secara otomatis.
+                  Ketikkan angka timbangan fisik pada kolom <strong>Stok Akhir Fisik</strong>. Inputan pegawai akan berstatus <strong>DRAFT</strong> dan di-release oleh Owner.
                 </div>
               </div>
 
-              <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-                <Save size={14} /> {saving ? 'Menyimpan...' : 'Simpan Sesi Opname'}
-              </button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {(isOwnerBisnis || isSuperadminPlatform) ? (
+                  <>
+                    <button className="btn btn-secondary" onClick={() => handleSave('DRAFT')} disabled={saving}>
+                      <Save size={14} /> {saving ? 'Menyimpan...' : 'Simpan Draft'}
+                    </button>
+                    <button className="btn btn-primary" onClick={() => handleSave('RELEASE')} disabled={saving} style={{ background: '#10b981', borderColor: '#10b981', color: '#ffffff', fontWeight: 700 }}>
+                      <CheckCircle2 size={14} /> {saving ? 'Menyimpan...' : 'Release & Setujui Opname'}
+                    </button>
+                  </>
+                ) : (
+                  <button className="btn btn-primary" onClick={() => handleSave('DRAFT')} disabled={saving}>
+                    <Save size={14} /> {saving ? 'Menyimpan...' : 'Simpan Draft Opname (Menunggu Release Owner)'}
+                  </button>
+                )}
+              </div>
             </div>
 
             {loading ? (
@@ -560,6 +598,7 @@ export default function StockOpname() {
                     <tr>
                       <th style={{ width: 140 }}>No. Dokumen Opname</th>
                       <th style={{ width: 100 }}>Tgl Opname</th>
+                      <th style={{ width: 110 }}>Status</th>
                       <th style={{ minWidth: 150 }}>Periode Buku</th>
                       <th style={{ minWidth: 150 }}>Gudang / Cabang</th>
                       <th style={{ minWidth: 130 }}>Pemeriksa (PIC)</th>
@@ -573,7 +612,7 @@ export default function StockOpname() {
                   <tbody>
                     {filteredSessions.length === 0 ? (
                       <tr>
-                        <td colSpan={10} style={{ textAlign: 'center', padding: '36px 0', color: 'var(--text-muted)' }}>
+                        <td colSpan={11} style={{ textAlign: 'center', padding: '36px 0', color: 'var(--text-muted)' }}>
                           Belum ada arsip sesi opname yang sesuai dengan filter.
                         </td>
                       </tr>
@@ -590,6 +629,19 @@ export default function StockOpname() {
                           </td>
                           <td className="mono" style={{ fontSize: 12.5 }}>
                             {s.opname_date}
+                          </td>
+                          <td>
+                            <span style={{
+                              fontSize: 10.5,
+                              fontWeight: 700,
+                              padding: '2px 8px',
+                              borderRadius: 6,
+                              background: s.is_closed ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                              color: s.is_closed ? '#34d399' : '#fbbf24',
+                              border: `1px solid ${s.is_closed ? 'rgba(16, 185, 129, 0.35)' : 'rgba(245, 158, 11, 0.35)'}`
+                            }}>
+                              {s.is_closed ? '🟢 RELEASED' : '⏳ DRAFT'}
+                            </span>
                           </td>
                           <td className="mono" style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
                             {s.period_from} s/d {s.period_to}
@@ -667,13 +719,35 @@ export default function StockOpname() {
           >
             {/* Modal Header Actions */}
             <div className="flex-between mb-4 pb-2 no-print" style={{ borderBottom: '1px solid var(--border)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <FileText size={18} color="var(--accent-bright)" />
                 <span style={{ fontSize: 15, fontWeight: 700 }}>
                   Dokumen Berita Acara Opname — {selectedSessionNo}
                 </span>
+                {sessionDetail?.session && (
+                  <span style={{
+                    fontSize: 10.5,
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: 6,
+                    background: sessionDetail.session.is_closed ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                    color: sessionDetail.session.is_closed ? '#34d399' : '#fbbf24',
+                    border: `1px solid ${sessionDetail.session.is_closed ? 'rgba(16, 185, 129, 0.35)' : 'rgba(245, 158, 11, 0.35)'}`
+                  }}>
+                    {sessionDetail.session.is_closed ? '🟢 RELEASED' : '⏳ DRAFT'}
+                  </span>
+                )}
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {(isOwnerBisnis || isSuperadminPlatform) && sessionDetail?.session && !sessionDetail.session.is_closed && (
+                  <button
+                    className="btn btn-sm"
+                    style={{ background: '#10b981', borderColor: '#10b981', color: '#ffffff', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}
+                    onClick={() => handleReleaseSession(selectedSessionNo)}
+                  >
+                    <CheckCircle2 size={14} /> Release & Setujui Opname Ini
+                  </button>
+                )}
                 <button className="btn btn-primary btn-sm" onClick={printBeritaAcara}>
                   <Printer size={13} /> Cetak Berita Acara
                 </button>
