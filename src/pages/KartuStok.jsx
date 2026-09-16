@@ -349,23 +349,7 @@ export default function KartuStok() {
 
           {/* Date Period Selector */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.06)', padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border)' }}>
-              <Calendar size={14} color="var(--accent-bright)" />
-              <span style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Periode:</span>
-              <input
-                type="date"
-                value={period.from}
-                onChange={e => setPeriod(p => ({ ...p, from: e.target.value }))}
-                style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: 12.5, outline: 'none', fontFamily: 'var(--font-mono)' }}
-              />
-              <span style={{ color: 'var(--text-muted)' }}>—</span>
-              <input
-                type="date"
-                value={period.to}
-                onChange={e => setPeriod(p => ({ ...p, to: e.target.value }))}
-                style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: 12.5, outline: 'none', fontFamily: 'var(--font-mono)' }}
-              />
-            </div>
+            <PeriodPicker from={period.from} to={period.to} onChange={setPeriod} align="right" />
 
             <button
               className="btn btn-ghost btn-sm"

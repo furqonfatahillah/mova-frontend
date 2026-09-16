@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Plus, Trash2, Filter, Store, TrendingUp, TrendingDown, Sparkles, Calculator, X } from 'lucide-react';
 import api from '../api/client';
-import { num, rupiah, LoadingState, PageHeader, AuditInfo } from '../components/ui';
+import { num, rupiah, LoadingState, PageHeader, AuditInfo, PeriodPicker } from '../components/ui';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 
@@ -59,13 +59,22 @@ export default function StockMovement() {
   });
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { fetchAll(); }, [filterIng, filterType, activeOutletId]);
+  const [period, setPeriod] = useState(() => {
+    const today = new Date();
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10);
+    return { from: firstDay, to: lastDay };
+  });
+
+  useEffect(() => { fetchAll(); }, [filterIng, filterType, activeOutletId, period]);
 
   async function fetchAll() {
     try {
       const params = {};
       if (filterIng !== 'ALL') params.ingredient_id = filterIng;
       if (filterType !== 'ALL') params.type = filterType;
+      if (period.from) params.from = period.from;
+      if (period.to) params.to = period.to;
       if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
         params.outlet_id = activeOutletId;
       }
@@ -218,7 +227,9 @@ export default function StockMovement() {
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <PeriodPicker from={period.from} to={period.to} onChange={setPeriod} align="right" />
+
               <select className="form-control" style={{ width: 'auto', padding: '6px 10px', fontSize: 12 }}
                 value={filterType} onChange={e => setFilterType(e.target.value)}>
                 <option value="ALL">Semua Tipe</option>
