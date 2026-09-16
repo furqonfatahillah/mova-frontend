@@ -79,6 +79,60 @@ export default function ProfitLoss() {
   const [savingExpense, setSavingExpense] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState(null);
 
+  // Detail Drilldown Modal State
+  const [detailModal, setDetailModal] = useState({
+    open: false,
+    type: null, // 'REVENUE' | 'COGS' | 'WASTE' | 'OPEX' | 'NET_PROFIT'
+    title: '',
+    loading: false,
+    items: [],
+  });
+
+  async function handleCardClick(type) {
+    const targetOutlet = activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all'
+      ? activeOutletId
+      : undefined;
+
+    if (type === 'REVENUE') {
+      setDetailModal({ open: true, type: 'REVENUE', title: 'Rincian Detail Transaksi Omset Penjualan', loading: true, items: [] });
+      try {
+        const res = await api.get('/transactions', {
+          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet, status: 'PAID', limit: 200 }
+        });
+        setDetailModal(p => ({ ...p, loading: false, items: res.data?.data || res.data || [] }));
+      } catch {
+        toast.error('Gagal memuat rincian transaksi penjualan');
+        setDetailModal(p => ({ ...p, loading: false }));
+      }
+    } else if (type === 'COGS') {
+      setDetailModal({ open: true, type: 'COGS', title: 'Rincian Detail HPP Resep & Susut Opname', loading: false, items: [] });
+    } else if (type === 'WASTE') {
+      setDetailModal({ open: true, type: 'WASTE', title: 'Rincian Detail Kerugian Waste (Bahan/Menu Terbuang)', loading: true, items: [] });
+      try {
+        const res = await api.get('/waste-logs', {
+          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet }
+        });
+        setDetailModal(p => ({ ...p, loading: false, items: res.data || [] }));
+      } catch {
+        toast.error('Gagal memuat rincian log waste');
+        setDetailModal(p => ({ ...p, loading: false }));
+      }
+    } else if (type === 'OPEX') {
+      setDetailModal({ open: true, type: 'OPEX', title: 'Rincian Detail Beban Operasional Toko (OPEX)', loading: true, items: [] });
+      try {
+        const res = await api.get('/expenses', {
+          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet }
+        });
+        setDetailModal(p => ({ ...p, loading: false, items: res.data || [] }));
+      } catch {
+        toast.error('Gagal memuat rincian OPEX');
+        setDetailModal(p => ({ ...p, loading: false }));
+      }
+    } else if (type === 'NET_PROFIT') {
+      setDetailModal({ open: true, type: 'NET_PROFIT', title: 'Rincian Formulasi & Sumber Kalkulasi Laba Bersih', loading: false, items: [] });
+    }
+  }
+
   const initialForm = {
     date: todayStr,
     outlet_id: activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all' ? activeOutletId : '',
@@ -605,16 +659,20 @@ export default function ProfitLoss() {
         {/* Card 1: Omset Bersih */}
         <div
           className="card"
+          onClick={() => handleCardClick('REVENUE')}
           style={{
             padding: 16,
             background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(15, 23, 42, 0.8) 100%)',
             border: '1px solid rgba(16, 185, 129, 0.25)',
             position: 'relative',
+            cursor: 'pointer',
+            transition: 'transform 0.2s, boxShadow 0.2s',
           }}
+          title="Klik untuk melihat rincian detail transaksi omset penjualan"
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#34d399', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Omset Bersih (Net)
+              Omset Bersih (Net) 🔍
             </span>
             <div style={{ padding: 6, borderRadius: 8, background: 'rgba(16, 185, 129, 0.15)', color: '#10b981' }}>
               <TrendingUp size={16} />
@@ -627,22 +685,29 @@ export default function ProfitLoss() {
             <span>Kotor: {rupiah(rev.gross_sales)}</span>
             <span>{rev.transaction_count} pesanan</span>
           </div>
+          <div style={{ fontSize: 10, color: '#34d399', fontWeight: 700, marginTop: 4 }}>
+            🔍 Klik rincian sumber transaksi
+          </div>
           {renderDeltaBadge(delta?.revenue?.net_sales)}
         </div>
 
         {/* Card 2: HPP Riil (COGS) */}
         <div
           className="card"
+          onClick={() => handleCardClick('COGS')}
           style={{
             padding: 16,
             background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(15, 23, 42, 0.8) 100%)',
             border: '1px solid rgba(99, 102, 241, 0.25)',
             position: 'relative',
+            cursor: 'pointer',
+            transition: 'transform 0.2s, boxShadow 0.2s',
           }}
+          title="Klik untuk melihat rincian HPP resep & susut opname"
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#818cf8', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              HPP Riil (COGS)
+              HPP Riil (COGS) 🔍
             </span>
             <div style={{ padding: 6, borderRadius: 8, background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8' }}>
               <Package size={16} />
@@ -657,22 +722,29 @@ export default function ProfitLoss() {
             </span>
             <span>Resep + Susut Opname</span>
           </div>
+          <div style={{ fontSize: 10, color: '#818cf8', fontWeight: 700, marginTop: 4 }}>
+            🔍 Klik rincian bahan terpakai
+          </div>
           {renderDeltaBadge(delta?.cogs?.total_cogs)}
         </div>
 
         {/* Card 3: Kerugian Waste */}
         <div
           className="card"
+          onClick={() => handleCardClick('WASTE')}
           style={{
             padding: 16,
             background: 'linear-gradient(135deg, rgba(244, 63, 94, 0.08) 0%, rgba(15, 23, 42, 0.8) 100%)',
             border: '1px solid rgba(244, 63, 94, 0.25)',
             position: 'relative',
+            cursor: 'pointer',
+            transition: 'transform 0.2s, boxShadow 0.2s',
           }}
+          title="Klik untuk melihat rincian log bahan/menu terbuang"
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#fb7185', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Kerugian Waste
+              Kerugian Waste 🔍
             </span>
             <div style={{ padding: 6, borderRadius: 8, background: 'rgba(244, 63, 94, 0.15)', color: '#f43f5e' }}>
               <Trash2 size={16} />
@@ -687,22 +759,29 @@ export default function ProfitLoss() {
             </span>
             <span>{wst.total_records || 0} log kejadian</span>
           </div>
+          <div style={{ fontSize: 10, color: '#fb7185', fontWeight: 700, marginTop: 4 }}>
+            🔍 Klik rincian log waste
+          </div>
           {renderDeltaBadge(delta?.waste?.total_waste_loss)}
         </div>
 
         {/* Card 4: Beban Operasional (OPEX) */}
         <div
           className="card"
+          onClick={() => handleCardClick('OPEX')}
           style={{
             padding: 16,
             background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(15, 23, 42, 0.8) 100%)',
             border: '1px solid rgba(245, 158, 11, 0.25)',
             position: 'relative',
+            cursor: 'pointer',
+            transition: 'transform 0.2s, boxShadow 0.2s',
           }}
+          title="Klik untuk melihat rincian rincian beban operasional toko (OPEX)"
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Beban Toko (OPEX)
+              Beban Toko (OPEX) 🔍
             </span>
             <div style={{ padding: 6, borderRadius: 8, background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24' }}>
               <Building2 size={16} />
@@ -717,23 +796,30 @@ export default function ProfitLoss() {
             </span>
             <span>{opx.total_records || 0} pos biaya</span>
           </div>
+          <div style={{ fontSize: 10, color: '#fbbf24', fontWeight: 700, marginTop: 4 }}>
+            🔍 Klik rincian pos biaya OPEX
+          </div>
           {renderDeltaBadge(delta?.opex?.total_opex)}
         </div>
 
         {/* Card 5: Laba Bersih Usaha (Net Profit) */}
         <div
           className="card"
+          onClick={() => handleCardClick('NET_PROFIT')}
           style={{
             padding: 16,
             background: `linear-gradient(135deg, ${bot.health_color}18 0%, rgba(15, 23, 42, 0.9) 100%)`,
             border: `1.5px solid ${bot.health_color}45`,
             position: 'relative',
             boxShadow: `0 8px 25px ${bot.health_color}1a`,
+            cursor: 'pointer',
+            transition: 'transform 0.2s, boxShadow 0.2s',
           }}
+          title="Klik untuk melihat formula kalkulasi laba bersih"
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 800, color: bot.health_color, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Laba Bersih Usaha
+              Laba Bersih Usaha 🔍
             </span>
             <div
               style={{
@@ -757,6 +843,9 @@ export default function ProfitLoss() {
               Net Margin: {bot.net_margin_pct}%
             </span>
             <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{bot.health_label}</span>
+          </div>
+          <div style={{ fontSize: 10, color: bot.health_color, fontWeight: 700, marginTop: 4 }}>
+            🔍 Klik rincian formula laba bersih
           </div>
           {renderDeltaBadge(delta?.bottom_line?.net_profit)}
         </div>
@@ -2432,6 +2521,372 @@ export default function ProfitLoss() {
           </div>
         </div>
       </div>
+
+      {/* 8. DRILLDOWN DETAIL MODAL FOR CARDS */}
+      {detailModal.open && (
+        <div className="modal-overlay" onClick={() => setDetailModal(p => ({ ...p, open: false }))}>
+          <div
+            className="modal-content fade-in"
+            onClick={e => e.stopPropagation()}
+            style={{ maxWidth: 900, width: '92%', padding: 24, maxHeight: '90vh', overflowY: 'auto' }}
+          >
+            {/* Modal Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, borderBottom: '1px solid rgba(165, 180, 252, 0.15)', paddingBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {detailModal.type === 'REVENUE' && <TrendingUp size={22} style={{ color: '#34d399' }} />}
+                {detailModal.type === 'COGS' && <Package size={22} style={{ color: '#818cf8' }} />}
+                {detailModal.type === 'WASTE' && <Trash2 size={22} style={{ color: '#f43f5e' }} />}
+                {detailModal.type === 'OPEX' && <Building2 size={22} style={{ color: '#fbbf24' }} />}
+                {detailModal.type === 'NET_PROFIT' && <Landmark size={22} style={{ color: bot.health_color }} />}
+                <div>
+                  <h3 style={{ fontSize: 17, fontWeight: 800, margin: 0, color: '#f8fafc' }}>
+                    {detailModal.title}
+                  </h3>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                    Cabang: <strong>{outletTitle}</strong> &nbsp;|&nbsp; Periode: <strong>{dateFrom}</strong> s/d <strong>{dateTo}</strong>
+                  </div>
+                </div>
+              </div>
+              <button
+                className="btn btn-ghost btn-icon btn-sm"
+                onClick={() => setDetailModal(p => ({ ...p, open: false }))}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Content depending on type */}
+            {detailModal.loading ? (
+              <LoadingState message="Memuat rincian detail transaksi..." />
+            ) : (
+              <>
+                {/* 1. REVENUE DETAIL */}
+                {detailModal.type === 'REVENUE' && (
+                  <div>
+                    {/* Summary Chips */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 18 }}>
+                      <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: 10, padding: 12 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Omset Penjualan Bersih</div>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: '#34d399' }}>{rupiah(rev.net_sales)}</div>
+                      </div>
+                      <div style={{ background: 'rgba(255, 255, 255, 0.04)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 10, padding: 12 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Penjualan Kotor (Gross)</div>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: '#ffffff' }}>{rupiah(rev.gross_sales)}</div>
+                      </div>
+                      <div style={{ background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.25)', borderRadius: 10, padding: 12 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Diskon & Promo</div>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: '#f87171' }}>({rupiah(rev.total_discount)})</div>
+                      </div>
+                      <div style={{ background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.25)', borderRadius: 10, padding: 12 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Jumlah Pesanan / Rata-rata</div>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: '#60a5fa' }}>{rev.transaction_count} pesanan (~{rupiah(rev.avg_order_value)})</div>
+                      </div>
+                    </div>
+
+                    {/* Table of Transactions */}
+                    <div style={{ overflowX: 'auto', border: '1px solid rgba(165, 180, 252, 0.12)', borderRadius: 10 }}>
+                      <table style={{ width: '100%', fontSize: 12.5, borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ background: 'rgba(255, 255, 255, 0.04)', textAlign: 'left', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                            <th style={{ padding: '10px 14px' }}>No. Order / Tanggal</th>
+                            <th style={{ padding: '10px 14px' }}>Pelanggan / Meja</th>
+                            <th style={{ padding: '10px 14px' }}>Metode Bayar</th>
+                            <th style={{ padding: '10px 14px' }}>Detail Menu Item</th>
+                            <th style={{ padding: '10px 14px', textAlign: 'right' }}>Total (Rp)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {detailModal.items.length > 0 ? (
+                            detailModal.items.map(t => (
+                              <tr key={t.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
+                                <td style={{ padding: '10px 14px' }}>
+                                  <strong style={{ color: 'var(--accent-bright)' }}>{t.order_number || `#${t.id}`}</strong>
+                                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t.created_at ? t.created_at.slice(0, 16).replace('T', ' ') : t.date}</div>
+                                </td>
+                                <td style={{ padding: '10px 14px', color: '#e2e8f0' }}>
+                                  {t.customer_name || 'Pelanggan Walk-in'}
+                                  {t.table_number && <span style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block' }}>Meja: {t.table_number}</span>}
+                                </td>
+                                <td style={{ padding: '10px 14px' }}>
+                                  <span style={{ padding: '2px 7px', borderRadius: 6, fontSize: 11, background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', fontWeight: 700 }}>
+                                    {t.payment_method || 'CASH'}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '10px 14px', color: '#cbd5e1', maxWidth: 260 }}>
+                                  {t.details?.map(d => `${d.qty}x ${d.menu_name || d.menu?.name}`).join(', ') || '-'}
+                                </td>
+                                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 800, color: '#34d399', fontSize: 13 }}>
+                                  {rupiah(t.total_price)}
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={5} style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)' }}>
+                                Tidak ada rincian transaksi penjualan pada periode ini.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. COGS DETAIL */}
+                {detailModal.type === 'COGS' && (
+                  <div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 18 }}>
+                      <div style={{ background: 'rgba(99, 102, 241, 0.1)', border: '1px solid rgba(99, 102, 241, 0.25)', borderRadius: 10, padding: 14 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total HPP Riil (COGS)</div>
+                        <div style={{ fontSize: 20, fontWeight: 800, color: '#818cf8' }}>{rupiah(cogs.total_cogs)}</div>
+                        <div style={{ fontSize: 11, color: '#818cf8', fontWeight: 600 }}>Rasio Food Cost: {cogs.cogs_ratio_pct}%</div>
+                      </div>
+                      <div style={{ background: 'rgba(255, 255, 255, 0.04)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 10, padding: 14 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>HPP Resep Standard</div>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: '#ffffff' }}>{rupiah(cogs.cogs_recipes)}</div>
+                      </div>
+                      <div style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: 10, padding: 14 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Selisih Variance Opname (Susut)</div>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: '#fbbf24' }}>{rupiah(cogs.cogs_variance)}</div>
+                      </div>
+                    </div>
+
+                    <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 10, color: '#f8fafc' }}>
+                      Top 10 Bahan Baku Terbanyak Terpakai (Resep Menus Terjual):
+                    </h4>
+                    <div style={{ overflowX: 'auto', border: '1px solid rgba(165, 180, 252, 0.12)', borderRadius: 10 }}>
+                      <table style={{ width: '100%', fontSize: 12.5, borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ background: 'rgba(255, 255, 255, 0.04)', textAlign: 'left', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                            <th style={{ padding: '10px 14px' }}>Nama Bahan Baku</th>
+                            <th style={{ padding: '10px 14px', textAlign: 'right' }}>Total Qty Terpakai</th>
+                            <th style={{ padding: '10px 14px', textAlign: 'right' }}>Nilai Rp HPP</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {cogs.top_ingredients_usage && cogs.top_ingredients_usage.length > 0 ? (
+                            cogs.top_ingredients_usage.map((ing, idx) => (
+                              <tr key={idx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
+                                <td style={{ padding: '10px 14px', fontWeight: 600, color: '#ffffff' }}>{ing.name}</td>
+                                <td style={{ padding: '10px 14px', textAlign: 'right', color: '#cbd5e1' }}>{num(ing.qty, 1)} {ing.unit}</td>
+                                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: '#818cf8' }}>{rupiah(ing.total_hpp)}</td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={3} style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
+                                Belum ada rincian bahan baku terpakai pada periode ini.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. WASTE DETAIL */}
+                {detailModal.type === 'WASTE' && (
+                  <div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 18 }}>
+                      <div style={{ background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.25)', borderRadius: 10, padding: 14 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Kerugian Waste</div>
+                        <div style={{ fontSize: 20, fontWeight: 800, color: '#f87171' }}>{rupiah(wst.total_waste_loss)}</div>
+                        <div style={{ fontSize: 11, color: '#f87171', fontWeight: 600 }}>Rasio Waste: {wst.waste_ratio_pct}% dari omset</div>
+                      </div>
+                      <div style={{ background: 'rgba(255, 255, 255, 0.04)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 10, padding: 14 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Jumlah Kejadian Waste</div>
+                        <div style={{ fontSize: 20, fontWeight: 800, color: '#ffffff' }}>{detailModal.items.length} Log</div>
+                      </div>
+                    </div>
+
+                    <div style={{ overflowX: 'auto', border: '1px solid rgba(165, 180, 252, 0.12)', borderRadius: 10 }}>
+                      <table style={{ width: '100%', fontSize: 12.5, borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ background: 'rgba(255, 255, 255, 0.04)', textAlign: 'left', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                            <th style={{ padding: '10px 14px' }}>Tanggal</th>
+                            <th style={{ padding: '10px 14px' }}>Tipe</th>
+                            <th style={{ padding: '10px 14px' }}>Nama Item (Bahan / Menu)</th>
+                            <th style={{ padding: '10px 14px', textAlign: 'right' }}>Qty Terbuang</th>
+                            <th style={{ padding: '10px 14px', textAlign: 'right' }}>Kerugian (Rp)</th>
+                            <th style={{ padding: '10px 14px' }}>Alasan & Catatan</th>
+                            <th style={{ padding: '10px 14px' }}>Operator</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {detailModal.items.length > 0 ? (
+                            detailModal.items.map(item => (
+                              <tr key={item.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
+                                <td style={{ padding: '10px 14px', color: 'var(--text-muted)', fontSize: 11.5 }}>
+                                  {item.date ? item.date.slice(0, 10) : item.created_at?.slice(0, 10)}
+                                </td>
+                                <td style={{ padding: '10px 14px' }}>
+                                  <span style={{ padding: '2px 7px', borderRadius: 6, fontSize: 11, fontWeight: 700, background: item.item_type === 'MENU' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(59, 130, 246, 0.15)', color: item.item_type === 'MENU' ? '#c084fc' : '#60a5fa' }}>
+                                    {item.item_type || 'BAHAN'}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '10px 14px', fontWeight: 700, color: '#ffffff' }}>
+                                  {item.name || item.ingredient?.name || item.menu?.name || 'Item Waste'}
+                                </td>
+                                <td style={{ padding: '10px 14px', textAlign: 'right', color: '#cbd5e1' }}>
+                                  {num(item.quantity || item.qty, 1)} {item.unit || item.ingredient?.unit_pakai || ''}
+                                </td>
+                                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 800, color: '#f87171' }}>
+                                  {rupiah(item.loss_amount || item.total_loss || 0)}
+                                </td>
+                                <td style={{ padding: '10px 14px', color: 'var(--text-muted)' }}>
+                                  <strong style={{ color: '#fbbf24' }}>{item.reason}</strong>
+                                  {item.notes && <div style={{ fontStyle: 'italic', fontSize: 11 }}>"{item.notes}"</div>}
+                                </td>
+                                <td style={{ padding: '10px 14px', color: 'var(--text-muted)', fontSize: 11.5 }}>
+                                  {item.user_name || item.user?.name || 'Staff'}
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={7} style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)' }}>
+                                Tidak ada catatan kerugian waste pada periode ini.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* 4. OPEX DETAIL */}
+                {detailModal.type === 'OPEX' && (
+                  <div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 18 }}>
+                      <div style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: 10, padding: 14 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Beban OPEX</div>
+                        <div style={{ fontSize: 20, fontWeight: 800, color: '#fbbf24' }}>{rupiah(opx.total_opex)}</div>
+                        <div style={{ fontSize: 11, color: '#fbbf24', fontWeight: 600 }}>Rasio OPEX: {opx.opex_ratio_pct}% dari omset</div>
+                      </div>
+                      <div style={{ background: 'rgba(255, 255, 255, 0.04)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 10, padding: 14 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Jumlah Catatan Pengeluaran</div>
+                        <div style={{ fontSize: 20, fontWeight: 800, color: '#ffffff' }}>{detailModal.items.length} Pos Biaya</div>
+                      </div>
+                    </div>
+
+                    <div style={{ overflowX: 'auto', border: '1px solid rgba(165, 180, 252, 0.12)', borderRadius: 10 }}>
+                      <table style={{ width: '100%', fontSize: 12.5, borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ background: 'rgba(255, 255, 255, 0.04)', textAlign: 'left', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                            <th style={{ padding: '10px 14px' }}>No. Bukti / Tanggal</th>
+                            <th style={{ padding: '10px 14px' }}>Kategori OPEX</th>
+                            <th style={{ padding: '10px 14px' }}>Nama & Deskripsi Biaya</th>
+                            <th style={{ padding: '10px 14px' }}>Metode Pembayaran</th>
+                            <th style={{ padding: '10px 14px', textAlign: 'right' }}>Nominal (Rp)</th>
+                            <th style={{ padding: '10px 14px' }}>Operator</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {detailModal.items.length > 0 ? (
+                            detailModal.items.map(item => (
+                              <tr key={item.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
+                                <td style={{ padding: '10px 14px' }}>
+                                  <strong style={{ color: '#f8fafc' }}>{item.expense_no || `EXP-${item.id}`}</strong>
+                                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.date ? item.date.slice(0, 10) : '-'}</div>
+                                </td>
+                                <td style={{ padding: '10px 14px' }}>
+                                  <span style={{ padding: '3px 8px', borderRadius: 10, fontSize: 11, fontWeight: 700, background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+                                    {item.category_label || item.category}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '10px 14px', color: '#ffffff', fontWeight: 600 }}>
+                                  {item.name}
+                                  {item.notes && <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>"{item.notes}"</div>}
+                                </td>
+                                <td style={{ padding: '10px 14px', color: '#cbd5e1' }}>
+                                  💳 {item.payment_method_label || item.payment_method || 'CASH'}
+                                </td>
+                                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 800, color: '#f87171', fontSize: 13.5 }}>
+                                  {rupiah(item.amount)}
+                                </td>
+                                <td style={{ padding: '10px 14px', color: 'var(--text-muted)', fontSize: 11.5 }}>
+                                  {item.user_name || item.user?.name || 'Kasir/Admin'}
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={6} style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)' }}>
+                                Tidak ada catatan biaya operasional pada periode ini.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* 5. NET PROFIT DETAIL */}
+                {detailModal.type === 'NET_PROFIT' && (
+                  <div>
+                    <div style={{ background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(165, 180, 252, 0.15)', borderRadius: 12, padding: 20, marginBottom: 16 }}>
+                      <h4 style={{ fontSize: 15, fontWeight: 800, margin: '0 0 14px 0', color: bot.health_color, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Landmark size={18} /> Formula & Jembatan Kalkulasi Laba Bersih Usaha
+                      </h4>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13.5 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(16, 185, 129, 0.1)', borderRadius: 8, borderLeft: '4px solid #10b981' }}>
+                          <span>(+) Omset Penjualan Bersih (Net Sales)</span>
+                          <strong style={{ color: '#34d399' }}>{rupiah(rev.net_sales)}</strong>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(99, 102, 241, 0.1)', borderRadius: 8, borderLeft: '4px solid #6366f1' }}>
+                          <span>(-) Harga Pokok Penjualan (HPP Riil Resep + Opname)</span>
+                          <strong style={{ color: '#818cf8' }}>({rupiah(cogs.total_cogs)})</strong>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(255, 255, 255, 0.03)', borderRadius: 8, fontWeight: 700 }}>
+                          <span>(=) Laba Kotor (Gross Profit)</span>
+                          <strong style={{ color: '#ffffff' }}>{rupiah(cogs.gross_profit)}</strong>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(244, 63, 94, 0.1)', borderRadius: 8, borderLeft: '4px solid #f43f5e' }}>
+                          <span>(-) Kerugian Bahan Terbuang (Waste Loss)</span>
+                          <strong style={{ color: '#f87171' }}>({rupiah(wst.total_waste_loss)})</strong>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(255, 255, 255, 0.03)', borderRadius: 8, fontWeight: 700 }}>
+                          <span>(=) Laba Operasional Setelah Waste</span>
+                          <strong style={{ color: '#ffffff' }}>{rupiah(wst.operating_profit_after_waste)}</strong>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(245, 158, 11, 0.1)', borderRadius: 8, borderLeft: '4px solid #f59e0b' }}>
+                          <span>(-) Beban Operasional Toko (OPEX)</span>
+                          <strong style={{ color: '#fbbf24' }}>({rupiah(opx.total_opex)})</strong>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '14px 18px', background: `linear-gradient(135deg, ${bot.health_color}25 0%, rgba(15, 23, 42, 0.95) 100%)`, borderRadius: 10, border: `2px solid ${bot.health_color}60`, fontWeight: 900, fontSize: 16 }}>
+                          <span>(=) LABA BERSIH USAHA AKHIR (NET PROFIT)</span>
+                          <strong style={{ color: bot.net_profit >= 0 ? bot.health_color : '#f43f5e', fontSize: 18 }}>{rupiah(bot.net_profit)}</strong>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Modal Footer */}
+            <div style={{ marginTop: 20, paddingTop: 14, borderTop: '1px solid rgba(165, 180, 252, 0.12)', display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => setDetailModal(p => ({ ...p, open: false }))}
+              >
+                Tutup Detail
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 9. HIDDEN PRINTABLE CONTAINER FOR BENCHMARK MATRIX */}
       <div id="printable-benchmark-matrix" style={{ display: 'none' }}>
