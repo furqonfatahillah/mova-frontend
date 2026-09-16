@@ -176,9 +176,8 @@ export default function BatchPrep() {
   }
 
   // Sub-Recipe Editor
-  function openSubRecipeEditor(recipeOrIngredient) {
-    // If it's a prep recipe
-    if (recipeOrIngredient.items) {
+  function openSubRecipeEditor(recipeOrIngredient = null) {
+    if (recipeOrIngredient && recipeOrIngredient.items) {
       setSubRecipeModal({
         ingredient_id: recipeOrIngredient.ingredient_id,
         name: recipeOrIngredient.name,
@@ -192,8 +191,7 @@ export default function BatchPrep() {
           waste_std: it.waste_std || 0,
         })),
       });
-    } else {
-      // It's an ingredient without prep recipe yet
+    } else if (recipeOrIngredient && recipeOrIngredient.id) {
       setSubRecipeModal({
         ingredient_id: recipeOrIngredient.id,
         name: `Standar Resep ${recipeOrIngredient.name}`,
@@ -201,13 +199,29 @@ export default function BatchPrep() {
         output_unit: recipeOrIngredient.yield_unit || recipeOrIngredient.unit_pakai || 'porsi',
         notes: '',
         items: [
-          { ingredient_id: '', qty: 1, unit: 'Kg', waste_std: 0 }
+          { ingredient_id: '', qty: 1, unit: 'gram', waste_std: 0 }
+        ],
+      });
+    } else {
+      const firstIng = ingredients[0];
+      setSubRecipeModal({
+        ingredient_id: firstIng ? firstIng.id : '',
+        name: firstIng ? `Standar Resep ${firstIng.name}` : '',
+        output_qty: firstIng?.yield_qty || 1,
+        output_unit: firstIng?.yield_unit || firstIng?.unit_pakai || 'porsi',
+        notes: '',
+        items: [
+          { ingredient_id: '', qty: 1, unit: 'gram', waste_std: 0 }
         ],
       });
     }
   }
 
   async function handleSaveSubRecipe() {
+    if (!subRecipeModal.ingredient_id) {
+      toast.error('Pilih bahan olahan target terlebih dahulu');
+      return;
+    }
     if (!subRecipeModal.name) {
       toast.error('Nama resep wajib diisi');
       return;
@@ -225,7 +239,7 @@ export default function BatchPrep() {
     setSavingRecipe(true);
     try {
       const payload = {
-        ingredient_id: subRecipeModal.ingredient_id,
+        ingredient_id: Number(subRecipeModal.ingredient_id),
         name: subRecipeModal.name,
         output_qty: Number(subRecipeModal.output_qty),
         output_unit: subRecipeModal.output_unit,
@@ -251,8 +265,9 @@ export default function BatchPrep() {
   }
 
   const rawIngredients = useMemo(() => {
-    return ingredients.filter(i => i.type !== 'SEMI_FINISHED');
-  }, [ingredients]);
+    if (!subRecipeModal?.ingredient_id) return ingredients;
+    return ingredients.filter(i => Number(i.id) !== Number(subRecipeModal.ingredient_id));
+  }, [ingredients, subRecipeModal?.ingredient_id]);
 
   const filteredBatches = useMemo(() => {
     return batches.filter(b => {
@@ -377,11 +392,7 @@ export default function BatchPrep() {
               <div style={{ fontSize: 13, color: 'var(--text-secondary)', maxWidth: 500, margin: '8px auto 20px' }}>
                 Buat resep bahan setengah jadi seperti Ayam Ungkep Marinasi, Sambal Matang, Saus Steak, atau Kaldu Bakso untuk mempercepat operasional dapur.
               </div>
-              <button className="btn btn-primary" onClick={() => {
-                const sf = ingredients.find(i => i.type === 'SEMI_FINISHED');
-                if (sf) openSubRecipeEditor(sf);
-                else toast.info('Buka Master Bahan lalu tandai atau tambah bahan bertipe "Olahan" terlebih dahulu.');
-              }}>
+              <button className="btn btn-primary" onClick={() => openSubRecipeEditor(null)}>
                 <Plus size={14} /> Buat Sub-Recipe Baru
               </button>
             </div>
@@ -1073,6 +1084,40 @@ export default function BatchPrep() {
             </div>
 
             <div style={{ padding: 20 }}>
+              {/* Target Ingredient Selection */}
+              <div style={{ marginBottom: 14 }}>
+                <label className="form-label" style={{ fontSize: 12, color: 'var(--accent-bright)', fontWeight: 700 }}>
+                  🧪 Pilih Bahan Target Olahan (Hasil Produksi):
+                </label>
+                <select
+                  className="form-control"
+                  style={{ fontSize: 13, fontWeight: 700, borderColor: 'var(--accent)' }}
+                  value={subRecipeModal.ingredient_id || ''}
+                  onChange={e => {
+                    const chosenId = Number(e.target.value);
+                    const chosenIng = ingredients.find(i => i.id === chosenId);
+                    setSubRecipeModal(p => ({
+                      ...p,
+                      ingredient_id: chosenId,
+                      name: p.name && !p.name.startsWith('Standar Resep') ? p.name : (chosenIng ? `Standar Resep ${chosenIng.name}` : ''),
+                      output_unit: chosenIng?.yield_unit || chosenIng?.unit_pakai || p.output_unit || 'porsi',
+                      output_qty: chosenIng?.yield_qty || p.output_qty || 1
+                    }));
+                  }}
+                  required
+                >
+                  <option value="">-- Pilih Bahan Baku Yang Akan Diolah --</option>
+                  {ingredients.map(ing => (
+                    <option key={ing.id} value={ing.id} style={{ background: '#11162d', color: '#ffffff' }}>
+                      {ing.code ? `[${ing.code}] ` : ''}{ing.name} ({ing.type === 'SEMI_FINISHED' ? 'Bahan Olahan' : 'Bahan Mentah'}) — Satuan: {ing.unit_pakai || 'porsi'}
+                    </option>
+                  ))}
+                </select>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, display: 'block' }}>
+                  *Bahan yang dipilih otomatis dikategorikan sebagai Bahan Olahan (Sub-Recipe) di sistem.
+                </span>
+              </div>
+
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginBottom: 14 }}>
                 <div>
                   <label className="form-label" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Nama Sub-Recipe:</label>

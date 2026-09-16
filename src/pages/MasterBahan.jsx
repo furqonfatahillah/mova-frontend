@@ -316,7 +316,7 @@ export default function MasterBahan() {
               <span className="pill pill-accent mono" style={{ fontSize: 10 }}>Aktif (PSAK 14)</span>
             </div>
             <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>
-              Setiap kali terjadi pembelian/restock baru dengan harga pasar yang berbeda, sistem otomatis menghitung ulang harga pokok rata-rata tertimbang berdasarkan sisa stok on-hand.
+              Harga beli tidak perlu di-input manual terus menerus. Setiap kali Anda mencatat transaksi Pembelian / Restock di <strong>Kartu Stok</strong>, sistem otomatis meng-update harga pokok rata-rata (Moving Average) & HPP bahan baku secara real-time.
             </div>
           </div>
         </div>
