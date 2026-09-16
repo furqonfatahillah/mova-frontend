@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Plus, Trash2, Filter, Store, TrendingUp, TrendingDown, Sparkles, Calculator, X } from 'lucide-react';
 import api from '../api/client';
-import { num, rupiah, LoadingState, PageHeader, AuditInfo, PeriodPicker } from '../components/ui';
+import { num, rupiah, fmtQtyVal, LoadingState, PageHeader, AuditInfo, PeriodPicker } from '../components/ui';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 
@@ -324,7 +324,7 @@ export default function StockMovement() {
                         </div>
                       </td>
                       <td className="mono right" style={{ color: ti.color, fontWeight: 600 }}>
-                        {ti.sign}{num(m.qty)} {m.ingredient?.unit_pakai}
+                        {ti.sign}{fmtQtyVal(m.qty, m.ingredient?.unit_pakai, m.cost_after || (m.ingredient?.konversi > 0 ? (m.ingredient.harga / m.ingredient.konversi) : 0))}
                       </td>
 
                       {/* Harga Beli & Moving Average Column */}

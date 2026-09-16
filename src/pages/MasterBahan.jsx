@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Edit2, Check, X, Store, Layers, Sparkles, Info, Calculator, ChefHat, Flame, Trash2 } from 'lucide-react';
 import api from '../api/client';
 import {
-  rupiah, num, LoadingState, PageHeader, AuditInfo,
+  rupiah, num, fmtQtyVal, LoadingState, PageHeader, AuditInfo,
   SATUAN_BELI_OPTIONS, SATUAN_PAKAI_OPTIONS, KATEGORI_BAHAN_OPTIONS,
   getSuggestedConversion, UnitSelect
 } from '../components/ui';
@@ -555,7 +555,7 @@ export default function MasterBahan() {
                   <td className="mono right">
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
                       <span style={{ fontWeight: 700, color: ing.current_stock <= (ing.current_stok_min ?? ing.stok_min) ? 'var(--danger)' : 'var(--ok)' }}>
-                        {num(ing.current_stock)} {ing.unit_pakai}
+                        {fmtQtyVal(ing.current_stock, ing.unit_pakai, hargaPakai)}
                       </span>
                       {ing.outlet_stocks?.length > 0 && (
                         <button
@@ -577,7 +577,7 @@ export default function MasterBahan() {
                     </div>
                   </td>
                   <td className="mono right">
-                    {isEd ? <FormCell data={editData} setData={setEditData} availableCategories={availableCategories} field="stok_min" type="number" style={{ width: 75 }} /> : num(ing.current_stok_min ?? ing.stok_min)}
+                    {isEd ? <FormCell data={editData} setData={setEditData} availableCategories={availableCategories} field="stok_min" type="number" style={{ width: 75 }} /> : fmtQtyVal(ing.current_stok_min ?? ing.stok_min, ing.unit_pakai, hargaPakai)}
                   </td>
                   <td className="mono right">
                     {isEd ? <FormCell data={editData} setData={setEditData} availableCategories={availableCategories} field="tolerance" type="number" style={{ width: 55 }} /> : `${ing.tolerance}%`}
@@ -663,44 +663,47 @@ export default function MasterBahan() {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
-              {breakdownModal.outlet_stocks?.map((os) => (
-                <div
-                  key={os.outlet_id}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '10px 14px',
-                    background: os.is_main ? 'rgba(99, 102, 241, 0.08)' : 'rgba(255, 255, 255, 0.03)',
-                    border: '1px solid',
-                    borderColor: os.is_main ? 'rgba(99, 102, 241, 0.3)' : 'rgba(255, 255, 255, 0.07)',
-                    borderRadius: 10,
-                  }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 13, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span>{os.outlet_name}</span>
-                      {os.is_main && (
-                        <span style={{ fontSize: 9.5, background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '1px 5px', borderRadius: 4, fontWeight: 800 }}>
-                          PUSAT
-                        </span>
-                      )}
+              {breakdownModal.outlet_stocks?.map((os) => {
+                const hppPari = breakdownModal.konversi > 0 ? (breakdownModal.harga / breakdownModal.konversi) : breakdownModal.harga;
+                return (
+                  <div
+                    key={os.outlet_id}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '10px 14px',
+                      background: os.is_main ? 'rgba(99, 102, 241, 0.08)' : 'rgba(255, 255, 255, 0.03)',
+                      border: '1px solid',
+                      borderColor: os.is_main ? 'rgba(99, 102, 241, 0.3)' : 'rgba(255, 255, 255, 0.07)',
+                      borderRadius: 10,
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span>{os.outlet_name}</span>
+                        {os.is_main && (
+                          <span style={{ fontSize: 9.5, background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '1px 5px', borderRadius: 4, fontWeight: 800 }}>
+                            PUSAT
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        Par Level Min: {fmtQtyVal(os.stok_min, breakdownModal.unit_pakai, hppPari)}
+                      </div>
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                      Par Level Min: {num(os.stok_min)} {breakdownModal.unit_pakai}
-                    </div>
-                  </div>
 
-                  <div style={{ textAlign: 'right' }}>
-                    <div className="mono" style={{ fontWeight: 800, fontSize: 14, color: os.is_low ? 'var(--danger)' : 'var(--ok)' }}>
-                      {num(os.stock)} {breakdownModal.unit_pakai}
+                    <div style={{ textAlign: 'right' }}>
+                      <div className="mono" style={{ fontWeight: 800, fontSize: 13, color: os.is_low ? 'var(--danger)' : 'var(--ok)' }}>
+                        {fmtQtyVal(os.stock, breakdownModal.unit_pakai, hppPari)}
+                      </div>
+                      <span style={{ fontSize: 10, color: os.is_low ? 'var(--danger)' : 'var(--text-muted)' }}>
+                        {os.is_low ? '⚠️ Di bawah par level' : '✓ Aman'}
+                      </span>
                     </div>
-                    <span style={{ fontSize: 10, color: os.is_low ? 'var(--danger)' : 'var(--text-muted)' }}>
-                      {os.is_low ? '⚠️ Di bawah par level' : '✓ Aman'}
-                    </span>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <div style={{ marginTop: 16, textAlign: 'right' }}>

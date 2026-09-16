@@ -12,6 +12,31 @@ export function num(n, d = 2) {
   return Number(n).toLocaleString('id-ID', { maximumFractionDigits: d, minimumFractionDigits: 0 });
 }
 
+/**
+ * Format kuantitas (gram/unit) dan nilai Rupiah disandingkan secara bersamaan.
+ * Contoh: 500 gram (Rp 25.000) atau Rp 25.000 (500 gram)
+ */
+export function fmtQtyVal(qty, unit = 'gram', costPerUnitOrTotal = 0, opts = {}) {
+  const q = Number(qty || 0);
+  let totalVal = 0;
+  if (opts && typeof opts === 'object' && opts.totalVal !== undefined) {
+    totalVal = Number(opts.totalVal || 0);
+  } else if (opts && typeof opts === 'object' && opts.isTotalVal) {
+    totalVal = Number(costPerUnitOrTotal || 0);
+  } else {
+    totalVal = Math.round(q * Number(costPerUnitOrTotal || 0));
+  }
+
+  const u = unit || 'gram';
+  const qStr = `${num(q)} ${u}`;
+  const rStr = rupiah(totalVal);
+
+  if (opts && opts.rpFirst) {
+    return `${rStr} (${qStr})`;
+  }
+  return `${qStr} (${rStr})`;
+}
+
 export function pct(n, d = 1) {
   if (n === undefined || n === null || isNaN(n)) return '0%';
   const s = n > 0 ? '+' : '';

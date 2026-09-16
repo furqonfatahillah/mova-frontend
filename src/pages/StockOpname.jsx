@@ -5,7 +5,7 @@ import {
   TrendingDown, TrendingUp, CheckCircle2, UserCheck
 } from 'lucide-react';
 import api from '../api/client';
-import { num, pct, rupiah, StatusPill, LoadingState, PeriodPicker, PageHeader, AuditInfo, MiniCard } from '../components/ui';
+import { num, pct, rupiah, fmtQtyVal, StatusPill, LoadingState, PeriodPicker, PageHeader, AuditInfo, MiniCard } from '../components/ui';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 import { printElement } from '../utils/print';
@@ -422,12 +422,12 @@ export default function StockOpname() {
                             <div style={{ fontWeight: 600, color: '#ffffff' }}>{iv.ingredient?.name}</div>
                             <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{iv.ingredient?.code} · {iv.ingredient?.category}</div>
                           </td>
-                          <td className="mono right">{num(iv.stok_awal_periode)} {iv.ingredient?.unit_pakai}</td>
-                          <td className="mono right">{num(iv.pembelian)}</td>
-                          <td className="mono right">{num(iv.pemakaian_teoritis)}</td>
-                          <td className="mono right" style={{ color: '#fb923c' }}>{num(iv.waste)}</td>
+                          <td className="mono right">{fmtQtyVal(iv.stok_awal_periode, iv.ingredient?.unit_pakai, iv.cost_per_unit)}</td>
+                          <td className="mono right">{fmtQtyVal(iv.pembelian, iv.ingredient?.unit_pakai, iv.cost_per_unit)}</td>
+                          <td className="mono right">{fmtQtyVal(iv.pemakaian_teoritis, iv.ingredient?.unit_pakai, iv.cost_per_unit)}</td>
+                          <td className="mono right" style={{ color: '#fb923c' }}>{fmtQtyVal(iv.waste, iv.ingredient?.unit_pakai, iv.cost_per_unit)}</td>
                           <td className="mono right" style={{ fontWeight: 700, color: 'var(--accent-bright)' }}>
-                            {num(iv.stok_akhir_teoritis)}
+                            {fmtQtyVal(iv.stok_akhir_teoritis, iv.ingredient?.unit_pakai, iv.cost_per_unit)}
                           </td>
                           <td style={{ textAlign: 'right' }}>
                             <input
@@ -445,7 +445,7 @@ export default function StockOpname() {
                             color: iv.variance_qty > 0 ? 'var(--ok)' : iv.variance_qty < 0 ? 'var(--danger)' : 'var(--text-muted)'
                           }}>
                             {iv.variance_qty !== null
-                              ? `${iv.variance_qty > 0 ? '+' : ''}${num(iv.variance_qty)} ${iv.ingredient?.unit_pakai} (${pct(iv.variance_pct)})`
+                              ? `${iv.variance_qty > 0 ? '+' : ''}${fmtQtyVal(iv.variance_qty, iv.ingredient?.unit_pakai, iv.cost_per_unit)} (${pct(iv.variance_pct)})`
                               : '—'}
                           </td>
                           <td className="center">

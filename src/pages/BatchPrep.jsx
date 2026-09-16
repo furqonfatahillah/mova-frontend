@@ -5,7 +5,7 @@ import {
   RefreshCw, Layers, Calendar, Flame, ChevronRight, CheckCircle2
 } from 'lucide-react';
 import api from '../api/client';
-import { rupiah, num, LoadingState, PageHeader, AuditInfo, UnitSelect, SATUAN_PAKAI_OPTIONS } from '../components/ui';
+import { rupiah, num, fmtQtyVal, LoadingState, PageHeader, AuditInfo, UnitSelect, SATUAN_PAKAI_OPTIONS } from '../components/ui';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 
@@ -641,7 +641,7 @@ export default function BatchPrep() {
                         <span className="pill pill-accent" style={{ fontSize: 11 }}>{batch.batch_multiplier}x</span>
                       </td>
                       <td className="right mono" style={{ fontWeight: 700, color: '#34d399', fontSize: 13 }}>
-                        {num(batch.actual_output_qty)} <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{batch.output_unit}</span>
+                        {fmtQtyVal(batch.actual_output_qty, batch.output_unit, batch.unit_cost)}
                       </td>
                       <td className="right mono" style={{ fontWeight: 600, fontSize: 12.5 }}>
                         {rupiah(batch.total_cost)}
