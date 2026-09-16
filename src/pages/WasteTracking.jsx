@@ -49,6 +49,7 @@ export default function WasteTracking() {
   const [wasteLogs, setWasteLogs] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [ingredients, setIngredients] = useState([]);
+  const [menus, setMenus] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Modal Form State
@@ -57,7 +58,9 @@ export default function WasteTracking() {
   const [form, setForm] = useState({
     date: new Date().toISOString().slice(0, 10),
     outlet_id: '',
+    item_type: 'INGREDIENT', // 'INGREDIENT' or 'MENU'
     ingredient_id: '',
+    menu_id: '',
     unit_type: 'PAKAI', // 'BELI' or 'PAKAI'
     qty: '',
     reason_category: 'EXPIRED',
@@ -87,15 +90,17 @@ export default function WasteTracking() {
         params.reason_category = filterReason;
       }
 
-      const [logsRes, analyticsRes, ingsRes] = await Promise.all([
+      const [logsRes, analyticsRes, ingsRes, menusRes] = await Promise.all([
         api.get('/waste-logs', { params }),
         api.get('/waste-logs/analytics', { params: { from: dateFrom, to: dateTo, outlet_id: params.outlet_id } }),
         api.get('/ingredients', { params: { outlet_id: params.outlet_id } }),
+        api.get('/menus'),
       ]);
 
       setWasteLogs(logsRes.data || []);
       setAnalytics(analyticsRes.data || null);
       setIngredients(ingsRes.data || []);
+      setMenus(menusRes.data || []);
     } catch (err) {
       toast.error('Gagal memuat data Waste & Spoilage.');
     } finally {
@@ -115,7 +120,9 @@ export default function WasteTracking() {
     setForm({
       date: new Date().toISOString().slice(0, 10),
       outlet_id: currentTargetOutlet,
+      item_type: 'INGREDIENT',
       ingredient_id: selectedIng?.id?.toString() || '',
+      menu_id: menus[0]?.id?.toString() || '',
       unit_type: 'PAKAI',
       qty: '',
       reason_category: 'EXPIRED',
@@ -125,15 +132,29 @@ export default function WasteTracking() {
     setModalOpen(true);
   }
 
-  // Selected ingredient in modal for live loss calculations
+  // Selected ingredient / menu in modal for live loss calculations
   const selectedModalIng = useMemo(() => {
     return ingredients.find(i => i.id === Number(form.ingredient_id));
   }, [ingredients, form.ingredient_id]);
 
+  const selectedModalMenu = useMemo(() => {
+    return menus.find(m => m.id === Number(form.menu_id));
+  }, [menus, form.menu_id]);
+
   // Live Loss Cost Calculation in Modal
   const calculatedLoss = useMemo(() => {
+    if (form.item_type === 'MENU') {
+      if (!selectedModalMenu || !form.qty || Number(form.qty) <= 0) {
+        return { qtyPakai: 0, costPerPakai: 0, lossCost: 0, unit: selectedModalMenu?.unit || 'porsi' };
+      }
+      const qtyPakai = Number(form.qty);
+      const costPerPakai = Number(selectedModalMenu.cost_price > 0 ? selectedModalMenu.cost_price : (selectedModalMenu.hpp > 0 ? selectedModalMenu.hpp : selectedModalMenu.price || 0));
+      const lossCost = qtyPakai * costPerPakai;
+      return { qtyPakai, costPerPakai, lossCost, unit: selectedModalMenu.unit || 'porsi' };
+    }
+
     if (!selectedModalIng || !form.qty || Number(form.qty) <= 0) {
-      return { qtyPakai: 0, costPerPakai: 0, lossCost: 0 };
+      return { qtyPakai: 0, costPerPakai: 0, lossCost: 0, unit: selectedModalIng?.unit_pakai || 'satuan' };
     }
 
     const konversi = Math.max(Number(selectedModalIng.konversi) || 1, 1);
@@ -146,17 +167,21 @@ export default function WasteTracking() {
     }
 
     const lossCost = qtyPakai * costPerPakai;
-    return { qtyPakai, costPerPakai, lossCost };
-  }, [selectedModalIng, form.qty, form.unit_type]);
+    return { qtyPakai, costPerPakai, lossCost, unit: selectedModalIng.unit_pakai || 'satuan' };
+  }, [selectedModalIng, selectedModalMenu, form.item_type, form.qty, form.unit_type]);
 
   async function handleSubmitWaste(e) {
     e.preventDefault();
-    if (!form.ingredient_id) {
+    if (form.item_type === 'INGREDIENT' && !form.ingredient_id) {
       toast.error('Pilih bahan baku atau bahan olahan terlebih dahulu.');
       return;
     }
+    if (form.item_type === 'MENU' && !form.menu_id) {
+      toast.error('Pilih menu/produk terlebih dahulu.');
+      return;
+    }
     if (!form.qty || Number(form.qty) <= 0) {
-      toast.error('Masukkan jumlah kuantitas bahan yang terbuang.');
+      toast.error('Masukkan jumlah kuantitas terbuang.');
       return;
     }
 
@@ -164,7 +189,9 @@ export default function WasteTracking() {
     try {
       const payload = {
         date: form.date,
-        ingredient_id: Number(form.ingredient_id),
+        item_type: form.item_type,
+        ingredient_id: form.item_type === 'INGREDIENT' ? Number(form.ingredient_id) : undefined,
+        menu_id: form.item_type === 'MENU' ? Number(form.menu_id) : undefined,
         outlet_id: Number(form.outlet_id || currentTargetOutlet),
         unit_type: form.unit_type,
         qty: Number(form.qty),
@@ -179,7 +206,7 @@ export default function WasteTracking() {
       setModalOpen(false);
       fetchData();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Gagal menyimpan catatan bahan terbuang.');
+      toast.error(err.response?.data?.message || 'Gagal menyimpan catatan terbuang.');
     } finally {
       setSaving(false);
     }
@@ -593,7 +620,7 @@ export default function WasteTracking() {
                   <th>No. Waste</th>
                   <th>Tanggal</th>
                   <th>Outlet</th>
-                  <th>Bahan Baku / Olahan</th>
+                  <th>Item / Bahan Baku / Menu</th>
                   <th className="right">Qty Terbuang</th>
                   <th>Kategori Alasan</th>
                   <th className="right">Loss Cost (Rp)</th>
@@ -606,12 +633,15 @@ export default function WasteTracking() {
                   <tr>
                     <td colSpan={9} className="center text-muted" style={{ padding: 36 }}>
                       <Trash2 size={32} style={{ opacity: 0.3, margin: '0 auto 8px', display: 'block' }} />
-                      Tidak ada catatan bahan terbuang yang cocok.
+                      Tidak ada catatan terbuang yang cocok.
                     </td>
                   </tr>
                 ) : (
                   filteredLogs.map(log => {
                     const meta = getWasteCategoryMeta(log.reason_category);
+                    const itemName = log.item_name || log.ingredient_name || log.menu_name || 'Item Terbuang';
+                    const isMenu = log.item_type === 'MENU';
+
                     return (
                       <tr key={log.id}>
                         <td className="mono" style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent-bright)' }}>
@@ -624,12 +654,23 @@ export default function WasteTracking() {
                           {log.outlet_name || '-'}
                         </td>
                         <td>
-                          <div style={{ fontWeight: 600, color: '#ffffff' }}>
-                            {log.ingredient_name}
+                          <div style={{ fontWeight: 600, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span>{itemName}</span>
+                            <span style={{
+                              fontSize: 9.5,
+                              fontWeight: 700,
+                              padding: '1px 6px',
+                              borderRadius: 4,
+                              background: isMenu ? 'rgba(168, 85, 247, 0.2)' : 'rgba(56, 189, 248, 0.2)',
+                              color: isMenu ? '#c084fc' : '#38bdf8',
+                              border: `1px solid ${isMenu ? 'rgba(168, 85, 247, 0.4)' : 'rgba(56, 189, 248, 0.4)'}`
+                            }}>
+                              {isMenu ? '☕ MENU' : '🥦 BAHAN'}
+                            </span>
                           </div>
-                          {log.ingredient?.category && (
+                          {(log.ingredient?.category || log.menu?.category) && (
                             <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
-                              {log.ingredient.category}
+                              {log.ingredient?.category || log.menu?.category}
                             </span>
                           )}
                         </td>
@@ -753,70 +794,137 @@ export default function WasteTracking() {
                 </div>
               </div>
 
-              {/* Pilih Bahan Baku / Olahan */}
-              <div className="form-group">
-                <label className="form-label">Pilih Bahan Baku / Olahan</label>
-                <select
-                  className="form-control"
-                  value={form.ingredient_id}
-                  onChange={e => setForm(p => ({ ...p, ingredient_id: e.target.value }))}
-                  required
-                  style={{ fontSize: 13 }}
-                >
-                  <option value="">-- Pilih Bahan --</option>
-                  {ingredients.map(ing => (
-                    <option key={ing.id} value={ing.id}>
-                      {ing.name} ({ing.type === 'SEMI_FINISHED' ? 'Bahan Olahan' : 'Bahan Mentah'}) — Stok: {num(ing.current_stock ?? 0)} {ing.unit_pakai}
-                    </option>
-                  ))}
-                </select>
-
-                {selectedModalIng && (
-                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4, display: 'flex', justifyContent: 'space-between' }}>
-                    <span>
-                      Stok Fisik Tersedia: <strong>{num(selectedModalIng.current_stock ?? 0)} {selectedModalIng.unit_pakai}</strong>
-                    </span>
-                    <span>
-                      HPP Satuan: <strong className="mono">{rupiah((selectedModalIng.harga || 0) / (selectedModalIng.konversi || 1))}/{selectedModalIng.unit_pakai}</strong>
-                    </span>
-                  </div>
-                )}
+              {/* Tipe Item Terbuang */}
+              <div className="form-group mb-2">
+                <label className="form-label">Tipe Item Terbuang / Rusak</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => setForm(p => ({ ...p, item_type: 'INGREDIENT' }))}
+                    className={`btn btn-sm ${form.item_type === 'INGREDIENT' ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ flex: 1, justifyContent: 'center', fontWeight: 700, fontSize: 12.5 }}
+                  >
+                    🥦 Bahan Baku / Olahan
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setForm(p => ({ ...p, item_type: 'MENU' }))}
+                    className={`btn btn-sm ${form.item_type === 'MENU' ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ flex: 1, justifyContent: 'center', fontWeight: 700, fontSize: 12.5 }}
+                  >
+                    ☕ Menu / Produk Olahan Jadi
+                  </button>
+                </div>
               </div>
+
+              {/* Pilih Item (Bahan atau Menu) */}
+              {form.item_type === 'INGREDIENT' ? (
+                <div className="form-group">
+                  <label className="form-label">Pilih Bahan Baku / Olahan</label>
+                  <select
+                    className="form-control"
+                    value={form.ingredient_id}
+                    onChange={e => setForm(p => ({ ...p, ingredient_id: e.target.value }))}
+                    required
+                    style={{ fontSize: 13 }}
+                  >
+                    <option value="">-- Pilih Bahan --</option>
+                    {ingredients.map(ing => (
+                      <option key={ing.id} value={ing.id}>
+                        {ing.name} ({ing.type === 'SEMI_FINISHED' ? 'Bahan Olahan' : 'Bahan Mentah'}) — Stok: {num(ing.current_stock ?? 0)} {ing.unit_pakai}
+                      </option>
+                    ))}
+                  </select>
+
+                  {selectedModalIng && (
+                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4, display: 'flex', justifyContent: 'space-between' }}>
+                      <span>
+                        Stok Fisik Tersedia: <strong>{num(selectedModalIng.current_stock ?? 0)} {selectedModalIng.unit_pakai}</strong>
+                      </span>
+                      <span>
+                        HPP Satuan: <strong className="mono">{rupiah((selectedModalIng.harga || 0) / (selectedModalIng.konversi || 1))}/{selectedModalIng.unit_pakai}</strong>
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="form-group">
+                  <label className="form-label">Pilih Menu / Produk Olahan Jadi</label>
+                  <select
+                    className="form-control"
+                    value={form.menu_id}
+                    onChange={e => setForm(p => ({ ...p, menu_id: e.target.value }))}
+                    required
+                    style={{ fontSize: 13 }}
+                  >
+                    <option value="">-- Pilih Menu --</option>
+                    {menus.map(m => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} ({m.category || 'Menu'}) — Price/HPP: {rupiah(m.cost_price || m.price)}
+                      </option>
+                    ))}
+                  </select>
+
+                  {selectedModalMenu && (
+                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4, display: 'flex', justifyContent: 'space-between' }}>
+                      <span>
+                        Kategori: <strong>{selectedModalMenu.category || 'Umum'}</strong>
+                      </span>
+                      <span>
+                        Estimasi HPP / Modal: <strong className="mono">{rupiah(selectedModalMenu.cost_price || selectedModalMenu.hpp || selectedModalMenu.price)}/{selectedModalMenu.unit || 'porsi'}</strong>
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Satuan & Kuantitas Terbuang */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div className="form-group">
-                  <label className="form-label">Satuan Input</label>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button
-                      type="button"
-                      onClick={() => setForm(p => ({ ...p, unit_type: 'PAKAI' }))}
-                      className={`btn btn-sm ${form.unit_type === 'PAKAI' ? 'btn-primary' : 'btn-secondary'}`}
-                      style={{ flex: 1, justifyContent: 'center', fontSize: 11.5 }}
-                    >
-                      Satuan Pakai ({selectedModalIng?.unit_pakai || 'pakai'})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setForm(p => ({ ...p, unit_type: 'BELI' }))}
-                      className={`btn btn-sm ${form.unit_type === 'BELI' ? 'btn-primary' : 'btn-secondary'}`}
-                      style={{ flex: 1, justifyContent: 'center', fontSize: 11.5 }}
-                    >
-                      Satuan Beli ({selectedModalIng?.unit_beli || 'beli'})
-                    </button>
+                {form.item_type === 'INGREDIENT' ? (
+                  <div className="form-group">
+                    <label className="form-label">Satuan Input</label>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        type="button"
+                        onClick={() => setForm(p => ({ ...p, unit_type: 'PAKAI' }))}
+                        className={`btn btn-sm ${form.unit_type === 'PAKAI' ? 'btn-primary' : 'btn-secondary'}`}
+                        style={{ flex: 1, justifyContent: 'center', fontSize: 11.5 }}
+                      >
+                        Satuan Pakai ({selectedModalIng?.unit_pakai || 'pakai'})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setForm(p => ({ ...p, unit_type: 'BELI' }))}
+                        className={`btn btn-sm ${form.unit_type === 'BELI' ? 'btn-primary' : 'btn-secondary'}`}
+                        style={{ flex: 1, justifyContent: 'center', fontSize: 11.5 }}
+                      >
+                        Satuan Beli ({selectedModalIng?.unit_beli || 'beli'})
+                      </button>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="form-group">
+                    <label className="form-label">Satuan Menu</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={selectedModalMenu?.unit || 'porsi'}
+                      disabled
+                      style={{ fontSize: 12.5 }}
+                    />
+                  </div>
+                )}
 
                 <div className="form-group">
                   <label className="form-label">
-                    Jumlah Terbuang ({form.unit_type === 'BELI' ? selectedModalIng?.unit_beli : selectedModalIng?.unit_pakai})
+                    Jumlah Terbuang ({form.item_type === 'MENU' ? (selectedModalMenu?.unit || 'porsi') : (form.unit_type === 'BELI' ? selectedModalIng?.unit_beli : selectedModalIng?.unit_pakai)})
                   </label>
                   <input
                     type="number"
                     step="0.001"
                     min="0.001"
                     className="form-control mono"
-                    placeholder="Contoh: 500 atau 2.5"
+                    placeholder="Contoh: 1 atau 2.5"
                     value={form.qty}
                     onChange={e => setForm(p => ({ ...p, qty: e.target.value }))}
                     required
