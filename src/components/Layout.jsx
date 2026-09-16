@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Package, UtensilsCrossed, ShoppingCart,
   ArrowUpDown, ClipboardList, BarChart2, TrendingUp, DollarSign,
   AlertTriangle, LogOut, ScrollText, Menu, X, Clock,
-  Store, Send, Users, Building2, ChefHat, Trash2, Percent, Landmark, Wallet, Coins, Gift, Copy, Check, Receipt
+  Store, Send, Users, Building2, ChefHat, Trash2, Percent, Landmark, Wallet, Coins, Gift, Copy, Check, Receipt, Headset
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
@@ -99,6 +99,17 @@ export default function Layout() {
         { to: '/root-cause', label: 'Root Cause', icon: AlertTriangle },
       ],
     },
+    {
+      label: 'Bantuan & Support',
+      items: [
+        {
+          isExternal: true,
+          href: 'https://wa.me/6281244295923?text=Halo%20Admin%20Helpdesk%20MOVA%20POS,%20saya%20butuh%20bantuan.',
+          label: 'Helpdesk WA (+62 812-4429-5923)',
+          icon: Headset,
+        },
+      ],
+    },
   ];
 
   useEffect(() => {
@@ -189,37 +200,57 @@ export default function Layout() {
           {navSections.map((section) => (
             <div key={section.label}>
               <div className="sidebar-section-label">{section.label}</div>
-              {section.items.map(({ to, label, icon: Icon, isUserMgmt }) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  end={to === '/'}
-                  onClick={() => setSidebarOpen(false)}
-                  className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <Icon size={16} className="nav-icon" />
-                    <span>{label}</span>
-                  </div>
-                  {isUserMgmt && pendingCount > 0 && (
-                    <span
-                      style={{
-                        background: '#f59e0b',
-                        color: '#11162d',
-                        fontSize: 10,
-                        fontWeight: 800,
-                        padding: '1px 7px',
-                        borderRadius: 10,
-                        lineHeight: '15px',
-                        boxShadow: '0 0 10px rgba(245, 158, 11, 0.5)'
-                      }}
-                      title={`${pendingCount} pendaftar menunggu persetujuan`}
-                    >
-                      {pendingCount}
+              {section.items.map(({ to, href, label, icon: Icon, isUserMgmt, isExternal }) => (
+                isExternal ? (
+                  <a
+                    key={href}
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setSidebarOpen(false)}
+                    className="nav-item"
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#25D366' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <Icon size={16} className="nav-icon" style={{ color: '#25D366' }} />
+                      <span style={{ fontWeight: 700 }}>{label}</span>
+                    </div>
+                    <span style={{ fontSize: 10, background: 'rgba(37, 211, 102, 0.15)', color: '#25D366', padding: '1px 7px', borderRadius: 6, fontWeight: 800 }}>
+                      WA ↗
                     </span>
-                  )}
-                </NavLink>
+                  </a>
+                ) : (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    end={to === '/'}
+                    onClick={() => setSidebarOpen(false)}
+                    className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <Icon size={16} className="nav-icon" />
+                      <span>{label}</span>
+                    </div>
+                    {isUserMgmt && pendingCount > 0 && (
+                      <span
+                        style={{
+                          background: '#f59e0b',
+                          color: '#11162d',
+                          fontSize: 10,
+                          fontWeight: 800,
+                          padding: '1px 7px',
+                          borderRadius: 10,
+                          lineHeight: '15px',
+                          boxShadow: '0 0 10px rgba(245, 158, 11, 0.5)'
+                        }}
+                        title={`${pendingCount} pendaftar menunggu persetujuan`}
+                      >
+                        {pendingCount}
+                      </span>
+                    )}
+                  </NavLink>
+                )
               ))}
             </div>
           ))}
@@ -497,6 +528,30 @@ export default function Layout() {
 
         <Outlet />
       </main>
+
+      {/* Floating WhatsApp Helpdesk Corner Button */}
+      <a
+        href="https://wa.me/6281244295923?text=Halo%20Admin%20Helpdesk%20MOVA%20POS,%20saya%20butuh%20bantuan."
+        target="_blank"
+        rel="noopener noreferrer"
+        className="helpdesk-floating-btn"
+        title="Hubungi Admin Helpdesk WA (+62 812-4429-5923)"
+      >
+        <div style={{
+          width: 26,
+          height: 26,
+          borderRadius: '50%',
+          background: '#ffffff',
+          color: '#128C7E',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontWeight: 900
+        }}>
+          <Headset size={15} />
+        </div>
+        <span>Helpdesk WA</span>
+      </a>
     </div>
   );
 }
