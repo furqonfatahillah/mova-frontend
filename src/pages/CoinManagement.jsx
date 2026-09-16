@@ -155,13 +155,281 @@ export default function CoinManagement() {
     }
   }
 
+  const [myCoinsData, setMyCoinsData] = useState(null);
+  const [loadingMyCoins, setLoadingMyCoins] = useState(true);
+
+  useEffect(() => {
+    if (isSuperadminPlatform) {
+      fetchOverview();
+    } else {
+      fetchMyCoins();
+    }
+  }, [isSuperadminPlatform]);
+
+  async function fetchMyCoins() {
+    setLoadingMyCoins(true);
+    try {
+      const res = await api.get('/my-business/coins');
+      setMyCoinsData(res.data);
+    } catch (err) {
+      toast.error('Gagal memuat saldo koin bisnis');
+    } finally {
+      setLoadingMyCoins(false);
+    }
+  }
+
   if (!isSuperadminPlatform) {
+    if (loadingMyCoins && !myCoinsData) {
+      return <LoadingState message="Memuat saldo koin perusahaan..." />;
+    }
+
+    const coinBal = myCoinsData?.coin_balance || 0;
+    const remTx = myCoinsData?.remaining_transactions || 0;
+    const rate = myCoinsData?.coins_per_transaction || 1;
+    const isLow = myCoinsData?.is_coin_low;
+    const isOut = myCoinsData?.is_coin_out;
+    const mutations = myCoinsData?.recent_mutations || [];
+    const businessName = myCoinsData?.business_name || 'Perusahaan';
+
+    const waLink = `https://wa.me/6281244295923?text=Halo%20Admin%20MOVA%20POS,%20saya%20ingin%20Top%20Up%20Koin%20untuk%20perusahaan%20${encodeURIComponent(businessName)}`;
+
     return (
       <div className="page-container">
-        <div className="empty-state" style={{ padding: '60px 20px', textAlign: 'center' }}>
-          <Shield size={48} style={{ color: '#ef4444', margin: '0 auto 16px' }} />
-          <h3>Akses Terbatas</h3>
-          <p style={{ color: 'var(--text-secondary)' }}>Halaman ini khusus untuk Pemilik Website (Superadmin Platform) guna mengelola koin penyewa.</p>
+        {/* Header */}
+        <PageHeader
+          title="Informasi Saldo & Top Up Koin"
+          subtitle={`Monitor sisa koin transaksi kasir, tarif per nota, dan riwayat penggunaan koin perusahaan ${businessName}.`}
+          badgeText="Saldo Perusahaan"
+          badgeIcon={Coins}
+          rightContent={
+            <button
+              onClick={() => {
+                fetchMyCoins();
+                refreshCoins();
+              }}
+              className="btn btn-secondary btn-sm"
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <RefreshCw size={14} className={loadingMyCoins ? 'animate-spin' : ''} />
+              Segarkan Saldo
+            </button>
+          }
+        />
+
+        {/* Metric Cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 24 }}>
+          <div className="card" style={{ padding: 20, display: 'flex', alignItems: 'center', gap: 16, borderLeft: `4px solid ${isOut ? '#ef4444' : isLow ? '#f59e0b' : '#34d399'}` }}>
+            <div style={{ width: 48, height: 48, borderRadius: 12, background: isOut ? 'rgba(239, 68, 68, 0.15)' : isLow ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: isOut ? '#f87171' : isLow ? '#fbbf24' : '#34d399' }}>
+              <Coins size={26} />
+            </div>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                Saldo Koin Perusahaan
+              </div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: '#ffffff', marginTop: 4 }}>
+                🪙 {num(coinBal)} Koin
+              </div>
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: 20, display: 'flex', alignItems: 'center', gap: 16, borderLeft: '4px solid #3b82f6' }}>
+            <div style={{ width: 48, height: 48, borderRadius: 12, background: 'rgba(59, 130, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#60a5fa' }}>
+              <FileText size={26} />
+            </div>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                Estimasi Sisa Transaksi
+              </div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: '#ffffff', marginTop: 4 }}>
+                ~{num(remTx)} Nota Kasir
+              </div>
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: 20, display: 'flex', alignItems: 'center', gap: 16, borderLeft: '4px solid #8b5cf6' }}>
+            <div style={{ width: 48, height: 48, borderRadius: 12, background: 'rgba(139, 92, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a78bfa' }}>
+              <CreditCard size={26} />
+            </div>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                Tarif Koin per Nota
+              </div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: '#c4b5fd', marginTop: 4 }}>
+                {num(rate)} Koin / Nota
+              </div>
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: 20, display: 'flex', alignItems: 'center', gap: 16, borderLeft: `4px solid ${isOut ? '#ef4444' : isLow ? '#f59e0b' : '#10b981'}` }}>
+            <div style={{ width: 48, height: 48, borderRadius: 12, background: isOut ? 'rgba(239, 68, 68, 0.15)' : isLow ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: isOut ? '#f87171' : isLow ? '#fbbf24' : '#34d399' }}>
+              {isOut ? <XCircle size={26} /> : isLow ? <AlertTriangle size={26} /> : <CheckCircle2 size={26} />}
+            </div>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                Status Saldo
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: isOut ? '#f87171' : isLow ? '#fbbf24' : '#34d399', marginTop: 4 }}>
+                {isOut ? '🔴 SALDO HABIS (0 Nota)' : isLow ? '🟡 MENIPIS (≤ 20 Nota)' : '🟢 SALDO AMAN'}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* WhatsApp Top-Up Banner Card */}
+        <div
+          className="card mb-4"
+          style={{
+            padding: 24,
+            background: 'linear-gradient(135deg, rgba(37, 211, 102, 0.12) 0%, rgba(18, 140, 126, 0.08) 100%)',
+            border: '1px solid rgba(37, 211, 102, 0.3)',
+            borderRadius: 16,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 20,
+            boxShadow: '0 8px 32px rgba(37, 211, 102, 0.15)'
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 280 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+              <div style={{ padding: '6px 12px', borderRadius: 20, background: '#25D366', color: '#ffffff', fontSize: 12, fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Coins size={14} /> Cara Top Up Koin Transaksi
+              </div>
+              <span style={{ fontSize: 12, color: '#34d399', fontWeight: 600 }}>Layanan Resmi Admin Helpdesk</span>
+            </div>
+            <h3 style={{ margin: '6px 0', fontSize: 18, fontWeight: 800, color: '#ffffff' }}>
+              Isi Ulang Koin Transaksi Perusahaan Anda
+            </h3>
+            <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              Setiap transaksi nota di kasir memotong koin sesuai tarif. Untuk menambahkan koin, silakan lakukan pembayaran ke <strong>Pemilik Website (Platform Owner)</strong> melalui WhatsApp Helpdesk di bawah ini.
+            </p>
+          </div>
+
+          <div>
+            <a
+              href={waLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-primary"
+              style={{
+                background: 'linear-gradient(135deg, #25D366 0%, #128C7E 100%)',
+                border: 'none',
+                padding: '12px 22px',
+                borderRadius: 12,
+                fontSize: 14,
+                fontWeight: 800,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 10,
+                boxShadow: '0 6px 20px rgba(37, 211, 102, 0.4)',
+                color: '#ffffff',
+                textDecoration: 'none'
+              }}
+            >
+              <Coins size={18} />
+              <span>Top Up via WA Admin (+62 812-4429-5923)</span>
+            </a>
+          </div>
+        </div>
+
+        {/* Mutation History Table Card */}
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(165, 180, 252, 0.12)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Clock size={18} style={{ color: 'var(--accent-bright)' }} />
+              <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: '#f8fafc' }}>
+                Riwayat Mutasi & Pemotongan Koin ({mutations.length})
+              </h3>
+            </div>
+          </div>
+
+          {mutations.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+              <Clock size={36} style={{ marginBottom: 8, opacity: 0.5 }} />
+              <div>Belum ada riwayat mutasi koin untuk perusahaan ini.</div>
+            </div>
+          ) : (
+            <div className="table-responsive">
+              <table className="table" style={{ margin: 0 }}>
+                <thead>
+                  <tr>
+                    <th style={{ paddingLeft: 20 }}>Waktu</th>
+                    <th style={{ textAlign: 'center' }}>Tipe Mutasi</th>
+                    <th style={{ textAlign: 'right' }}>Perubahan</th>
+                    <th style={{ textAlign: 'right' }}>Saldo (Awal &rarr; Akhir)</th>
+                    <th>No. Nota / Referensi</th>
+                    <th>Catatan & Operator</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mutations.map((h) => (
+                    <tr key={h.id}>
+                      <td style={{ paddingLeft: 20, fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                        {formatDateTime(h.created_at)}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        {h.type === 'TOPUP' ? (
+                          <span style={{
+                            padding: '3px 8px', borderRadius: 8, fontSize: 11, fontWeight: 700,
+                            background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)'
+                          }}>
+                            TOP UP
+                          </span>
+                        ) : h.type === 'USAGE' ? (
+                          <span style={{
+                            padding: '3px 8px', borderRadius: 8, fontSize: 11, fontWeight: 700,
+                            background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.3)'
+                          }}>
+                            NOTA KASIR
+                          </span>
+                        ) : (
+                          <span style={{
+                            padding: '3px 8px', borderRadius: 8, fontSize: 11, fontWeight: 700,
+                            background: 'rgba(139, 92, 246, 0.15)', color: '#c4b5fd'
+                          }}>
+                            {h.type}
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ textAlign: 'right', fontWeight: 800 }}>
+                        <span style={{ color: Number(h.amount) > 0 ? '#34d399' : '#ef4444' }}>
+                          {Number(h.amount) > 0 ? `+${num(h.amount)}` : num(h.amount)} Koin
+                        </span>
+                      </td>
+                      <td style={{ textAlign: 'right', fontSize: 13 }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>{num(h.balance_before)}</span>
+                        <span style={{ margin: '0 6px', color: 'var(--text-muted)' }}>&rarr;</span>
+                        <strong style={{ color: '#ffffff' }}>{num(h.balance_after)}</strong>
+                      </td>
+                      <td>
+                        {h.order_number ? (
+                          <span style={{
+                            fontFamily: 'monospace', fontWeight: 700, fontSize: 12, color: 'var(--accent-bright)'
+                          }}>
+                            {h.order_number}
+                          </span>
+                        ) : h.payment_reference ? (
+                          <span style={{ fontSize: 12, color: '#34d399', fontWeight: 600 }}>
+                            Ref: {h.payment_reference}
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>-</span>
+                        )}
+                      </td>
+                      <td>
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{h.notes || '-'}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                          Oleh: {h.creator?.name || 'Sistem'}
+                          {h.outlet?.name ? ` • Cabang: ${h.outlet.name}` : ''}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     );

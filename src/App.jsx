@@ -94,7 +94,7 @@ export default function App() {
 
           {/* SaaS Platform (Superadmin / Website Owner ONLY) */}
           <Route path="businesses" element={<RoleRoute roles={['superadmin']}><BusinessManagement /></RoleRoute>} />
-          <Route path="coin-management" element={<RoleRoute roles={['superadmin']}><CoinManagement /></RoleRoute>} />
+          <Route path="coin-management" element={<RoleRoute roles={['pegawai', 'owner_outlet', 'owner_bisnis', 'owner_website', 'superadmin']}><CoinManagement /></RoleRoute>} />
 
           {/* Operasional (All Roles / Staff Accessible) */}
           <Route path="pos"        element={<RoleRoute roles={['pegawai']}><POS /></RoleRoute>} />

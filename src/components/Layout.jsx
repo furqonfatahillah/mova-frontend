@@ -48,7 +48,14 @@ export default function Layout() {
           { to: '/coin-management', label: 'Top Up & Koin Platform', icon: Coins },
         ],
       },
-    ] : []),
+    ] : [
+      {
+        label: 'Tagihan & Koin',
+        items: [
+          { to: '/coin-management', label: 'Top Up & Saldo Koin', icon: Coins },
+        ],
+      },
+    ]),
     {
       label: 'Overview',
       items: [
@@ -355,7 +362,8 @@ export default function Layout() {
             </div>
 
             {/* Coin Balance Badge */}
-            <div
+            <NavLink
+              to="/coin-management"
               className="top-header-coin-badge"
               style={{
                 display: 'flex',
@@ -366,8 +374,10 @@ export default function Layout() {
                 background: isCoinOut ? 'rgba(239, 68, 68, 0.15)' : isCoinLow ? 'rgba(245, 158, 11, 0.15)' : 'rgba(139, 92, 246, 0.15)',
                 border: `1px solid ${isCoinOut ? 'rgba(239, 68, 68, 0.35)' : isCoinLow ? 'rgba(245, 158, 11, 0.35)' : 'rgba(139, 92, 246, 0.3)'}`,
                 boxShadow: isCoinLow ? '0 0 12px rgba(245, 158, 11, 0.2)' : 'none',
+                textDecoration: 'none',
+                cursor: 'pointer',
               }}
-              title={`Saldo: ${coinBalance} koin (${coinsPerTransaction} koin/nota). Estimasi ${remainingTransactions} nota transaksi tersisa.`}
+              title={`Saldo: ${coinBalance} koin (${coinsPerTransaction} koin/nota). Klik untuk informasi top-up.`}
             >
               <Coins size={16} style={{ color: isCoinOut ? '#ef4444' : isCoinLow ? '#f59e0b' : 'var(--accent-bright)' }} />
               <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
@@ -378,7 +388,7 @@ export default function Layout() {
                   ~{remainingTransactions.toLocaleString()} Nota Sisa
                 </span>
               </div>
-            </div>
+            </NavLink>
 
             {/* User Referral Badge in Header */}
             {(userReferralCode || user.referral_code) && (
@@ -483,11 +493,9 @@ export default function Layout() {
                 </div>
               </div>
             </div>
-            {isSuperadminPlatform && (
-              <NavLink to="/coin-management" className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap', fontWeight: 700 }}>
-                Top Up Sekarang
-              </NavLink>
-            )}
+            <NavLink to="/coin-management" className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap', fontWeight: 700 }}>
+              Top Up Sekarang
+            </NavLink>
           </div>
         )}
 
@@ -518,11 +526,9 @@ export default function Layout() {
                 </div>
               </div>
             </div>
-            {isSuperadminPlatform && (
-              <NavLink to="/coin-management" className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap', fontWeight: 700 }}>
-                Top Up Koin
-              </NavLink>
-            )}
+            <NavLink to="/coin-management" className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap', fontWeight: 700 }}>
+              Top Up Koin
+            </NavLink>
           </div>
         )}
 
