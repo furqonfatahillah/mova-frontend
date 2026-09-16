@@ -106,7 +106,7 @@ export default function RootCause() {
                   color: iv.status === 'TIDAK WAJAR' ? 'var(--danger)' : 'var(--warn)'
                 }}>
                   Variance {pct(iv.variance_pct)} ({rupiah(iv.variance_value)}) melebihi toleransi {iv.ingredient?.tolerance}%.
-                  Pemakaian teoritis: <strong>{iv.pemakaian_teoritis?.toFixed(0)} {iv.ingredient?.unit_pakai}</strong>, aktual: <strong>{iv.pemakaian_aktual?.toFixed(0) ?? '—'}</strong>.
+                  Pemakaian teoritis: <strong>{num(iv.pemakaian_teoritis, 2)} {iv.ingredient?.unit_pakai}</strong>, aktual: <strong>{iv.pemakaian_aktual != null ? num(iv.pemakaian_aktual, 2) : '—'}</strong>.
                 </div>
 
                 <div className="grid-2 gap-3" style={{ marginBottom: 12 }}>

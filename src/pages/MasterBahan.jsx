@@ -497,7 +497,7 @@ export default function MasterBahan() {
                   <td className="mono">
                     {isEd
                       ? <FormCell data={editData} setData={setEditData} availableCategories={availableCategories} field="konversi" type="number" style={{ width: 75 }} />
-                      : <span style={{ fontSize: 12 }}>1 {ing.unit_beli} = <strong style={{ color: 'var(--accent-bright)' }}>{num(ing.konversi, 0)}</strong> {ing.unit_pakai}</span>
+                      : <span style={{ fontSize: 12 }}>1 {ing.unit_beli} = <strong style={{ color: 'var(--accent-bright)' }}>{num(ing.konversi)}</strong> {ing.unit_pakai}</span>
                     }
                   </td>
                   {/* Harga Beli Moving Average */}
@@ -564,7 +564,7 @@ export default function MasterBahan() {
                     </div>
                   </td>
                   <td className="mono right">
-                    {isEd ? <FormCell data={editData} setData={setEditData} availableCategories={availableCategories} field="stok_min" type="number" style={{ width: 75 }} /> : num(ing.current_stok_min ?? ing.stok_min, 0)}
+                    {isEd ? <FormCell data={editData} setData={setEditData} availableCategories={availableCategories} field="stok_min" type="number" style={{ width: 75 }} /> : num(ing.current_stok_min ?? ing.stok_min)}
                   </td>
                   <td className="mono right">
                     {isEd ? <FormCell data={editData} setData={setEditData} availableCategories={availableCategories} field="tolerance" type="number" style={{ width: 55 }} /> : `${ing.tolerance}%`}

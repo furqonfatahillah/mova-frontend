@@ -7,7 +7,7 @@ export function rupiah(n) {
   return (neg ? '-Rp' : 'Rp') + s;
 }
 
-export function num(n, d = 1) {
+export function num(n, d = 2) {
   if (n === undefined || n === null || isNaN(n)) return '0';
   return Number(n).toLocaleString('id-ID', { maximumFractionDigits: d, minimumFractionDigits: 0 });
 }
