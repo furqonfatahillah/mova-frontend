@@ -411,49 +411,15 @@ export default function MasterBahan() {
                 <td><FormCell data={addForm} setData={setAddForm} availableCategories={availableCategories} field="unit_beli" style={{ width: 85 }} /></td>
                 <td><FormCell data={addForm} setData={setAddForm} availableCategories={availableCategories} field="unit_pakai" style={{ width: 85 }} /></td>
                 <td><FormCell data={addForm} setData={setAddForm} availableCategories={availableCategories} field="konversi" type="number" style={{ width: 75 }} /></td>
-                <td>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    <input
-                      type="number"
-                      step="any"
-                      className="form-control mono right"
-                      style={{ padding: '5px 8px', fontSize: 12, minWidth: 90 }}
-                      placeholder="0"
-                      value={addForm.harga ?? ''}
-                      onChange={e => {
-                        const val = e.target.value;
-                        setAddForm(p => ({ ...p, harga: val === '' ? '' : Number(val) }));
-                      }}
-                    />
-                    <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>per {addForm.unit_beli}</span>
+                <td className="mono right">
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>0</span>
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>⚡ Otomatis dari Kartu Stok</span>
                   </div>
                 </td>
-                <td>
+                <td className="mono right">
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                    <input
-                      type="number"
-                      step="any"
-                      className="form-control mono right"
-                      style={{
-                        padding: '5px 8px',
-                        fontSize: 12,
-                        minWidth: 90,
-                        borderColor: 'var(--accent-bright)',
-                        background: 'rgba(99, 102, 241, 0.08)'
-                      }}
-                      placeholder="0"
-                      value={addForm.harga && addForm.konversi ? Number((addForm.harga / addForm.konversi).toFixed(4)) : ''}
-                      onChange={e => {
-                        const val = e.target.value;
-                        if (val === '') {
-                          setAddForm(p => ({ ...p, harga: '' }));
-                          return;
-                        }
-                        const hp = Number(val);
-                        const konv = addForm.konversi || 1;
-                        setAddForm(p => ({ ...p, harga: Math.round(hp * konv) }));
-                      }}
-                    />
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>0</span>
                     <span style={{ fontSize: 10, color: 'var(--accent-bright)', fontWeight: 500 }}>
                       ⚡ Otomatis /{addForm.unit_pakai}
                     </span>
@@ -536,74 +502,26 @@ export default function MasterBahan() {
                   </td>
                   {/* Harga Beli Moving Average */}
                   <td className="mono right">
-                    {isEd ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <input
-                          type="number"
-                          step="any"
-                          className="form-control mono right"
-                          style={{ padding: '5px 8px', fontSize: 12, minWidth: 90 }}
-                          value={editData.harga ?? ''}
-                          onChange={e => {
-                            const val = e.target.value;
-                            setEditData(p => ({ ...p, harga: val === '' ? '' : Number(val) }));
-                          }}
-                        />
-                        <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>per {editData.unit_beli}</span>
+                    <div>
+                      <div style={{ fontWeight: 700, color: '#ffffff' }}>{rupiah(ing.harga)}</div>
+                      <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', marginTop: 2 }}>
+                        <span style={{ fontSize: 9.5, padding: '1px 5px', borderRadius: 3, background: 'rgba(124, 58, 237, 0.18)', color: 'var(--accent-bright)', fontWeight: 600 }}>
+                          Moving Avg
+                        </span>
+                        <span style={{ fontSize: 10, color: 'var(--text-secondary)' }}>/{ing.unit_beli}</span>
                       </div>
-                    ) : (
-                      <div>
-                        <div style={{ fontWeight: 700, color: '#ffffff' }}>{rupiah(ing.harga)}</div>
-                        <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', marginTop: 2 }}>
-                          <span style={{ fontSize: 9.5, padding: '1px 5px', borderRadius: 3, background: 'rgba(124, 58, 237, 0.18)', color: 'var(--accent-bright)', fontWeight: 600 }}>
-                            Moving Avg
-                          </span>
-                          <span style={{ fontSize: 10, color: 'var(--text-secondary)' }}>/{ing.unit_beli}</span>
-                        </div>
-                      </div>
-                    )}
+                    </div>
                   </td>
                   {/* Harga Satuan Pakai (Otomatis) */}
                   <td className="mono right">
-                    {isEd ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                        <input
-                          type="number"
-                          step="any"
-                          className="form-control mono right"
-                          style={{
-                            padding: '5px 8px',
-                            fontSize: 12,
-                            minWidth: 90,
-                            borderColor: 'var(--accent-bright)',
-                            background: 'rgba(99, 102, 241, 0.08)'
-                          }}
-                          value={editData.harga && editData.konversi ? Number((editData.harga / editData.konversi).toFixed(4)) : ''}
-                          onChange={e => {
-                            const val = e.target.value;
-                            if (val === '') {
-                              setEditData(p => ({ ...p, harga: '' }));
-                              return;
-                            }
-                            const hp = Number(val);
-                            const konv = editData.konversi || 1;
-                            setEditData(p => ({ ...p, harga: Math.round(hp * konv) }));
-                          }}
-                        />
-                        <span style={{ fontSize: 10, color: 'var(--accent-bright)', fontWeight: 500 }}>
-                          ⚡ Otomatis /{editData.unit_pakai}
-                        </span>
+                    <div>
+                      <div style={{ fontWeight: 600, color: 'var(--accent-bright)', fontSize: 12.5 }}>
+                        {rupiah(hargaPakai)} <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>/{ing.unit_pakai}</span>
                       </div>
-                    ) : (
-                      <div>
-                        <div style={{ fontWeight: 600, color: 'var(--accent-bright)', fontSize: 12.5 }}>
-                          {rupiah(hargaPakai)} <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>/{ing.unit_pakai}</span>
-                        </div>
-                        <span style={{ fontSize: 9.5, color: 'var(--ok)', background: 'rgba(16, 217, 122, 0.1)', padding: '1px 5px', borderRadius: 3 }}>
-                          Terkonversi
-                        </span>
-                      </div>
-                    )}
+                      <span style={{ fontSize: 9.5, color: 'var(--ok)', background: 'rgba(16, 217, 122, 0.1)', padding: '1px 5px', borderRadius: 3 }}>
+                        Terkonversi
+                      </span>
+                    </div>
                   </td>
                   {/* Harga PO Terakhir */}
                   <td className="mono right">
