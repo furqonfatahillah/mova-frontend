@@ -41,14 +41,10 @@ export default function CoinManagement() {
   });
 
   useEffect(() => {
-    fetchOverview();
-  }, []);
-
-  useEffect(() => {
-    if (activeTab === 'history') {
+    if (isSuperadminPlatform && activeTab === 'history') {
       fetchHistory();
     }
-  }, [activeTab, historyBusinessFilter]);
+  }, [isSuperadminPlatform, activeTab, historyBusinessFilter]);
 
   async function fetchOverview() {
     setLoading(true);

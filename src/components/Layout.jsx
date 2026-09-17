@@ -56,18 +56,20 @@ export default function Layout() {
         ],
       },
     ]),
-    {
-      label: 'Overview',
-      items: [
-        { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-      ],
-    },
+    ...(!isPegawai ? [
+      {
+        label: 'Overview',
+        items: [
+          { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+        ],
+      },
+    ] : []),
     {
       label: 'Master Data',
       items: [
         { to: '/bahan', label: 'Master Bahan', icon: Package },
         { to: '/menu', label: 'Master Menu', icon: UtensilsCrossed },
-        ...(isOwnerWebsite || isOwnerOutlet ? [
+        ...(!isPegawai ? [
           { to: '/outlet', label: 'Cabang Outlet', icon: Store }
         ] : []),
         ...(!isPegawai ? [
@@ -95,17 +97,19 @@ export default function Layout() {
         { to: '/opex', label: 'Biaya Operasional (OPEX)', icon: Receipt },
       ],
     },
-    {
-      label: 'Analitik',
-      items: [
-        { to: '/profit-loss', label: 'Laba Rugi (P&L)', icon: Landmark },
-        { to: '/cash-flow', label: 'Arus Kas (Cash Flow)', icon: Wallet },
-        { to: '/variance/bahan', label: 'Variance Bahan', icon: BarChart2 },
-        { to: '/variance/menu', label: 'Variance Menu', icon: TrendingUp },
-        { to: '/profitability', label: 'Profitability', icon: DollarSign },
-        { to: '/root-cause', label: 'Root Cause', icon: AlertTriangle },
-      ],
-    },
+    ...(!isPegawai ? [
+      {
+        label: 'Analitik',
+        items: [
+          { to: '/profit-loss', label: 'Laba Rugi (P&L)', icon: Landmark },
+          { to: '/cash-flow', label: 'Arus Kas (Cash Flow)', icon: Wallet },
+          { to: '/variance/bahan', label: 'Variance Bahan', icon: BarChart2 },
+          { to: '/variance/menu', label: 'Variance Menu', icon: TrendingUp },
+          { to: '/profitability', label: 'Profitability', icon: DollarSign },
+          { to: '/root-cause', label: 'Root Cause', icon: AlertTriangle },
+        ],
+      },
+    ] : []),
     {
       label: 'Bantuan & Support',
       items: [
@@ -441,7 +445,7 @@ export default function Layout() {
               </div>
             )}
 
-            {isOwnerWebsite ? (
+            {(isOwnerWebsite || isOwnerBisnis || isSuperadminPlatform) ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flex: 1, minWidth: 0 }}>
                 <span className="top-header-switcher-label">Ganti Cabang:</span>
                 <select
