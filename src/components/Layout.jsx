@@ -4,7 +4,8 @@ import {
   LayoutDashboard, Package, UtensilsCrossed, ShoppingCart,
   ArrowUpDown, ClipboardList, BarChart2, TrendingUp, DollarSign,
   AlertTriangle, LogOut, ScrollText, Menu, X, Clock,
-  Store, Send, Users, Building2, ChefHat, Trash2, Percent, Landmark, Wallet, Coins, Gift, Copy, Check, Receipt, Headset
+  Store, Send, Users, Building2, ChefHat, Trash2, Percent, Landmark, Wallet, Coins, Gift, Copy, Check, Receipt, Headset,
+  AlertOctagon
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
@@ -86,6 +87,7 @@ export default function Layout() {
       label: 'Operasional',
       items: [
         { to: '/pos', label: 'POS / Transaksi', icon: ShoppingCart },
+        { to: '/urgent-notes', label: 'Nota Urgent (Bahan)', icon: AlertOctagon },
         { to: '/shift', label: 'Kelola Shift', icon: Clock },
         { to: '/batch-prep', label: 'Produksi Batch (Prep)', icon: ChefHat },
         { to: '/waste', label: 'Bahan Terbuang (Waste)', icon: Trash2 },

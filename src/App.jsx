@@ -27,6 +27,7 @@ import ProfitLoss from './pages/ProfitLoss';
 import CashFlow from './pages/CashFlow';
 import CoinManagement from './pages/CoinManagement';
 import OpexManagement from './pages/OpexManagement';
+import UrgentNotes from './pages/UrgentNotes';
 import { OutletProvider } from './context/OutletContext';
 
 function PrivateRoute({ children }) {
@@ -97,17 +98,18 @@ export default function App() {
           <Route path="coin-management" element={<RoleRoute roles={['pegawai', 'owner_outlet', 'owner_bisnis', 'owner_website', 'superadmin']}><CoinManagement /></RoleRoute>} />
 
           {/* Operasional (All Roles / Staff Accessible) */}
-          <Route path="pos"        element={<RoleRoute roles={['pegawai']}><POS /></RoleRoute>} />
-          <Route path="shift"      element={<RoleRoute roles={['pegawai']}><ShiftManagement /></RoleRoute>} />
-          <Route path="transfer"   element={<RoleRoute roles={['pegawai']}><TransferBahan /></RoleRoute>} />
-          <Route path="batch-prep" element={<RoleRoute roles={['pegawai']}><BatchPrep /></RoleRoute>} />
-          <Route path="waste"      element={<RoleRoute roles={['pegawai']}><WasteTracking /></RoleRoute>} />
-          <Route path="diskon"     element={<RoleRoute roles={['pegawai']}><DiscountManagement /></RoleRoute>} />
-          <Route path="kartu-stok" element={<RoleRoute roles={['pegawai']}><KartuStok /></RoleRoute>} />
-          <Route path="movement"   element={<RoleRoute roles={['pegawai']}><StockMovement /></RoleRoute>} />
-          <Route path="opname"     element={<RoleRoute roles={['pegawai']}><StockOpname /></RoleRoute>} />
-          <Route path="opex"       element={<RoleRoute roles={['pegawai']}><OpexManagement /></RoleRoute>} />
-          <Route path="expenses"   element={<RoleRoute roles={['pegawai']}><OpexManagement /></RoleRoute>} />
+          <Route path="pos"          element={<RoleRoute roles={['pegawai']}><POS /></RoleRoute>} />
+          <Route path="urgent-notes" element={<RoleRoute roles={['pegawai']}><UrgentNotes /></RoleRoute>} />
+          <Route path="shift"        element={<RoleRoute roles={['pegawai']}><ShiftManagement /></RoleRoute>} />
+          <Route path="transfer"     element={<RoleRoute roles={['pegawai']}><TransferBahan /></RoleRoute>} />
+          <Route path="batch-prep"   element={<RoleRoute roles={['pegawai']}><BatchPrep /></RoleRoute>} />
+          <Route path="waste"        element={<RoleRoute roles={['pegawai']}><WasteTracking /></RoleRoute>} />
+          <Route path="diskon"       element={<RoleRoute roles={['pegawai']}><DiscountManagement /></RoleRoute>} />
+          <Route path="kartu-stok"   element={<RoleRoute roles={['pegawai']}><KartuStok /></RoleRoute>} />
+          <Route path="movement"     element={<RoleRoute roles={['pegawai']}><StockMovement /></RoleRoute>} />
+          <Route path="opname"       element={<RoleRoute roles={['pegawai']}><StockOpname /></RoleRoute>} />
+          <Route path="opex"         element={<RoleRoute roles={['pegawai']}><OpexManagement /></RoleRoute>} />
+          <Route path="expenses"     element={<RoleRoute roles={['pegawai']}><OpexManagement /></RoleRoute>} />
 
           {/* Analitik & Keuangan */}
           <Route path="variance/bahan" element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'owner_website', 'superadmin']}><VarianceBahan /></RoleRoute>} />

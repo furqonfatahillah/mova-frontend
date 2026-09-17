@@ -8,7 +8,8 @@ import {
   Package, ShieldAlert, ArrowUpRight, Send, Bookmark, ChefHat,
   FileText, CheckCircle2, ChevronRight, PauseCircle, RefreshCw, XCircle, Users,
   Percent, Tag, Gift, Scissors, Split, Divide,
-  ShoppingBag, Briefcase, Barcode, Utensils, Coins
+  ShoppingBag, Briefcase, Barcode, Utensils, Coins,
+  Zap, AlertOctagon
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, num, LoadingState, PageHeader } from '../components/ui';
@@ -21,6 +22,7 @@ export default function POS() {
   const [transactions, setTransactions] = useState([]);
   const [ingredients, setIngredients] = useState([]);
   const [activeShift, setActiveShift] = useState(null);
+  const [urgentCount, setUrgentCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -56,6 +58,7 @@ export default function POS() {
     selectedOptions: {},
     qty: 1,
     notes: '',
+    isUrgent: false,
   });
 
   // Stock Out Alert Modal State
@@ -174,13 +177,14 @@ export default function POS() {
   async function fetchAll() {
     setLoading(true);
     try {
-      const [m, t, i, s, ob, disc] = await Promise.all([
+      const [m, t, i, s, ob, disc, urg] = await Promise.all([
         api.get('/menus'),
         api.get('/transactions', { params: { outlet_id: currentTargetOutlet, status: 'PAID' } }),
         api.get('/ingredients', { params: { outlet_id: currentTargetOutlet } }),
         api.get('/shifts/active', { params: { outlet_id: currentTargetOutlet } }),
         api.get('/transactions/open-bills', { params: { outlet_id: currentTargetOutlet } }),
         api.get('/discounts/available', { params: { outlet_id: currentTargetOutlet } }).catch(() => ({ data: [] })),
+        api.get('/urgent-notes/summary', { params: { outlet_id: currentTargetOutlet } }).catch(() => ({ data: { pending_count: 0 } })),
       ]);
       setMenus(m.data.filter(x => x.active));
       setTransactions(t.data.slice(0, 30));
@@ -188,6 +192,7 @@ export default function POS() {
       setActiveShift(s.data);
       setOpenBills(ob.data || []);
       setAvailableDiscounts(disc.data || []);
+      setUrgentCount(urg.data?.pending_count || 0);
     } catch {
       toast.error('Gagal memuat data POS');
     } finally {
@@ -492,7 +497,7 @@ export default function POS() {
   }
 
   // Open Modifier Customization Modal
-  function openModifierModal(menu, status) {
+  function openModifierModal(menu, status, isUrgent = false) {
     const initialSelection = {};
     (menu.modifier_groups || []).forEach(group => {
       const isSingleChoice = group.max_selection === 1;
@@ -511,6 +516,7 @@ export default function POS() {
       selectedOptions: initialSelection,
       qty: 1,
       notes: '',
+      isUrgent: Boolean(isUrgent),
     });
   }
 
@@ -580,7 +586,7 @@ export default function POS() {
 
   // Confirm modifier selection and add to cart
   function handleConfirmModifierModal() {
-    const { menu, selectedOptions, qty, notes } = modifierModal;
+    const { menu, selectedOptions, qty, notes, isUrgent } = modifierModal;
     if (!menu) return;
 
     // Validate min_selection
@@ -614,7 +620,7 @@ export default function POS() {
       });
     });
 
-    addItemToCart(menu, notes, selectedModifierObjects, qty);
+    addItemToCart(menu, notes, selectedModifierObjects, qty, isUrgent);
     setModifierModal({
       open: false,
       menu: null,
@@ -622,14 +628,15 @@ export default function POS() {
       selectedOptions: {},
       qty: 1,
       notes: '',
+      isUrgent: false,
     });
-    toast.success(`"${menu.name}" ditambahkan ke keranjang.`);
+    toast.success(`"${menu.name}" ditambahkan ke keranjang${isUrgent ? ' (Nota Urgent)' : ''}.`);
   }
 
-  // Add item to cart with modifier support
-  function addItemToCart(menu, forcedNote = '', selectedModifiers = [], initialQty = 1) {
+  // Add item to cart with modifier & urgent note support
+  function addItemToCart(menu, forcedNote = '', selectedModifiers = [], initialQty = 1, isUrgent = false) {
     const sortedModIds = [...(selectedModifiers || [])].map(m => m.id).sort((a, b) => a - b);
-    const cartKey = `${menu.id}_${sortedModIds.join('-')}`;
+    const cartKey = `${menu.id}_${sortedModIds.join('-')}${isUrgent ? '_urgent' : ''}`;
     const extraPrice = (selectedModifiers || []).reduce((sum, m) => sum + (Number(m.price) || 0), 0);
     const unitPrice = Number(menu.price) + extraPrice;
 
@@ -641,6 +648,7 @@ export default function POS() {
           ...updated[existingIndex],
           qty: updated[existingIndex].qty + initialQty,
           notes: forcedNote || updated[existingIndex].notes,
+          isUrgent: isUrgent || updated[existingIndex].isUrgent,
         };
         return updated;
       } else {
@@ -651,9 +659,27 @@ export default function POS() {
           notes: forcedNote,
           selectedModifiers: selectedModifiers || [],
           unitPrice,
+          isUrgent: Boolean(isUrgent),
         }];
       }
     });
+  }
+
+  // Create Urgent Order (Partial Stock Deduction & Pending Deficit Log)
+  function handleCreateUrgentOrder() {
+    if (stockAlertModal.menu) {
+      const m = stockAlertModal.menu;
+      const currentStatus = stockAlertModal.status;
+      setStockAlertModal({ open: false, menu: null, status: null });
+
+      if (m.modifier_groups?.length > 0) {
+        openModifierModal(m, { isSoldOut: false, hasRecipe: true }, true);
+        return;
+      }
+
+      addItemToCart(m, '⚡ Nota Urgent (Stok tergantung)', [], 1, true);
+      toast.success(`"${m.name}" ditambahkan sebagai Nota Urgent.`);
+    }
   }
 
   // Force add out-of-stock item (Emergency Order)
@@ -665,7 +691,7 @@ export default function POS() {
         openModifierModal(m, { isSoldOut: false, hasRecipe: true });
         return;
       }
-      addItemToCart(m, 'Bahan darurat / fisik tersedia');
+      addItemToCart(m, 'Bahan darurat / fisik tersedia', [], 1, true);
       toast.success(`"${m.name}" dimasukkan ke keranjang (Order Darurat).`);
     }
   }
@@ -1091,10 +1117,12 @@ export default function POS() {
         discount_name: appliedDiscount?.name || undefined,
         discount_type: appliedDiscount?.type || undefined,
         discount_rate: appliedDiscount?.value ?? appliedDiscount?.rate ?? undefined,
+        is_urgent_note: cart.some(i => i.isUrgent),
         items: cart.map(item => ({
           menu_id: item.menu.id,
           qty: item.qty,
           notes: item.notes || undefined,
+          is_urgent: Boolean(item.isUrgent),
           modifier_option_ids: (item.selectedModifiers || []).map(m => m.id),
           modifiers: item.selectedModifiers || [],
         })),
@@ -1156,10 +1184,12 @@ export default function POS() {
     setSubmitting(true);
     try {
       const payload = {
+        is_urgent_note: cart.some(i => i.isUrgent),
         items: cart.map(item => ({
           menu_id: item.menu.id,
           qty: item.qty,
           notes: item.notes || undefined,
+          is_urgent: Boolean(item.isUrgent),
           modifier_option_ids: (item.selectedModifiers || []).map(m => m.id),
           modifiers: item.selectedModifiers || [],
         })),
@@ -1299,10 +1329,12 @@ export default function POS() {
           discount_name: appliedDiscount?.name || undefined,
           discount_type: appliedDiscount?.type || undefined,
           discount_rate: appliedDiscount?.value ?? appliedDiscount?.rate ?? undefined,
+          is_urgent_note: cart.some(i => i.isUrgent),
           items: cart.map(item => ({
             menu_id: item.menu.id,
             qty: item.qty,
             notes: item.notes || undefined,
+            is_urgent: Boolean(item.isUrgent),
             modifier_option_ids: (item.selectedModifiers || []).map(m => m.id),
             modifiers: item.selectedModifiers || [],
           })),
@@ -1322,6 +1354,8 @@ export default function POS() {
           discount_name: data.discount_name || appliedDiscount?.name,
           total_price: data.total_price,
           items: data.items,
+          is_urgent_note: data.is_urgent_note,
+          urgent_status: data.urgent_status,
           cashier: data.cashier?.name || currentUser.name || 'Kasir',
           shift_name: activeShift?.shift?.shift_name || 'Reguler',
           outlet_name: activeOutlet?.name || currentUser.outlet_name || 'Outlet',
@@ -1438,6 +1472,41 @@ export default function POS() {
                 {openBills.length}
               </span>
             </button>
+
+            {/* Quick Link to Urgent Notes */}
+            <Link
+              to="/urgent-notes"
+              className="btn btn-sm"
+              style={{
+                background: urgentCount > 0 ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.22) 0%, rgba(220, 38, 38, 0.3) 100%)' : 'rgba(255, 255, 255, 0.05)',
+                border: urgentCount > 0 ? '1px solid rgba(239, 68, 68, 0.5)' : '1px solid var(--border)',
+                color: urgentCount > 0 ? '#fca5a5' : 'var(--text-secondary)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                fontWeight: urgentCount > 0 ? 700 : 500,
+                textDecoration: 'none',
+                boxShadow: urgentCount > 0 ? '0 0 15px rgba(239, 68, 68, 0.2)' : 'none'
+              }}
+              title="Daftar Nota Urgent & Bahan Tergantung"
+            >
+              <AlertOctagon size={14} style={{ color: urgentCount > 0 ? '#ef4444' : 'inherit' }} />
+              <span>Nota Urgent</span>
+              {urgentCount > 0 && (
+                <span style={{
+                  background: '#ef4444',
+                  color: '#ffffff',
+                  fontWeight: 800,
+                  fontSize: 11,
+                  padding: '1px 7px',
+                  borderRadius: 10,
+                  minWidth: 18,
+                  textAlign: 'center'
+                }}>
+                  {urgentCount}
+                </span>
+              )}
+            </Link>
 
             <button
               className={`btn ${showHistory ? 'btn-primary' : 'btn-secondary'} btn-sm`}
@@ -2040,7 +2109,12 @@ export default function POS() {
                           <div style={{ flex: 1, paddingRight: 8 }}>
                             <div style={{ fontWeight: 700, fontSize: 13, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                               <span>{item.menu.name}</span>
-                              {status.isSoldOut && (
+                              {item.isUrgent && (
+                                <span style={{ fontSize: 10, color: '#f59e0b', background: 'rgba(245,158,11,0.2)', border: '1px solid rgba(245,158,11,0.4)', padding: '1px 6px', borderRadius: 4, fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                  <Zap size={10} /> NOTA URGENT
+                                </span>
+                              )}
+                              {status.isSoldOut && !item.isUrgent && (
                                 <span style={{ fontSize: 10, color: 'var(--danger)', background: 'rgba(244,63,94,0.15)', padding: '1px 5px', borderRadius: 4 }}>
                                   ⚠️ Stok Habis
                                 </span>
@@ -2463,12 +2537,35 @@ export default function POS() {
 
             {/* Actions */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {/* PRIMARY ACTION: Buat Nota Urgent (Potong sisa & gantungkan kekurangan) */}
+              <button
+                type="button"
+                className="btn btn-warning"
+                onClick={handleCreateUrgentOrder}
+                style={{
+                  background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                  color: '#000000',
+                  fontWeight: 800,
+                  fontSize: 13,
+                  padding: '10px 16px',
+                  borderRadius: 8,
+                  border: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  boxShadow: '0 4px 12px rgba(245, 158, 11, 0.3)'
+                }}
+              >
+                <Zap size={16} /> Buat Nota Urgent (Potong Sisa Stok & Gantungkan Kekurangan)
+              </button>
+
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button
                   type="button"
                   className="btn btn-secondary"
                   onClick={() => setStockAlertModal({ open: false, menu: null, status: null })}
-                  style={{ flex: 1, minWidth: 90, justifyContent: 'center' }}
+                  style={{ flex: 1, minWidth: 80, justifyContent: 'center' }}
                 >
                   Batal
                 </button>
@@ -2480,15 +2577,15 @@ export default function POS() {
                   className="btn btn-outline"
                   style={{ flex: 1.5, minWidth: 140, justifyContent: 'center', fontWeight: 700, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }}
                 >
-                  <Send size={14} /> Minta Transfer Cabang
+                  <Send size={14} /> Minta Transfer
                 </Link>
                 <button
                   type="button"
                   className="btn btn-primary"
                   onClick={() => handleOpenRestock(stockAlertModal.status.limitingIngredient?.id)}
-                  style={{ flex: 2, minWidth: 160, justifyContent: 'center', fontWeight: 700 }}
+                  style={{ flex: 1.8, minWidth: 150, justifyContent: 'center', fontWeight: 700 }}
                 >
-                  <Package size={14} style={{ marginRight: 4 }} /> Restock Beli Cabang Ini
+                  <Package size={14} style={{ marginRight: 4 }} /> Restok Beli
                 </button>
               </div>
 
@@ -3028,6 +3125,21 @@ export default function POS() {
                     letterSpacing: '0.04em'
                   }}>
                     *** SPLIT BILL {completedOrder.split_type === 'EQUAL' ? `(PATUNGAN ${completedOrder.split_index}/${completedOrder.split_total})` : `(BAGIAN ${completedOrder.split_index})`} ***
+                  </div>
+                )}
+                {completedOrder.is_urgent_note && (
+                  <div style={{
+                    fontSize: 10,
+                    fontWeight: 900,
+                    border: '1.5px solid #000',
+                    background: '#000',
+                    color: '#fff',
+                    padding: '2px 6px',
+                    margin: '4px auto 0',
+                    display: 'inline-block',
+                    letterSpacing: '0.04em'
+                  }}>
+                    *** NOTA URGENT (BAHAN TERGANTUNG) ***
                   </div>
                 )}
               </div>
