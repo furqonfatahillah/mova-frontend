@@ -10,7 +10,9 @@ import { PageHeader, LoadingState, rupiah, num, formatDateTime } from '../compon
 import { useOutlet } from '../context/OutletContext';
 
 export default function CoinManagement() {
-  const { isSuperadminPlatform, refreshCoins } = useOutlet();
+  const { isSuperadminPlatform, isOwnerWebsite, refreshCoins } = useOutlet();
+  const isPlatformAdmin = isSuperadminPlatform || isOwnerWebsite;
+
   const [dataOverview, setDataOverview] = useState(null);
   const [historyList, setHistoryList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -41,10 +43,10 @@ export default function CoinManagement() {
   });
 
   useEffect(() => {
-    if (isSuperadminPlatform && activeTab === 'history') {
+    if (isPlatformAdmin && activeTab === 'history') {
       fetchHistory();
     }
-  }, [isSuperadminPlatform, activeTab, historyBusinessFilter]);
+  }, [isPlatformAdmin, activeTab, historyBusinessFilter]);
 
   async function fetchOverview() {
     setLoading(true);
@@ -155,12 +157,12 @@ export default function CoinManagement() {
   const [loadingMyCoins, setLoadingMyCoins] = useState(true);
 
   useEffect(() => {
-    if (isSuperadminPlatform) {
+    if (isPlatformAdmin) {
       fetchOverview();
     } else {
       fetchMyCoins();
     }
-  }, [isSuperadminPlatform]);
+  }, [isPlatformAdmin]);
 
   async function fetchMyCoins() {
     setLoadingMyCoins(true);
@@ -174,7 +176,7 @@ export default function CoinManagement() {
     }
   }
 
-  if (!isSuperadminPlatform) {
+  if (!isPlatformAdmin) {
     if (loadingMyCoins && !myCoinsData) {
       return <LoadingState message="Memuat saldo koin perusahaan..." />;
     }
@@ -732,7 +734,7 @@ export default function CoinManagement() {
                           )}
                         </td>
                         <td style={{ textAlign: 'right', paddingRight: 20 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
                             <button
                               onClick={() => handleOpenTopUp(b)}
                               className="btn btn-primary btn-sm"
@@ -749,6 +751,18 @@ export default function CoinManagement() {
                             >
                               <Edit3 size={14} />
                               Tarif
+                            </button>
+                            <button
+                              onClick={() => {
+                                setHistoryBusinessFilter(String(b.id));
+                                setActiveTab('history');
+                              }}
+                              className="btn btn-ghost btn-sm"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#38bdf8' }}
+                              title="Lihat riwayat mutasi koin perusahaan ini"
+                            >
+                              <Clock size={14} />
+                              Riwayat
                             </button>
                           </div>
                         </td>
