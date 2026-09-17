@@ -65,7 +65,9 @@ export default function CoinManagement() {
     try {
       const params = historyBusinessFilter ? { business_id: historyBusinessFilter } : {};
       const res = await api.get('/platform/coins/history', { params });
-      setHistoryList(res.data);
+      const rawData = res.data;
+      const list = Array.isArray(rawData) ? rawData : (rawData?.data || []);
+      setHistoryList(list);
     } catch (err) {
       toast.error('Gagal memuat riwayat mutasi koin');
     } finally {
@@ -807,31 +809,37 @@ export default function CoinManagement() {
             </button>
           </div>
 
-          {loadingHistory ? (
-            <LoadingState message="Memuat mutasi koin..." />
-          ) : historyList.length === 0 ? (
-            <div className="card" style={{ padding: 40, textAlign: 'center' }}>
-              <Clock size={36} style={{ color: 'var(--text-secondary)', margin: '0 auto 12px' }} />
-              <h4>Belum ada riwayat mutasi koin</h4>
-              <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Mutasi akan otomatis tercatat saat top up koin atau setiap nota transaksi kasir selesai.</p>
-            </div>
-          ) : (
-            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-              <div className="table-responsive">
-                <table className="table" style={{ margin: 0 }}>
-                  <thead>
-                    <tr>
-                      <th style={{ paddingLeft: 20 }}>Waktu</th>
-                      <th>Perusahaan / Tenant</th>
-                      <th style={{ textAlign: 'center' }}>Tipe Mutasi</th>
-                      <th style={{ textAlign: 'right' }}>Perubahan</th>
-                      <th style={{ textAlign: 'right' }}>Saldo (Awal &rarr; Akhir)</th>
-                      <th>Referensi / Nota</th>
-                      <th>Catatan & Operator</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {historyList.map((h) => (
+          {(() => {
+            const safeHistoryList = Array.isArray(historyList) ? historyList : (historyList?.data || []);
+            if (loadingHistory) {
+              return <LoadingState message="Memuat mutasi koin..." />;
+            }
+            if (safeHistoryList.length === 0) {
+              return (
+                <div className="card" style={{ padding: 40, textAlign: 'center' }}>
+                  <Clock size={36} style={{ color: 'var(--text-secondary)', margin: '0 auto 12px' }} />
+                  <h4>Belum ada riwayat mutasi koin</h4>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Mutasi akan otomatis tercatat saat top up koin atau setiap nota transaksi kasir selesai.</p>
+                </div>
+              );
+            }
+            return (
+              <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                <div className="table-responsive">
+                  <table className="table" style={{ margin: 0 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ paddingLeft: 20 }}>Waktu</th>
+                        <th>Perusahaan / Tenant</th>
+                        <th style={{ textAlign: 'center' }}>Tipe Mutasi</th>
+                        <th style={{ textAlign: 'right' }}>Perubahan</th>
+                        <th style={{ textAlign: 'right' }}>Saldo (Awal &rarr; Akhir)</th>
+                        <th>Referensi / Nota</th>
+                        <th>Catatan & Operator</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {safeHistoryList.map((h) => (
                       <tr key={h.id}>
                         <td style={{ paddingLeft: 20, fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
                           {formatDateTime(h.created_at)}
@@ -906,7 +914,8 @@ export default function CoinManagement() {
                 </table>
               </div>
             </div>
-          )}
+          );
+        })()}
         </>
       )}
 
