@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   Plus, Save, X, Edit2, Trash2, UtensilsCrossed, Check, Layers, Sliders,
-  CheckSquare, Tag, Package, Scissors, Sparkles, AlertCircle, RefreshCw, Barcode
+  CheckSquare, Tag, Package, Scissors, Sparkles, AlertCircle, RefreshCw, Barcode, Info,
+  Copy, Search
 } from 'lucide-react';
 import api from '../api/client';
 import {
@@ -49,6 +50,7 @@ export default function MasterMenu() {
   // Modal State for Modifier Group
   const [groupModalOpen, setGroupModalOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState(null);
+  const [groupMenuSearch, setGroupMenuSearch] = useState('');
   const [groupForm, setGroupForm] = useState({
     name: '',
     selection_type: 'SINGLE',
@@ -58,6 +60,14 @@ export default function MasterMenu() {
       { name: '', price: 0, ingredient_id: '', qty: 0, unit: 'gram' }
     ]
   });
+
+  const semiFinishedIngredients = useMemo(() => {
+    return (ingredients || []).filter(i => i.type === 'SEMI_FINISHED');
+  }, [ingredients]);
+
+  const rawIngredients = useMemo(() => {
+    return (ingredients || []).filter(i => i.type !== 'SEMI_FINISHED');
+  }, [ingredients]);
 
   useEffect(() => { fetchAll(); }, []);
 
@@ -279,6 +289,7 @@ export default function MasterMenu() {
 
   function openCreateGroupModal() {
     setEditingGroup(null);
+    setGroupMenuSearch('');
     setGroupForm({
       name: '',
       selection_type: 'SINGLE',
@@ -294,6 +305,7 @@ export default function MasterMenu() {
 
   function openEditGroupModal(group) {
     setEditingGroup(group);
+    setGroupMenuSearch('');
     setGroupForm({
       name: group.name,
       selection_type: group.selection_type || 'SINGLE',
@@ -309,6 +321,66 @@ export default function MasterMenu() {
       }))
     });
     setGroupModalOpen(true);
+  }
+
+  function openDuplicateGroupModal(group) {
+    setEditingGroup(null);
+    setGroupMenuSearch('');
+    const currentType = group.selection_type || 'SINGLE';
+    const targetType = currentType === 'SINGLE' ? 'MULTIPLE' : 'SINGLE';
+    const typeLabel = targetType === 'SINGLE' ? 'Pilih 1 / Radio' : 'Bebas / Checkbox';
+
+    setGroupForm({
+      name: `${group.name} (${typeLabel})`,
+      selection_type: targetType,
+      is_required: targetType === 'SINGLE',
+      menu_ids: [],
+      options: (group.options || []).map(opt => ({
+        name: opt.name,
+        price: opt.price || 0,
+        ingredient_id: opt.ingredient_id || '',
+        qty: opt.qty || 0,
+        unit: opt.unit || 'gram',
+      }))
+    });
+    setGroupModalOpen(true);
+    toast.success(`Duplikasi siap! Ubah nama, tipe pilihan, dan pilih menu tujuannya.`, { duration: 4000 });
+  }
+
+  function applyGroupPreset(type) {
+    if (type === 'EXTRA_TOPPING') {
+      setGroupForm(f => ({
+        ...f,
+        name: f.name.trim() ? f.name : 'Extra Topping Tambahan',
+        selection_type: 'MULTIPLE',
+        is_required: false,
+      }));
+      toast.success('Template Extra Topping (Banyak Pilihan / Checkbox) diterapkan');
+    } else if (type === 'SINGLE_CHOICE') {
+      setGroupForm(f => ({
+        ...f,
+        name: f.name.trim() ? f.name : 'Pilihan Topping / Saus Paket',
+        selection_type: 'SINGLE',
+        is_required: true,
+      }));
+      toast.success('Template Pilihan Tunggal Paket (Wajib 1 - Radio) diterapkan');
+    } else if (type === 'LEVEL_PEDAS') {
+      setGroupForm(f => ({
+        ...f,
+        name: f.name.trim() ? f.name : 'Level Pedas',
+        selection_type: 'SINGLE',
+        is_required: true,
+      }));
+      toast.success('Template Level Pedas (Wajib 1 - Radio) diterapkan');
+    } else if (type === 'UKURAN_PORTION') {
+      setGroupForm(f => ({
+        ...f,
+        name: f.name.trim() ? f.name : 'Ukuran Porsi',
+        selection_type: 'SINGLE',
+        is_required: true,
+      }));
+      toast.success('Template Ukuran Porsi (Wajib 1 - Radio) diterapkan');
+    }
   }
 
   function addGroupOption() {
@@ -368,6 +440,8 @@ export default function MasterMenu() {
         name: groupForm.name.trim(),
         selection_type: groupForm.selection_type,
         is_required: groupForm.is_required,
+        min_selection: groupForm.is_required ? 1 : 0,
+        max_selection: groupForm.selection_type === 'SINGLE' ? 1 : null,
         menu_ids: groupForm.menu_ids,
         options: validOptions.map((opt, idx) => ({
           name: opt.name.trim(),
@@ -1201,6 +1275,40 @@ export default function MasterMenu() {
                   </button>
                 </div>
 
+                {/* Panduan Visual Kasus Populer */}
+                <div style={{
+                  background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.9) 100%)',
+                  border: '1px solid rgba(99, 102, 241, 0.3)',
+                  borderRadius: 10,
+                  padding: '12px 16px',
+                  marginBottom: 16,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#a5b4fc', fontWeight: 700, fontSize: 13 }}>
+                    <Sparkles size={15} color="var(--accent-bright)" /> Panduan Penting Pengaturan Varian & Topping:
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 10 }}>
+                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: '9px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <div style={{ fontWeight: 700, fontSize: 12, color: '#93c5fd', marginBottom: 2 }}>
+                        🥣 1. Topping dari 2 Bahan atau Lebih (Saus Keju, Sambal Spesial, dll)?
+                      </div>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                        Gunakan <strong>🟣 Bahan Olahan (Setengah Jadi)</strong> yang dibuat di menu <em>Master Bahan</em> & diproduksi di <em>Produksi Batch</em>. Saat kasir memilih topping ini, sistem otomatis memotong seluruh bahan mentah penyusunnya di dapur.
+                      </div>
+                    </div>
+                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: '9px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <div style={{ fontWeight: 700, fontSize: 12, color: '#fde68a', marginBottom: 2 }}>
+                        🔀 2. Menu Reguler Checkbox (Bebas), tapi Menu Paket Radio (Pilih 1)?
+                      </div>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                        Gunakan tombol <strong>"Duplikasi"</strong> pada kelompok yang sudah ada! Anda bisa membuat versi <em>Radio (Pilih 1)</em> untuk Menu Paket dari daftar topping yang sama tanpa perlu mengetik ulang pilihan atau bahan bakunya.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Section 1: Checkbox selector of all modifier groups for this menu */}
                 <div style={{
                   background: 'rgba(255,255,255,0.02)',
@@ -1294,7 +1402,7 @@ export default function MasterMenu() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                               <span style={{ fontWeight: 800, fontSize: 14, color: '#ffffff' }}>{grp.name}</span>
                               <span className="badge badge-info" style={{ fontSize: 10.5 }}>
-                                {grp.selection_type === 'SINGLE' ? 'Pilihan Tunggal (Radio)' : 'Banyak Pilihan (Checkbox)'}
+                                {grp.selection_type === 'SINGLE' ? '🔘 Pilihan Tunggal (Radio)' : '☑️ Banyak Pilihan (Checkbox)'}
                               </span>
                               {grp.is_required ? (
                                 <span className="pill pill-warn" style={{ fontSize: 10 }}>Wajib Dipilih</span>
@@ -1303,6 +1411,15 @@ export default function MasterMenu() {
                               )}
                             </div>
                             <div style={{ display: 'flex', gap: 6 }}>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => openDuplicateGroupModal(grp)}
+                                style={{ fontSize: 11, padding: '3px 8px', display: 'flex', alignItems: 'center', gap: 4 }}
+                                title="Duplikasi kelompok ini (misal: buat versi Radio untuk Menu Paket atau Checkbox untuk Reguler)"
+                              >
+                                <Copy size={12} /> Duplikasi ke Tipe Lain
+                              </button>
                               <button
                                 type="button"
                                 className="btn btn-ghost btn-sm"
@@ -1338,8 +1455,10 @@ export default function MasterMenu() {
                                       {opt.ingredient ? (
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                           <span style={{ color: 'var(--accent-bright)' }}>{opt.ingredient.name}</span>
-                                          {opt.ingredient.type === 'SEMI_FINISHED' && (
-                                            <span className="pill" style={{ fontSize: 9, background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc' }}>Olahan</span>
+                                          {opt.ingredient.type === 'SEMI_FINISHED' ? (
+                                            <span className="pill" style={{ fontSize: 9, background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc' }}>🟣 Olahan (2+ Bahan)</span>
+                                          ) : (
+                                            <span className="pill" style={{ fontSize: 9, background: 'rgba(16, 185, 129, 0.15)', color: '#6ee7b7' }}>🟢 Mentah</span>
                                           )}
                                         </div>
                                       ) : (
@@ -1381,10 +1500,19 @@ export default function MasterMenu() {
                           <div>
                             <strong style={{ fontSize: 13, color: '#ffffff' }}>{grp.name}</strong>
                             <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                              {grp.selection_type === 'SINGLE' ? 'Radio (Pilih 1)' : 'Multi (Checkbox)'} · {grp.is_required ? 'Wajib' : 'Opsional'}
+                              {grp.selection_type === 'SINGLE' ? '🔘 Radio (Pilih 1)' : '☑️ Multi (Checkbox)'} · {grp.is_required ? 'Wajib' : 'Opsional'}
                             </div>
                           </div>
                           <div style={{ display: 'flex', gap: 4 }}>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              style={{ padding: '2px 6px', fontSize: 11 }}
+                              onClick={() => openDuplicateGroupModal(grp)}
+                              title="Duplikasi kelompok modifier ini"
+                            >
+                              <Copy size={12} />
+                            </button>
                             <button
                               type="button"
                               className="btn btn-ghost btn-sm"
@@ -1817,10 +1945,58 @@ export default function MasterMenu() {
 
             <form onSubmit={handleSaveModifierGroup} style={{ overflowY: 'auto', flex: 1, paddingRight: 4 }}>
               <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {/* Group Name & Selection Type */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 14 }}>
+                {/* 1. Quick Presets / Template */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '8px 12px',
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  flexWrap: 'wrap'
+                }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <Sparkles size={13} style={{ color: 'var(--accent-bright)' }} /> Contoh Pengaturan Cepat:
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    style={{ fontSize: 11, padding: '2px 8px', border: '1px solid var(--border)' }}
+                    onClick={() => applyGroupPreset('EXTRA_TOPPING')}
+                  >
+                    ☑️ Extra Topping Bebas (Checkbox)
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    style={{ fontSize: 11, padding: '2px 8px', border: '1px solid var(--border)' }}
+                    onClick={() => applyGroupPreset('SINGLE_CHOICE')}
+                  >
+                    🔘 Pilihan Saus / Paket (Radio)
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    style={{ fontSize: 11, padding: '2px 8px', border: '1px solid var(--border)' }}
+                    onClick={() => applyGroupPreset('LEVEL_PEDAS')}
+                  >
+                    🌶️ Level Pedas (Radio)
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    style={{ fontSize: 11, padding: '2px 8px', border: '1px solid var(--border)' }}
+                    onClick={() => applyGroupPreset('UKURAN_PORTION')}
+                  >
+                    🥤 Ukuran Porsi (Radio)
+                  </button>
+                </div>
+
+                {/* 2. Group Name & Visual Selection Type Cards */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   <div className="form-group">
-                    <label className="form-label">Nama Kelompok Varian / Modifier</label>
+                    <label className="form-label" style={{ fontWeight: 700 }}>Nama Kelompok Varian / Modifier</label>
                     <input
                       type="text"
                       className="form-control"
@@ -1828,53 +2004,90 @@ export default function MasterMenu() {
                       autoFocus
                       value={groupForm.name}
                       onChange={e => setGroupForm(f => ({ ...f, name: e.target.value }))}
-                      placeholder="Contoh: Level Pedas, Ukuran, Extra Topping, Saus"
+                      placeholder="Contoh: Extra Topping, Pilihan Saus, Level Pedas, Ukuran"
                     />
                     <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                      Nama kelompok yang akan muncul di layar kasir POS.
+                      Nama ini akan muncul sebagai judul kelompok varian di layar kasir POS.
                     </span>
                   </div>
 
+                  {/* Interactive Cards for Radio vs Checkbox */}
                   <div className="form-group">
-                    <label className="form-label">Jenis Pemilihan</label>
-                    <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, cursor: 'pointer' }}>
-                        <input
-                          type="radio"
-                          name="selection_type"
-                          value="SINGLE"
-                          checked={groupForm.selection_type === 'SINGLE'}
-                          onChange={() => setGroupForm(f => ({ ...f, selection_type: 'SINGLE' }))}
-                        />
-                        <span>Pilihan Tunggal (Radio)</span>
-                      </label>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, cursor: 'pointer' }}>
-                        <input
-                          type="radio"
-                          name="selection_type"
-                          value="MULTIPLE"
-                          checked={groupForm.selection_type === 'MULTIPLE'}
-                          onChange={() => setGroupForm(f => ({ ...f, selection_type: 'MULTIPLE' }))}
-                        />
-                        <span>Banyak Pilihan (Checkbox)</span>
-                      </label>
+                    <label className="form-label" style={{ fontWeight: 700 }}>Jenis Pemilihan di Kasir POS</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10, marginTop: 4 }}>
+                      {/* Option 1: Radio */}
+                      <div
+                        onClick={() => setGroupForm(f => ({ ...f, selection_type: 'SINGLE' }))}
+                        style={{
+                          padding: '12px 14px',
+                          borderRadius: 8,
+                          border: groupForm.selection_type === 'SINGLE' ? '2px solid var(--accent)' : '1px solid var(--border)',
+                          background: groupForm.selection_type === 'SINGLE' ? 'rgba(99, 102, 241, 0.12)' : 'rgba(255,255,255,0.02)',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 4
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <strong style={{ fontSize: 13, color: groupForm.selection_type === 'SINGLE' ? '#ffffff' : 'var(--text-secondary)' }}>
+                            🔘 Pilihan Tunggal (Radio)
+                          </strong>
+                          {groupForm.selection_type === 'SINGLE' && (
+                            <span style={{ fontSize: 10, background: 'var(--accent)', color: '#fff', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>Aktif</span>
+                          )}
+                        </div>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                          Pelanggan <strong>hanya boleh memilih 1 opsi</strong>. Sangat cocok untuk: <em>Level Pedas, Pilihan Rasa, Saus Paket Bundling, Ukuran Cup</em>.
+                        </span>
+                      </div>
+
+                      {/* Option 2: Checkbox */}
+                      <div
+                        onClick={() => setGroupForm(f => ({ ...f, selection_type: 'MULTIPLE' }))}
+                        style={{
+                          padding: '12px 14px',
+                          borderRadius: 8,
+                          border: groupForm.selection_type === 'MULTIPLE' ? '2px solid var(--accent)' : '1px solid var(--border)',
+                          background: groupForm.selection_type === 'MULTIPLE' ? 'rgba(99, 102, 241, 0.12)' : 'rgba(255,255,255,0.02)',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 4
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <strong style={{ fontSize: 13, color: groupForm.selection_type === 'MULTIPLE' ? '#ffffff' : 'var(--text-secondary)' }}>
+                            ☑️ Banyak Pilihan (Checkbox)
+                          </strong>
+                          {groupForm.selection_type === 'MULTIPLE' && (
+                            <span style={{ fontSize: 10, background: 'var(--accent)', color: '#fff', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>Aktif</span>
+                          )}
+                        </div>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                          Pelanggan <strong>bebas memilih lebih dari 1 opsi</strong>. Sangat cocok untuk: <em>Extra Topping Tambahan (Keju + Telur + Sosis)</em>.
+                        </span>
+                      </div>
                     </div>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                      {groupForm.selection_type === 'SINGLE' ? 'Pelanggan hanya boleh pilih 1 opsi (misal Level 1 ATAU 2).' : 'Pelanggan bebas memilih lebih dari 1 opsi (misal Keju + Sosis).'}
-                    </span>
                   </div>
                 </div>
 
-                {/* Is Required Checkbox */}
-                <div style={{
-                  background: 'rgba(255,255,255,0.02)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 8,
-                  padding: '10px 14px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10
-                }}>
+                {/* 3. Is Required Checkbox */}
+                <div
+                  onClick={() => setGroupForm(f => ({ ...f, is_required: !f.is_required }))}
+                  style={{
+                    background: groupForm.is_required ? 'rgba(245, 158, 11, 0.1)' : 'rgba(255,255,255,0.02)',
+                    border: `1px solid ${groupForm.is_required ? 'rgba(245, 158, 11, 0.35)' : 'var(--border)'}`,
+                    borderRadius: 8,
+                    padding: '10px 14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    cursor: 'pointer'
+                  }}
+                >
                   <input
                     type="checkbox"
                     id="is_required_chk"
@@ -1882,13 +2095,34 @@ export default function MasterMenu() {
                     onChange={e => setGroupForm(f => ({ ...f, is_required: e.target.checked }))}
                     style={{ width: 16, height: 16, cursor: 'pointer' }}
                   />
-                  <label htmlFor="is_required_chk" style={{ fontSize: 13, cursor: 'pointer', margin: 0 }}>
-                    <strong>Wajib Dipilih di Kasir POS</strong> — Transaksi tidak bisa disimpan sebelum pelanggan memilih opsi ini (cocok untuk Level Pedas atau Ukuran).
+                  <label htmlFor="is_required_chk" style={{ fontSize: 12.5, cursor: 'pointer', margin: 0, color: groupForm.is_required ? '#fde68a' : 'var(--text-primary)' }}>
+                    <strong>Wajib Dipilih di Kasir POS</strong> — Transaksi tidak bisa disimpan sebelum pelanggan memilih salah satu opsi ini (cocok untuk Level Pedas atau Pilihan Saus Paket). Jika ini topping tambahan opsional, biarkan tidak dicentang.
                   </label>
                 </div>
 
-                {/* Options Table */}
+                {/* 4. Options Table with Guidance */}
                 <div>
+                  {/* Guidance Box for 2+ Ingredients & Stock Deduction */}
+                  <div style={{
+                    background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.6) 0%, rgba(15, 23, 42, 0.85) 100%)',
+                    border: '1px solid rgba(59, 130, 246, 0.25)',
+                    borderRadius: 8,
+                    padding: '10px 14px',
+                    marginBottom: 10,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#93c5fd', fontWeight: 700, fontSize: 12 }}>
+                      <Info size={14} /> Panduan Pemotongan Bahan Baku untuk Topping:
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                      • <strong>Topping 1 Bahan Mentah:</strong> Pilih langsung bahan mentah di kolom <em>Bahan yang Dipotong</em> (misal: 🟢 <em>Keju Cheddar</em>, 🟢 <em>Telur</em>).<br />
+                      • <strong>Topping Racikan 2 Bahan atau Lebih (Saus Keju, Sambal, dsb):</strong> Buat terlebih dahulu sebagai <strong>🟣 Bahan Olahan (Setengah Jadi)</strong> di menu Master Bahan & Resep, lalu pilih bahan olahan tersebut di sini agar potongan stok dapur 100% akurat.<br />
+                      • <strong>Topping Tanpa Potong Stok:</strong> Pilih <em>"-- Tanpa Potong Bahan --"</em> jika hanya sebagai preferensi rasa atau catatan kasir.
+                    </div>
+                  </div>
+
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                     <label className="form-label" style={{ margin: 0, fontWeight: 700, fontSize: 13 }}>
                       Daftar Pilihan / Opsi ({groupForm.options.length})
@@ -1907,10 +2141,10 @@ export default function MasterMenu() {
                     <table>
                       <thead>
                         <tr>
-                          <th>Nama Opsi</th>
+                          <th>Nama Opsi / Topping</th>
                           <th className="right" style={{ width: 120 }}>+ Harga (Rp)</th>
-                          <th style={{ width: 220 }}>Bahan yang Dipotong</th>
-                          <th className="right" style={{ width: 90 }}>Qty Stok</th>
+                          <th style={{ width: 250 }}>Bahan yang Dipotong</th>
+                          <th className="right" style={{ width: 95 }}>Qty Potong</th>
                           <th style={{ width: 85 }}>Satuan</th>
                           <th style={{ width: 40 }}></th>
                         </tr>
@@ -1926,7 +2160,7 @@ export default function MasterMenu() {
                                 required
                                 value={opt.name}
                                 onChange={e => updateGroupOption(idx, 'name', e.target.value)}
-                                placeholder="Contoh: Level 2 / Large / Keju"
+                                placeholder="Contoh: Extra Keju / Saus BBQ"
                               />
                             </td>
                             <td>
@@ -1953,14 +2187,37 @@ export default function MasterMenu() {
                                   if (ing) updateGroupOption(idx, 'unit', ing.unit_pakai);
                                 }}
                               >
-                                <option value="">-- Tanpa Potong Bahan --</option>
-                                {ingredients.map(i => (
-                                  <option key={i.id} value={i.id}>
-                                    {i.type === 'SEMI_FINISHED' ? '🟣 [Olahan] ' : '🟢 [Mentah] '}
-                                    {i.name} ({i.unit_pakai})
-                                  </option>
-                                ))}
+                                <option value="">-- Tanpa Potong Bahan (Catatan/Rasa) --</option>
+                                {semiFinishedIngredients.length > 0 && (
+                                  <optgroup label="🟣 Bahan Olahan / Racikan (Untuk Topping dari 2+ Bahan)">
+                                    {semiFinishedIngredients.map(i => (
+                                      <option key={i.id} value={i.id}>
+                                        🟣 [Olahan] {i.name} ({i.unit_pakai})
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                )}
+                                <optgroup label="🟢 Bahan Baku Mentah Langsung (Single Ingredient)">
+                                  {rawIngredients.map(i => (
+                                    <option key={i.id} value={i.id}>
+                                      🟢 [Mentah] {i.name} ({i.unit_pakai})
+                                    </option>
+                                  ))}
+                                </optgroup>
                               </select>
+                              {opt.ingredient_id && (
+                                <div style={{ fontSize: 9.5, marginTop: 3 }}>
+                                  {ingredients.find(i => i.id === Number(opt.ingredient_id))?.type === 'SEMI_FINISHED' ? (
+                                    <span style={{ color: '#c084fc', background: 'rgba(168, 85, 247, 0.15)', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>
+                                      🟣 Bahan Olahan (Racikan 2+ Bahan)
+                                    </span>
+                                  ) : (
+                                    <span style={{ color: '#34d399', background: 'rgba(16, 185, 129, 0.15)', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>
+                                      🟢 Bahan Mentah Tunggal
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </td>
                             <td>
                               <input
@@ -1972,7 +2229,7 @@ export default function MasterMenu() {
                                 disabled={!opt.ingredient_id}
                                 value={opt.qty}
                                 onChange={e => updateGroupOption(idx, 'qty', e.target.value)}
-                                placeholder="0"
+                                placeholder={opt.ingredient_id ? "0" : "-"}
                               />
                             </td>
                             <td>
@@ -1983,7 +2240,7 @@ export default function MasterMenu() {
                                 disabled={!opt.ingredient_id}
                                 value={opt.unit}
                                 onChange={e => updateGroupOption(idx, 'unit', e.target.value)}
-                                placeholder="gram"
+                                placeholder={opt.ingredient_id ? "gram" : "-"}
                               />
                             </td>
                             <td className="center">
@@ -2006,37 +2263,102 @@ export default function MasterMenu() {
                   </div>
                 </div>
 
-                {/* Menu Assignment Checkboxes */}
+                {/* 5. Menu Assignment Checkboxes with Search and Multi-Menu Guidance */}
                 <div>
-                  <label className="form-label" style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>
-                    Terapkan Kelompok Modifier ini ke Menu:
-                  </label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <label className="form-label" style={{ fontWeight: 700, fontSize: 13, margin: 0 }}>
+                      Terapkan Kelompok Modifier ini ke Menu:
+                    </label>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                      ({groupForm.menu_ids.length} menu terpilih)
+                    </span>
+                  </div>
+
+                  {/* Search and Quick Select */}
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+                    <div style={{ position: 'relative', flex: 1 }}>
+                      <Search size={13} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                      <input
+                        type="text"
+                        className="form-control"
+                        style={{ paddingLeft: 26, fontSize: 11.5, padding: '4px 8px 4px 26px' }}
+                        placeholder="Cari nama menu..."
+                        value={groupMenuSearch}
+                        onChange={e => setGroupMenuSearch(e.target.value)}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ fontSize: 11, padding: '3px 8px', border: '1px solid var(--border)' }}
+                      onClick={() => setGroupForm(f => ({ ...f, menu_ids: menus.map(m => m.id) }))}
+                    >
+                      Pilih Semua
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ fontSize: 11, padding: '3px 8px', border: '1px solid var(--border)' }}
+                      onClick={() => setGroupForm(f => ({ ...f, menu_ids: [] }))}
+                    >
+                      Reset
+                    </button>
+                  </div>
+
                   <div style={{
                     maxHeight: 140,
                     overflowY: 'auto',
                     background: 'rgba(0,0,0,0.2)',
                     border: '1px solid var(--border)',
                     borderRadius: 8,
-                    padding: 10,
+                    padding: 8,
                     display: 'grid',
                     gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+                    gap: 6
+                  }}>
+                    {menus
+                      .filter(m => !groupMenuSearch || m.name.toLowerCase().includes(groupMenuSearch.toLowerCase()) || m.code.toLowerCase().includes(groupMenuSearch.toLowerCase()))
+                      .map(m => {
+                        const checked = groupForm.menu_ids.includes(m.id);
+                        return (
+                          <label key={m.id} style={{
+                            display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer',
+                            padding: '4px 8px', borderRadius: 6,
+                            background: checked ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255,255,255,0.02)',
+                            border: checked ? '1px solid rgba(99, 102, 241, 0.4)' : '1px solid transparent'
+                          }}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleGroupMenu(m.id)}
+                              style={{ cursor: 'pointer' }}
+                            />
+                            <span style={{ fontWeight: checked ? 700 : 400, color: checked ? '#ffffff' : 'var(--text-secondary)' }}>{m.name}</span>
+                            {m.item_type === 'BUNDLE' && (
+                              <span style={{ fontSize: 9.5, background: 'rgba(244, 63, 94, 0.2)', color: '#fda4af', padding: '1px 4px', borderRadius: 4, fontWeight: 700 }}>🎁 Paket</span>
+                            )}
+                          </label>
+                        );
+                      })}
+                  </div>
+
+                  {/* Tips for Multi-Menu Radio vs Checkbox */}
+                  <div style={{
+                    background: 'linear-gradient(135deg, rgba(45, 30, 15, 0.5) 0%, rgba(30, 20, 10, 0.75) 100%)',
+                    border: '1px solid rgba(245, 158, 11, 0.25)',
+                    borderRadius: 8,
+                    padding: '10px 14px',
+                    marginTop: 10,
+                    display: 'flex',
+                    alignItems: 'flex-start',
                     gap: 8
                   }}>
-                    {menus.map(m => {
-                      const checked = groupForm.menu_ids.includes(m.id);
-                      return (
-                        <label key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleGroupMenu(m.id)}
-                            style={{ cursor: 'pointer' }}
-                          />
-                          <span>{m.name}</span>
-                          <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>({m.code})</span>
-                        </label>
-                      );
-                    })}
+                    <AlertCircle size={15} style={{ color: '#f59e0b', flexShrink: 0, marginTop: 2 }} />
+                    <div style={{ fontSize: 11.5, color: '#fde68a', lineHeight: 1.5 }}>
+                      <strong>Solusi Checkbox di Menu Reguler vs Radio di Menu Paket:</strong><br />
+                      Kelompok ini berlaku dengan tipe <strong>{groupForm.selection_type === 'SINGLE' ? '🔘 Pilihan Tunggal (Radio - Pilih 1)' : '☑️ Banyak Pilihan (Checkbox - Bebas)'}</strong> untuk menu yang dicentang.<br />
+                      Jika topping yang sama ingin bisa dipilih banyak di <u>Menu Reguler</u> tapi hanya boleh dipilih 1 di <u>Menu Paket</u>, simpan kelompok ini, lalu klik tombol <strong>"Duplikasi"</strong> untuk membuat versi satunya dalam 1 klik!
+                    </div>
                   </div>
                 </div>
               </div>

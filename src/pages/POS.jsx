@@ -696,11 +696,11 @@ export default function POS() {
   function handleToggleModifierOption(group, option) {
     setModifierModal(prev => {
       const current = prev.selectedOptions[group.id] || [];
-      const isSingleChoice = group.max_selection === 1;
+      const isSingleChoice = group.selection_type === 'SINGLE' || group.max_selection === 1;
 
       if (isSingleChoice) {
         const isSelected = current.includes(option.id);
-        const isRequired = (group.min_selection ?? 0) >= 1;
+        const isRequired = Boolean(group.is_required) || (group.min_selection ?? 0) >= 1;
         if (isSelected && !isRequired) {
           return {
             ...prev,
@@ -764,7 +764,8 @@ export default function POS() {
     // Validate min_selection
     for (const group of (menu.modifier_groups || [])) {
       const selected = selectedOptions[group.id] || [];
-      const min = group.min_selection ?? 0;
+      const isRequired = Boolean(group.is_required) || (group.min_selection ?? 0) >= 1;
+      const min = isRequired ? Math.max(1, group.min_selection ?? 0) : (group.min_selection ?? 0);
       if (min > 0 && selected.length < min) {
         toast.error(`Harap pilih minimal ${min} opsi untuk "${group.name}".`);
         return;
@@ -4197,9 +4198,9 @@ export default function POS() {
             {/* Body: Groups & Options */}
             <div style={{ flex: 1, overflowY: 'auto', paddingRight: 4, display: 'flex', flexDirection: 'column', gap: 16 }}>
               {(modifierModal.menu.modifier_groups || []).map(group => {
-                const isSingleChoice = group.max_selection === 1;
+                const isSingleChoice = group.selection_type === 'SINGLE' || group.max_selection === 1;
                 const min = group.min_selection ?? 0;
-                const isRequired = min >= 1;
+                const isRequired = Boolean(group.is_required) || min >= 1;
                 const selectedList = modifierModal.selectedOptions[group.id] || [];
 
                 return (
@@ -4218,17 +4219,30 @@ export default function POS() {
                           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>({group.description})</span>
                         )}
                       </div>
-                      <span style={{
-                        fontSize: 10.5,
-                        padding: '2px 8px',
-                        borderRadius: 8,
-                        fontWeight: 700,
-                        background: isRequired && selectedList.length === 0 ? 'rgba(244, 63, 94, 0.15)' : 'rgba(255, 255, 255, 0.07)',
-                        color: isRequired && selectedList.length === 0 ? '#fb7185' : 'var(--text-secondary)',
-                        border: isRequired && selectedList.length === 0 ? '1px solid rgba(244, 63, 94, 0.3)' : '1px solid var(--border)'
-                      }}>
-                        {isRequired ? (isSingleChoice ? 'Wajib (Pilih 1)' : `Wajib (Min. ${min})`) : (isSingleChoice ? 'Opsional' : `Opsional (Maks ${group.max_selection || 'Bebas'})`)}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{
+                          fontSize: 10,
+                          padding: '2px 7px',
+                          borderRadius: 6,
+                          fontWeight: 700,
+                          background: isSingleChoice ? 'rgba(99, 102, 241, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                          color: isSingleChoice ? 'var(--accent-bright)' : '#34d399',
+                          border: isSingleChoice ? '1px solid rgba(99, 102, 241, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)'
+                        }}>
+                          {isSingleChoice ? '🔘 Pilih 1 Opsi' : '☑️ Pilihan Bebas'}
+                        </span>
+                        <span style={{
+                          fontSize: 10,
+                          padding: '2px 7px',
+                          borderRadius: 6,
+                          fontWeight: 700,
+                          background: isRequired && selectedList.length === 0 ? 'rgba(244, 63, 94, 0.15)' : 'rgba(255, 255, 255, 0.07)',
+                          color: isRequired && selectedList.length === 0 ? '#fb7185' : 'var(--text-secondary)',
+                          border: isRequired && selectedList.length === 0 ? '1px solid rgba(244, 63, 94, 0.3)' : '1px solid var(--border)'
+                        }}>
+                          {isRequired ? '🔴 Wajib' : '⚪ Opsional'}
+                        </span>
+                      </div>
                     </div>
 
                     {/* Options List */}
@@ -4276,8 +4290,13 @@ export default function POS() {
                                   {opt.name}
                                 </div>
                                 {opt.ingredient && (
-                                  <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-                                    ✂ {num(opt.qty)} {opt.unit || opt.ingredient.unit_pakai} {opt.ingredient.name}
+                                  <div style={{ fontSize: 10, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                                    <span>✂ {num(opt.qty)} {opt.unit || opt.ingredient.unit_pakai} {opt.ingredient.name}</span>
+                                    {opt.ingredient.type === 'SEMI_FINISHED' && (
+                                      <span style={{ fontSize: 8.5, background: 'rgba(168, 85, 247, 0.2)', color: '#c084fc', padding: '0 4px', borderRadius: 3, fontWeight: 700 }}>
+                                        Olahan
+                                      </span>
+                                    )}
                                   </div>
                                 )}
                               </div>
