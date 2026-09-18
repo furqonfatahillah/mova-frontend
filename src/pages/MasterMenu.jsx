@@ -536,6 +536,7 @@ export default function MasterMenu() {
               { id: 'RECIPE', label: 'Resep' },
               { id: 'DIRECT', label: 'Retail' },
               { id: 'SERVICE', label: 'Jasa' },
+              { id: 'BUNDLE', label: 'Paket' },
             ].map(t => (
               <button
                 key={t.id}

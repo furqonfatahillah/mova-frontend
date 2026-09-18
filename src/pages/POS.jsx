@@ -208,7 +208,7 @@ export default function POS() {
   }, [menus]);
 
   // Calculate available servings and stock status for any product type
-  function getMenuStockStatus(menu) {
+  function getMenuStockStatus(menu, visitedIds = new Set()) {
     const itemType = menu.item_type || (menu.recipes && menu.recipes.length > 0 ? 'RECIPE' : (menu.track_stock ? 'DIRECT' : 'RECIPE'));
 
     // 1. Jasa / Layanan (SERVICE) - Tidak ada stok fisik & tidak butuh resep
@@ -222,7 +222,9 @@ export default function POS() {
         isLowStock: false,
         reason: null,
         limitingIngredient: null,
+        limitingItem: null,
         details: [],
+        bundleItemsSummary: [],
       };
     }
 
@@ -244,6 +246,7 @@ export default function POS() {
         isLowStock,
         reason: isSoldOut ? 'Stok produk habis' : null,
         limitingIngredient: null,
+        limitingItem: null,
         details: [{
           id: menu.id,
           name: menu.name,
@@ -253,10 +256,174 @@ export default function POS() {
           possibleServings: directStock,
           isDeficit: isSoldOut,
         }],
+        bundleItemsSummary: [],
       };
     }
 
-    // 3. Olahan Resep / F&B (RECIPE)
+    // 3. Paket Bundling / Combo / Buy 1 Get 1 (BUNDLE)
+    if (itemType === 'BUNDLE') {
+      const bundleItems = menu.bundle_items || menu.bundleItems || [];
+
+      if (bundleItems.length === 0) {
+        return {
+          itemType: 'BUNDLE',
+          hasRecipe: false,
+          isBundle: true,
+          availableServings: 0,
+          isSoldOut: true,
+          isLowStock: false,
+          reason: 'Belum ada rincian menu dalam paket bundling',
+          limitingIngredient: null,
+          limitingItem: { name: 'Isi paket kosong' },
+          details: [],
+          bundleItemsSummary: [],
+        };
+      }
+
+      // Guard terhadap siklus rekursif bundling
+      const currentVisited = new Set(visitedIds);
+      currentVisited.add(menu.id);
+
+      let minBundles = Infinity;
+      let limitingItem = null;
+      const details = [];
+      const bundleItemsSummary = [];
+
+      for (const bi of bundleItems) {
+        const reqQty = Number(bi.qty) || 1;
+        const targetMenuId = bi.bundled_menu_id || bi.bundledMenu?.id;
+
+        if (targetMenuId) {
+          // Komponen adalah menu lain (olahan resep / retail)
+          const targetMenu = menus.find(m => m.id === targetMenuId) || bi.bundledMenu;
+          if (!targetMenu) {
+            minBundles = 0;
+            limitingItem = { id: targetMenuId, name: `Menu #${targetMenuId}` };
+            details.push({
+              id: targetMenuId,
+              name: `Menu #${targetMenuId}`,
+              required: reqQty,
+              unit: 'porsi',
+              stock: 0,
+              possibleServings: 0,
+              isDeficit: true,
+              isBundledMenu: true,
+            });
+            bundleItemsSummary.push({
+              id: targetMenuId,
+              name: `Menu #${targetMenuId}`,
+              qty: reqQty,
+              unit: 'porsi',
+              availableServings: 0,
+              isSoldOut: true,
+            });
+            continue;
+          }
+
+          let targetStatus;
+          if (currentVisited.has(targetMenu.id)) {
+            targetStatus = { availableServings: 0, isSoldOut: true };
+          } else {
+            targetStatus = getMenuStockStatus(targetMenu, currentVisited);
+          }
+
+          const targetAvailable = targetStatus.availableServings ?? 0;
+          const possibleFromThisItem = Math.max(0, Math.floor(targetAvailable / reqQty));
+          const isDeficit = targetStatus.isSoldOut || possibleFromThisItem <= 0;
+          const subLimiting = targetStatus.limitingIngredient || targetStatus.limitingItem;
+
+          details.push({
+            id: targetMenu.id,
+            name: targetMenu.name,
+            required: reqQty,
+            unit: targetMenu.unit || 'porsi',
+            stock: targetAvailable,
+            possibleServings: possibleFromThisItem,
+            isDeficit,
+            isBundledMenu: true,
+            subLimiting,
+          });
+
+          bundleItemsSummary.push({
+            id: targetMenu.id,
+            name: targetMenu.name,
+            qty: reqQty,
+            unit: targetMenu.unit || 'porsi',
+            availableServings: targetAvailable,
+            isSoldOut: isDeficit,
+            subLimiting,
+          });
+
+          if (possibleFromThisItem < minBundles) {
+            minBundles = possibleFromThisItem;
+            limitingItem = {
+              id: targetMenu.id,
+              name: targetMenu.name,
+              available: targetAvailable,
+              required: reqQty,
+              unit: targetMenu.unit || 'porsi',
+              subLimiting,
+            };
+          }
+        } else if (bi.ingredient_id) {
+          // Komponen adalah bahan baku langsung
+          const ing = ingredients.find(i => i.id === bi.ingredient_id) || bi.ingredient;
+          const currentStock = ing ? (ing.current_stock ?? ing.stok_awal ?? 0) : 0;
+          const possibleFromThisItem = Math.max(0, Math.floor(currentStock / reqQty));
+          const isDeficit = currentStock < reqQty;
+
+          details.push({
+            id: bi.ingredient_id,
+            name: ing?.name || `Bahan #${bi.ingredient_id}`,
+            required: reqQty,
+            unit: bi.unit || ing?.unit_pakai || 'satuan',
+            stock: currentStock,
+            possibleServings: possibleFromThisItem,
+            isDeficit,
+            isBundledMenu: false,
+          });
+
+          bundleItemsSummary.push({
+            id: bi.ingredient_id,
+            name: ing?.name || `Bahan #${bi.ingredient_id}`,
+            qty: reqQty,
+            unit: bi.unit || ing?.unit_pakai || 'satuan',
+            availableServings: possibleFromThisItem,
+            isSoldOut: isDeficit,
+          });
+
+          if (possibleFromThisItem < minBundles) {
+            minBundles = possibleFromThisItem;
+            limitingItem = {
+              id: bi.ingredient_id,
+              name: ing?.name || `Bahan #${bi.ingredient_id}`,
+              available: currentStock,
+              required: reqQty,
+              unit: bi.unit || ing?.unit_pakai || 'satuan',
+            };
+          }
+        }
+      }
+
+      const availableServings = minBundles === Infinity ? 0 : minBundles;
+      const isSoldOut = availableServings <= 0;
+      const isLowStock = !isSoldOut && availableServings <= 5;
+
+      return {
+        itemType: 'BUNDLE',
+        hasRecipe: true,
+        isBundle: true,
+        availableServings,
+        isSoldOut,
+        isLowStock,
+        limitingItem,
+        limitingIngredient: limitingItem,
+        details,
+        bundleItemsSummary,
+      };
+    }
+
+    // 4. Olahan Resep / F&B (RECIPE)
     const recipe = menu.recipes?.[0];
     if (!recipe || !recipe.items || recipe.items.length === 0) {
       return {
@@ -267,7 +434,9 @@ export default function POS() {
         isLowStock: false,
         reason: 'Belum ada resep aktif (Penjualan Bebas)',
         limitingIngredient: null,
+        limitingItem: null,
         details: [],
+        bundleItemsSummary: [],
       };
     }
 
@@ -315,7 +484,9 @@ export default function POS() {
       isSoldOut,
       isLowStock,
       limitingIngredient,
+      limitingItem: limitingIngredient,
       details,
+      bundleItemsSummary: [],
     };
   }
 
@@ -1804,6 +1975,7 @@ export default function POS() {
                     { id: 'RECIPE', label: 'Resep (F&B)' },
                     { id: 'DIRECT', label: 'Retail / Barang Jadi' },
                     { id: 'SERVICE', label: 'Jasa / Layanan' },
+                    { id: 'BUNDLE', label: 'Paket / Bundling' },
                   ].map(t => {
                     const isAct = selectedType === t.id;
                     const count = t.id === 'ALL'
@@ -1902,19 +2074,23 @@ export default function POS() {
                             <div className="pos-menu-icon" style={{
                               background: status.isSoldOut ? 'rgba(244, 63, 94, 0.15)' : (
                                 menu.item_type === 'SERVICE' ? 'rgba(168, 85, 247, 0.15)' :
-                                menu.item_type === 'DIRECT' ? 'rgba(59, 130, 246, 0.15)' : undefined
+                                menu.item_type === 'DIRECT' ? 'rgba(59, 130, 246, 0.15)' :
+                                menu.item_type === 'BUNDLE' ? 'rgba(244, 63, 94, 0.15)' : undefined
                               ),
                               borderColor: status.isSoldOut ? 'rgba(244, 63, 94, 0.3)' : (
                                 menu.item_type === 'SERVICE' ? 'rgba(168, 85, 247, 0.3)' :
-                                menu.item_type === 'DIRECT' ? 'rgba(59, 130, 246, 0.3)' : undefined
+                                menu.item_type === 'DIRECT' ? 'rgba(59, 130, 246, 0.3)' :
+                                menu.item_type === 'BUNDLE' ? 'rgba(244, 63, 94, 0.3)' : undefined
                               ),
                               color: status.isSoldOut ? '#fb7185' : (
                                 menu.item_type === 'SERVICE' ? '#c084fc' :
-                                menu.item_type === 'DIRECT' ? '#60a5fa' : undefined
+                                menu.item_type === 'DIRECT' ? '#60a5fa' :
+                                menu.item_type === 'BUNDLE' ? '#fda4af' : undefined
                               ),
                             }}>
                               {menu.item_type === 'SERVICE' ? <Briefcase size={22} /> :
                                menu.item_type === 'DIRECT' ? <ShoppingBag size={22} /> :
+                               menu.item_type === 'BUNDLE' ? <Gift size={22} /> :
                                (isDrink ? <Coffee size={22} /> : <Utensils size={22} />)}
                             </div>
 
@@ -1935,6 +2111,20 @@ export default function POS() {
                               ) : (
                                 <span className="pos-stock-badge in-stock" style={{ background: 'rgba(59, 130, 246, 0.15)', borderColor: 'rgba(59, 130, 246, 0.35)', color: '#93c5fd' }}>
                                   Stok {status.availableServings} {menu.unit || 'pcs'}
+                                </span>
+                              )
+                            ) : menu.item_type === 'BUNDLE' ? (
+                              status.isSoldOut ? (
+                                <span className="pos-stock-badge sold-out">
+                                  Habis
+                                </span>
+                              ) : status.isLowStock ? (
+                                <span className="pos-stock-badge low-stock">
+                                  Sisa {status.availableServings} paket
+                                </span>
+                              ) : (
+                                <span className="pos-stock-badge in-stock" style={{ background: 'rgba(244, 63, 94, 0.15)', borderColor: 'rgba(244, 63, 94, 0.35)', color: '#fda4af' }}>
+                                  ~{status.availableServings} paket
                                 </span>
                               )
                             ) : (
@@ -1958,22 +2148,40 @@ export default function POS() {
                             <span style={{ fontSize: 11, color: 'var(--accent-bright)', fontWeight: 600 }}>
                               {menu.category || 'Menu'}
                             </span>
-                            {menu.modifier_groups && menu.modifier_groups.length > 0 && (
-                              <span style={{
-                                fontSize: 10,
-                                fontWeight: 700,
-                                background: 'rgba(139, 92, 246, 0.18)',
-                                color: '#c4b5fd',
-                                border: '1px solid rgba(139, 92, 246, 0.35)',
-                                padding: '1px 6px',
-                                borderRadius: 4,
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 3
-                              }}>
-                                <Sparkles size={9} /> {menu.modifier_groups.length} Varian
-                              </span>
-                            )}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              {menu.item_type === 'BUNDLE' && (
+                                <span style={{
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  background: 'rgba(244, 63, 94, 0.18)',
+                                  color: '#fda4af',
+                                  border: '1px solid rgba(244, 63, 94, 0.35)',
+                                  padding: '1px 6px',
+                                  borderRadius: 4,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 3
+                                }}>
+                                  <Gift size={9} /> Bundling
+                                </span>
+                              )}
+                              {menu.modifier_groups && menu.modifier_groups.length > 0 && (
+                                <span style={{
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  background: 'rgba(139, 92, 246, 0.18)',
+                                  color: '#c4b5fd',
+                                  border: '1px solid rgba(139, 92, 246, 0.35)',
+                                  padding: '1px 6px',
+                                  borderRadius: 4,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 3
+                                }}>
+                                  <Sparkles size={9} /> {menu.modifier_groups.length} Varian
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <h4 style={{
                             fontSize: 14,
@@ -1984,6 +2192,58 @@ export default function POS() {
                           }}>
                             {menu.name}
                           </h4>
+
+                          {/* Bundle Items Breakdown Preview */}
+                          {menu.item_type === 'BUNDLE' && status.bundleItemsSummary && status.bundleItemsSummary.length > 0 && (
+                            <div style={{
+                              marginTop: 5,
+                              marginBottom: 4,
+                              padding: '5px 7px',
+                              background: 'rgba(0, 0, 0, 0.22)',
+                              borderRadius: 6,
+                              border: '1px solid rgba(255, 255, 255, 0.06)',
+                            }}>
+                              <div style={{
+                                fontSize: 9.5,
+                                color: 'var(--text-secondary)',
+                                marginBottom: 3,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                fontWeight: 700
+                              }}>
+                                <Gift size={10} style={{ color: '#f43f5e' }} />
+                                <span>Isi Paket:</span>
+                              </div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                                {status.bundleItemsSummary.map((item, idx) => (
+                                  <span
+                                    key={idx}
+                                    style={{
+                                      fontSize: 9.5,
+                                      padding: '1px 5px',
+                                      borderRadius: 4,
+                                      background: item.isSoldOut ? 'rgba(244, 63, 94, 0.22)' : 'rgba(255, 255, 255, 0.05)',
+                                      color: item.isSoldOut ? '#fb7185' : 'var(--text-primary)',
+                                      border: `1px solid ${item.isSoldOut ? 'rgba(244, 63, 94, 0.45)' : 'rgba(255, 255, 255, 0.08)'}`,
+                                      fontWeight: item.isSoldOut ? 700 : 500,
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 2,
+                                    }}
+                                    title={item.isSoldOut ? `${item.name} stoknya habis!` : `${item.qty} ${item.name}`}
+                                  >
+                                    {item.qty > 1 ? `${item.qty}x ` : ''}{item.name}
+                                    {item.isSoldOut && (
+                                      <span style={{ color: '#f43f5e', fontSize: 9, fontWeight: 800 }}>
+                                        (Habis)
+                                      </span>
+                                    )}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
 
                         <div style={{ marginTop: 12, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1992,7 +2252,7 @@ export default function POS() {
                           </span>
                           {status.isSoldOut ? (
                             <span style={{ fontSize: 10, color: 'var(--danger)', fontWeight: 600 }}>
-                              {status.limitingIngredient ? `${status.limitingIngredient.name} Habis` : (menu.item_type === 'DIRECT' ? '+ Klik Restok' : '! Habis')}
+                              {status.limitingItem ? `${status.limitingItem.name} Habis` : (status.limitingIngredient ? `${status.limitingIngredient.name} Habis` : (menu.item_type === 'DIRECT' ? '+ Klik Restok' : '! Habis'))}
                             </span>
                           ) : menu.item_type === 'SERVICE' ? (
                             <span style={{ fontSize: 10, color: '#c084fc', fontWeight: 700 }}>
@@ -2001,6 +2261,10 @@ export default function POS() {
                           ) : menu.item_type === 'DIRECT' ? (
                             <span style={{ fontSize: 10, color: '#60a5fa', fontWeight: 700 }}>
                               📦 Retail
+                            </span>
+                          ) : menu.item_type === 'BUNDLE' ? (
+                            <span style={{ fontSize: 10, color: '#fda4af', fontWeight: 700 }}>
+                              🎁 {status.bundleItemsSummary?.length || 0} Menu
                             </span>
                           ) : (
                             <span style={{ fontSize: 10, color: status.hasRecipe ? 'var(--text-muted)' : '#f59e0b', fontWeight: 600 }} title={status.hasRecipe ? 'Resep Aktif' : 'Bebas Resep'}>
@@ -2110,6 +2374,11 @@ export default function POS() {
                           <div style={{ flex: 1, paddingRight: 8 }}>
                             <div style={{ fontWeight: 700, fontSize: 13, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                               <span>{item.menu.name}</span>
+                              {item.menu.item_type === 'BUNDLE' && (
+                                <span style={{ fontSize: 10, color: '#fda4af', background: 'rgba(244,63,94,0.18)', border: '1px solid rgba(244,63,94,0.35)', padding: '1px 6px', borderRadius: 4, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                  <Gift size={10} /> BUNDLING
+                                </span>
+                              )}
                               {item.isUrgent && (
                                 <span style={{ fontSize: 10, color: '#f59e0b', background: 'rgba(245,158,11,0.2)', border: '1px solid rgba(245,158,11,0.4)', padding: '1px 6px', borderRadius: 4, fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                                   <Zap size={10} /> NOTA URGENT
@@ -2121,6 +2390,31 @@ export default function POS() {
                                 </span>
                               )}
                             </div>
+
+                            {/* Bundle breakdown pills in cart */}
+                            {item.menu.item_type === 'BUNDLE' && (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginTop: 4 }}>
+                                {(item.menu.bundle_items || item.menu.bundleItems || []).map((bi, bIdx) => {
+                                  const bm = menus.find(m => m.id === (bi.bundled_menu_id || bi.bundledMenu?.id)) || bi.bundledMenu;
+                                  const name = bm?.name || (bi.ingredient?.name || `Item #${bi.bundled_menu_id || bi.ingredient_id}`);
+                                  return (
+                                    <span key={bIdx} style={{
+                                      fontSize: 10,
+                                      background: 'rgba(244, 63, 94, 0.12)',
+                                      border: '1px solid rgba(244, 63, 94, 0.25)',
+                                      color: '#fda4af',
+                                      padding: '1px 6px',
+                                      borderRadius: 4,
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 2,
+                                    }}>
+                                      {Number(bi.qty) > 1 ? `${bi.qty}x ` : ''}{name}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            )}
 
                             {/* Selected Modifiers Pills */}
                             {item.selectedModifiers && item.selectedModifiers.length > 0 && (
@@ -2482,16 +2776,20 @@ export default function POS() {
               </div>
               <div>
                 <h3 style={{ fontSize: 16, fontWeight: 800, color: '#ffffff', margin: 0 }}>
-                  Stok Bahan Tidak Mencukupi!
+                  {stockAlertModal.menu.item_type === 'BUNDLE' ? 'Stok Paket Bundling Tidak Cukup!' : 'Stok Bahan Tidak Mencukupi!'}
                 </h3>
                 <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                  Peringatan ketersediaan bahan baku di sistem
+                  {stockAlertModal.menu.item_type === 'BUNDLE' ? 'Ada menu isi paket yang kehabisan stok' : 'Peringatan ketersediaan bahan baku di sistem'}
                 </span>
               </div>
             </div>
 
             <p style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.5, marginBottom: 14 }}>
-              Menu <strong>{stockAlertModal.menu.name}</strong> membutuhkan bahan baku yang saat ini stoknya habis atau di bawah takaran resep:
+              {stockAlertModal.menu.item_type === 'BUNDLE' ? (
+                <>Paket <strong>{stockAlertModal.menu.name}</strong> tidak dapat dipesan karena ada menu isi paket yang stoknya habis atau tidak mencukupi takaran paket:</>
+              ) : (
+                <>Menu <strong>{stockAlertModal.menu.name}</strong> membutuhkan bahan baku yang saat ini stoknya habis atau di bawah takaran resep:</>
+              )}
             </p>
 
             {/* Breakdown Table */}
@@ -2517,9 +2815,15 @@ export default function POS() {
                     <strong style={{ color: item.isDeficit ? '#fb7185' : '#ffffff' }}>
                       {item.name}
                     </strong>
-                    <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
-                      Butuh: {num(item.required)} {item.unit} / porsi
-                    </div>
+                    {item.isBundledMenu ? (
+                      <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
+                        Butuh: {num(item.required)} {item.unit} / paket {item.subLimiting && <span style={{ color: '#fb7185' }}>({item.subLimiting.name} habis)</span>}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
+                        Butuh: {num(item.required)} {item.unit} / porsi
+                      </div>
+                    )}
                   </div>
                   <div style={{ textAlign: 'right' }}>
                     <span className="mono" style={{
@@ -2529,7 +2833,7 @@ export default function POS() {
                       {num(item.stock)} {item.unit}
                     </span>
                     <div style={{ fontSize: 10, color: item.isDeficit ? 'var(--danger)' : 'var(--text-muted)' }}>
-                      {item.isDeficit ? '❌ Habis / Defisit' : `✓ ~${item.possibleServings} porsi`}
+                      {item.isDeficit ? '❌ Habis / Defisit' : (stockAlertModal.menu.item_type === 'BUNDLE' ? `✓ ~${item.possibleServings} paket` : `✓ ~${item.possibleServings} porsi`)}
                     </div>
                   </div>
                 </div>
@@ -2573,7 +2877,10 @@ export default function POS() {
                 <Link
                   to={stockAlertModal.menu?.item_type === 'DIRECT'
                     ? `/transfer?destination_outlet_id=${currentTargetOutlet}&menu_id=${stockAlertModal.menu.id}&item_type=PRODUCT`
-                    : `/transfer?destination_outlet_id=${currentTargetOutlet}&ingredient_id=${stockAlertModal.status.limitingIngredient?.id || ''}`
+                    : (stockAlertModal.menu?.item_type === 'BUNDLE' && stockAlertModal.status.limitingItem?.id
+                        ? `/transfer?destination_outlet_id=${currentTargetOutlet}&menu_id=${stockAlertModal.status.limitingItem.id}&item_type=PRODUCT`
+                        : `/transfer?destination_outlet_id=${currentTargetOutlet}&ingredient_id=${stockAlertModal.status.limitingIngredient?.id || ''}`
+                      )
                   }
                   className="btn btn-outline"
                   style={{ flex: 1.5, minWidth: 140, justifyContent: 'center', fontWeight: 700, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }}
@@ -2583,7 +2890,7 @@ export default function POS() {
                 <button
                   type="button"
                   className="btn btn-primary"
-                  onClick={() => handleOpenRestock(stockAlertModal.status.limitingIngredient?.id)}
+                  onClick={() => handleOpenRestock(stockAlertModal.status.limitingItem?.subLimiting?.id || stockAlertModal.status.limitingIngredient?.id)}
                   style={{ flex: 1.8, minWidth: 150, justifyContent: 'center', fontWeight: 700 }}
                 >
                   <Package size={14} style={{ marginRight: 4 }} /> Restok Beli
