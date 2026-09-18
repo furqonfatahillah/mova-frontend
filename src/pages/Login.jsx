@@ -18,10 +18,11 @@ export default function Login() {
       localStorage.setItem('pos_user', JSON.stringify(data.user));
       const u = data.user;
       const isSuperadminPlatform = u.role === 'superadmin_platform' || u.role === 'superadmin' || Boolean(u.is_superadmin_platform);
-      const isOwnerWebsite = isSuperadminPlatform || u.role === 'owner_website' || Boolean(u.is_owner_website);
-      const isOwnerBisnis = isOwnerWebsite || u.role === 'owner_bisnis' || u.role === 'owner' || u.role === 'admin' || Boolean(u.is_owner_bisnis);
+      const isOwnerWebsite = u.role === 'owner_website' || Boolean(u.is_owner_website);
+      const isPlatformAdmin = isSuperadminPlatform || isOwnerWebsite;
+      const isOwnerBisnis = u.role === 'owner_bisnis' || u.role === 'owner' || u.role === 'admin' || Boolean(u.is_owner_bisnis);
       const isOwnerOutlet = u.role === 'owner_outlet' || u.role === 'manager_outlet' || Boolean(u.is_owner_outlet);
-      const isPegawai = !isSuperadminPlatform && !isOwnerWebsite && !isOwnerBisnis && !isOwnerOutlet;
+      const isPegawai = !isPlatformAdmin && !isOwnerBisnis && !isOwnerOutlet;
 
       navigate(isPegawai ? '/pos' : '/');
     } catch (err) {

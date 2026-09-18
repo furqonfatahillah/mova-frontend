@@ -66,50 +66,58 @@ export default function Layout() {
         ],
       },
     ] : []),
-    {
-      label: 'Master Data',
-      items: [
-        { to: '/bahan', label: 'Master Bahan', icon: Package },
-        { to: '/menu', label: 'Master Menu', icon: UtensilsCrossed },
-        ...(!isPegawai ? [
-          { to: '/outlet', label: 'Cabang Outlet', icon: Store }
-        ] : []),
-        ...(!isPegawai ? [
+    ...(!isPegawai ? [
+      {
+        label: 'Master Data',
+        items: [
+          { to: '/bahan', label: 'Master Bahan', icon: Package },
+          { to: '/menu', label: 'Master Menu', icon: UtensilsCrossed },
+          ...(isOwnerBisnis || isPlatformAdmin ? [
+            { to: '/outlet', label: 'Cabang Outlet', icon: Store },
+          ] : []),
           {
             to: '/users',
             label: isOwnerOutlet ? 'Kelola Pegawai' : 'Kelola Pengguna',
             icon: Users,
-            isUserMgmt: true
-          }
-        ] : []),
-      ],
-    },
+            isUserMgmt: true,
+          },
+        ],
+      },
+    ] : []),
     {
-      label: 'Operasional',
+      label: isPegawai ? 'Operasional Kasir & Dapur' : 'Operasional',
       items: [
         { to: '/pos', label: 'POS / Transaksi', icon: ShoppingCart },
         { to: '/urgent-notes', label: 'Nota Urgent (Bahan)', icon: AlertOctagon },
         { to: '/shift', label: 'Kelola Shift', icon: Clock },
         { to: '/batch-prep', label: 'Produksi Batch (Prep)', icon: ChefHat },
         { to: '/waste', label: 'Bahan Terbuang (Waste)', icon: Trash2 },
-        { to: '/diskon', label: 'Promo & Diskon', icon: Percent },
+        ...(isOwnerBisnis || isPlatformAdmin ? [
+          { to: '/diskon', label: 'Promo & Diskon', icon: Percent },
+        ] : []),
         { to: '/transfer', label: 'Transfer Stok / Barang', icon: Send },
         { to: '/kartu-stok', label: 'Kartu Stok', icon: ScrollText },
-        { to: '/movement', label: 'Riwayat Mutasi', icon: ArrowUpDown },
-        { to: '/opname', label: 'Stock Opname', icon: ClipboardList },
-        { to: '/opex', label: 'Biaya Operasional (OPEX)', icon: Receipt },
+        ...(!isPegawai ? [
+          { to: '/movement', label: 'Riwayat Mutasi', icon: ArrowUpDown },
+          { to: '/opname', label: 'Stock Opname', icon: ClipboardList },
+          { to: '/opex', label: 'Biaya Operasional (OPEX)', icon: Receipt },
+        ] : []),
       ],
     },
     ...(!isPegawai ? [
       {
-        label: 'Analitik',
+        label: isOwnerOutlet ? 'Analitik Cabang' : 'Analitik',
         items: [
-          { to: '/profit-loss', label: 'Laba Rugi (P&L)', icon: Landmark },
-          { to: '/cash-flow', label: 'Arus Kas (Cash Flow)', icon: Wallet },
+          ...(isOwnerBisnis || isPlatformAdmin ? [
+            { to: '/profit-loss', label: 'Laba Rugi (P&L)', icon: Landmark },
+            { to: '/cash-flow', label: 'Arus Kas (Cash Flow)', icon: Wallet },
+          ] : []),
           { to: '/variance/bahan', label: 'Variance Bahan', icon: BarChart2 },
           { to: '/variance/menu', label: 'Variance Menu', icon: TrendingUp },
-          { to: '/profitability', label: 'Profitability', icon: DollarSign },
-          { to: '/root-cause', label: 'Root Cause', icon: AlertTriangle },
+          ...(isOwnerBisnis || isPlatformAdmin ? [
+            { to: '/profitability', label: 'Profitability', icon: DollarSign },
+            { to: '/root-cause', label: 'Root Cause', icon: AlertTriangle },
+          ] : []),
         ],
       },
     ] : []),
@@ -522,20 +530,24 @@ export default function Layout() {
               </div>
               <div>
                 <div style={{ fontWeight: 800, color: '#f87171', fontSize: 14 }}>
-                  🚫 Saldo Koin Transaksi Perusahaan Habis!
+                  {isPlatformAdmin
+                    ? `🚫 Saldo Koin Tenant ${currentBusiness?.name || userBusinessName} Habis!`
+                    : '🚫 Saldo Koin Transaksi Perusahaan Habis!'}
                 </div>
                 <div style={{ fontSize: 12, color: '#fca5a5', marginTop: 2 }}>
-                  Sisa koin perusahaan Anda tidak mencukupi untuk memproses nota transaksi baru di kasir. Silakan segera transfer pembayaran ke <strong>Pemilik Website</strong> untuk top-up koin.
+                  {isPlatformAdmin
+                    ? `Saldo koin bisnis penyewa ini telah habis. Sebagai Pemilik Platform, Anda dapat menambahkan koin sekarang agar kasir penyewa dapat bertransaksi.`
+                    : 'Sisa koin perusahaan Anda tidak mencukupi untuk memproses nota transaksi baru di kasir. Silakan segera hubungi Pemilik Website untuk top-up koin.'}
                 </div>
               </div>
             </div>
             <NavLink to="/coin-management" className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap', fontWeight: 700 }}>
-              Top Up Sekarang
+              {isPlatformAdmin ? '⚡ Top Up Koin Tenant' : 'Top Up Sekarang'}
             </NavLink>
           </div>
         )}
 
-        {/* Low Coins Alert Banner (<= 20 Transaksi) */}
+        {/* Low Coins Alert Banner */}
         {!isCoinOut && isCoinLow && (
           <div style={{
             background: 'linear-gradient(90deg, rgba(245, 158, 11, 0.18), rgba(217, 119, 6, 0.12))',
@@ -555,15 +567,19 @@ export default function Layout() {
               </div>
               <div>
                 <div style={{ fontWeight: 800, color: '#fbbf24', fontSize: 14 }}>
-                  ⚠️ Peringatan: Saldo Koin Menipis ({remainingTransactions} Nota Tersisa)
+                  {isPlatformAdmin
+                    ? `⚠️ Peringatan: Saldo Koin Tenant ${currentBusiness?.name || userBusinessName} Menipis (${remainingTransactions} Nota Tersisa)`
+                    : `⚠️ Peringatan: Saldo Koin Menipis (${remainingTransactions} Nota Tersisa)`}
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-                  Sisa koin perusahaan Anda tinggal <strong>{coinBalance} koin</strong> (hanya dapat digunakan untuk <strong>~{remainingTransactions} nota transaksi lagi</strong> di semua cabang). Segera transfer pembayaran ke <strong>Pemilik Website</strong> untuk top-up koin agar operasional kasir tidak terhenti.
+                  {isPlatformAdmin
+                    ? `Sisa koin bisnis penyewa ini tinggal ${coinBalance.toLocaleString()} koin (~${remainingTransactions.toLocaleString()} nota tersisa). Anda dapat melakukan top up koin untuk penyewa ini.`
+                    : <>Sisa koin perusahaan Anda tinggal <strong>{coinBalance.toLocaleString()} koin</strong> (hanya dapat digunakan untuk <strong>~{remainingTransactions.toLocaleString()} nota transaksi lagi</strong> di semua cabang). Segera hubungi <strong>Pemilik Website</strong> untuk top-up koin agar operasional kasir tidak terhenti.</>}
                 </div>
               </div>
             </div>
             <NavLink to="/coin-management" className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap', fontWeight: 700 }}>
-              Top Up Koin
+              {isPlatformAdmin ? '⚡ Top Up Koin Tenant' : 'Top Up Koin'}
             </NavLink>
           </div>
         )}
