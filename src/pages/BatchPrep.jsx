@@ -184,11 +184,16 @@ export default function BatchPrep() {
   // Sub-Recipe Editor
   function openSubRecipeEditor(recipeOrIngredient = null) {
     if (recipeOrIngredient && recipeOrIngredient.items) {
+      // Editing existing sub-recipe
+      const ing = recipeOrIngredient.ingredient;
       setSubRecipeModal({
+        id: recipeOrIngredient.id,
         ingredient_id: recipeOrIngredient.ingredient_id,
-        name: recipeOrIngredient.name,
+        name: ing?.name || recipeOrIngredient.name || '',
+        category: ing?.category || 'Bahan Olahan',
         output_qty: recipeOrIngredient.output_qty,
-        output_unit: recipeOrIngredient.output_unit,
+        output_unit: recipeOrIngredient.output_unit || ing?.unit_pakai || 'kg',
+        stok_min: ing?.current_stok_min ?? ing?.stok_min ?? 0,
         notes: recipeOrIngredient.notes || '',
         items: recipeOrIngredient.items.map(it => ({
           ingredient_id: it.ingredient_id,
@@ -198,23 +203,30 @@ export default function BatchPrep() {
         })),
       });
     } else if (recipeOrIngredient && recipeOrIngredient.id) {
+      // Semi-finished ingredient passed without existing recipe
       setSubRecipeModal({
+        id: null,
         ingredient_id: recipeOrIngredient.id,
-        name: `Standar Resep ${recipeOrIngredient.name}`,
+        name: recipeOrIngredient.name,
+        category: recipeOrIngredient.category || 'Bahan Olahan',
         output_qty: recipeOrIngredient.yield_qty || 1,
-        output_unit: recipeOrIngredient.yield_unit || recipeOrIngredient.unit_pakai || 'porsi',
+        output_unit: recipeOrIngredient.yield_unit || recipeOrIngredient.unit_pakai || 'kg',
+        stok_min: recipeOrIngredient.stok_min ?? 0,
         notes: '',
         items: [
           { ingredient_id: '', qty: 1, unit: 'gram', waste_std: 0 }
         ],
       });
     } else {
-      const firstIng = ingredients[0];
+      // Direct creation of a NEW Bahan Olahan
       setSubRecipeModal({
-        ingredient_id: firstIng ? firstIng.id : '',
-        name: firstIng ? `Standar Resep ${firstIng.name}` : '',
-        output_qty: firstIng?.yield_qty || 1,
-        output_unit: firstIng?.yield_unit || firstIng?.unit_pakai || 'porsi',
+        id: null,
+        ingredient_id: null,
+        name: '',
+        category: 'Bahan Olahan',
+        output_qty: 10,
+        output_unit: 'kg',
+        stok_min: 0,
         notes: '',
         items: [
           { ingredient_id: '', qty: 1, unit: 'gram', waste_std: 0 }
@@ -224,32 +236,33 @@ export default function BatchPrep() {
   }
 
   async function handleSaveSubRecipe() {
-    if (!subRecipeModal.ingredient_id) {
-      toast.error('Pilih bahan olahan target terlebih dahulu');
-      return;
-    }
-    if (!subRecipeModal.name) {
-      toast.error('Nama resep wajib diisi');
+    if (!subRecipeModal.name?.trim()) {
+      toast.error('Nama bahan olahan wajib diisi (Contoh: Ayam Marinasi)');
       return;
     }
     if (!subRecipeModal.output_qty || Number(subRecipeModal.output_qty) <= 0) {
-      toast.error('Output standar harus lebih besar dari 0');
+      toast.error('Hasil 1 batch standar harus lebih besar dari 0');
       return;
     }
-    const validItems = subRecipeModal.items.filter(i => i.ingredient_id && Number(i.qty) > 0);
+    if (!subRecipeModal.output_unit?.trim()) {
+      toast.error('Satuan output standar wajib diisi (Contoh: kg, porsi, liter)');
+      return;
+    }
+    const validItems = (subRecipeModal.items || []).filter(i => i.ingredient_id && Number(i.qty) > 0);
     if (validItems.length === 0) {
-      toast.error('Tambahkan minimal 1 bahan mentah');
+      toast.error('Tambahkan minimal 1 bahan mentah pendukung resep');
       return;
     }
 
     setSavingRecipe(true);
     try {
       const payload = {
-        ingredient_id: Number(subRecipeModal.ingredient_id),
-        name: subRecipeModal.name,
+        name: subRecipeModal.name.trim(),
+        category: subRecipeModal.category?.trim() || 'Bahan Olahan',
         output_qty: Number(subRecipeModal.output_qty),
-        output_unit: subRecipeModal.output_unit,
-        notes: subRecipeModal.notes,
+        output_unit: subRecipeModal.output_unit.trim(),
+        stok_min: Number(subRecipeModal.stok_min || 0),
+        notes: subRecipeModal.notes || '',
         items: validItems.map(it => ({
           ingredient_id: Number(it.ingredient_id),
           qty: Number(it.qty),
@@ -258,8 +271,12 @@ export default function BatchPrep() {
         })),
       };
 
+      if (subRecipeModal.ingredient_id) {
+        payload.ingredient_id = Number(subRecipeModal.ingredient_id);
+      }
+
       await api.post('/prep-recipes', payload);
-      toast.success('Resep olahan berhasil disimpan!');
+      toast.success(subRecipeModal.ingredient_id ? 'Resep bahan olahan berhasil diperbarui!' : 'Bahan olahan baru & resep berhasil didaftarkan!');
       setSubRecipeModal(null);
       fetchAllData();
     } catch (err) {
@@ -274,6 +291,26 @@ export default function BatchPrep() {
     if (!subRecipeModal?.ingredient_id) return ingredients;
     return ingredients.filter(i => Number(i.id) !== Number(subRecipeModal.ingredient_id));
   }, [ingredients, subRecipeModal?.ingredient_id]);
+
+  const estimatedCostData = useMemo(() => {
+    if (!subRecipeModal || !subRecipeModal.items) return { totalCost: 0, costPerUnit: 0 };
+    let total = 0;
+    for (const item of subRecipeModal.items) {
+      if (!item.ingredient_id || !item.qty) continue;
+      const ing = ingredients.find(i => Number(i.id) === Number(item.ingredient_id));
+      if (!ing) continue;
+      const konv = Math.max(Number(ing.konversi) || 1, 1);
+      const costPerPakai = (Number(ing.harga) || 0) / konv;
+      const isBeli = (item.unit && ing.unit_beli && item.unit.toLowerCase() === ing.unit_beli.toLowerCase());
+      const baseQty = Number(item.qty) || 0;
+      const qtyPakai = isBeli ? (baseQty * konv) : baseQty;
+      const wasteFactor = 1 + ((Number(item.waste_std) || 0) / 100);
+      total += (qtyPakai * costPerPakai * wasteFactor);
+    }
+    const outputQty = Number(subRecipeModal.output_qty) || 0;
+    const costPerUnit = outputQty > 0 ? (total / outputQty) : 0;
+    return { totalCost: Math.round(total), costPerUnit: Math.round(costPerUnit) };
+  }, [subRecipeModal, ingredients]);
 
   const filteredBatches = useMemo(() => {
     return batches.filter(b => {
@@ -300,6 +337,9 @@ export default function BatchPrep() {
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-secondary" onClick={fetchAllData}>
               <RefreshCw size={14} /> Refresh
+            </button>
+            <button className="btn btn-secondary" onClick={() => openSubRecipeEditor(null)}>
+              <Plus size={15} /> + Resep Olahan Baru
             </button>
             <button className="btn btn-primary" onClick={() => openCookModal()}>
               <Flame size={15} /> + Masak Batch Olahan
@@ -399,11 +439,20 @@ export default function BatchPrep() {
                 Buat resep bahan setengah jadi seperti Ayam Ungkep Marinasi, Sambal Matang, Saus Steak, atau Kaldu Bakso untuk mempercepat operasional dapur.
               </div>
               <button className="btn btn-primary" onClick={() => openSubRecipeEditor(null)}>
-                <Plus size={14} /> Buat Sub-Recipe Baru
+                <Plus size={14} /> Buat Bahan Olahan Baru
               </button>
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 16 }}>
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                  Formula bahan olahan dapur & standar pemotongan bahan mentah.
+                </div>
+                <button className="btn btn-primary btn-sm" onClick={() => openSubRecipeEditor(null)}>
+                  <Plus size={14} /> + Buat Bahan Olahan Baru
+                </button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 16 }}>
               {recipes.map(recipe => {
                 const ing = recipe.ingredient;
                 const currentStock = ing?.current_stock ?? 0;
@@ -548,6 +597,7 @@ export default function BatchPrep() {
                   </div>
                 );
               })}
+            </div>
             </div>
           )}
         </div>
@@ -1103,23 +1153,27 @@ export default function BatchPrep() {
         </div>
       )}
 
-      {/* MODAL: SUB-RECIPE EDITOR */}
+      {/* MODAL: BUAT / EDIT RESEP BAHAN OLAHAN */}
       {subRecipeModal && (
         <div className="modal-backdrop" style={{
           position: 'fixed', inset: 0, zIndex: 999, background: 'rgba(0,0,0,0.75)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16
         }}>
           <div className="card" style={{
-            width: '100%', maxWidth: 700, maxHeight: '90vh', overflowY: 'auto',
-            background: '#0e1329', border: '1px solid rgba(139, 92, 246, 0.3)'
+            width: '100%', maxWidth: 740, maxHeight: '90vh', overflowY: 'auto',
+            background: '#0e1329', border: '1px solid rgba(139, 92, 246, 0.3)',
+            boxShadow: '0 20px 50px rgba(0, 0, 0, 0.6)'
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
               <div>
-                <h3 style={{ fontSize: 16, fontWeight: 700, color: '#ffffff', margin: 0 }}>
-                  Atur Resep Komposisi Olahan (Sub-Recipe)
+                <h3 style={{ fontSize: 16, fontWeight: 700, color: '#ffffff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <ChefHat size={18} style={{ color: 'var(--accent-bright)' }} />
+                  {subRecipeModal.ingredient_id ? `Edit Resep: ${subRecipeModal.name}` : 'Buat Bahan Olahan Baru (Sub-Recipe)'}
                 </h3>
-                <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
-                  Tentukan bahan mentah standar yang dibutuhkan untuk memproduksi 1 batch
+                <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+                  {subRecipeModal.ingredient_id
+                    ? 'Perbarui standar komposisi bahan mentah dan kuantitas hasil produksi'
+                    : 'Bahan olahan baru (misal: Ayam Marinasi) akan otomatis dibuat dan tersimpan di Master Bahan'}
                 </div>
               </div>
               <button className="btn btn-ghost btn-icon" onClick={() => setSubRecipeModal(null)}>
@@ -1128,94 +1182,141 @@ export default function BatchPrep() {
             </div>
 
             <div style={{ padding: 20 }}>
-              {/* Target Ingredient Selection */}
-              <div style={{ marginBottom: 14 }}>
-                <label className="form-label" style={{ fontSize: 12, color: 'var(--accent-bright)', fontWeight: 700 }}>
-                  🧪 Pilih Bahan Target Olahan (Hasil Produksi):
-                </label>
-                <select
-                  className="form-control"
-                  style={{ fontSize: 13, fontWeight: 700, borderColor: 'var(--accent)' }}
-                  value={subRecipeModal.ingredient_id || ''}
-                  onChange={e => {
-                    const chosenId = Number(e.target.value);
-                    const chosenIng = ingredients.find(i => i.id === chosenId);
-                    setSubRecipeModal(p => ({
-                      ...p,
-                      ingredient_id: chosenId,
-                      name: p.name && !p.name.startsWith('Standar Resep') ? p.name : (chosenIng ? `Standar Resep ${chosenIng.name}` : ''),
-                      output_unit: chosenIng?.yield_unit || chosenIng?.unit_pakai || p.output_unit || 'porsi',
-                      output_qty: chosenIng?.yield_qty || p.output_qty || 1
-                    }));
-                  }}
-                  required
-                >
-                  <option value="">-- Pilih Bahan Baku Yang Akan Diolah --</option>
-                  {ingredients.map(ing => (
-                    <option key={ing.id} value={ing.id} style={{ background: '#11162d', color: '#ffffff' }}>
-                      {ing.code ? `[${ing.code}] ` : ''}{ing.name} ({ing.type === 'SEMI_FINISHED' ? 'Bahan Olahan' : 'Bahan Mentah'}) — Satuan: {ing.unit_pakai || 'porsi'}
-                    </option>
-                  ))}
-                </select>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, display: 'block' }}>
-                  *Bahan yang dipilih otomatis dikategorikan sebagai Bahan Olahan (Sub-Recipe) di sistem.
-                </span>
-              </div>
+              {/* Petunjuk info pembuat olahan */}
+              {!subRecipeModal.ingredient_id && (
+                <div style={{
+                  padding: '10px 14px',
+                  borderRadius: 8,
+                  background: 'rgba(99, 102, 241, 0.12)',
+                  border: '1px solid rgba(99, 102, 241, 0.25)',
+                  fontSize: 12,
+                  color: '#c7d2fe',
+                  marginBottom: 16,
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 10
+                }}>
+                  <Sparkles size={16} style={{ color: '#818cf8', flexShrink: 0, marginTop: 2 }} />
+                  <div>
+                    <strong>Bahan Olahan Mandiri:</strong> Masukkan nama bahan olahan baru yang ingin dibuat (contoh: <em>Ayam Marinasi</em>).
+                    Sistem langsung mendaftarkannya sebagai item baru bertipe <strong>Bahan Olahan</strong> di Master Bahan tanpa menimpa bahan mentah Anda.
+                  </div>
+                </div>
+              )}
 
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginBottom: 14 }}>
+              {/* Baris 1: Nama & Kategori */}
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12, marginBottom: 14 }}>
                 <div>
-                  <label className="form-label" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Nama Sub-Recipe:</label>
+                  <label className="form-label" style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent-bright)' }}>
+                    Nama Bahan Olahan: *
+                  </label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    style={{ fontSize: 13, fontWeight: 600 }}
+                    placeholder="Contoh: Ayam Marinasi / Saus Keju Racik / Sambal Terasi"
+                    value={subRecipeModal.name}
+                    onChange={e => setSubRecipeModal(p => ({ ...p, name: e.target.value }))}
+                    autoFocus={!subRecipeModal.ingredient_id}
+                  />
+                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 3 }}>
+                    Nama bahan olahan yang akan tampil di Master Bahan & Resep Menu POS
+                  </div>
+                </div>
+                <div>
+                  <label className="form-label" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                    Kategori:
+                  </label>
                   <input
                     type="text"
                     className="form-control"
                     style={{ fontSize: 12.5 }}
-                    placeholder="Contoh: Batch Ungkep 10kg Ayam"
-                    value={subRecipeModal.name}
-                    onChange={e => setSubRecipeModal(p => ({ ...p, name: e.target.value }))}
+                    placeholder="Bahan Olahan"
+                    value={subRecipeModal.category}
+                    onChange={e => setSubRecipeModal(p => ({ ...p, category: e.target.value }))}
                   />
+                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 3 }}>
+                    Pengelompokan kategori bahan
+                  </div>
                 </div>
+              </div>
+
+              {/* Baris 2: Output Standar 1 Batch & Satuan & Stok Min */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: 12, marginBottom: 14 }}>
                 <div>
-                  <label className="form-label" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Output Standar 1 Batch:</label>
+                  <label className="form-label" style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>
+                    Hasil 1 Batch Standar: *
+                  </label>
                   <input
                     type="number"
                     step="any"
-                    min="0.1"
+                    min="0.001"
                     className="form-control mono text-center"
-                    style={{ fontSize: 13, fontWeight: 600 }}
+                    style={{ fontSize: 13, fontWeight: 700 }}
                     value={subRecipeModal.output_qty}
                     onChange={e => setSubRecipeModal(p => ({ ...p, output_qty: e.target.value }))}
                   />
+                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 3 }}>
+                    Kuantitas hasil produksi 1 kali masak
+                  </div>
                 </div>
                 <div>
-                  <label className="form-label" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Satuan Output:</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    style={{ fontSize: 12.5 }}
-                    placeholder="potong / kg / porsi"
+                  <label className="form-label" style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>
+                    Satuan Output: *
+                  </label>
+                  <UnitSelect
                     value={subRecipeModal.output_unit}
-                    onChange={e => setSubRecipeModal(p => ({ ...p, output_unit: e.target.value }))}
+                    options={SATUAN_PAKAI_OPTIONS}
+                    style={{ fontSize: 12.5 }}
+                    onChange={val => setSubRecipeModal(p => ({ ...p, output_unit: val }))}
                   />
+                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 3 }}>
+                    Satuan stok olahan (kg, porsi, liter)
+                  </div>
+                </div>
+                <div>
+                  <label className="form-label" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                    Alert Stok Minimum:
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    className="form-control mono text-center"
+                    style={{ fontSize: 12.5 }}
+                    value={subRecipeModal.stok_min}
+                    onChange={e => setSubRecipeModal(p => ({ ...p, stok_min: e.target.value }))}
+                  />
+                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 3 }}>
+                    Peringatan jika sisa stok &le; angka ini
+                  </div>
                 </div>
               </div>
 
-              {/* SOP Recipe Notes */}
+              {/* Baris 3: SOP Petunjuk Racik Dapur */}
               <div style={{ marginBottom: 16 }}>
-                <label className="form-label" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Petunjuk SOP Racik / Masak Dapur (Opsional):</label>
+                <label className="form-label" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                  Petunjuk SOP Racik / Masak Dapur (Opsional):
+                </label>
                 <textarea
                   className="form-control"
                   rows={2}
                   style={{ fontSize: 12 }}
-                  placeholder="Contoh instruksi marinasi, durasi merebus, standar api..."
+                  placeholder="Contoh: Marinasi daging minimal 2 jam dalam chiller sebelum digoreng..."
                   value={subRecipeModal.notes}
                   onChange={e => setSubRecipeModal(p => ({ ...p, notes: e.target.value }))}
                 />
               </div>
 
-              {/* Items Table */}
+              {/* Baris 4: Komposisi Bahan Mentah */}
               <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#ffffff' }}>
-                  Komposisi Bahan Mentah:
+                <div>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#ffffff' }}>
+                    Komposisi Bahan Mentah Yang Digunakan:
+                  </span>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    Bahan-bahan mentah di bawah akan otomatis dipotong saat dapur memproses 1 batch olahan ini
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -1231,15 +1332,15 @@ export default function BatchPrep() {
                 </button>
               </div>
 
-              <div className="table-wrap">
+              <div className="table-wrap mb-3">
                 <table style={{ fontSize: 12 }}>
                   <thead>
                     <tr>
-                      <th style={{ minWidth: 200 }}>Bahan Mentah</th>
-                      <th style={{ width: 100 }}>Kuantitas</th>
+                      <th style={{ minWidth: 220 }}>Bahan Mentah</th>
+                      <th style={{ width: 110 }}>Kuantitas</th>
                       <th style={{ width: 110 }}>Satuan</th>
                       <th style={{ width: 90 }}>Waste %</th>
-                      <th style={{ width: 40 }} className="center">Hapus</th>
+                      <th style={{ width: 40 }} className="center">Aksi</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1267,7 +1368,7 @@ export default function BatchPrep() {
                             <option value="">-- Pilih Bahan Mentah --</option>
                             {rawIngredients.map(ing => (
                               <option key={ing.id} value={ing.id}>
-                                {ing.code} - {ing.name} ({rupiah(ing.harga / (ing.konversi || 1))}/{ing.unit_pakai})
+                                {ing.code ? `[${ing.code}] ` : ''}{ing.name} ({rupiah(ing.harga / (ing.konversi || 1))}/{ing.unit_pakai})
                               </option>
                             ))}
                           </select>
@@ -1276,7 +1377,7 @@ export default function BatchPrep() {
                           <input
                             type="number"
                             step="any"
-                            min="0.001"
+                            min="0.0001"
                             className="form-control mono right"
                             style={{ padding: '5px 8px', fontSize: 12 }}
                             value={item.qty}
@@ -1344,6 +1445,37 @@ export default function BatchPrep() {
                   </tbody>
                 </table>
               </div>
+
+              {/* Kalkulasi HPP Otomatis Banner */}
+              <div style={{
+                padding: '12px 16px',
+                borderRadius: 8,
+                background: 'linear-gradient(135deg, rgba(30, 58, 138, 0.25) 0%, rgba(17, 24, 39, 0.6) 100%)',
+                border: '1px solid rgba(59, 130, 246, 0.3)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: 12
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Calculator size={20} style={{ color: '#60a5fa' }} />
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Kalkulasi Biaya Bahan Mentah (1 Batch)</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: '#ffffff' }}>
+                      {rupiah(estimatedCostData.totalCost)}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                    Estimasi HPP per {subRecipeModal.output_unit || 'satuan'}:
+                  </div>
+                  <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--accent-bright)' }}>
+                    {rupiah(estimatedCostData.costPerUnit)} <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)' }}>/ {subRecipeModal.output_unit || 'unit'}</span>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
@@ -1361,7 +1493,12 @@ export default function BatchPrep() {
                 onClick={handleSaveSubRecipe}
                 disabled={savingRecipe}
               >
-                {savingRecipe ? 'Menyimpan...' : <><Check size={14} /> Simpan Sub-Recipe</>}
+                {savingRecipe ? 'Menyimpan...' : (
+                  <>
+                    <Check size={14} />
+                    {subRecipeModal.ingredient_id ? 'Simpan Resep' : 'Buat Bahan Olahan & Resep'}
+                  </>
+                )}
               </button>
             </div>
           </div>
