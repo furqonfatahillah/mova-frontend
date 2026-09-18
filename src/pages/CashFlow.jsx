@@ -6,7 +6,7 @@ import {
   HelpCircle, Store, Edit3, Trash, Info, Package, Landmark, Flame
 } from 'lucide-react';
 import api from '../api/client';
-import { rupiah, num, pct, LoadingState, PageHeader } from '../components/ui';
+import { rupiah, num, pct, LoadingState, PageHeader, PeriodPicker } from '../components/ui';
 import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
@@ -331,51 +331,16 @@ export default function CashFlow() {
           border: '1px solid rgba(165, 180, 252, 0.12)',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Wallet size={15} /> Periode Kas:
-          </span>
-          <input
-            type="date"
-            className="form-control"
-            style={{ width: 'auto', fontSize: 13, padding: '5px 10px', height: 34 }}
-            value={dateFrom}
-            onChange={e => setDateFrom(e.target.value)}
-          />
-          <span style={{ color: 'var(--text-muted)' }}>—</span>
-          <input
-            type="date"
-            className="form-control"
-            style={{ width: 'auto', fontSize: 13, padding: '5px 10px', height: 34 }}
-            value={dateTo}
-            onChange={e => setDateTo(e.target.value)}
-          />
-        </div>
-
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {[
-            { id: 'today', label: 'Hari Ini' },
-            { id: '7days', label: '7 Hari Terakhir' },
-            { id: 'this_month', label: 'Bulan Ini' },
-            { id: 'last_month', label: 'Bulan Lalu' },
-            { id: 'this_year', label: 'Tahun Ini' },
-          ].map(p => (
-            <button
-              key={p.id}
-              className="btn btn-ghost btn-sm"
-              style={{
-                fontSize: 12,
-                padding: '4px 10px',
-                borderRadius: 6,
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                background: 'rgba(255, 255, 255, 0.03)',
-              }}
-              onClick={() => applyPreset(p.id)}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
+        <PeriodPicker
+          from={dateFrom}
+          to={dateTo}
+          onChange={({ from, to }) => {
+            setDateFrom(from);
+            setDateTo(to);
+          }}
+          label="Periode Kas"
+          align="left"
+        />
       </div>
 
       {/* 2. Top 4 Cash Flow KPI Cards */}

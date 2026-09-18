@@ -5,7 +5,7 @@ import {
   RefreshCw, Layers, Calendar, Flame, ChevronRight, CheckCircle2
 } from 'lucide-react';
 import api from '../api/client';
-import { rupiah, num, fmtQtyVal, LoadingState, PageHeader, AuditInfo, UnitSelect, SATUAN_PAKAI_OPTIONS } from '../components/ui';
+import { rupiah, num, fmtQtyVal, LoadingState, PageHeader, AuditInfo, UnitSelect, SATUAN_PAKAI_OPTIONS, PeriodPicker } from '../components/ui';
 import { getTodayStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
@@ -570,24 +570,13 @@ export default function BatchPrep() {
               />
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Periode:</span>
-              <input
-                type="date"
-                className="form-control"
-                style={{ fontSize: 12, padding: '5px 10px', width: 130 }}
-                value={historyFilter.from}
-                onChange={e => setHistoryFilter(p => ({ ...p, from: e.target.value }))}
-              />
-              <span style={{ color: 'var(--text-muted)' }}>—</span>
-              <input
-                type="date"
-                className="form-control"
-                style={{ fontSize: 12, padding: '5px 10px', width: 130 }}
-                value={historyFilter.to}
-                onChange={e => setHistoryFilter(p => ({ ...p, to: e.target.value }))}
-              />
-            </div>
+            <PeriodPicker
+              from={historyFilter.from}
+              to={historyFilter.to}
+              onChange={({ from, to }) => setHistoryFilter(p => ({ ...p, from, to }))}
+              label="Periode"
+              align="left"
+            />
 
             {(historyFilter.search || historyFilter.from || historyFilter.to) && (
               <button

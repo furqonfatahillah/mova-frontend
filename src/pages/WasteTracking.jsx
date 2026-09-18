@@ -6,7 +6,7 @@ import {
   X, RefreshCw, AlertCircle, ArrowDownRight, Layers, FileText
 } from 'lucide-react';
 import api from '../api/client';
-import { num, rupiah, LoadingState, PageHeader, AuditInfo } from '../components/ui';
+import { num, rupiah, LoadingState, PageHeader, AuditInfo, PeriodPicker } from '../components/ui';
 import { getTodayStr, getMonthStartStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
@@ -296,27 +296,15 @@ export default function WasteTracking() {
       {/* Period & Filter Bar */}
       <div className="card" style={{ padding: '14px 18px', marginBottom: 20 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
-              <Calendar size={14} style={{ color: 'var(--accent-bright)' }} />
-              <span>Periode:</span>
-            </div>
-            <input
-              type="date"
-              className="form-control"
-              value={dateFrom}
-              onChange={e => setDateFrom(e.target.value)}
-              style={{ padding: '5px 10px', fontSize: 12, width: 140 }}
-            />
-            <span style={{ color: 'var(--text-muted)' }}>s/d</span>
-            <input
-              type="date"
-              className="form-control"
-              value={dateTo}
-              onChange={e => setDateTo(e.target.value)}
-              style={{ padding: '5px 10px', fontSize: 12, width: 140 }}
-            />
-          </div>
+          <PeriodPicker
+            from={dateFrom}
+            to={dateTo}
+            onChange={({ from, to }) => {
+              setDateFrom(from);
+              setDateTo(to);
+            }}
+            align="left"
+          />
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>

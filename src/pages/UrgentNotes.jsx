@@ -5,7 +5,8 @@ import {
   Store, UtensilsCrossed, Sparkles, ChevronRight, Eye, Layers
 } from 'lucide-react';
 import api from '../api/client';
-import { num, LoadingState, PageHeader } from '../components/ui';
+import { num, LoadingState, PageHeader, PeriodPicker } from '../components/ui';
+import { getMonthStartStr, getTodayStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 
@@ -26,6 +27,10 @@ export default function UrgentNotes() {
   // Filters
   const [statusFilter, setStatusFilter] = useState('PENDING'); // 'PENDING' | 'RESOLVED' | 'ALL'
   const [searchQuery, setSearchQuery] = useState('');
+  const [period, setPeriod] = useState(() => ({
+    from: getMonthStartStr(),
+    to: getTodayStr(),
+  }));
   const [selectedOutlet, setSelectedOutlet] = useState(() => {
     if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
       return String(activeOutletId);
@@ -61,7 +66,7 @@ export default function UrgentNotes() {
 
   useEffect(() => {
     fetchData();
-  }, [selectedOutlet, statusFilter]);
+  }, [selectedOutlet, statusFilter, period]);
 
   async function fetchData() {
     setLoading(true);
@@ -69,10 +74,16 @@ export default function UrgentNotes() {
       const params = {};
       if (selectedOutlet) params.outlet_id = selectedOutlet;
       if (statusFilter !== 'ALL') params.status = statusFilter;
+      if (period.from) params.from = period.from;
+      if (period.to) params.to = period.to;
 
       const [notesRes, sumRes] = await Promise.all([
         api.get('/urgent-notes', { params }),
-        api.get('/urgent-notes/summary', { params: selectedOutlet ? { outlet_id: selectedOutlet } : {} }),
+        api.get('/urgent-notes/summary', { params: {
+          ...(selectedOutlet ? { outlet_id: selectedOutlet } : {}),
+          ...(period.from ? { from: period.from } : {}),
+          ...(period.to ? { to: period.to } : {})
+        } }),
       ]);
 
       const items = notesRes.data.data ? notesRes.data.data : (Array.isArray(notesRes.data) ? notesRes.data : []);
@@ -386,8 +397,16 @@ export default function UrgentNotes() {
           </button>
         </div>
 
-        {/* Outlet & Search Filter */}
+        {/* Outlet, Period & Search Filter */}
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <PeriodPicker
+            from={period.from}
+            to={period.to}
+            onChange={setPeriod}
+            label="Periode Nota"
+            align="right"
+          />
+
           {/* Outlet Select */}
           {outlets && outlets.length > 1 && (
             <select

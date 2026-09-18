@@ -6,7 +6,8 @@ import {
   Square, Settings, UserCheck, Search, Info
 } from 'lucide-react';
 import api from '../api/client';
-import { rupiah, num, PageHeader, LoadingState, MiniCard } from '../components/ui';
+import { rupiah, num, PageHeader, LoadingState, MiniCard, PeriodPicker } from '../components/ui';
+import { getMonthStartStr, getTodayStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 
@@ -47,6 +48,10 @@ export default function ShiftManagement() {
 
   // Filter
   const [filterStatus, setFilterStatus] = useState('');
+  const [period, setPeriod] = useState(() => ({
+    from: getMonthStartStr(),
+    to: getTodayStr(),
+  }));
 
   // Modals
   const [showOpenModal, setShowOpenModal] = useState(false);
@@ -104,7 +109,7 @@ export default function ShiftManagement() {
       fetchSchedules(selectedOutlet);
       fetchCompanyEmployees();
     }
-  }, [filterStatus, selectedOutlet, activeTab]);
+  }, [filterStatus, selectedOutlet, activeTab, period]);
 
   async function fetchData() {
     setLoading(true);
@@ -116,6 +121,8 @@ export default function ShiftManagement() {
           params: {
             status: filterStatus || undefined,
             outlet_id: targetOutlet || undefined,
+            from: period.from || undefined,
+            to: period.to || undefined,
           }
         }),
       ]);
@@ -599,18 +606,27 @@ export default function ShiftManagement() {
             <h3 style={{ fontSize: 16, fontWeight: 700, color: '#ffffff' }}>Riwayat Sesi Shift</h3>
             <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 2 }}>Daftar shift yang telah dibuka dan ditutup beserta rekonsiliasi kas dan stok.</p>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Status:</span>
-            <select
-              className="form-control"
-              style={{ width: 140, padding: '6px 10px', fontSize: 12 }}
-              value={filterStatus}
-              onChange={e => setFilterStatus(e.target.value)}
-            >
-              <option value="">Semua Status</option>
-              <option value="OPEN">Aktif (Open)</option>
-              <option value="CLOSED">Selesai (Closed)</option>
-            </select>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <PeriodPicker
+              from={period.from}
+              to={period.to}
+              onChange={setPeriod}
+              label="Periode Shift"
+              align="right"
+            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Status:</span>
+              <select
+                className="form-control"
+                style={{ width: 140, padding: '6px 10px', fontSize: 12 }}
+                value={filterStatus}
+                onChange={e => setFilterStatus(e.target.value)}
+              >
+                <option value="">Semua Status</option>
+                <option value="OPEN">Aktif (Open)</option>
+                <option value="CLOSED">Selesai (Closed)</option>
+              </select>
+            </div>
           </div>
         </div>
 

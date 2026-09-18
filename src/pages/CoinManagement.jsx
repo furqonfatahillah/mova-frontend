@@ -7,7 +7,8 @@ import {
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
-import { PageHeader, LoadingState, rupiah, num, formatDateTime } from '../components/ui';
+import { PageHeader, LoadingState, rupiah, num, formatDateTime, PeriodPicker } from '../components/ui';
+import { getMonthStartStr, getTodayStr } from '../utils/date';
 import { useOutlet } from '../context/OutletContext';
 
 /**
@@ -115,6 +116,10 @@ export default function CoinManagement() {
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'LOW' | 'OUT' | 'SAFE'
   const [historyBusinessFilter, setHistoryBusinessFilter] = useState('');
   const [adminViewMode, setAdminViewMode] = useState('grouped'); // 'grouped' | 'flat'
+  const [historyPeriod, setHistoryPeriod] = useState(() => ({
+    from: getMonthStartStr(),
+    to: getTodayStr(),
+  }));
 
   // Modals
   const [topUpModal, setTopUpModal] = useState({
@@ -155,10 +160,20 @@ export default function CoinManagement() {
     if (isPlatformAdmin && activeTab === 'history') {
       fetchHistory();
     }
-  }, [isPlatformAdmin, activeTab, historyBusinessFilter]);
+  }, [isPlatformAdmin, activeTab, historyBusinessFilter, historyPeriod]);
 
   // --- MEMO HOOKS (Always top level, NEVER inside if statements) ---
-  const mutations = useMemo(() => myCoinsData?.recent_mutations || [], [myCoinsData]);
+  const filteredTenantMutations = useMemo(() => {
+    const raw = myCoinsData?.recent_mutations || [];
+    if (!historyPeriod.from && !historyPeriod.to) return raw;
+    return raw.filter(m => {
+      const d = (m.created_at || '').substring(0, 10);
+      if (historyPeriod.from && d < historyPeriod.from) return false;
+      if (historyPeriod.to && d > historyPeriod.to) return false;
+      return true;
+    });
+  }, [myCoinsData, historyPeriod]);
+  const mutations = filteredTenantMutations;
   const groupedMutations = useMemo(() => groupMutationsByDate(mutations), [mutations]);
 
   const safeHistoryList = useMemo(() => {
@@ -211,7 +226,10 @@ export default function CoinManagement() {
   async function fetchHistory() {
     setLoadingHistory(true);
     try {
-      const params = historyBusinessFilter ? { business_id: historyBusinessFilter } : {};
+      const params = {};
+      if (historyBusinessFilter) params.business_id = historyBusinessFilter;
+      if (historyPeriod.from) params.date_from = historyPeriod.from;
+      if (historyPeriod.to) params.date_to = historyPeriod.to;
       const res = await api.get('/platform/coins/history', { params });
       const rawData = res.data;
       const list = Array.isArray(rawData) ? rawData : (rawData?.data || []);
@@ -480,9 +498,13 @@ export default function CoinManagement() {
                 Riwayat Mutasi Koin per Tanggal ({groupedMutations.length} Hari · {mutations.length} Transaksi)
               </h3>
             </div>
-            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-              💡 Klik baris tanggal untuk melihat rincian transaksi & operator pembuat
-            </span>
+            <PeriodPicker
+              from={historyPeriod.from}
+              to={historyPeriod.to}
+              onChange={setHistoryPeriod}
+              label="Periode"
+              align="right"
+            />
           </div>
 
           {groupedMutations.length === 0 ? (
@@ -930,11 +952,18 @@ export default function CoinManagement() {
       {activeTab === 'history' && (
         <>
           <div className="card" style={{ padding: 14, marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>Filter Perusahaan:</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>Filter:</span>
+              <PeriodPicker
+                from={historyPeriod.from}
+                to={historyPeriod.to}
+                onChange={setHistoryPeriod}
+                label="Periode"
+                align="left"
+              />
               <select
                 className="form-control"
-                style={{ minWidth: 220 }}
+                style={{ minWidth: 200 }}
                 value={historyBusinessFilter}
                 onChange={(e) => setHistoryBusinessFilter(e.target.value)}
               >
