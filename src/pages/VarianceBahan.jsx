@@ -35,9 +35,9 @@ export default function VarianceBahan() {
     finally { setLoading(false); }
   }
 
-  function handleExportExcel() {
+  async function handleExportExcel() {
     try {
-      const fname = exportVarianceBahanToExcel({
+      const fname = await exportVarianceBahanToExcel({
         varData,
         period,
         outletName,

@@ -32,9 +32,9 @@ export default function VarianceMenu() {
     finally { setLoading(false); }
   }
 
-  function handleExportExcel() {
+  async function handleExportExcel() {
     try {
-      const fname = exportVarianceMenuToExcel({
+      const fname = await exportVarianceMenuToExcel({
         menuData,
         period,
         outletName,

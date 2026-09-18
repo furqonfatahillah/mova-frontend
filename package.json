@@ -13,12 +13,11 @@
     "vite": "^8.2.2"
   },
   "dependencies": {
-    "@tanstack/react-query": "^5.102.8",
     "axios": "^1.20.0",
     "lucide-react": "^1.41.0",
     "react-hot-toast": "^2.6.0",
     "react-router-dom": "^7.18.3",
-    "recharts": "^3.10.1",
     "xlsx": "^0.18.5"
   }
 }
+

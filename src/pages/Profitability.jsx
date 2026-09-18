@@ -32,9 +32,9 @@ export default function Profitability() {
     finally { setLoading(false); }
   }
 
-  function handleExportExcel() {
+  async function handleExportExcel() {
     try {
-      const fname = exportProfitabilityToExcel({
+      const fname = await exportProfitabilityToExcel({
         data,
         period,
         outletName,

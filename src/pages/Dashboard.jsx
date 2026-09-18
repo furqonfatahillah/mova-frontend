@@ -54,9 +54,9 @@ export default function Dashboard() {
     }
   }
 
-  function handleExportExcel() {
+  async function handleExportExcel() {
     try {
-      const fname = exportDashboardToExcel({
+      const fname = await exportDashboardToExcel({
         data,
         varData,
         varMenuData,

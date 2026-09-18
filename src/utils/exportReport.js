@@ -1,4 +1,10 @@
-import * as XLSX from 'xlsx';
+/**
+ * Dynamic loader for SheetJS (xlsx) so the heavy library is ONLY loaded
+ * when the user clicks the "Export Excel" button.
+ */
+async function getXLSX() {
+  return await import('xlsx');
+}
 
 /**
  * Helper to auto-fit column widths in SheetJS
@@ -17,7 +23,8 @@ function fitColumns(rows) {
 /**
  * 1. Export Dashboard Cost Control & Analytics to Excel
  */
-export function exportDashboardToExcel({ data, varData = [], varMenuData = [], period, outletName = 'Semua Cabang', businessName = 'MOVA POS', userName = 'Administrator' }) {
+export async function exportDashboardToExcel({ data, varData = [], varMenuData = [], period, outletName = 'Semua Cabang', businessName = 'MOVA POS', userName = 'Administrator' }) {
+  const XLSX = await getXLSX();
   const wb = XLSX.utils.book_new();
   const dateStr = new Date().toLocaleString('id-ID');
 
@@ -151,7 +158,8 @@ export function exportDashboardToExcel({ data, varData = [], varMenuData = [], p
 /**
  * 2. Export Detailed Ingredient Variance Audit to Excel
  */
-export function exportVarianceBahanToExcel({ varData = [], period, outletName = 'Semua Cabang', businessName = 'MOVA POS', userName = 'Administrator' }) {
+export async function exportVarianceBahanToExcel({ varData = [], period, outletName = 'Semua Cabang', businessName = 'MOVA POS', userName = 'Administrator' }) {
+  const XLSX = await getXLSX();
   const wb = XLSX.utils.book_new();
   const dateStr = new Date().toLocaleString('id-ID');
 
@@ -255,7 +263,8 @@ export function exportVarianceBahanToExcel({ varData = [], period, outletName = 
 /**
  * 3. Export Menu Profitability & HPP to Excel
  */
-export function exportProfitabilityToExcel({ data = [], period, outletName = 'Semua Cabang', businessName = 'MOVA POS', userName = 'Administrator' }) {
+export async function exportProfitabilityToExcel({ data = [], period, outletName = 'Semua Cabang', businessName = 'MOVA POS', userName = 'Administrator' }) {
+  const XLSX = await getXLSX();
   const wb = XLSX.utils.book_new();
   const dateStr = new Date().toLocaleString('id-ID');
 
@@ -313,7 +322,8 @@ export function exportProfitabilityToExcel({ data = [], period, outletName = 'Se
 /**
  * 4. Export Menu Variance Ranking to Excel
  */
-export function exportVarianceMenuToExcel({ menuData = [], period, outletName = 'Semua Cabang', businessName = 'MOVA POS', userName = 'Administrator' }) {
+export async function exportVarianceMenuToExcel({ menuData = [], period, outletName = 'Semua Cabang', businessName = 'MOVA POS', userName = 'Administrator' }) {
+  const XLSX = await getXLSX();
   const wb = XLSX.utils.book_new();
   const dateStr = new Date().toLocaleString('id-ID');
   const total = menuData.reduce((s, r) => s + (r.variance_value || 0), 0);
