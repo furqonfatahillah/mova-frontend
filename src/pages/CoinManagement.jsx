@@ -103,6 +103,7 @@ export default function CoinManagement() {
   const { isSuperadminPlatform, isOwnerWebsite, refreshCoins } = useOutlet();
   const isPlatformAdmin = isSuperadminPlatform || isOwnerWebsite;
 
+  // --- STATE HOOKS (Always top level) ---
   const [dataOverview, setDataOverview] = useState(null);
   const [historyList, setHistoryList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -138,12 +139,63 @@ export default function CoinManagement() {
     group: null,
   });
 
+  const [myCoinsData, setMyCoinsData] = useState(null);
+  const [loadingMyCoins, setLoadingMyCoins] = useState(true);
+
+  // --- EFFECT HOOKS (Always top level) ---
+  useEffect(() => {
+    if (isPlatformAdmin) {
+      fetchOverview();
+    } else {
+      fetchMyCoins();
+    }
+  }, [isPlatformAdmin]);
+
   useEffect(() => {
     if (isPlatformAdmin && activeTab === 'history') {
       fetchHistory();
     }
   }, [isPlatformAdmin, activeTab, historyBusinessFilter]);
 
+  // --- MEMO HOOKS (Always top level, NEVER inside if statements) ---
+  const mutations = useMemo(() => myCoinsData?.recent_mutations || [], [myCoinsData]);
+  const groupedMutations = useMemo(() => groupMutationsByDate(mutations), [mutations]);
+
+  const safeHistoryList = useMemo(() => {
+    return Array.isArray(historyList) ? historyList : (historyList?.data || []);
+  }, [historyList]);
+
+  const groupedAdminHistory = useMemo(() => groupMutationsByDate(safeHistoryList), [safeHistoryList]);
+
+  const businesses = useMemo(() => dataOverview?.businesses || [], [dataOverview]);
+  const metrics = useMemo(() => dataOverview?.metrics || {
+    total_businesses: 0,
+    total_coins_in_circulation: 0,
+    businesses_low_coins: 0,
+    businesses_out_of_coins: 0,
+  }, [dataOverview]);
+
+  const filteredBusinesses = useMemo(() => {
+    return businesses.filter(b => {
+      const matchSearch =
+        b.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (b.owner_name && b.owner_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (b.slug && b.slug.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (b.referral_code_used && b.referral_code_used.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (b.referred_by?.name && b.referred_by.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (b.referred_by?.referral_code && b.referred_by.referral_code.toLowerCase().includes(searchTerm.toLowerCase()));
+
+      if (!matchSearch) return false;
+
+      if (statusFilter === 'LOW') return b.is_coin_low && !b.is_coin_out;
+      if (statusFilter === 'OUT') return b.is_coin_out;
+      if (statusFilter === 'SAFE') return !b.is_coin_low && !b.is_coin_out;
+
+      return true;
+    });
+  }, [businesses, searchTerm, statusFilter]);
+
+  // --- API HANDLERS ---
   async function fetchOverview() {
     setLoading(true);
     try {
@@ -168,6 +220,18 @@ export default function CoinManagement() {
       toast.error('Gagal memuat riwayat mutasi koin');
     } finally {
       setLoadingHistory(false);
+    }
+  }
+
+  async function fetchMyCoins() {
+    setLoadingMyCoins(true);
+    try {
+      const res = await api.get('/my-business/coins');
+      setMyCoinsData(res.data);
+    } catch (err) {
+      toast.error('Gagal memuat saldo koin bisnis');
+    } finally {
+      setLoadingMyCoins(false);
     }
   }
 
@@ -251,31 +315,8 @@ export default function CoinManagement() {
     }
   }
 
-  const [myCoinsData, setMyCoinsData] = useState(null);
-  const [loadingMyCoins, setLoadingMyCoins] = useState(true);
-
-  useEffect(() => {
-    if (isPlatformAdmin) {
-      fetchOverview();
-    } else {
-      fetchMyCoins();
-    }
-  }, [isPlatformAdmin]);
-
-  async function fetchMyCoins() {
-    setLoadingMyCoins(true);
-    try {
-      const res = await api.get('/my-business/coins');
-      setMyCoinsData(res.data);
-    } catch (err) {
-      toast.error('Gagal memuat saldo koin bisnis');
-    } finally {
-      setLoadingMyCoins(false);
-    }
-  }
-
   // -------------------------------------------------------------
-  // NON-PLATFORM ADMIN VIEW (Tenant / Business Owner)
+  // VIEW: BUSINESS / TENANT OWNER ("Cek Saldo Koin Usaha")
   // -------------------------------------------------------------
   if (!isPlatformAdmin) {
     if (loadingMyCoins && !myCoinsData) {
@@ -287,11 +328,7 @@ export default function CoinManagement() {
     const rate = myCoinsData?.coins_per_transaction || 1;
     const isLow = myCoinsData?.is_coin_low;
     const isOut = myCoinsData?.is_coin_out;
-    const mutations = myCoinsData?.recent_mutations || [];
     const businessName = myCoinsData?.business_name || 'Perusahaan';
-
-    const groupedMutations = useMemo(() => groupMutationsByDate(mutations), [mutations]);
-
     const waLink = `https://wa.me/6281244295923?text=Halo%20Admin%20MOVA%20POS,%20saya%20ingin%20Top%20Up%20Koin%20untuk%20perusahaan%20${encodeURIComponent(businessName)}`;
 
     return (
@@ -571,38 +608,8 @@ export default function CoinManagement() {
   }
 
   // -------------------------------------------------------------
-  // PLATFORM ADMIN / WEBSITE OWNER VIEW
+  // VIEW: PLATFORM ADMIN / WEBSITE OWNER
   // -------------------------------------------------------------
-  const businesses = dataOverview?.businesses || [];
-  const metrics = dataOverview?.metrics || {
-    total_businesses: 0,
-    total_coins_in_circulation: 0,
-    businesses_low_coins: 0,
-    businesses_out_of_coins: 0,
-  };
-
-  // Filtered Businesses
-  const filteredBusinesses = businesses.filter(b => {
-    const matchSearch =
-      b.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (b.owner_name && b.owner_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (b.slug && b.slug.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (b.referral_code_used && b.referral_code_used.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (b.referred_by?.name && b.referred_by.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (b.referred_by?.referral_code && b.referred_by.referral_code.toLowerCase().includes(searchTerm.toLowerCase()));
-
-    if (!matchSearch) return false;
-
-    if (statusFilter === 'LOW') return b.is_coin_low && !b.is_coin_out;
-    if (statusFilter === 'OUT') return b.is_coin_out;
-    if (statusFilter === 'SAFE') return !b.is_coin_low && !b.is_coin_out;
-
-    return true;
-  });
-
-  const safeHistoryList = Array.isArray(historyList) ? historyList : (historyList?.data || []);
-  const groupedAdminHistory = useMemo(() => groupMutationsByDate(safeHistoryList), [safeHistoryList]);
-
   return (
     <div className="page-container">
       {/* Header */}
@@ -1464,24 +1471,27 @@ function CoinDateDetailModal({ open, group, onClose }) {
   const [filterType, setFilterType] = useState('ALL'); // 'ALL' | 'USAGE' | 'TOPUP'
   const [searchTxt, setSearchTxt] = useState('');
 
-  if (!open || !group) return null;
+  const items = useMemo(() => group?.items || [], [group]);
 
-  const items = group.items || [];
-  const filteredItems = items.filter(item => {
-    if (filterType === 'USAGE' && item.type !== 'USAGE') return false;
-    if (filterType === 'TOPUP' && item.type !== 'TOPUP') return false;
-    if (searchTxt) {
-      const q = searchTxt.toLowerCase();
-      const orderMatch = (item.order_number || '').toLowerCase().includes(q);
-      const refMatch = (item.payment_reference || '').toLowerCase().includes(q);
-      const creatorMatch = (item.creator?.name || item.created_by_name || '').toLowerCase().includes(q);
-      const outletMatch = (item.outlet?.name || '').toLowerCase().includes(q);
-      const bizMatch = (item.business?.name || '').toLowerCase().includes(q);
-      const notesMatch = (item.notes || '').toLowerCase().includes(q);
-      if (!orderMatch && !refMatch && !creatorMatch && !outletMatch && !bizMatch && !notesMatch) return false;
-    }
-    return true;
-  });
+  const filteredItems = useMemo(() => {
+    return items.filter(item => {
+      if (filterType === 'USAGE' && item.type !== 'USAGE') return false;
+      if (filterType === 'TOPUP' && item.type !== 'TOPUP') return false;
+      if (searchTxt) {
+        const q = searchTxt.toLowerCase();
+        const orderMatch = (item.order_number || '').toLowerCase().includes(q);
+        const refMatch = (item.payment_reference || '').toLowerCase().includes(q);
+        const creatorMatch = (item.creator?.name || item.created_by_name || '').toLowerCase().includes(q);
+        const outletMatch = (item.outlet?.name || '').toLowerCase().includes(q);
+        const bizMatch = (item.business?.name || '').toLowerCase().includes(q);
+        const notesMatch = (item.notes || '').toLowerCase().includes(q);
+        if (!orderMatch && !refMatch && !creatorMatch && !outletMatch && !bizMatch && !notesMatch) return false;
+      }
+      return true;
+    });
+  }, [items, filterType, searchTxt]);
+
+  if (!open || !group) return null;
 
   return (
     <div className="modal-overlay" onClick={onClose} style={{ zIndex: 1100 }}>
