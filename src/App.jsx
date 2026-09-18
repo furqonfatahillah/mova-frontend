@@ -1,34 +1,37 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
-import { useState, useEffect } from 'react';
-import Login from './pages/Login';
-import Register from './pages/Register';
+import { lazy, Suspense } from 'react';
 import Layout from './components/Layout';
-import Dashboard from './pages/Dashboard';
-import MasterBahan from './pages/MasterBahan';
-import MasterMenu from './pages/MasterMenu';
-import POS from './pages/POS';
-import StockMovement from './pages/StockMovement';
-import StockOpname from './pages/StockOpname';
-import VarianceBahan from './pages/VarianceBahan';
-import VarianceMenu from './pages/VarianceMenu';
-import Profitability from './pages/Profitability';
-import RootCause from './pages/RootCause';
-import KartuStok from './pages/KartuStok';
-import ShiftManagement from './pages/ShiftManagement';
-import OutletManagement from './pages/OutletManagement';
-import TransferBahan from './pages/TransferBahan';
-import UserManagement from './pages/UserManagement';
-import BusinessManagement from './pages/BusinessManagement';
-import BatchPrep from './pages/BatchPrep';
-import WasteTracking from './pages/WasteTracking';
-import DiscountManagement from './pages/DiscountManagement';
-import ProfitLoss from './pages/ProfitLoss';
-import CashFlow from './pages/CashFlow';
-import CoinManagement from './pages/CoinManagement';
-import OpexManagement from './pages/OpexManagement';
-import UrgentNotes from './pages/UrgentNotes';
+import { LoadingState } from './components/ui';
 import { OutletProvider } from './context/OutletContext';
+
+// Lazy loaded page components for fast initial load and code-splitting
+const Login = lazy(() => import('./pages/Login'));
+const Register = lazy(() => import('./pages/Register'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const MasterBahan = lazy(() => import('./pages/MasterBahan'));
+const MasterMenu = lazy(() => import('./pages/MasterMenu'));
+const POS = lazy(() => import('./pages/POS'));
+const StockMovement = lazy(() => import('./pages/StockMovement'));
+const StockOpname = lazy(() => import('./pages/StockOpname'));
+const VarianceBahan = lazy(() => import('./pages/VarianceBahan'));
+const VarianceMenu = lazy(() => import('./pages/VarianceMenu'));
+const Profitability = lazy(() => import('./pages/Profitability'));
+const RootCause = lazy(() => import('./pages/RootCause'));
+const KartuStok = lazy(() => import('./pages/KartuStok'));
+const ShiftManagement = lazy(() => import('./pages/ShiftManagement'));
+const OutletManagement = lazy(() => import('./pages/OutletManagement'));
+const TransferBahan = lazy(() => import('./pages/TransferBahan'));
+const UserManagement = lazy(() => import('./pages/UserManagement'));
+const BusinessManagement = lazy(() => import('./pages/BusinessManagement'));
+const BatchPrep = lazy(() => import('./pages/BatchPrep'));
+const WasteTracking = lazy(() => import('./pages/WasteTracking'));
+const DiscountManagement = lazy(() => import('./pages/DiscountManagement'));
+const ProfitLoss = lazy(() => import('./pages/ProfitLoss'));
+const CashFlow = lazy(() => import('./pages/CashFlow'));
+const CoinManagement = lazy(() => import('./pages/CoinManagement'));
+const OpexManagement = lazy(() => import('./pages/OpexManagement'));
+const UrgentNotes = lazy(() => import('./pages/UrgentNotes'));
 
 function PrivateRoute({ children }) {
   const token = localStorage.getItem('pos_token');
@@ -80,48 +83,50 @@ export default function App() {
           error:   { iconTheme: { primary: '#f43f5e', secondary: '#11162d' } },
         }}
       />
-      <Routes>
-        <Route path="/login"    element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/" element={
-          <PrivateRoute><Layout /></PrivateRoute>
-        }>
-          {/* Dashboard & Master Data */}
-          <Route index             element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><Dashboard /></RoleRoute>} />
-          <Route path="bahan"      element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><MasterBahan /></RoleRoute>} />
-          <Route path="menu"       element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><MasterMenu /></RoleRoute>} />
-          <Route path="outlet"     element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><OutletManagement /></RoleRoute>} />
-          <Route path="users"      element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><UserManagement /></RoleRoute>} />
+      <Suspense fallback={<LoadingState />}>
+        <Routes>
+          <Route path="/login"    element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/" element={
+            <PrivateRoute><Layout /></PrivateRoute>
+          }>
+            {/* Dashboard & Master Data */}
+            <Route index             element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><Dashboard /></RoleRoute>} />
+            <Route path="bahan"      element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><MasterBahan /></RoleRoute>} />
+            <Route path="menu"       element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><MasterMenu /></RoleRoute>} />
+            <Route path="outlet"     element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><OutletManagement /></RoleRoute>} />
+            <Route path="users"      element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><UserManagement /></RoleRoute>} />
 
-          {/* SaaS Platform (Superadmin / Website Owner ONLY & Tenant Coin Billing) */}
-          <Route path="businesses" element={<RoleRoute roles={['platform_admin', 'superadmin', 'owner_website']}><BusinessManagement /></RoleRoute>} />
-          <Route path="coin-management" element={<RoleRoute roles={['owner_bisnis', 'owner_website', 'superadmin', 'platform_admin']}><CoinManagement /></RoleRoute>} />
+            {/* SaaS Platform (Superadmin / Website Owner ONLY & Tenant Coin Billing) */}
+            <Route path="businesses" element={<RoleRoute roles={['platform_admin', 'superadmin', 'owner_website']}><BusinessManagement /></RoleRoute>} />
+            <Route path="coin-management" element={<RoleRoute roles={['owner_bisnis', 'owner_website', 'superadmin', 'platform_admin']}><CoinManagement /></RoleRoute>} />
 
-          {/* Operasional (Staff & Kasir Accessible) */}
-          <Route path="pos"          element={<RoleRoute roles={['pegawai']}><POS /></RoleRoute>} />
-          <Route path="urgent-notes" element={<RoleRoute roles={['pegawai']}><UrgentNotes /></RoleRoute>} />
-          <Route path="shift"        element={<RoleRoute roles={['pegawai']}><ShiftManagement /></RoleRoute>} />
-          <Route path="transfer"     element={<RoleRoute roles={['pegawai']}><TransferBahan /></RoleRoute>} />
-          <Route path="batch-prep"   element={<RoleRoute roles={['pegawai']}><BatchPrep /></RoleRoute>} />
-          <Route path="waste"        element={<RoleRoute roles={['pegawai']}><WasteTracking /></RoleRoute>} />
-          <Route path="kartu-stok"   element={<RoleRoute roles={['pegawai']}><KartuStok /></RoleRoute>} />
+            {/* Operasional (Staff & Kasir Accessible) */}
+            <Route path="pos"          element={<RoleRoute roles={['pegawai']}><POS /></RoleRoute>} />
+            <Route path="urgent-notes" element={<RoleRoute roles={['pegawai']}><UrgentNotes /></RoleRoute>} />
+            <Route path="shift"        element={<RoleRoute roles={['pegawai']}><ShiftManagement /></RoleRoute>} />
+            <Route path="transfer"     element={<RoleRoute roles={['pegawai']}><TransferBahan /></RoleRoute>} />
+            <Route path="batch-prep"   element={<RoleRoute roles={['pegawai']}><BatchPrep /></RoleRoute>} />
+            <Route path="waste"        element={<RoleRoute roles={['pegawai']}><WasteTracking /></RoleRoute>} />
+            <Route path="kartu-stok"   element={<RoleRoute roles={['pegawai']}><KartuStok /></RoleRoute>} />
 
-          {/* Operasional Manajemen (Owner Bisnis & Manager Cabang) */}
-          <Route path="diskon"       element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><DiscountManagement /></RoleRoute>} />
-          <Route path="movement"     element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><StockMovement /></RoleRoute>} />
-          <Route path="opname"       element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><StockOpname /></RoleRoute>} />
-          <Route path="opex"         element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><OpexManagement /></RoleRoute>} />
-          <Route path="expenses"     element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><OpexManagement /></RoleRoute>} />
+            {/* Operasional Manajemen (Owner Bisnis & Manager Cabang) */}
+            <Route path="diskon"       element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><DiscountManagement /></RoleRoute>} />
+            <Route path="movement"     element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><StockMovement /></RoleRoute>} />
+            <Route path="opname"       element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><StockOpname /></RoleRoute>} />
+            <Route path="opex"         element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><OpexManagement /></RoleRoute>} />
+            <Route path="expenses"     element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><OpexManagement /></RoleRoute>} />
 
-          {/* Analitik & Keuangan */}
-          <Route path="variance/bahan" element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><VarianceBahan /></RoleRoute>} />
-          <Route path="variance/menu"  element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><VarianceMenu /></RoleRoute>} />
-          <Route path="profit-loss"    element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><ProfitLoss /></RoleRoute>} />
-          <Route path="cash-flow"      element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><CashFlow /></RoleRoute>} />
-          <Route path="profitability"  element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><Profitability /></RoleRoute>} />
-          <Route path="root-cause"     element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><RootCause /></RoleRoute>} />
-        </Route>
-      </Routes>
+            {/* Analitik & Keuangan */}
+            <Route path="variance/bahan" element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><VarianceBahan /></RoleRoute>} />
+            <Route path="variance/menu"  element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><VarianceMenu /></RoleRoute>} />
+            <Route path="profit-loss"    element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><ProfitLoss /></RoleRoute>} />
+            <Route path="cash-flow"      element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><CashFlow /></RoleRoute>} />
+            <Route path="profitability"  element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><Profitability /></RoleRoute>} />
+            <Route path="root-cause"     element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><RootCause /></RoleRoute>} />
+          </Route>
+        </Routes>
+      </Suspense>
       </OutletProvider>
     </BrowserRouter>
   );

@@ -81,22 +81,13 @@ export function OutletProvider({ children }) {
     setLoadingOutlets(true);
     try {
       const { data } = await api.get('/outlets');
-      setOutlets(data);
-      // If current active outlet is not in the list and not 'ALL', set to first outlet
-      if (data && data.length > 0) {
-        const found = data.some(o => String(o.id) === String(activeOutletId));
-        if (!found && activeOutletId !== 'ALL') {
-          const firstId = String(data[0].id);
-          setActiveOutletIdState(firstId);
-          localStorage.setItem('pos_active_outlet_id', firstId);
-        }
-      }
+      setOutlets(data || []);
     } catch (err) {
       console.error('Failed to fetch outlets:', err);
     } finally {
       setLoadingOutlets(false);
     }
-  }, [activeOutletId]);
+  }, []);
 
   const fetchBusinessData = useCallback(async () => {
     try {
@@ -190,7 +181,7 @@ export function OutletProvider({ children }) {
 
   const hasCoinBalance = !isPlatformAdmin || Boolean(activeBusinessId);
 
-  const value = {
+  const value = useMemo(() => ({
     outlets,
     loadingOutlets,
     currentUser,
@@ -223,7 +214,29 @@ export function OutletProvider({ children }) {
     refreshCoins: fetchCoinData,
     userReferralCode: currentUser?.referral_code,
     refreshUser: refreshCurrentUser,
-  };
+  }), [
+    outlets,
+    loadingOutlets,
+    currentUser,
+    activeOutletId,
+    activeOutlet,
+    businesses,
+    currentBusiness,
+    activeBusinessId,
+    isSuperadminPlatform,
+    isOwnerWebsite,
+    isPlatformAdmin,
+    isOwnerBisnis,
+    isOwnerOutlet,
+    isPegawai,
+    fetchOutlets,
+    fetchBusinessData,
+    coinData,
+    loadingCoins,
+    hasCoinBalance,
+    fetchCoinData,
+    refreshCurrentUser,
+  ]);
 
   return <OutletContext.Provider value={value}>{children}</OutletContext.Provider>;
 }
