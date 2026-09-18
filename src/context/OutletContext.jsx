@@ -39,12 +39,12 @@ export function OutletProvider({ children }) {
     Boolean(currentUser.is_superadmin_platform);
 
   const isOwnerWebsite =
-    isSuperadminPlatform ||
     currentUser.role === 'owner_website' ||
     Boolean(currentUser.is_owner_website);
 
+  const isPlatformAdmin = isSuperadminPlatform || isOwnerWebsite;
+
   const isOwnerBisnis =
-    isOwnerWebsite ||
     currentUser.role === 'owner_bisnis' ||
     currentUser.role === 'owner' ||
     currentUser.role === 'admin' ||
@@ -55,20 +55,20 @@ export function OutletProvider({ children }) {
     currentUser.role === 'manager_outlet' ||
     Boolean(currentUser.is_owner_outlet);
 
-  const isPegawai = !isSuperadminPlatform && !isOwnerWebsite && !isOwnerBisnis && !isOwnerOutlet;
+  const isPegawai = !isPlatformAdmin && !isOwnerBisnis && !isOwnerOutlet;
 
-  // Active business ID for Superadmin
+  // Active business ID for Platform Admin (Superadmin / Owner Website)
   const [activeBusinessId, setActiveBusinessIdState] = useState(() => {
-    if (!isSuperadminPlatform && currentUser.business_id) {
+    if (!isPlatformAdmin && currentUser.business_id) {
       return String(currentUser.business_id);
     }
     return localStorage.getItem('pos_active_business_id') || (currentUser.business_id ? String(currentUser.business_id) : '');
   });
 
-  // For owner_bisnis / superadmin: can be a specific outlet ID or 'ALL'
+  // For owner_bisnis / platform admin: can be a specific outlet ID or 'ALL'
   // For branch manager/pegawai: strictly locked to user's assigned outlet
   const [activeOutletId, setActiveOutletIdState] = useState(() => {
-    if (!isOwnerBisnis && !isSuperadminPlatform && currentUser.outlet_id) {
+    if (!isOwnerBisnis && !isPlatformAdmin && currentUser.outlet_id) {
       return String(currentUser.outlet_id);
     }
     return localStorage.getItem('pos_active_outlet_id') || (currentUser.outlet_id ? String(currentUser.outlet_id) : '1');
@@ -100,14 +100,14 @@ export function OutletProvider({ children }) {
 
   const fetchBusinessData = useCallback(async () => {
     try {
-      if (isSuperadminPlatform) {
+      if (isPlatformAdmin) {
         const { data } = await api.get('/businesses');
         setBusinesses(data);
         if (activeBusinessId) {
           const b = data.find(item => String(item.id) === String(activeBusinessId));
-          setCurrentBusiness(b || data[0] || null);
-        } else if (data.length > 0) {
-          setCurrentBusiness(data[0]);
+          setCurrentBusiness(b || null);
+        } else {
+          setCurrentBusiness(null);
         }
       } else if (currentUser.business) {
         setCurrentBusiness(currentUser.business);
@@ -118,20 +118,29 @@ export function OutletProvider({ children }) {
     } catch (err) {
       console.error('Failed to fetch business data:', err);
     }
-  }, [isSuperadminPlatform, activeBusinessId, currentUser]);
+  }, [isPlatformAdmin, activeBusinessId, currentUser]);
 
   const fetchCoinData = useCallback(async () => {
     try {
+      if (isPlatformAdmin && !activeBusinessId) {
+        // Platform admin in global view does NOT have a tenant coin balance
+        setCoinData(null);
+        return;
+      }
       setLoadingCoins(true);
-      const params = isSuperadminPlatform && activeBusinessId ? { business_id: activeBusinessId } : {};
+      const params = isPlatformAdmin && activeBusinessId ? { business_id: activeBusinessId } : {};
       const { data } = await api.get('/my-business/coins', { params });
-      setCoinData(data);
+      if (data?.is_platform_admin && !activeBusinessId) {
+        setCoinData(null);
+      } else {
+        setCoinData(data);
+      }
     } catch (err) {
       // Non-blocking failover
     } finally {
       setLoadingCoins(false);
     }
-  }, [isSuperadminPlatform, activeBusinessId]);
+  }, [isPlatformAdmin, activeBusinessId]);
 
   useEffect(() => {
     fetchOutlets();
@@ -148,7 +157,7 @@ export function OutletProvider({ children }) {
   }, [fetchOutlets, fetchBusinessData, fetchCoinData]);
 
   const changeOutlet = (outletId) => {
-    if (!isOwnerBisnis && !isSuperadminPlatform) return; // Disallow branch users from switching
+    if (!isOwnerBisnis && !isPlatformAdmin) return; // Disallow branch users from switching
     const val = String(outletId);
     setActiveOutletIdState(val);
     localStorage.setItem('pos_active_outlet_id', val);
@@ -156,7 +165,7 @@ export function OutletProvider({ children }) {
   };
 
   const changeBusiness = (businessId) => {
-    if (!isSuperadminPlatform) return;
+    if (!isPlatformAdmin) return;
     const val = String(businessId);
     setActiveBusinessIdState(val);
     if (val) {
@@ -179,6 +188,8 @@ export function OutletProvider({ children }) {
     return outlets.find((o) => String(o.id) === String(activeOutletId)) || outlets[0] || null;
   }, [outlets, activeOutletId]);
 
+  const hasCoinBalance = !isPlatformAdmin || Boolean(activeBusinessId);
+
   const value = {
     outlets,
     loadingOutlets,
@@ -192,16 +203,18 @@ export function OutletProvider({ children }) {
     changeBusiness,
     isSuperadminPlatform,
     isOwnerWebsite,
+    isPlatformAdmin,
     isOwnerBisnis,
     isOwnerOutlet,
     isPegawai,
     userOutletId: currentUser.outlet_id,
     userOutletName: currentUser.outlet_name,
-    userBusinessName: currentUser.business_name || currentBusiness?.name || 'MOVA Cloud',
+    userBusinessName: currentUser.business_name || currentBusiness?.name || (isPlatformAdmin ? '🌐 Platform Provider MOVA' : 'MOVA Cloud'),
     refreshOutlets: fetchOutlets,
     refreshBusiness: fetchBusinessData,
     coinData,
     loadingCoins,
+    hasCoinBalance,
     coinBalance: Number(coinData?.coin_balance ?? 0),
     coinsPerTransaction: Number(coinData?.coins_per_transaction ?? 1),
     remainingTransactions: Number(coinData?.remaining_transactions ?? 0),

@@ -41,17 +41,17 @@ function RoleRoute({ roles, children }) {
 
   const user = JSON.parse(localStorage.getItem('pos_user') || '{}');
   const isSuperadminPlatform = user.role === 'superadmin_platform' || user.role === 'superadmin' || Boolean(user.is_superadmin_platform);
-  const isOwnerWebsite = isSuperadminPlatform || user.role === 'owner_website' || Boolean(user.is_owner_website);
-  const isOwnerBisnis = isOwnerWebsite || user.role === 'owner_bisnis' || user.role === 'owner' || user.role === 'admin' || Boolean(user.is_owner_bisnis);
+  const isOwnerWebsite = user.role === 'owner_website' || Boolean(user.is_owner_website);
+  const isPlatformAdmin = isSuperadminPlatform || isOwnerWebsite;
+  const isOwnerBisnis = user.role === 'owner_bisnis' || user.role === 'owner' || user.role === 'admin' || Boolean(user.is_owner_bisnis);
   const isOwnerOutlet = user.role === 'owner_outlet' || user.role === 'manager_outlet' || Boolean(user.is_owner_outlet);
-  const isPegawai = !isSuperadminPlatform && !isOwnerWebsite && !isOwnerBisnis && !isOwnerOutlet;
+  const isPegawai = !isPlatformAdmin && !isOwnerBisnis && !isOwnerOutlet;
 
   let allowed = false;
-  if (roles.includes('superadmin') && isSuperadminPlatform) allowed = true;
-  if (roles.includes('owner_website') && isOwnerWebsite) allowed = true;
-  if (roles.includes('owner_bisnis') && isOwnerBisnis) allowed = true;
-  if (roles.includes('owner_outlet') && (isOwnerOutlet || isOwnerBisnis || isOwnerWebsite)) allowed = true;
-  if (roles.includes('pegawai')) allowed = true;
+  if ((roles.includes('platform_admin') || roles.includes('superadmin') || roles.includes('owner_website')) && isPlatformAdmin) allowed = true;
+  if (roles.includes('owner_bisnis') && (isOwnerBisnis || isPlatformAdmin)) allowed = true;
+  if (roles.includes('owner_outlet') && (isOwnerOutlet || isOwnerBisnis || isPlatformAdmin)) allowed = true;
+  if (roles.includes('pegawai')) allowed = true; // All authenticated roles can access operational routes
 
   if (!allowed) {
     return <Navigate to={isPegawai ? "/pos" : "/"} replace />;
@@ -94,8 +94,8 @@ export default function App() {
           <Route path="users"      element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'owner_website', 'superadmin']}><UserManagement /></RoleRoute>} />
 
           {/* SaaS Platform (Superadmin / Website Owner ONLY) */}
-          <Route path="businesses" element={<RoleRoute roles={['superadmin']}><BusinessManagement /></RoleRoute>} />
-          <Route path="coin-management" element={<RoleRoute roles={['pegawai', 'owner_outlet', 'owner_bisnis', 'owner_website', 'superadmin']}><CoinManagement /></RoleRoute>} />
+          <Route path="businesses" element={<RoleRoute roles={['platform_admin', 'superadmin', 'owner_website']}><BusinessManagement /></RoleRoute>} />
+          <Route path="coin-management" element={<RoleRoute roles={['pegawai', 'owner_outlet', 'owner_bisnis', 'owner_website', 'superadmin', 'platform_admin']}><CoinManagement /></RoleRoute>} />
 
           {/* Operasional (All Roles / Staff Accessible) */}
           <Route path="pos"          element={<RoleRoute roles={['pegawai']}><POS /></RoleRoute>} />

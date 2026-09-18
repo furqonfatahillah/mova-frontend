@@ -27,8 +27,9 @@ export default function Layout() {
     activeBusinessId,
     changeBusiness,
     isSuperadminPlatform,
-    isOwnerBisnis,
     isOwnerWebsite,
+    isPlatformAdmin,
+    isOwnerBisnis,
     isOwnerOutlet,
     isPegawai,
     userBusinessName,
@@ -41,7 +42,7 @@ export default function Layout() {
   } = useOutletContext();
 
   const navSections = [
-    ...(isSuperadminPlatform ? [
+    ...(isPlatformAdmin ? [
       {
         label: 'SaaS Platform',
         items: [
@@ -367,34 +368,63 @@ export default function Layout() {
               )}
             </div>
 
-            {/* Coin Balance Badge */}
-            <NavLink
-              to="/coin-management"
-              className="top-header-coin-badge"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '4px 12px',
-                borderRadius: 10,
-                background: isCoinOut ? 'rgba(239, 68, 68, 0.15)' : isCoinLow ? 'rgba(245, 158, 11, 0.15)' : 'rgba(139, 92, 246, 0.15)',
-                border: `1px solid ${isCoinOut ? 'rgba(239, 68, 68, 0.35)' : isCoinLow ? 'rgba(245, 158, 11, 0.35)' : 'rgba(139, 92, 246, 0.3)'}`,
-                boxShadow: isCoinLow ? '0 0 12px rgba(245, 158, 11, 0.2)' : 'none',
-                textDecoration: 'none',
-                cursor: 'pointer',
-              }}
-              title={`Saldo: ${coinBalance} koin (${coinsPerTransaction} koin/nota). Klik untuk informasi top-up.`}
-            >
-              <Coins size={16} style={{ color: isCoinOut ? '#ef4444' : isCoinLow ? '#f59e0b' : 'var(--accent-bright)' }} />
-              <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
-                <span style={{ fontSize: 13, fontWeight: 800, color: isCoinOut ? '#f87171' : isCoinLow ? '#fbbf24' : '#ffffff' }}>
-                  {coinBalance.toLocaleString()} Koin
-                </span>
-                <span style={{ fontSize: 10, color: isCoinOut ? '#fca5a5' : isCoinLow ? '#fde68a' : 'var(--text-secondary)', fontWeight: 600 }}>
-                  ~{remainingTransactions.toLocaleString()} Nota Sisa
-                </span>
-              </div>
-            </NavLink>
+            {/* Coin Balance Badge / Platform Admin Badge */}
+            {isPlatformAdmin && !activeBusinessId ? (
+              <NavLink
+                to="/coin-management"
+                className="top-header-coin-badge"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '4px 12px',
+                  borderRadius: 10,
+                  background: 'rgba(99, 102, 241, 0.15)',
+                  border: '1px solid rgba(99, 102, 241, 0.3)',
+                  textDecoration: 'none',
+                  cursor: 'pointer',
+                }}
+                title="Mode Pengelola Platform SaaS. Klik untuk mengelola saldo dan tarif koin bisnis penyewa."
+              >
+                <Coins size={16} style={{ color: 'var(--accent-bright)' }} />
+                <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: '#ffffff' }}>
+                    Platform Admin
+                  </span>
+                  <span style={{ fontSize: 10, color: 'var(--accent-bright)', fontWeight: 600 }}>
+                    Kelola Koin Penyewa ↗
+                  </span>
+                </div>
+              </NavLink>
+            ) : (
+              <NavLink
+                to="/coin-management"
+                className="top-header-coin-badge"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '4px 12px',
+                  borderRadius: 10,
+                  background: isCoinOut ? 'rgba(239, 68, 68, 0.15)' : isCoinLow ? 'rgba(245, 158, 11, 0.15)' : 'rgba(139, 92, 246, 0.15)',
+                  border: `1px solid ${isCoinOut ? 'rgba(239, 68, 68, 0.35)' : isCoinLow ? 'rgba(245, 158, 11, 0.35)' : 'rgba(139, 92, 246, 0.3)'}`,
+                  boxShadow: isCoinLow ? '0 0 12px rgba(245, 158, 11, 0.2)' : 'none',
+                  textDecoration: 'none',
+                  cursor: 'pointer',
+                }}
+                title={`Saldo: ${coinBalance} koin (${coinsPerTransaction} koin/nota). Klik untuk informasi top-up.`}
+              >
+                <Coins size={16} style={{ color: isCoinOut ? '#ef4444' : isCoinLow ? '#f59e0b' : 'var(--accent-bright)' }} />
+                <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: isCoinOut ? '#f87171' : isCoinLow ? '#fbbf24' : '#ffffff' }}>
+                    {coinBalance.toLocaleString()} Koin
+                  </span>
+                  <span style={{ fontSize: 10, color: isCoinOut ? '#fca5a5' : isCoinLow ? '#fde68a' : 'var(--text-secondary)', fontWeight: 600 }}>
+                    ~{remainingTransactions.toLocaleString()} Nota Sisa
+                  </span>
+                </div>
+              </NavLink>
+            )}
 
             {/* User Referral Badge in Header */}
             {(userReferralCode || user.referral_code) && (
@@ -428,8 +458,8 @@ export default function Layout() {
           </div>
 
           <div className="top-header-right">
-            {/* Superadmin Tenant Switcher */}
-            {isSuperadminPlatform && businesses.length > 0 && (
+            {/* Platform Admin Tenant Switcher */}
+            {isPlatformAdmin && businesses.length > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <span className="top-header-switcher-label">Tenant:</span>
                 <select
@@ -447,7 +477,7 @@ export default function Layout() {
               </div>
             )}
 
-            {(isOwnerWebsite || isOwnerBisnis || isSuperadminPlatform) ? (
+            {(isPlatformAdmin || isOwnerBisnis) ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flex: 1, minWidth: 0 }}>
                 <span className="top-header-switcher-label">Ganti Cabang:</span>
                 <select

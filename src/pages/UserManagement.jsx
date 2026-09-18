@@ -10,10 +10,11 @@ import { PageHeader, LoadingState, MiniCard, formatDateTime } from '../component
 export default function UserManagement() {
   const currentUser = JSON.parse(localStorage.getItem('pos_user') || '{}');
   const isSuperadminPlatform = currentUser.role === 'superadmin_platform' || currentUser.role === 'superadmin' || Boolean(currentUser.is_superadmin_platform);
-  const isOwnerWebsite = isSuperadminPlatform || currentUser.role === 'owner_website' || Boolean(currentUser.is_owner_website);
-  const isOwnerBisnis = isOwnerWebsite || currentUser.role === 'owner_bisnis' || currentUser.role === 'owner' || currentUser.role === 'admin' || Boolean(currentUser.is_owner_bisnis);
+  const isOwnerWebsite = currentUser.role === 'owner_website' || Boolean(currentUser.is_owner_website);
+  const isPlatformAdmin = isSuperadminPlatform || isOwnerWebsite;
+  const isOwnerBisnis = currentUser.role === 'owner_bisnis' || currentUser.role === 'owner' || currentUser.role === 'admin' || Boolean(currentUser.is_owner_bisnis);
   const isOwnerOutlet = currentUser.role === 'owner_outlet' || currentUser.role === 'manager_outlet' || Boolean(currentUser.is_owner_outlet);
-  const isPegawai = !isSuperadminPlatform && !isOwnerWebsite && !isOwnerBisnis && !isOwnerOutlet;
+  const isPegawai = !isPlatformAdmin && !isOwnerBisnis && !isOwnerOutlet;
 
   const [users, setUsers] = useState([]);
   const [counts, setCounts] = useState({ total: 0, pending: 0, active: 0, rejected: 0, suspended: 0 });
@@ -755,7 +756,7 @@ export default function UserManagement() {
                     >
                       <option value="pegawai" style={{ background: '#11162d', color: '#ffffff' }}>Pegawai (Kasir & Operasional Cabang)</option>
                       <option value="owner_outlet" style={{ background: '#11162d', color: '#ffffff' }}>Owner Outlet (Pemilik Cabang)</option>
-                      {isOwnerWebsite && (
+                      {isPlatformAdmin && (
                         <>
                           <option value="owner_bisnis" style={{ background: '#11162d', color: '#ffffff' }}>Owner Bisnis (Pemilik Usaha)</option>
                           <option value="owner_website" style={{ background: '#11162d', color: '#ffffff' }}>Owner Website</option>
@@ -897,7 +898,7 @@ export default function UserManagement() {
                     >
                       <option value="pegawai" style={{ background: '#11162d', color: '#ffffff' }}>Pegawai Cabang</option>
                       <option value="owner_outlet" style={{ background: '#11162d', color: '#ffffff' }}>Owner Outlet</option>
-                      {isOwnerWebsite && (
+                      {isPlatformAdmin && (
                         <>
                           <option value="owner_bisnis" style={{ background: '#11162d', color: '#ffffff' }}>Owner Bisnis</option>
                           <option value="owner_website" style={{ background: '#11162d', color: '#ffffff' }}>Owner Website</option>
@@ -1020,7 +1021,7 @@ export default function UserManagement() {
                     >
                       <option value="pegawai" style={{ background: '#11162d', color: '#ffffff' }}>Pegawai</option>
                       <option value="owner_outlet" style={{ background: '#11162d', color: '#ffffff' }}>Owner Outlet</option>
-                      {isOwnerWebsite && (
+                      {isPlatformAdmin && (
                         <>
                           <option value="owner_bisnis" style={{ background: '#11162d', color: '#ffffff' }}>Owner Bisnis</option>
                           <option value="owner_website" style={{ background: '#11162d', color: '#ffffff' }}>Owner Website</option>
