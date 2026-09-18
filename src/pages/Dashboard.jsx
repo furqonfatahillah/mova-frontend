@@ -8,13 +8,14 @@ import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 import { exportDashboardToExcel } from '../utils/exportReport';
 import { printElement } from '../utils/print';
-
-const today = new Date().toISOString().slice(0, 10);
-const firstOfMonth = today.slice(0, 8) + '01';
+import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [period, setPeriod] = useState({ from: '2026-08-01', to: '2026-08-31' });
+  const [period, setPeriod] = useState(() => ({
+    from: getMonthStartStr(),
+    to: getMonthEndStr(),
+  }));
   const [data, setData] = useState(null);
   const [varData, setVarData] = useState([]);
   const [varMenuData, setVarMenuData] = useState([]);

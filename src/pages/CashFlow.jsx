@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, num, pct, LoadingState, PageHeader } from '../components/ui';
+import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 import { printElement } from '../utils/print';
@@ -47,14 +48,8 @@ export default function CashFlow() {
   const { activeOutletId, activeOutlet, outlets, currentBusiness } = useOutlet();
   const currentUser = JSON.parse(localStorage.getItem('pos_user') || '{}');
 
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const firstDayThisMonth = () => {
-    const d = new Date();
-    d.setDate(1);
-    return d.toISOString().slice(0, 10);
-  };
-
-  const [dateFrom, setDateFrom] = useState(firstDayThisMonth);
+  const todayStr = getTodayStr();
+  const [dateFrom, setDateFrom] = useState(() => getMonthStartStr());
   const [dateTo, setDateTo] = useState(todayStr);
   const [activeTab, setActiveTab] = useState('statement'); // 'statement' | 'reconciliation' | 'journal'
 
@@ -93,19 +88,19 @@ export default function CashFlow() {
     } else if (type === '7days') {
       const past = new Date();
       past.setDate(now.getDate() - 6);
-      setDateFrom(past.toISOString().slice(0, 10));
+      setDateFrom(getTodayStr(past));
       setDateTo(todayStr);
     } else if (type === 'this_month') {
-      setDateFrom(firstDayThisMonth());
+      setDateFrom(getMonthStartStr());
       setDateTo(todayStr);
     } else if (type === 'last_month') {
       const firstPast = new Date(now.getFullYear(), now.getMonth() - 1, 1);
       const lastPast = new Date(now.getFullYear(), now.getMonth(), 0);
-      setDateFrom(firstPast.toISOString().slice(0, 10));
-      setDateTo(lastPast.toISOString().slice(0, 10));
+      setDateFrom(getTodayStr(firstPast));
+      setDateTo(getTodayStr(lastPast));
     } else if (type === 'this_year') {
       const firstYear = new Date(now.getFullYear(), 0, 1);
-      setDateFrom(firstYear.toISOString().slice(0, 10));
+      setDateFrom(getTodayStr(firstYear));
       setDateTo(todayStr);
     }
   }

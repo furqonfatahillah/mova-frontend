@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, num, fmtQtyVal, LoadingState, PageHeader, AuditInfo, UnitSelect, SATUAN_PAKAI_OPTIONS } from '../components/ui';
+import { getTodayStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 
@@ -32,7 +33,7 @@ export default function BatchPrep() {
   const [selectedCookOutletId, setSelectedCookOutletId] = useState('');
   const [batchMultiplier, setBatchMultiplier] = useState(1);
   const [actualOutputQty, setActualOutputQty] = useState('');
-  const [cookDate, setCookDate] = useState(new Date().toISOString().slice(0, 10));
+  const [cookDate, setCookDate] = useState(getTodayStr());
   const [cookNotes, setCookNotes] = useState('');
   const [previewLoading, setPreviewLoading] = useState(false);
   const [batchPreview, setBatchPreview] = useState(null);
@@ -76,7 +77,7 @@ export default function BatchPrep() {
       setIngredients(ings);
 
       // Compute stats
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayStr = getTodayStr();
       const todayBatches = bchs.filter(b => b.date === todayStr);
       const semiFinishedIngs = ings.filter(i => i.type === 'SEMI_FINISHED');
       const lowStockCount = semiFinishedIngs.filter(i => Number(i.current_stock ?? 0) <= Number(i.current_stok_min ?? i.stok_min ?? 0)).length;
@@ -140,7 +141,7 @@ export default function BatchPrep() {
       setBatchMultiplier(1);
       setActualOutputQty(recipes[0].output_qty);
     }
-    setCookDate(new Date().toISOString().slice(0, 10));
+    setCookDate(getTodayStr());
     setCookNotes('');
     setCookModalOpen(true);
   }

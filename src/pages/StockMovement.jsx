@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Plus, Trash2, Filter, Store, TrendingUp, TrendingDown, Sparkles, Calculator, X } from 'lucide-react';
 import api from '../api/client';
 import { num, rupiah, fmtQtyVal, LoadingState, PageHeader, AuditInfo, PeriodPicker } from '../components/ui';
+import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 
@@ -67,17 +68,15 @@ export default function StockMovement() {
     unit_type: 'BELI', // 'BELI' or 'PAKAI'
     unit_price: '',
     qty: '',
-    date: new Date().toISOString().slice(0, 10),
+    date: getTodayStr(),
     note: '',
   });
   const [saving, setSaving] = useState(false);
 
-  const [period, setPeriod] = useState(() => {
-    const today = new Date();
-    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
-    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10);
-    return { from: firstDay, to: lastDay };
-  });
+  const [period, setPeriod] = useState(() => ({
+    from: getMonthStartStr(),
+    to: getMonthEndStr(),
+  }));
 
   useEffect(() => { fetchAll(); }, [filterIng, filterType, filterOutlet, period]);
 

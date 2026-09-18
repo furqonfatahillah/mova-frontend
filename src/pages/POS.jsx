@@ -14,6 +14,7 @@ import {
 import api from '../api/client';
 import { rupiah, num, LoadingState, PageHeader } from '../components/ui';
 import { printElement } from '../utils/print';
+import { getTodayStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 
@@ -35,7 +36,7 @@ export default function POS() {
   const [cart, setCart] = useState([]);
 
   const [customerName, setCustomerName] = useState('');
-  const [orderDate, setOrderDate] = useState(new Date().toISOString().slice(0, 10));
+  const [orderDate, setOrderDate] = useState(getTodayStr());
 
   // Payment Modal State
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
@@ -1002,7 +1003,7 @@ export default function POS() {
         parent_order_number: data.parent_order_number,
         split_index: data.split_index,
         split_type: 'BY_ITEM',
-        date: data.date || new Date().toISOString().slice(0, 10),
+        date: data.date || getTodayStr(),
         customer_name: data.customer_name || 'Pelanggan',
         payment_method: data.payment_method,
         amount_paid: data.amount_paid,
@@ -1067,7 +1068,7 @@ export default function POS() {
         split_index: data.split_index,
         split_total: data.split_total,
         split_type: 'EQUAL',
-        date: data.date || new Date().toISOString().slice(0, 10),
+        date: data.date || getTodayStr(),
         customer_name: data.customer_name,
         payment_method: data.payment_method,
         amount_paid: data.amount_paid,
@@ -1287,7 +1288,7 @@ export default function POS() {
 
         setCompletedOrder({
           order_number: data.order_number,
-          date: data.paid_at || new Date().toISOString().slice(0, 10),
+          date: data.paid_at || getTodayStr(),
           customer_name: data.customer_name || 'Pelanggan Umum',
           payment_method: data.payment_method,
           amount_paid: data.amount_paid,

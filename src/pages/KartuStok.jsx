@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, num, LoadingState, PageHeader, AuditInfo, PeriodPicker } from '../components/ui';
+import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 
@@ -31,7 +32,10 @@ export default function KartuStok() {
     }
     return '';
   });
-  const [period, setPeriod] = useState({ from: '2026-08-01', to: '2026-08-31' });
+  const [period, setPeriod] = useState(() => ({
+    from: getMonthStartStr(),
+    to: getMonthEndStr(),
+  }));
 
   // Selected ingredient (when empty, displays items summary list; when set, displays specific stock card)
   const [selectedIngId, setSelectedIngId] = useState('');
@@ -61,7 +65,7 @@ export default function KartuStok() {
   const [mutationForm, setMutationForm] = useState({
     ingredient_id: '',
     outlet_id: '',
-    date: new Date().toISOString().slice(0, 10),
+    date: getTodayStr(),
     type: 'PURCHASE',
     unit_type: 'BELI',
     unit_price: '',
@@ -306,7 +310,7 @@ export default function KartuStok() {
                 setMutationForm({
                   ingredient_id: targetIngId,
                   outlet_id: selectedOutletId,
-                  date: new Date().toISOString().slice(0, 10),
+                  date: getTodayStr(),
                   type: 'PURCHASE',
                   unit_type: 'BELI',
                   unit_price: targetIng?.harga || '',

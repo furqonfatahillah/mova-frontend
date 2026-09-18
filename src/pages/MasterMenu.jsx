@@ -8,6 +8,7 @@ import {
   rupiah, num, LoadingState, PageHeader, AuditInfo, formatDateTime,
   SATUAN_PAKAI_OPTIONS, UnitSelect
 } from '../components/ui';
+import { getTodayStr } from '../utils/date';
 import toast from 'react-hot-toast';
 
 export default function MasterMenu() {
@@ -487,7 +488,7 @@ export default function MasterMenu() {
     }
     setSaving(true);
     try {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = getTodayStr();
       await api.post(`/menus/${selected.id}/recipes`, {
         date: today,
         items: draft,

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import api from '../api/client';
 import { num, pct, rupiah, fmtQtyVal, StatusPill, LoadingState, PeriodPicker, PageHeader, AuditInfo, MiniCard } from '../components/ui';
+import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 import { printElement } from '../utils/print';
@@ -32,13 +33,16 @@ export default function StockOpname() {
   }, [selectedOutletId, activeOutletId, outlets]);
 
   // --- TAB 1: INPUT OPNAME STATE ---
-  const [period, setPeriod] = useState({ from: '2026-08-01', to: '2026-08-31' });
+  const [period, setPeriod] = useState(() => ({
+    from: getMonthStartStr(),
+    to: getMonthEndStr(),
+  }));
   const [varData, setVarData] = useState([]);
   const [actuals, setActuals] = useState({});
   const [reasons, setReasons] = useState({});
   const [opnameMap, setOpnameMap] = useState({});
   const [sessionForm, setSessionForm] = useState({
-    opname_date: new Date().toISOString().slice(0, 10),
+    opname_date: getTodayStr(),
     approver: '',
     notes: ''
   });
@@ -95,7 +99,7 @@ export default function StockOpname() {
       setActuals(acts);
       setReasons(reas);
       setSessionForm({
-        opname_date: firstDate || new Date().toISOString().slice(0, 10),
+        opname_date: firstDate || getTodayStr(),
         approver: firstApprover,
         notes: firstNotes
       });
@@ -125,7 +129,7 @@ export default function StockOpname() {
   }
 
   async function handleSave(actionType = 'DRAFT') {
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = getTodayStr();
     if (sessionForm.opname_date < todayStr) {
       toast.error('Tanggal pelaksanaan opname tidak boleh di-inputkan tanggal mundur (sebelum hari ini)!');
       return;
@@ -340,7 +344,7 @@ export default function StockOpname() {
                   type="date"
                   className="form-control mono"
                   style={{ fontSize: 12.5 }}
-                  min={new Date().toISOString().slice(0, 10)}
+                  min={getTodayStr()}
                   value={sessionForm.opname_date}
                   onChange={e => setSessionForm(p => ({ ...p, opname_date: e.target.value }))}
                 />

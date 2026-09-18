@@ -11,6 +11,7 @@ import api from '../api/client';
 import toast from 'react-hot-toast';
 import { PageHeader, LoadingState, AuditInfo, MiniCard, num, PeriodPicker } from '../components/ui';
 import { printElement } from '../utils/print';
+import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
 import { useOutlet } from '../context/OutletContext';
 
 export default function TransferBahan() {
@@ -48,7 +49,7 @@ export default function TransferBahan() {
   const [returning, setReturning] = useState(false);
 
   // Form state
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = getTodayStr();
   const [formData, setFormData] = useState({
     date: todayStr,
     source_mode: 'OUTLET', // 'OUTLET' or 'CUSTOM'
@@ -74,12 +75,10 @@ export default function TransferBahan() {
     ]
   });
 
-  const [period, setPeriod] = useState(() => {
-    const today = new Date();
-    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
-    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10);
-    return { from: firstDay, to: lastDay };
-  });
+  const [period, setPeriod] = useState(() => ({
+    from: getMonthStartStr(),
+    to: getMonthEndStr(),
+  }));
 
   // Load all initial data
   useEffect(() => {
@@ -153,7 +152,7 @@ export default function TransferBahan() {
     };
 
     setFormData({
-      date: new Date().toISOString().slice(0, 10),
+      date: getTodayStr(),
       source_mode: 'OUTLET',
       source_outlet_id: altSource ? String(altSource.id) : '',
       source_name: '',
@@ -181,7 +180,7 @@ export default function TransferBahan() {
     const defaultUnit = firstIng?.unit_beli || firstIng?.unit_pakai || 'gram';
 
     setFormData({
-      date: new Date().toISOString().slice(0, 10),
+      date: getTodayStr(),
       source_mode: 'OUTLET',
       source_outlet_id: firstOut ? String(firstOut.id) : '',
       source_name: '',

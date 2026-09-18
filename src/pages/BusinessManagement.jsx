@@ -7,6 +7,7 @@ import {
 import api from '../api/client';
 import toast from 'react-hot-toast';
 import { PageHeader, LoadingState, MiniCard, formatDateTime } from '../components/ui';
+import { getTodayStr } from '../utils/date';
 import { useOutlet } from '../context/OutletContext';
 
 export default function BusinessManagement() {
@@ -65,7 +66,7 @@ export default function BusinessManagement() {
       package_type: 'pro',
       max_outlets: 5,
       status: 'active',
-      expires_at: nextMonth.toISOString().slice(0, 10),
+      expires_at: getTodayStr(nextMonth),
     });
     setCreateModalOpen(true);
   }

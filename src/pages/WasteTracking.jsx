@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import api from '../api/client';
 import { num, rupiah, LoadingState, PageHeader, AuditInfo } from '../components/ui';
+import { getTodayStr, getMonthStartStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 
@@ -36,12 +37,8 @@ export default function WasteTracking() {
   const { activeOutletId, activeOutlet, isOwnerWebsite, outlets } = useOutlet();
 
   // Filters
-  const [dateFrom, setDateFrom] = useState(() => {
-    const d = new Date();
-    d.setDate(1); // Beginning of current month
-    return d.toISOString().slice(0, 10);
-  });
-  const [dateTo, setDateTo] = useState(new Date().toISOString().slice(0, 10));
+  const [dateFrom, setDateFrom] = useState(() => getMonthStartStr());
+  const [dateTo, setDateTo] = useState(() => getTodayStr());
   const [filterReason, setFilterReason] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -56,7 +53,7 @@ export default function WasteTracking() {
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
-    date: new Date().toISOString().slice(0, 10),
+    date: getTodayStr(),
     outlet_id: '',
     item_type: 'INGREDIENT', // 'INGREDIENT' or 'MENU'
     ingredient_id: '',
@@ -118,7 +115,7 @@ export default function WasteTracking() {
   function handleOpenModal(preSelectedIngId = '') {
     const selectedIng = ingredients.find(i => i.id === Number(preSelectedIngId)) || ingredients[0];
     setForm({
-      date: new Date().toISOString().slice(0, 10),
+      date: getTodayStr(),
       outlet_id: currentTargetOutlet,
       item_type: 'INGREDIENT',
       ingredient_id: selectedIng?.id?.toString() || '',
