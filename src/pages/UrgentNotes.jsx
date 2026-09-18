@@ -391,29 +391,38 @@ export default function UrgentNotes() {
           {/* Outlet Select */}
           {outlets && outlets.length > 1 && (
             <select
-              className="form-select"
+              className="form-control"
               value={selectedOutlet}
               onChange={e => setSelectedOutlet(e.target.value)}
-              style={{ minWidth: 160, fontSize: 12.5, padding: '7px 12px' }}
+              style={{ minWidth: 180, fontSize: 12.5, padding: '6px 12px', height: 36 }}
             >
-              <option value="">Semua Cabang Outlet</option>
+              <option value="" style={{ background: '#11162d', color: '#ffffff' }}>Semua Cabang Outlet</option>
               {outlets.map(o => (
-                <option key={o.id} value={o.id}>{o.name}</option>
+                <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>{o.name}</option>
               ))}
             </select>
           )}
 
           {/* Search Input */}
-          <div style={{ position: 'relative', width: 240 }}>
-            <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+          <div style={{ position: 'relative', width: 250 }}>
+            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
             <input
               type="text"
-              className="form-input"
+              className="form-control"
               placeholder="Cari No. Order / Bahan..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              style={{ paddingLeft: 32, fontSize: 12.5, height: 36 }}
+              style={{ paddingLeft: 32, paddingRight: searchQuery ? 28 : 10, fontSize: 12.5, height: 36 }}
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+              >
+                <X size={13} />
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -672,7 +681,7 @@ export default function UrgentNotes() {
               <label className="form-label" style={{ fontSize: 12 }}>Catatan Pelunasan / Sumber Stok:</label>
               <input
                 type="text"
-                className="form-input"
+                className="form-control"
                 value={resolveModal.resolutionNotes}
                 onChange={e => setResolveModal(p => ({ ...p, resolutionNotes: e.target.value }))}
                 placeholder="Misal: Stok baru masuk dari PO #123 / Pembelian Kasir"
