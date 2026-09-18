@@ -21,14 +21,18 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [showReportModal, setShowReportModal] = useState(false);
 
-  const { activeOutletId, activeOutlet, currentBusiness } = useOutlet();
+  const { activeOutletId, activeOutlet, currentBusiness, isPlatformAdmin, activeBusinessId, businesses, changeBusiness } = useOutlet();
   const currentUser = JSON.parse(localStorage.getItem('pos_user') || '{}');
   const businessName = currentBusiness?.name || currentUser?.business?.name || 'MOVA POS F&B Management';
   const outletName = (activeOutlet && activeOutletId !== 'ALL' && activeOutletId !== 'all') ? activeOutlet.name : 'Semua Cabang (Konsolidasi)';
 
   useEffect(() => {
+    if (isPlatformAdmin && !activeBusinessId) {
+      setLoading(false);
+      return;
+    }
     fetchAll();
-  }, [period, activeOutletId]);
+  }, [period, activeOutletId, isPlatformAdmin, activeBusinessId]);
 
   async function fetchAll() {
     setLoading(true);
@@ -77,6 +81,162 @@ export default function Dashboard() {
   }
 
   if (loading) return <LoadingState />;
+
+  if (isPlatformAdmin && !activeBusinessId) {
+    return (
+      <div className="fade-in">
+        <PageHeader
+          title="Panel Pengelola Platform SaaS (Owner Website)"
+          subtitle="Kelola ekosistem bisnis MOVA POS, alokasi koin operasional penyewa, dan pengguna platform."
+        />
+
+        {/* Hero Section */}
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0.08))',
+          border: '1px solid rgba(139, 92, 246, 0.3)',
+          borderRadius: 16,
+          padding: 24,
+          marginBottom: 24,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 20,
+        }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+              <span style={{
+                background: 'rgba(99, 102, 241, 0.25)',
+                color: 'var(--accent-bright)',
+                fontSize: 11,
+                fontWeight: 800,
+                padding: '3px 10px',
+                borderRadius: 20,
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase'
+              }}>
+                🌐 Superadmin / Owner Website
+              </span>
+              <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                {businesses.length} Bisnis Penyewa Terdaftar
+              </span>
+            </div>
+            <h2 style={{ fontSize: 22, fontWeight: 800, color: '#ffffff', margin: 0 }}>
+              Pusat Manajemen Infrastruktur SaaS
+            </h2>
+            <p style={{ fontSize: 13.5, color: 'var(--text-secondary)', marginTop: 6, maxWidth: 650, lineHeight: 1.5 }}>
+              Sebagai Pemilik Website / Penyedia Platform, Anda mengelola lisensi penyewa dan tarif koin per transaksi. Untuk melihat atau membantu operasional dapur/resto penyewa, silakan pilih tenant di bawah atau gunakan <strong>Tenant Switcher</strong> di header.
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button
+              onClick={() => navigate('/businesses')}
+              className="btn btn-primary"
+              style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}
+            >
+              <Building2 size={16} /> Kelola Penyewa (SaaS)
+            </button>
+            <button
+              onClick={() => navigate('/coin-management')}
+              className="btn btn-secondary"
+              style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}
+            >
+              <Coins size={16} /> Top Up & Koin Platform
+            </button>
+          </div>
+        </div>
+
+        {/* Tenant Remote Assistance Cards */}
+        <div style={{ marginBottom: 30 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <div>
+              <h3 style={{ fontSize: 16, fontWeight: 800, color: '#ffffff', margin: 0 }}>
+                🔍 Remote Assistance / Inspeksi Dapur & Resto Penyewa
+              </h3>
+              <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+                Pilih salah satu bisnis penyewa untuk masuk ke mode inspeksi (melihat dashboard HPP, resep, transaksi kasir, dan laporan keuangan tenant).
+              </p>
+            </div>
+          </div>
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+            gap: 16,
+          }}>
+            {businesses.map((b) => (
+              <div
+                key={b.id}
+                onClick={() => changeBusiness(b.id)}
+                style={{
+                  background: 'var(--bg-card)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: 14,
+                  padding: 18,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.5)';
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 9, background: 'rgba(139, 92, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Building2 size={18} style={{ color: 'var(--accent-bright)' }} />
+                    </div>
+                    <span style={{
+                      fontSize: 10,
+                      fontWeight: 800,
+                      padding: '2px 8px',
+                      borderRadius: 6,
+                      background: b.status === 'active' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                      color: b.status === 'active' ? '#34d399' : '#f87171'
+                    }}>
+                      {b.status?.toUpperCase() || 'ACTIVE'}
+                    </span>
+                  </div>
+                  <div style={{ fontWeight: 800, color: '#ffffff', fontSize: 15 }}>
+                    {b.name}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                    Owner: {b.owner_name || b.email || 'Penyewa'}
+                  </div>
+                </div>
+
+                <div style={{
+                  paddingTop: 10,
+                  borderTop: '1px solid rgba(255, 255, 255, 0.06)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  fontSize: 12
+                }}>
+                  <span style={{ color: 'var(--accent-bright)', fontWeight: 600 }}>
+                    🪙 {Number(b.coin_balance || 0).toLocaleString()} Koin
+                  </span>
+                  <span style={{ color: 'var(--text-secondary)', fontWeight: 700 }}>
+                    Inspeksi Tenant ➔
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!data) return null;
 
   const {

@@ -24,7 +24,7 @@ export default function Login() {
       const isOwnerOutlet = u.role === 'owner_outlet' || u.role === 'manager_outlet' || Boolean(u.is_owner_outlet);
       const isPegawai = !isPlatformAdmin && !isOwnerBisnis && !isOwnerOutlet;
 
-      navigate(isPegawai ? '/pos' : '/');
+      navigate(isPegawai ? '/pos' : isPlatformAdmin ? '/businesses' : '/');
     } catch (err) {
       if (!err.response) {
         toast.error('Tidak dapat terhubung ke backend (pastikan php artisan serve berjalan).');

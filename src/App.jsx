@@ -88,14 +88,14 @@ export default function App() {
         }>
           {/* Dashboard & Master Data */}
           <Route index             element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><Dashboard /></RoleRoute>} />
-          <Route path="bahan"      element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><MasterBahan /></RoleRoute>} />
-          <Route path="menu"       element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><MasterMenu /></RoleRoute>} />
+          <Route path="bahan"      element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><MasterBahan /></RoleRoute>} />
+          <Route path="menu"       element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><MasterMenu /></RoleRoute>} />
           <Route path="outlet"     element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><OutletManagement /></RoleRoute>} />
           <Route path="users"      element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><UserManagement /></RoleRoute>} />
 
-          {/* SaaS Platform (Superadmin / Website Owner ONLY) */}
+          {/* SaaS Platform (Superadmin / Website Owner ONLY & Tenant Coin Billing) */}
           <Route path="businesses" element={<RoleRoute roles={['platform_admin', 'superadmin', 'owner_website']}><BusinessManagement /></RoleRoute>} />
-          <Route path="coin-management" element={<RoleRoute roles={['pegawai', 'owner_outlet', 'owner_bisnis', 'owner_website', 'superadmin', 'platform_admin']}><CoinManagement /></RoleRoute>} />
+          <Route path="coin-management" element={<RoleRoute roles={['owner_bisnis', 'owner_website', 'superadmin', 'platform_admin']}><CoinManagement /></RoleRoute>} />
 
           {/* Operasional (Staff & Kasir Accessible) */}
           <Route path="pos"          element={<RoleRoute roles={['pegawai']}><POS /></RoleRoute>} />

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Package, UtensilsCrossed, ShoppingCart,
@@ -41,98 +41,234 @@ export default function Layout() {
     userReferralCode,
   } = useOutletContext();
 
-  const navSections = [
-    ...(isPlatformAdmin ? [
-      {
-        label: 'SaaS Platform',
-        items: [
-          { to: '/businesses', label: 'Kelola Penyewa (SaaS)', icon: Building2 },
-          { to: '/coin-management', label: 'Top Up & Koin Platform', icon: Coins },
-        ],
-      },
-    ] : [
-      {
-        label: 'Tagihan & Koin',
-        items: [
-          { to: '/coin-management', label: 'Top Up & Saldo Koin', icon: Coins },
-        ],
-      },
-    ]),
-    ...(!isPegawai ? [
-      {
-        label: 'Overview',
-        items: [
-          { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-        ],
-      },
-    ] : []),
-    ...(!isPegawai ? [
-      {
-        label: 'Master Data',
-        items: [
-          { to: '/bahan', label: 'Master Bahan', icon: Package },
-          { to: '/menu', label: 'Master Menu', icon: UtensilsCrossed },
-          ...(isOwnerBisnis || isPlatformAdmin ? [
-            { to: '/outlet', label: 'Cabang Outlet', icon: Store },
-          ] : []),
+  const navSections = useMemo(() => {
+    // 1. Owner Website (Penyedia SaaS / Superadmin Platform)
+    if (isPlatformAdmin) {
+      const basePlatformSections = [
+        {
+          label: 'SaaS Platform',
+          items: [
+            { to: '/businesses', label: 'Kelola Penyewa (SaaS)', icon: Building2 },
+            { to: '/coin-management', label: 'Top Up & Koin Platform', icon: Coins },
+          ],
+        },
+        {
+          label: 'Manajemen Platform',
+          items: [
+            { to: '/users', label: 'Kelola Pengguna Platform', icon: Users, isUserMgmt: true },
+          ],
+        },
+      ];
+
+      // If Owner Website selected a tenant from the switcher, render tenant inspection section
+      if (activeBusinessId) {
+        return [
+          ...basePlatformSections,
           {
-            to: '/users',
-            label: isOwnerOutlet ? 'Kelola Pegawai' : 'Kelola Pengguna',
-            icon: Users,
-            isUserMgmt: true,
+            label: `Inspeksi: ${currentBusiness?.name || 'Tenant'}`,
+            items: [
+              { to: '/', label: 'Dashboard Tenant', icon: LayoutDashboard },
+              { to: '/bahan', label: 'Master Bahan & Resep', icon: Package },
+              { to: '/menu', label: 'Master Menu & Harga', icon: UtensilsCrossed },
+              { to: '/outlet', label: 'Cabang Outlet', icon: Store },
+              { to: '/pos', label: 'POS / Transaksi', icon: ShoppingCart },
+              { to: '/urgent-notes', label: 'Nota Urgent', icon: AlertOctagon },
+              { to: '/shift', label: 'Kelola Shift', icon: Clock },
+              { to: '/batch-prep', label: 'Produksi Batch', icon: ChefHat },
+              { to: '/waste', label: 'Bahan Terbuang (Waste)', icon: Trash2 },
+              { to: '/diskon', label: 'Promo & Diskon', icon: Percent },
+              { to: '/transfer', label: 'Transfer Stok', icon: Send },
+              { to: '/kartu-stok', label: 'Kartu Stok', icon: ScrollText },
+              { to: '/movement', label: 'Riwayat Mutasi', icon: ArrowUpDown },
+              { to: '/opname', label: 'Stock Opname', icon: ClipboardList },
+              { to: '/opex', label: 'Biaya Operasional (OPEX)', icon: Receipt },
+              { to: '/profit-loss', label: 'Laba Rugi (P&L)', icon: Landmark },
+              { to: '/cash-flow', label: 'Arus Kas (Cash Flow)', icon: Wallet },
+              { to: '/variance/bahan', label: 'Variance Bahan', icon: BarChart2 },
+              { to: '/variance/menu', label: 'Variance Menu', icon: TrendingUp },
+              { to: '/profitability', label: 'Profitability', icon: DollarSign },
+              { to: '/root-cause', label: 'Root Cause', icon: AlertTriangle },
+            ],
+          },
+          {
+            label: 'Bantuan & Support',
+            items: [
+              {
+                isExternal: true,
+                href: 'https://wa.me/6281244295923?text=Halo%20Admin%20Helpdesk%20MOVA%20POS,%20saya%20butuh%20bantuan.',
+                label: 'Helpdesk WA (+62 812-4429-5923)',
+                icon: Headset,
+              },
+            ],
+          },
+        ];
+      }
+
+      // Default Platform Mode (No Tenant Selected)
+      return [
+        ...basePlatformSections,
+        {
+          label: 'Bantuan & Support',
+          items: [
+            {
+              isExternal: true,
+              href: 'https://wa.me/6281244295923?text=Halo%20Admin%20Helpdesk%20MOVA%20POS,%20saya%20butuh%20bantuan.',
+              label: 'Helpdesk WA (+62 812-4429-5923)',
+              icon: Headset,
+            },
+          ],
+        },
+      ];
+    }
+
+    // 2. Owner Bisnis (Penyewa / Pemilik Resto / Cafe)
+    if (isOwnerBisnis) {
+      return [
+        {
+          label: 'Tagihan Usaha',
+          items: [
+            { to: '/coin-management', label: 'Cek Saldo Koin Usaha', icon: Coins },
+          ],
+        },
+        {
+          label: 'Overview',
+          items: [
+            { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+          ],
+        },
+        {
+          label: 'Master Bisnis',
+          items: [
+            { to: '/bahan', label: 'Master Resep & HPP Bahan', icon: Package },
+            { to: '/menu', label: 'Master Menu & Modifier', icon: UtensilsCrossed },
+            { to: '/outlet', label: 'Tambah Cabang Outlet', icon: Store },
+            { to: '/users', label: 'Kelola Manager & Pegawai', icon: Users, isUserMgmt: true },
+          ],
+        },
+        {
+          label: 'Operasional',
+          items: [
+            { to: '/pos', label: 'POS / Transaksi', icon: ShoppingCart },
+            { to: '/urgent-notes', label: 'Nota Urgent (Bahan)', icon: AlertOctagon },
+            { to: '/shift', label: 'Kelola Shift Kasir', icon: Clock },
+            { to: '/batch-prep', label: 'Produksi Batch (Prep)', icon: ChefHat },
+            { to: '/waste', label: 'Bahan Terbuang (Waste)', icon: Trash2 },
+            { to: '/diskon', label: 'Master Diskon & Promo', icon: Percent },
+            { to: '/transfer', label: 'Transfer Stok / Barang', icon: Send },
+            { to: '/kartu-stok', label: 'Kartu Stok', icon: ScrollText },
+            { to: '/movement', label: 'Riwayat Mutasi', icon: ArrowUpDown },
+            { to: '/opname', label: 'Stock Opname', icon: ClipboardList },
+            { to: '/opex', label: 'Biaya Operasional (OPEX)', icon: Receipt },
+          ],
+        },
+        {
+          label: 'Finansial & Analitik',
+          items: [
+            { to: '/profit-loss', label: 'Laba Rugi (P&L)', icon: Landmark },
+            { to: '/cash-flow', label: 'Arus Kas (Cash Flow)', icon: Wallet },
+            { to: '/variance/bahan', label: 'Analisis Varian Bahan', icon: BarChart2 },
+            { to: '/variance/menu', label: 'Analisis Varian Menu', icon: TrendingUp },
+            { to: '/profitability', label: 'Profitability (Menu Eng.)', icon: DollarSign },
+            { to: '/root-cause', label: 'Root Cause Analysis', icon: AlertTriangle },
+          ],
+        },
+        {
+          label: 'Bantuan & Support',
+          items: [
+            {
+              isExternal: true,
+              href: 'https://wa.me/6281244295923?text=Halo%20Admin%20Helpdesk%20MOVA%20POS,%20saya%20butuh%20bantuan.',
+              label: 'Helpdesk WA (+62 812-4429-5923)',
+              icon: Headset,
+            },
+          ],
+        },
+      ];
+    }
+
+    // 3. Owner Outlet / Manager Cabang (Kepala Toko)
+    if (isOwnerOutlet) {
+      return [
+        {
+          label: 'Overview Cabang',
+          items: [
+            { to: '/', label: 'Dashboard Cabang', icon: LayoutDashboard },
+          ],
+        },
+        {
+          label: 'Kepegawaian Cabang',
+          items: [
+            { to: '/users', label: 'Kelola Pegawai Cabang', icon: Users, isUserMgmt: true },
+          ],
+        },
+        {
+          label: 'Operasional Cabang',
+          items: [
+            { to: '/pos', label: 'POS Kasir', icon: ShoppingCart },
+            { to: '/urgent-notes', label: 'Nota Urgent', icon: AlertOctagon },
+            { to: '/shift', label: 'Shift Kasir', icon: Clock },
+            { to: '/batch-prep', label: 'Batch Prep Dapur', icon: ChefHat },
+            { to: '/waste', label: 'Waste Log', icon: Trash2 },
+            { to: '/opex', label: 'Biaya Operasional Cabang', icon: Receipt },
+          ],
+        },
+        {
+          label: 'Logistik Cabang',
+          items: [
+            { to: '/transfer', label: 'Transfer Bahan (Kirim/Terima)', icon: Send },
+            { to: '/kartu-stok', label: 'Kartu Stok Cabang', icon: ScrollText },
+            { to: '/movement', label: 'Riwayat Mutasi', icon: ArrowUpDown },
+            { to: '/opname', label: 'Stock Opname Cabang', icon: ClipboardList },
+          ],
+        },
+        {
+          label: 'Analitik Cabang',
+          items: [
+            { to: '/variance/bahan', label: 'Analisis Varian Bahan', icon: BarChart2 },
+            { to: '/variance/menu', label: 'Analisis Varian Menu', icon: TrendingUp },
+          ],
+        },
+        {
+          label: 'Bantuan & Support',
+          items: [
+            {
+              isExternal: true,
+              href: 'https://wa.me/6281244295923?text=Halo%20Admin%20Helpdesk%20MOVA%20POS,%20saya%20butuh%20bantuan.',
+              label: 'Helpdesk WA (+62 812-4429-5923)',
+              icon: Headset,
+            },
+          ],
+        },
+      ];
+    }
+
+    // 4. Pegawai (Kasir / Barista / Kitchen Staff)
+    return [
+      {
+        label: 'Operasional Kasir & Dapur',
+        items: [
+          { to: '/pos', label: 'POS / Transaksi', icon: ShoppingCart },
+          { to: '/urgent-notes', label: 'Nota Urgent', icon: AlertOctagon },
+          { to: '/shift', label: 'Shift Kasir', icon: Clock },
+          { to: '/batch-prep', label: 'Produksi Batch (Dapur)', icon: ChefHat },
+          { to: '/waste', label: 'Bahan Terbuang (Waste)', icon: Trash2 },
+          { to: '/transfer', label: 'Transfer Stok (Terima/Kirim)', icon: Send },
+          { to: '/kartu-stok', label: 'Kartu Stok', icon: ScrollText },
+        ],
+      },
+      {
+        label: 'Bantuan & Support',
+        items: [
+          {
+            isExternal: true,
+            href: 'https://wa.me/6281244295923?text=Halo%20Admin%20Helpdesk%20MOVA%20POS,%20saya%20butuh%20bantuan.',
+            label: 'Helpdesk WA (+62 812-4429-5923)',
+            icon: Headset,
           },
         ],
       },
-    ] : []),
-    {
-      label: isPegawai ? 'Operasional Kasir & Dapur' : 'Operasional',
-      items: [
-        { to: '/pos', label: 'POS / Transaksi', icon: ShoppingCart },
-        { to: '/urgent-notes', label: 'Nota Urgent (Bahan)', icon: AlertOctagon },
-        { to: '/shift', label: 'Kelola Shift', icon: Clock },
-        { to: '/batch-prep', label: 'Produksi Batch (Prep)', icon: ChefHat },
-        { to: '/waste', label: 'Bahan Terbuang (Waste)', icon: Trash2 },
-        ...(isOwnerBisnis || isPlatformAdmin ? [
-          { to: '/diskon', label: 'Promo & Diskon', icon: Percent },
-        ] : []),
-        { to: '/transfer', label: 'Transfer Stok / Barang', icon: Send },
-        { to: '/kartu-stok', label: 'Kartu Stok', icon: ScrollText },
-        ...(!isPegawai ? [
-          { to: '/movement', label: 'Riwayat Mutasi', icon: ArrowUpDown },
-          { to: '/opname', label: 'Stock Opname', icon: ClipboardList },
-          { to: '/opex', label: 'Biaya Operasional (OPEX)', icon: Receipt },
-        ] : []),
-      ],
-    },
-    ...(!isPegawai ? [
-      {
-        label: isOwnerOutlet ? 'Analitik Cabang' : 'Analitik',
-        items: [
-          ...(isOwnerBisnis || isPlatformAdmin ? [
-            { to: '/profit-loss', label: 'Laba Rugi (P&L)', icon: Landmark },
-            { to: '/cash-flow', label: 'Arus Kas (Cash Flow)', icon: Wallet },
-          ] : []),
-          { to: '/variance/bahan', label: 'Variance Bahan', icon: BarChart2 },
-          { to: '/variance/menu', label: 'Variance Menu', icon: TrendingUp },
-          ...(isOwnerBisnis || isPlatformAdmin ? [
-            { to: '/profitability', label: 'Profitability', icon: DollarSign },
-            { to: '/root-cause', label: 'Root Cause', icon: AlertTriangle },
-          ] : []),
-        ],
-      },
-    ] : []),
-    {
-      label: 'Bantuan & Support',
-      items: [
-        {
-          isExternal: true,
-          href: 'https://wa.me/6281244295923?text=Halo%20Admin%20Helpdesk%20MOVA%20POS,%20saya%20butuh%20bantuan.',
-          label: 'Helpdesk WA (+62 812-4429-5923)',
-          icon: Headset,
-        },
-      ],
-    },
-  ];
+    ];
+  }, [isPlatformAdmin, isOwnerBisnis, isOwnerOutlet, isPegawai, activeBusinessId, currentBusiness]);
 
   useEffect(() => {
     if (!isPegawai) {
@@ -485,7 +621,7 @@ export default function Layout() {
               </div>
             )}
 
-            {(isPlatformAdmin || isOwnerBisnis) ? (
+            {(isPlatformAdmin ? Boolean(activeBusinessId) : isOwnerBisnis) ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flex: 1, minWidth: 0 }}>
                 <span className="top-header-switcher-label">Ganti Cabang:</span>
                 <select
@@ -502,13 +638,61 @@ export default function Layout() {
                   ))}
                 </select>
               </div>
-            ) : (
+            ) : !isPlatformAdmin ? (
               <div className="top-header-isolated-badge">
                 <span>Mutasi & stok bahan diisolasi khusus cabang {user.outlet_name || 'ini'}</span>
               </div>
-            )}
+            ) : null}
           </div>
         </div>
+
+        {/* Remote Support / Inspection Mode Banner for Platform Admin */}
+        {isPlatformAdmin && activeBusinessId && (
+          <div style={{
+            background: 'linear-gradient(90deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.2))',
+            border: '1px solid rgba(139, 92, 246, 0.4)',
+            borderRadius: 12,
+            padding: '10px 18px',
+            margin: '0 24px 16px 24px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            boxShadow: '0 4px 16px rgba(99, 102, 241, 0.15)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(99, 102, 241, 0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Building2 size={18} style={{ color: 'var(--accent-bright)' }} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 800, color: '#ffffff', fontSize: 13 }}>
+                  🔍 Mode Remote Support / Inspeksi Tenant Aktif: {currentBusiness?.name || 'Tenant Terpilih'}
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 1 }}>
+                  Anda sedang menginspeksi modul operasional, resep, dan laporan finansial milik penyewa ini.
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => changeBusiness('')}
+              className="btn btn-ghost btn-sm"
+              style={{
+                color: '#f87171',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                background: 'rgba(239, 68, 68, 0.1)',
+                whiteSpace: 'nowrap',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6
+              }}
+              title="Keluar dari mode inspeksi tenant dan kembali ke dashboard SaaS Platform"
+            >
+              <X size={14} />
+              Keluar Mode Inspeksi
+            </button>
+          </div>
+        )}
 
         {/* Out of Coins Alert Banner */}
         {isCoinOut && (

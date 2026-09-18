@@ -59,10 +59,10 @@ export function OutletProvider({ children }) {
 
   // Active business ID for Platform Admin (Superadmin / Owner Website)
   const [activeBusinessId, setActiveBusinessIdState] = useState(() => {
-    if (!isPlatformAdmin && currentUser.business_id) {
-      return String(currentUser.business_id);
+    if (isPlatformAdmin) {
+      return localStorage.getItem('pos_active_business_id') || '';
     }
-    return localStorage.getItem('pos_active_business_id') || (currentUser.business_id ? String(currentUser.business_id) : '');
+    return currentUser.business_id ? String(currentUser.business_id) : '';
   });
 
   // For owner_bisnis / platform admin: can be a specific outlet ID or 'ALL'
