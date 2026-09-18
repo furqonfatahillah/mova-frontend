@@ -1,13 +1,103 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Coins, Plus, Search, Shield, Building2, Store, ArrowUpRight, ArrowDownLeft,
   Calendar, CheckCircle2, AlertTriangle, XCircle, Clock, Edit3, RefreshCw,
-  TrendingUp, CreditCard, Banknote, FileText, Check, X, AlertCircle, Gift
+  TrendingUp, CreditCard, Banknote, FileText, Check, X, AlertCircle, Gift,
+  User, Eye, ChevronRight, Layers, ListFilter
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
 import { PageHeader, LoadingState, rupiah, num, formatDateTime } from '../components/ui';
 import { useOutlet } from '../context/OutletContext';
+
+/**
+ * Format string date (YYYY-MM-DD) into Indonesian readable date.
+ */
+function formatDateIndo(dateStr) {
+  if (!dateStr || dateStr === 'Lainnya') return dateStr || '-';
+  try {
+    const d = new Date(dateStr + 'T00:00:00');
+    return d.toLocaleDateString('id-ID', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+  } catch (e) {
+    return dateStr;
+  }
+}
+
+/**
+ * Group raw mutations array by date (YYYY-MM-DD extracted from created_at).
+ * Calculates daily usage count/amount, top up count/amount, and net balance movement.
+ */
+function groupMutationsByDate(mutations) {
+  if (!Array.isArray(mutations) || mutations.length === 0) return [];
+
+  const groupsMap = {};
+
+  for (const m of mutations) {
+    const dateKey = (m.created_at || '').substring(0, 10) || 'Lainnya';
+    if (!groupsMap[dateKey]) {
+      groupsMap[dateKey] = {
+        date: dateKey,
+        items: [],
+        totalChange: 0,
+        usageCount: 0,
+        usageAmount: 0,
+        topUpCount: 0,
+        topUpAmount: 0,
+        otherCount: 0,
+        startBalance: null,
+        endBalance: null,
+      };
+    }
+    groupsMap[dateKey].items.push(m);
+  }
+
+  // Sort groups by date descending
+  const sortedGroups = Object.values(groupsMap).sort((a, b) => b.date.localeCompare(a.date));
+
+  for (const g of sortedGroups) {
+    let sumAmount = 0;
+    let uCount = 0;
+    let uAmt = 0;
+    let tCount = 0;
+    let tAmt = 0;
+    let oCount = 0;
+
+    // Items are ordered by created_at desc (latest is index 0, earliest is last index)
+    const latestItem = g.items[0];
+    const earliestItem = g.items[g.items.length - 1];
+
+    g.endBalance = latestItem?.balance_after ?? 0;
+    g.startBalance = earliestItem?.balance_before ?? 0;
+
+    for (const item of g.items) {
+      const amt = Number(item.amount) || 0;
+      sumAmount += amt;
+      if (item.type === 'USAGE') {
+        uCount++;
+        uAmt += Math.abs(amt);
+      } else if (item.type === 'TOPUP') {
+        tCount++;
+        tAmt += amt;
+      } else {
+        oCount++;
+      }
+    }
+
+    g.totalChange = sumAmount;
+    g.usageCount = uCount;
+    g.usageAmount = uAmt;
+    g.topUpCount = tCount;
+    g.topUpAmount = tAmt;
+    g.otherCount = oCount;
+  }
+
+  return sortedGroups;
+}
 
 export default function CoinManagement() {
   const { isSuperadminPlatform, isOwnerWebsite, refreshCoins } = useOutlet();
@@ -23,6 +113,7 @@ export default function CoinManagement() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'LOW' | 'OUT' | 'SAFE'
   const [historyBusinessFilter, setHistoryBusinessFilter] = useState('');
+  const [adminViewMode, setAdminViewMode] = useState('grouped'); // 'grouped' | 'flat'
 
   // Modals
   const [topUpModal, setTopUpModal] = useState({
@@ -40,6 +131,11 @@ export default function CoinManagement() {
     business: null,
     coinsPerTx: 1,
     submitting: false,
+  });
+
+  const [detailDateModal, setDetailDateModal] = useState({
+    open: false,
+    group: null,
   });
 
   useEffect(() => {
@@ -178,6 +274,9 @@ export default function CoinManagement() {
     }
   }
 
+  // -------------------------------------------------------------
+  // NON-PLATFORM ADMIN VIEW (Tenant / Business Owner)
+  // -------------------------------------------------------------
   if (!isPlatformAdmin) {
     if (loadingMyCoins && !myCoinsData) {
       return <LoadingState message="Memuat saldo koin perusahaan..." />;
@@ -190,6 +289,8 @@ export default function CoinManagement() {
     const isOut = myCoinsData?.is_coin_out;
     const mutations = myCoinsData?.recent_mutations || [];
     const businessName = myCoinsData?.business_name || 'Perusahaan';
+
+    const groupedMutations = useMemo(() => groupMutationsByDate(mutations), [mutations]);
 
     const waLink = `https://wa.me/6281244295923?text=Halo%20Admin%20MOVA%20POS,%20saya%20ingin%20Top%20Up%20Koin%20untuk%20perusahaan%20${encodeURIComponent(businessName)}`;
 
@@ -333,18 +434,21 @@ export default function CoinManagement() {
           </div>
         </div>
 
-        {/* Mutation History Table Card */}
+        {/* Mutation History Table Card - Grouped By Date */}
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(165, 180, 252, 0.12)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(165, 180, 252, 0.12)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Clock size={18} style={{ color: 'var(--accent-bright)' }} />
+              <Calendar size={18} style={{ color: 'var(--accent-bright)' }} />
               <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: '#f8fafc' }}>
-                Riwayat Mutasi & Pemotongan Koin ({mutations.length})
+                Riwayat Mutasi Koin per Tanggal ({groupedMutations.length} Hari · {mutations.length} Transaksi)
               </h3>
             </div>
+            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+              💡 Klik baris tanggal untuk melihat rincian transaksi & operator pembuat
+            </span>
           </div>
 
-          {mutations.length === 0 ? (
+          {groupedMutations.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
               <Clock size={36} style={{ marginBottom: 8, opacity: 0.5 }} />
               <div>Belum ada riwayat mutasi koin untuk perusahaan ini.</div>
@@ -354,75 +458,99 @@ export default function CoinManagement() {
               <table className="table" style={{ margin: 0 }}>
                 <thead>
                   <tr>
-                    <th style={{ paddingLeft: 20 }}>Waktu</th>
-                    <th style={{ textAlign: 'center' }}>Tipe Mutasi</th>
-                    <th style={{ textAlign: 'right' }}>Perubahan</th>
+                    <th style={{ paddingLeft: 20 }}>Tanggal Transaksi</th>
+                    <th style={{ textAlign: 'center' }}>Aktivitas Mutasi</th>
+                    <th style={{ textAlign: 'right' }}>Total Perubahan</th>
                     <th style={{ textAlign: 'right' }}>Saldo (Awal &rarr; Akhir)</th>
-                    <th>No. Nota / Referensi</th>
-                    <th>Catatan & Operator</th>
+                    <th style={{ textAlign: 'center', paddingRight: 20 }}>Rincian Transaksi</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {mutations.map((h) => (
-                    <tr key={h.id}>
-                      <td style={{ paddingLeft: 20, fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                        {formatDateTime(h.created_at)}
+                  {groupedMutations.map((g) => (
+                    <tr
+                      key={g.date}
+                      style={{ cursor: 'pointer', transition: 'background 0.15s' }}
+                      onClick={() => setDetailDateModal({ open: true, group: g })}
+                    >
+                      <td style={{ paddingLeft: 20 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{
+                            width: 38, height: 38, borderRadius: 10,
+                            background: 'rgba(139, 92, 246, 0.15)',
+                            color: '#c4b5fd',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontWeight: 800, fontSize: 13, flexShrink: 0
+                          }}>
+                            <Calendar size={18} />
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 700, color: '#ffffff', fontSize: 14 }}>
+                              {formatDateIndo(g.date)}
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                              {g.date} • Total {g.items.length} Transaksi
+                            </div>
+                          </div>
+                        </div>
                       </td>
+
                       <td style={{ textAlign: 'center' }}>
-                        {h.type === 'TOPUP' ? (
-                          <span style={{
-                            padding: '3px 8px', borderRadius: 8, fontSize: 11, fontWeight: 700,
-                            background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)'
-                          }}>
-                            TOP UP
-                          </span>
-                        ) : h.type === 'USAGE' ? (
-                          <span style={{
-                            padding: '3px 8px', borderRadius: 8, fontSize: 11, fontWeight: 700,
-                            background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.3)'
-                          }}>
-                            NOTA KASIR
-                          </span>
-                        ) : (
-                          <span style={{
-                            padding: '3px 8px', borderRadius: 8, fontSize: 11, fontWeight: 700,
-                            background: 'rgba(139, 92, 246, 0.15)', color: '#c4b5fd'
-                          }}>
-                            {h.type}
-                          </span>
-                        )}
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
+                          {g.usageCount > 0 && (
+                            <span style={{
+                              padding: '4px 10px', borderRadius: 20, fontSize: 11.5, fontWeight: 700,
+                              background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.3)'
+                            }}>
+                              🛒 {g.usageCount} Nota Kasir (-{num(g.usageAmount)})
+                            </span>
+                          )}
+                          {g.topUpCount > 0 && (
+                            <span style={{
+                              padding: '4px 10px', borderRadius: 20, fontSize: 11.5, fontWeight: 700,
+                              background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)'
+                            }}>
+                              🪙 {g.topUpCount} Top Up (+{num(g.topUpAmount)})
+                            </span>
+                          )}
+                          {g.otherCount > 0 && (
+                            <span style={{
+                              padding: '4px 10px', borderRadius: 20, fontSize: 11.5, fontWeight: 700,
+                              background: 'rgba(139, 92, 246, 0.15)', color: '#c4b5fd'
+                            }}>
+                              {g.otherCount} Penyesuaian
+                            </span>
+                          )}
+                        </div>
                       </td>
-                      <td style={{ textAlign: 'right', fontWeight: 800 }}>
-                        <span style={{ color: Number(h.amount) > 0 ? '#34d399' : '#ef4444' }}>
-                          {Number(h.amount) > 0 ? `+${num(h.amount)}` : num(h.amount)} Koin
+
+                      <td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14 }}>
+                        <span style={{ color: g.totalChange > 0 ? '#34d399' : g.totalChange < 0 ? '#ef4444' : '#ffffff' }}>
+                          {g.totalChange > 0 ? `+${num(g.totalChange)}` : num(g.totalChange)} Koin
                         </span>
                       </td>
+
                       <td style={{ textAlign: 'right', fontSize: 13 }}>
-                        <span style={{ color: 'var(--text-secondary)' }}>{num(h.balance_before)}</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>{num(g.startBalance)}</span>
                         <span style={{ margin: '0 6px', color: 'var(--text-muted)' }}>&rarr;</span>
-                        <strong style={{ color: '#ffffff' }}>{num(h.balance_after)}</strong>
+                        <strong style={{ color: '#ffffff', fontSize: 14 }}>{num(g.endBalance)}</strong>
                       </td>
-                      <td>
-                        {h.order_number ? (
-                          <span style={{
-                            fontFamily: 'monospace', fontWeight: 700, fontSize: 12, color: 'var(--accent-bright)'
-                          }}>
-                            {h.order_number}
-                          </span>
-                        ) : h.payment_reference ? (
-                          <span style={{ fontSize: 12, color: '#34d399', fontWeight: 600 }}>
-                            Ref: {h.payment_reference}
-                          </span>
-                        ) : (
-                          <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>-</span>
-                        )}
-                      </td>
-                      <td>
-                        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{h.notes || '-'}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                          Oleh: {h.creator?.name || 'Sistem'}
-                          {h.outlet?.name ? ` • Cabang: ${h.outlet.name}` : ''}
-                        </div>
+
+                      <td style={{ textAlign: 'center', paddingRight: 20 }}>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDetailDateModal({ open: true, group: g });
+                          }}
+                          className="btn btn-secondary btn-sm"
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 6,
+                            fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 8
+                          }}
+                        >
+                          <Eye size={14} style={{ color: 'var(--accent-bright)' }} />
+                          <span>Lihat {g.items.length} Rincian</span>
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -431,10 +559,20 @@ export default function CoinManagement() {
             </div>
           )}
         </div>
+
+        {/* Modal Detail Transaksi Koin per Tanggal */}
+        <CoinDateDetailModal
+          open={detailDateModal.open}
+          group={detailDateModal.group}
+          onClose={() => setDetailDateModal({ open: false, group: null })}
+        />
       </div>
     );
   }
 
+  // -------------------------------------------------------------
+  // PLATFORM ADMIN / WEBSITE OWNER VIEW
+  // -------------------------------------------------------------
   const businesses = dataOverview?.businesses || [];
   const metrics = dataOverview?.metrics || {
     total_businesses: 0,
@@ -461,6 +599,9 @@ export default function CoinManagement() {
 
     return true;
   });
+
+  const safeHistoryList = Array.isArray(historyList) ? historyList : (historyList?.data || []);
+  const groupedAdminHistory = useMemo(() => groupMutationsByDate(safeHistoryList), [safeHistoryList]);
 
   return (
     <div className="page-container">
@@ -797,6 +938,27 @@ export default function CoinManagement() {
                   </option>
                 ))}
               </select>
+
+              <div style={{ display: 'flex', gap: 4, background: 'rgba(255,255,255,0.05)', padding: 3, borderRadius: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setAdminViewMode('grouped')}
+                  className={`btn btn-sm ${adminViewMode === 'grouped' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ fontSize: 11.5, padding: '4px 10px', borderRadius: 6 }}
+                >
+                  <Layers size={13} style={{ marginRight: 4 }} />
+                  Group Tanggal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAdminViewMode('flat')}
+                  className={`btn btn-sm ${adminViewMode === 'flat' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ fontSize: 11.5, padding: '4px 10px', borderRadius: 6 }}
+                >
+                  <ListFilter size={13} style={{ marginRight: 4 }} />
+                  Semua Baris
+                </button>
+              </div>
             </div>
 
             <button
@@ -810,7 +972,6 @@ export default function CoinManagement() {
           </div>
 
           {(() => {
-            const safeHistoryList = Array.isArray(historyList) ? historyList : (historyList?.data || []);
             if (loadingHistory) {
               return <LoadingState message="Memuat mutasi koin..." />;
             }
@@ -823,6 +984,121 @@ export default function CoinManagement() {
                 </div>
               );
             }
+
+            if (adminViewMode === 'grouped') {
+              return (
+                <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                  <div style={{ padding: '14px 20px', borderBottom: '1px solid rgba(165, 180, 252, 0.12)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Calendar size={18} style={{ color: 'var(--accent-bright)' }} />
+                      <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: '#f8fafc' }}>
+                        Riwayat Mutasi Koin per Tanggal ({groupedAdminHistory.length} Hari · {safeHistoryList.length} Transaksi)
+                      </h3>
+                    </div>
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                      💡 Klik baris tanggal untuk melihat rincian & operator pembuat
+                    </span>
+                  </div>
+
+                  <div className="table-responsive">
+                    <table className="table" style={{ margin: 0 }}>
+                      <thead>
+                        <tr>
+                          <th style={{ paddingLeft: 20 }}>Tanggal Transaksi</th>
+                          <th style={{ textAlign: 'center' }}>Aktivitas Mutasi</th>
+                          <th style={{ textAlign: 'right' }}>Total Perubahan</th>
+                          <th style={{ textAlign: 'right' }}>Saldo (Awal &rarr; Akhir)</th>
+                          <th style={{ textAlign: 'center', paddingRight: 20 }}>Rincian Transaksi</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {groupedAdminHistory.map((g) => (
+                          <tr
+                            key={g.date}
+                            style={{ cursor: 'pointer', transition: 'background 0.15s' }}
+                            onClick={() => setDetailDateModal({ open: true, group: g })}
+                          >
+                            <td style={{ paddingLeft: 20 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <div style={{
+                                  width: 38, height: 38, borderRadius: 10,
+                                  background: 'rgba(139, 92, 246, 0.15)',
+                                  color: '#c4b5fd',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  fontWeight: 800, fontSize: 13, flexShrink: 0
+                                }}>
+                                  <Calendar size={18} />
+                                </div>
+                                <div>
+                                  <div style={{ fontWeight: 700, color: '#ffffff', fontSize: 14 }}>
+                                    {formatDateIndo(g.date)}
+                                  </div>
+                                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                                    {g.date} • Total {g.items.length} Transaksi
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+
+                            <td style={{ textAlign: 'center' }}>
+                              <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
+                                {g.usageCount > 0 && (
+                                  <span style={{
+                                    padding: '4px 10px', borderRadius: 20, fontSize: 11.5, fontWeight: 700,
+                                    background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.3)'
+                                  }}>
+                                    🛒 {g.usageCount} Nota Kasir (-{num(g.usageAmount)})
+                                  </span>
+                                )}
+                                {g.topUpCount > 0 && (
+                                  <span style={{
+                                    padding: '4px 10px', borderRadius: 20, fontSize: 11.5, fontWeight: 700,
+                                    background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)'
+                                  }}>
+                                    🪙 {g.topUpCount} Top Up (+{num(g.topUpAmount)})
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+
+                            <td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14 }}>
+                              <span style={{ color: g.totalChange > 0 ? '#34d399' : g.totalChange < 0 ? '#ef4444' : '#ffffff' }}>
+                                {g.totalChange > 0 ? `+${num(g.totalChange)}` : num(g.totalChange)} Koin
+                              </span>
+                            </td>
+
+                            <td style={{ textAlign: 'right', fontSize: 13 }}>
+                              <span style={{ color: 'var(--text-secondary)' }}>{num(g.startBalance)}</span>
+                              <span style={{ margin: '0 6px', color: 'var(--text-muted)' }}>&rarr;</span>
+                              <strong style={{ color: '#ffffff', fontSize: 14 }}>{num(g.endBalance)}</strong>
+                            </td>
+
+                            <td style={{ textAlign: 'center', paddingRight: 20 }}>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDetailDateModal({ open: true, group: g });
+                                }}
+                                className="btn btn-secondary btn-sm"
+                                style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                                  fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 8
+                                }}
+                              >
+                                <Eye size={14} style={{ color: 'var(--accent-bright)' }} />
+                                <span>Lihat {g.items.length} Rincian</span>
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            }
+
             return (
               <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
                 <div className="table-responsive">
@@ -840,84 +1116,94 @@ export default function CoinManagement() {
                     </thead>
                     <tbody>
                       {safeHistoryList.map((h) => (
-                      <tr key={h.id}>
-                        <td style={{ paddingLeft: 20, fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                          {formatDateTime(h.created_at)}
-                        </td>
-                        <td>
-                          <div style={{ fontWeight: 700, color: '#ffffff', fontSize: 13 }}>{h.business?.name || 'Perusahaan'}</div>
-                        </td>
-                        <td style={{ textAlign: 'center' }}>
-                          {h.type === 'TOPUP' ? (
-                            <span style={{
-                              padding: '3px 8px', borderRadius: 8, fontSize: 11, fontWeight: 700,
-                              background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)'
-                            }}>
-                              TOP UP
+                        <tr key={h.id}>
+                          <td style={{ paddingLeft: 20, fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                            {formatDateTime(h.created_at)}
+                          </td>
+                          <td>
+                            <div style={{ fontWeight: 700, color: '#ffffff', fontSize: 13 }}>{h.business?.name || 'Perusahaan'}</div>
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            {h.type === 'TOPUP' ? (
+                              <span style={{
+                                padding: '3px 8px', borderRadius: 8, fontSize: 11, fontWeight: 700,
+                                background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)'
+                              }}>
+                                TOP UP
+                              </span>
+                            ) : h.type === 'USAGE' ? (
+                              <span style={{
+                                padding: '3px 8px', borderRadius: 8, fontSize: 11, fontWeight: 700,
+                                background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.3)'
+                              }}>
+                                NOTA KASIR
+                              </span>
+                            ) : (
+                              <span style={{
+                                padding: '3px 8px', borderRadius: 8, fontSize: 11, fontWeight: 700,
+                                background: 'rgba(139, 92, 246, 0.15)', color: '#c4b5fd'
+                              }}>
+                                {h.type}
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 800 }}>
+                            <span style={{ color: Number(h.amount) > 0 ? '#34d399' : '#ef4444' }}>
+                              {Number(h.amount) > 0 ? `+${num(h.amount)}` : num(h.amount)} Koin
                             </span>
-                          ) : h.type === 'USAGE' ? (
-                            <span style={{
-                              padding: '3px 8px', borderRadius: 8, fontSize: 11, fontWeight: 700,
-                              background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.3)'
-                            }}>
-                              NOTA KASIR
-                            </span>
-                          ) : (
-                            <span style={{
-                              padding: '3px 8px', borderRadius: 8, fontSize: 11, fontWeight: 700,
-                              background: 'rgba(139, 92, 246, 0.15)', color: '#c4b5fd'
-                            }}>
-                              {h.type}
-                            </span>
-                          )}
-                        </td>
-                        <td style={{ textAlign: 'right', fontWeight: 800 }}>
-                          <span style={{ color: Number(h.amount) > 0 ? '#34d399' : '#ef4444' }}>
-                            {Number(h.amount) > 0 ? `+${num(h.amount)}` : num(h.amount)} Koin
-                          </span>
-                        </td>
-                        <td style={{ textAlign: 'right', fontSize: 13 }}>
-                          <span style={{ color: 'var(--text-secondary)' }}>{num(h.balance_before)}</span>
-                          <span style={{ margin: '0 6px', color: 'var(--text-muted)' }}>&rarr;</span>
-                          <strong style={{ color: '#ffffff' }}>{num(h.balance_after)}</strong>
-                        </td>
-                        <td>
-                          {h.order_number ? (
-                            <span style={{
-                              fontFamily: 'monospace', fontWeight: 700, fontSize: 12, color: 'var(--accent-bright)'
-                            }}>
-                              {h.order_number}
-                            </span>
-                          ) : h.payment_reference ? (
-                            <span style={{ fontSize: 12, color: '#34d399', fontWeight: 600 }}>
-                              Ref: {h.payment_reference}
-                            </span>
-                          ) : (
-                            <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>-</span>
-                          )}
-                          {h.payment_amount && Number(h.payment_amount) > 0 && (
-                            <div style={{ fontSize: 11, color: '#34d399' }}>
-                              ({rupiah(h.payment_amount)})
+                          </td>
+                          <td style={{ textAlign: 'right', fontSize: 13 }}>
+                            <span style={{ color: 'var(--text-secondary)' }}>{num(h.balance_before)}</span>
+                            <span style={{ margin: '0 6px', color: 'var(--text-muted)' }}>&rarr;</span>
+                            <strong style={{ color: '#ffffff' }}>{num(h.balance_after)}</strong>
+                          </td>
+                          <td>
+                            {h.order_number ? (
+                              <span style={{
+                                fontFamily: 'monospace', fontWeight: 700, fontSize: 12, color: 'var(--accent-bright)'
+                              }}>
+                                {h.order_number}
+                              </span>
+                            ) : h.payment_reference ? (
+                              <span style={{ fontSize: 12, color: '#34d399', fontWeight: 600 }}>
+                                Ref: {h.payment_reference}
+                              </span>
+                            ) : (
+                              <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>-</span>
+                            )}
+                            {h.payment_amount && Number(h.payment_amount) > 0 && (
+                              <div style={{ fontSize: 11, color: '#34d399' }}>
+                                ({rupiah(h.payment_amount)})
+                              </div>
+                            )}
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, color: '#ffffff', fontSize: 12.5 }}>
+                              <User size={13} style={{ color: 'var(--accent-bright)' }} />
+                              <span>{h.creator?.name || h.created_by_name || 'Admin / Kasir'}</span>
                             </div>
-                          )}
-                        </td>
-                        <td>
-                          <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{h.notes || '-'}</div>
-                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                            Oleh: {h.creator?.name || 'Sistem'}
-                            {h.outlet?.name ? ` • Cabang: ${h.outlet.name}` : ''}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                              {h.outlet?.name ? `Cabang: ${h.outlet.name} • ` : ''}
+                              {h.notes || '-'}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-          );
-        })()}
+            );
+          })()}
         </>
       )}
+
+      {/* Modal Detail Transaksi Koin per Tanggal (For Admin View) */}
+      <CoinDateDetailModal
+        open={detailDateModal.open}
+        group={detailDateModal.group}
+        onClose={() => setDetailDateModal({ open: false, group: null })}
+      />
 
       {/* MODAL 1: TOP UP KOIN */}
       {topUpModal.open && topUpModal.business && (
@@ -1166,6 +1452,354 @@ export default function CoinManagement() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Modal detail rincian transaksi koin untuk 1 tanggal terpilih.
+ * Menampilkan ringkasan mutasi harian, daftar per nota/top-up, serta Operator / Kasir pembuat transaksi (Created By).
+ */
+function CoinDateDetailModal({ open, group, onClose }) {
+  const [filterType, setFilterType] = useState('ALL'); // 'ALL' | 'USAGE' | 'TOPUP'
+  const [searchTxt, setSearchTxt] = useState('');
+
+  if (!open || !group) return null;
+
+  const items = group.items || [];
+  const filteredItems = items.filter(item => {
+    if (filterType === 'USAGE' && item.type !== 'USAGE') return false;
+    if (filterType === 'TOPUP' && item.type !== 'TOPUP') return false;
+    if (searchTxt) {
+      const q = searchTxt.toLowerCase();
+      const orderMatch = (item.order_number || '').toLowerCase().includes(q);
+      const refMatch = (item.payment_reference || '').toLowerCase().includes(q);
+      const creatorMatch = (item.creator?.name || item.created_by_name || '').toLowerCase().includes(q);
+      const outletMatch = (item.outlet?.name || '').toLowerCase().includes(q);
+      const bizMatch = (item.business?.name || '').toLowerCase().includes(q);
+      const notesMatch = (item.notes || '').toLowerCase().includes(q);
+      if (!orderMatch && !refMatch && !creatorMatch && !outletMatch && !bizMatch && !notesMatch) return false;
+    }
+    return true;
+  });
+
+  return (
+    <div className="modal-overlay" onClick={onClose} style={{ zIndex: 1100 }}>
+      <div
+        className="modal-content"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          maxWidth: 960,
+          width: '95%',
+          maxHeight: '92vh',
+          display: 'flex',
+          flexDirection: 'column',
+          padding: 0,
+          overflow: 'hidden',
+          borderRadius: 16,
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)'
+        }}
+      >
+        {/* Header */}
+        <div style={{
+          padding: '20px 24px',
+          borderBottom: '1px solid rgba(165, 180, 252, 0.15)',
+          background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(59, 130, 246, 0.1) 100%)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 12
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{
+              width: 44,
+              height: 44,
+              borderRadius: 12,
+              background: 'linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#ffffff',
+              boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)'
+            }}>
+              <Calendar size={22} />
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#ffffff' }}>
+                  {formatDateIndo(group.date)}
+                </h3>
+                <span style={{
+                  padding: '2px 8px',
+                  borderRadius: 6,
+                  background: 'rgba(139, 92, 246, 0.2)',
+                  color: '#c4b5fd',
+                  fontSize: 12,
+                  fontWeight: 700
+                }}>
+                  {group.date}
+                </span>
+              </div>
+              <p style={{ margin: '3px 0 0', fontSize: 13, color: 'var(--text-secondary)' }}>
+                Total <strong>{items.length} transaksi koin</strong> tercatat pada tanggal ini.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="btn btn-ghost btn-icon btn-sm"
+            style={{ borderRadius: 8, padding: 8 }}
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Date Summary Metric Strip */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+          gap: 12,
+          padding: '16px 24px',
+          background: 'rgba(15, 23, 42, 0.6)',
+          borderBottom: '1px solid rgba(165, 180, 252, 0.1)'
+        }}>
+          <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Total Mutasi Hari Ini</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: group.totalChange > 0 ? '#34d399' : group.totalChange < 0 ? '#ef4444' : '#ffffff', marginTop: 2 }}>
+              {group.totalChange > 0 ? `+${num(group.totalChange)}` : num(group.totalChange)} Koin
+            </div>
+          </div>
+
+          <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#93c5fd', textTransform: 'uppercase' }}>Pemotongan Nota Kasir</div>
+            <div style={{ fontSize: 17, fontWeight: 800, color: '#60a5fa', marginTop: 2 }}>
+              🛒 {group.usageCount} Nota (-{num(group.usageAmount)} Koin)
+            </div>
+          </div>
+
+          {group.topUpCount > 0 && (
+            <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#6ee7b7', textTransform: 'uppercase' }}>Top Up Saldo</div>
+              <div style={{ fontSize: 17, fontWeight: 800, color: '#34d399', marginTop: 2 }}>
+                🪙 {group.topUpCount} Top Up (+{num(group.topUpAmount)} Koin)
+              </div>
+            </div>
+          )}
+
+          <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Pergerakan Saldo</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#ffffff', marginTop: 4 }}>
+              <span style={{ color: 'var(--text-secondary)' }}>{num(group.startBalance)}</span>
+              <span style={{ margin: '0 6px', color: 'var(--text-muted)' }}>&rarr;</span>
+              <strong style={{ color: '#38bdf8' }}>{num(group.endBalance)}</strong>
+            </div>
+          </div>
+        </div>
+
+        {/* Filter Controls */}
+        <div style={{
+          padding: '12px 24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 12,
+          borderBottom: '1px solid rgba(165, 180, 252, 0.08)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => setFilterType('ALL')}
+              className={`btn btn-sm ${filterType === 'ALL' ? 'btn-primary' : 'btn-ghost'}`}
+              style={{ fontSize: 12, padding: '5px 12px', borderRadius: 6 }}
+            >
+              Semua ({items.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterType('USAGE')}
+              className={`btn btn-sm ${filterType === 'USAGE' ? 'btn-primary' : 'btn-ghost'}`}
+              style={{ fontSize: 12, padding: '5px 12px', borderRadius: 6 }}
+            >
+              Nota Kasir ({group.usageCount})
+            </button>
+            {group.topUpCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setFilterType('TOPUP')}
+                className={`btn btn-sm ${filterType === 'TOPUP' ? 'btn-primary' : 'btn-ghost'}`}
+                style={{ fontSize: 12, padding: '5px 12px', borderRadius: 6 }}
+              >
+                Top Up ({group.topUpCount})
+              </button>
+            )}
+          </div>
+
+          <div style={{ position: 'relative', width: 240 }}>
+            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+            <input
+              type="text"
+              placeholder="Cari nota, kasir / user..."
+              className="form-control"
+              style={{ fontSize: 12, padding: '6px 10px 6px 30px' }}
+              value={searchTxt}
+              onChange={(e) => setSearchTxt(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* Transaction Table Body */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: 0 }}>
+          {filteredItems.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+              Tidak ada transaksi yang sesuai kriteria pencarian.
+            </div>
+          ) : (
+            <div className="table-responsive">
+              <table className="table" style={{ margin: 0 }}>
+                <thead>
+                  <tr style={{ background: 'rgba(255,255,255,0.02)' }}>
+                    <th style={{ paddingLeft: 24, width: 100 }}>Waktu</th>
+                    <th style={{ textAlign: 'center', width: 120 }}>Tipe</th>
+                    <th style={{ textAlign: 'right', width: 130 }}>Perubahan</th>
+                    <th style={{ textAlign: 'right', width: 170 }}>Saldo (Awal &rarr; Akhir)</th>
+                    <th style={{ width: 180 }}>No. Nota / Ref</th>
+                    <th>Dibuat Oleh (Operator / Kasir)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredItems.map((item) => {
+                    const timeStr = item.created_at ? (item.created_at.includes('T') ? item.created_at.split('T')[1]?.substring(0, 8) : item.created_at.split(' ')[1]?.substring(0, 8)) : '-';
+                    const creatorName = item.creator?.name || item.created_by_name || 'Admin / Kasir';
+                    const outletName = item.outlet?.name || 'Cabang Utama';
+
+                    return (
+                      <tr key={item.id} style={{ verticalAlign: 'middle' }}>
+                        <td style={{ paddingLeft: 24, fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'monospace', fontWeight: 600 }}>
+                          <Clock size={12} style={{ display: 'inline', marginRight: 4, opacity: 0.7 }} />
+                          {timeStr}
+                        </td>
+
+                        <td style={{ textAlign: 'center' }}>
+                          {item.type === 'TOPUP' ? (
+                            <span style={{
+                              padding: '3px 8px', borderRadius: 8, fontSize: 11, fontWeight: 700,
+                              background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)'
+                            }}>
+                              TOP UP
+                            </span>
+                          ) : item.type === 'USAGE' ? (
+                            <span style={{
+                              padding: '3px 8px', borderRadius: 8, fontSize: 11, fontWeight: 700,
+                              background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.3)'
+                            }}>
+                              NOTA KASIR
+                            </span>
+                          ) : (
+                            <span style={{
+                              padding: '3px 8px', borderRadius: 8, fontSize: 11, fontWeight: 700,
+                              background: 'rgba(139, 92, 246, 0.15)', color: '#c4b5fd'
+                            }}>
+                              {item.type}
+                            </span>
+                          )}
+                        </td>
+
+                        <td style={{ textAlign: 'right', fontWeight: 800, fontSize: 13 }}>
+                          <span style={{ color: Number(item.amount) > 0 ? '#34d399' : '#ef4444' }}>
+                            {Number(item.amount) > 0 ? `+${num(item.amount)}` : num(item.amount)} Koin
+                          </span>
+                        </td>
+
+                        <td style={{ textAlign: 'right', fontSize: 12 }}>
+                          <span style={{ color: 'var(--text-secondary)' }}>{num(item.balance_before)}</span>
+                          <span style={{ margin: '0 5px', color: 'var(--text-muted)' }}>&rarr;</span>
+                          <strong style={{ color: '#ffffff' }}>{num(item.balance_after)}</strong>
+                        </td>
+
+                        <td>
+                          {item.order_number ? (
+                            <span style={{
+                              fontFamily: 'monospace', fontWeight: 700, fontSize: 12, color: 'var(--accent-bright)'
+                            }}>
+                              {item.order_number}
+                            </span>
+                          ) : item.payment_reference ? (
+                            <span style={{ fontSize: 12, color: '#34d399', fontWeight: 600 }}>
+                              Ref: {item.payment_reference}
+                            </span>
+                          ) : (
+                            <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>-</span>
+                          )}
+                          {item.payment_amount && Number(item.payment_amount) > 0 && (
+                            <div style={{ fontSize: 11, color: '#34d399' }}>
+                              ({rupiah(item.payment_amount)})
+                            </div>
+                          )}
+                        </td>
+
+                        <td>
+                          {/* Created By & Outlet Info */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, color: '#ffffff', fontSize: 12.5 }}>
+                              <div style={{
+                                width: 22, height: 22, borderRadius: '50%',
+                                background: 'rgba(139, 92, 246, 0.25)',
+                                color: '#c4b5fd',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                flexShrink: 0
+                              }}>
+                                <User size={12} />
+                              </div>
+                              <span>{creatorName}</span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                              <Store size={12} style={{ color: 'var(--text-muted)' }} />
+                              <span>{outletName}</span>
+                              {item.business?.name && (
+                                <>
+                                  <span>•</span>
+                                  <span style={{ color: '#c4b5fd' }}>{item.business.name}</span>
+                                </>
+                              )}
+                              {item.notes && (
+                                <>
+                                  <span>•</span>
+                                  <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>{item.notes}</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Modal Footer */}
+        <div style={{
+          padding: '14px 24px',
+          borderTop: '1px solid rgba(165, 180, 252, 0.12)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          background: 'rgba(15, 23, 42, 0.4)'
+        }}>
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+            Menampilkan <strong>{filteredItems.length}</strong> dari {items.length} transaksi pada {group.date}
+          </div>
+          <button type="button" onClick={onClose} className="btn btn-secondary btn-sm" style={{ padding: '7px 18px', fontWeight: 700 }}>
+            Tutup
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
