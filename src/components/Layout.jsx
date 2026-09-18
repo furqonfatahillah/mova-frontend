@@ -479,31 +479,48 @@ export default function Layout() {
         {/* Top Header Bar: Active Branch Status & Quick Switcher */}
         <div className="top-header-bar">
           <div className="top-header-left">
-            <div className="top-header-outlet-info">
-              <div className="top-header-icon">
-                <Store size={18} />
-              </div>
-              <div>
-                <div className="top-header-outlet-label">
-                  Cabang Operasional Aktif
+            {isPlatformAdmin && !activeBusinessId ? (
+              <div className="top-header-outlet-info">
+                <div className="top-header-icon" style={{ background: 'rgba(99, 102, 241, 0.2)', color: 'var(--accent-bright)' }}>
+                  <Building2 size={18} />
                 </div>
-                <div className="top-header-outlet-name">
-                  <span>{activeOutlet?.name || 'Cabang Terpilih'}</span>
-                  {activeOutlet?.is_main && (
-                    <span className="top-header-badge pusat">PUSAT</span>
-                  )}
-                  {!isOwnerWebsite && (
-                    <span className="top-header-badge terisolasi">TERISOLASI</span>
-                  )}
+                <div>
+                  <div className="top-header-outlet-label">
+                    Mode Panel
+                  </div>
+                  <div className="top-header-outlet-name">
+                    <span>Pusat Layanan SaaS Platform</span>
+                    <span className="top-header-badge pusat" style={{ background: 'rgba(99, 102, 241, 0.25)', color: 'var(--accent-bright)' }}>SUPERADMIN</span>
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="top-header-outlet-info">
+                <div className="top-header-icon">
+                  <Store size={18} />
+                </div>
+                <div>
+                  <div className="top-header-outlet-label">
+                    {isPlatformAdmin ? `Inspeksi Cabang (${currentBusiness?.name || 'Tenant'})` : 'Cabang Operasional Aktif'}
+                  </div>
+                  <div className="top-header-outlet-name">
+                    <span>{activeOutlet?.name || 'Cabang Terpilih'}</span>
+                    {activeOutlet?.is_main && (
+                      <span className="top-header-badge pusat">PUSAT</span>
+                    )}
+                    {!isPlatformAdmin && isOwnerOutlet && (
+                      <span className="top-header-badge terisolasi">TERISOLASI</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Business Badge */}
             <div className="top-header-business-badge">
               <Building2 size={14} style={{ color: 'var(--accent-bright)' }} />
               <span className="top-header-business-name">
-                {userBusinessName}
+                {isPlatformAdmin && !activeBusinessId ? '🌐 Platform Provider MOVA' : (currentBusiness?.name || userBusinessName)}
               </span>
               {currentBusiness?.package_type && (
                 <span className="top-header-pkg-badge">
@@ -512,35 +529,8 @@ export default function Layout() {
               )}
             </div>
 
-            {/* Coin Balance Badge / Platform Admin Badge */}
-            {isPlatformAdmin && !activeBusinessId ? (
-              <NavLink
-                to="/coin-management"
-                className="top-header-coin-badge"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '4px 12px',
-                  borderRadius: 10,
-                  background: 'rgba(99, 102, 241, 0.15)',
-                  border: '1px solid rgba(99, 102, 241, 0.3)',
-                  textDecoration: 'none',
-                  cursor: 'pointer',
-                }}
-                title="Mode Pengelola Platform SaaS. Klik untuk mengelola saldo dan tarif koin bisnis penyewa."
-              >
-                <Coins size={16} style={{ color: 'var(--accent-bright)' }} />
-                <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
-                  <span style={{ fontSize: 12, fontWeight: 800, color: '#ffffff' }}>
-                    Platform Admin
-                  </span>
-                  <span style={{ fontSize: 10, color: 'var(--accent-bright)', fontWeight: 600 }}>
-                    Kelola Koin Penyewa ↗
-                  </span>
-                </div>
-              </NavLink>
-            ) : (
+            {/* Coin Balance Badge - ONLY for Owner Bisnis */}
+            {isOwnerBisnis && (
               <NavLink
                 to="/coin-management"
                 className="top-header-coin-badge"
@@ -556,7 +546,7 @@ export default function Layout() {
                   textDecoration: 'none',
                   cursor: 'pointer',
                 }}
-                title={`Saldo: ${coinBalance} koin (${coinsPerTransaction} koin/nota). Klik untuk informasi top-up.`}
+                title={`Saldo Koin Usaha: ${coinBalance} koin (${coinsPerTransaction} koin/nota). Klik untuk informasi top-up.`}
               >
                 <Coins size={16} style={{ color: isCoinOut ? '#ef4444' : isCoinLow ? '#f59e0b' : 'var(--accent-bright)' }} />
                 <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
@@ -568,6 +558,33 @@ export default function Layout() {
                   </span>
                 </div>
               </NavLink>
+            )}
+
+            {/* In Inspection Mode: show inspected tenant's coin balance */}
+            {isPlatformAdmin && activeBusinessId && (
+              <div
+                className="top-header-coin-badge"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '4px 12px',
+                  borderRadius: 10,
+                  background: isCoinOut ? 'rgba(239, 68, 68, 0.15)' : isCoinLow ? 'rgba(245, 158, 11, 0.15)' : 'rgba(139, 92, 246, 0.15)',
+                  border: `1px solid ${isCoinOut ? 'rgba(239, 68, 68, 0.35)' : isCoinLow ? 'rgba(245, 158, 11, 0.35)' : 'rgba(139, 92, 246, 0.3)'}`,
+                }}
+                title={`Saldo Koin Tenant (${currentBusiness?.name}): ${coinBalance} koin`}
+              >
+                <Coins size={16} style={{ color: isCoinOut ? '#ef4444' : isCoinLow ? '#f59e0b' : 'var(--accent-bright)' }} />
+                <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: isCoinOut ? '#f87171' : isCoinLow ? '#fbbf24' : '#ffffff' }}>
+                    {coinBalance.toLocaleString()} Koin
+                  </span>
+                  <span style={{ fontSize: 10, color: 'var(--text-secondary)', fontWeight: 600 }}>
+                    Saldo Tenant
+                  </span>
+                </div>
+              </div>
             )}
 
             {/* User Referral Badge in Header */}
@@ -695,7 +712,7 @@ export default function Layout() {
         )}
 
         {/* Out of Coins Alert Banner */}
-        {isCoinOut && (
+        {(isPlatformAdmin ? (Boolean(activeBusinessId) && isCoinOut) : isCoinOut) && (
           <div style={{
             background: 'linear-gradient(90deg, rgba(239, 68, 68, 0.22), rgba(185, 28, 28, 0.15))',
             border: '1px solid rgba(239, 68, 68, 0.45)',
@@ -732,7 +749,7 @@ export default function Layout() {
         )}
 
         {/* Low Coins Alert Banner */}
-        {!isCoinOut && isCoinLow && (
+        {(isPlatformAdmin ? (Boolean(activeBusinessId) && !isCoinOut && isCoinLow) : (!isCoinOut && isCoinLow)) && (
           <div style={{
             background: 'linear-gradient(90deg, rgba(245, 158, 11, 0.18), rgba(217, 119, 6, 0.12))',
             border: '1px solid rgba(245, 158, 11, 0.4)',
