@@ -12,13 +12,13 @@ import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 
 export const WASTE_CATEGORIES = [
-  { value: 'EXPIRED',            label: 'Basi / Kedaluwarsa',          color: '#f43f5e', bg: 'rgba(244, 63, 94, 0.15)', border: 'rgba(244, 63, 94, 0.35)', icon: Flame },
-  { value: 'COOKING_ERROR',      label: 'Gosong / Salah Masak',        color: '#fb923c', bg: 'rgba(251, 146, 60, 0.15)', border: 'rgba(251, 146, 60, 0.35)', icon: AlertTriangle },
-  { value: 'DELIVERY_DAMAGE',    label: 'Rusak saat Pengiriman',       color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.15)', border: 'rgba(56, 189, 248, 0.35)', icon: Package },
-  { value: 'CUSTOMER_COMPLAINT', label: 'Komplain Tamu / Retur',       color: '#ec4899', bg: 'rgba(236, 72, 153, 0.15)', border: 'rgba(236, 72, 153, 0.35)', icon: AlertCircle },
-  { value: 'DROPPED_SPILL',      label: 'Tumpah / Jatuh',              color: '#eab308', bg: 'rgba(234, 179, 8, 0.15)', border: 'rgba(234, 179, 8, 0.35)', icon: ArrowDownRight },
-  { value: 'STORAGE_DAMAGE',     label: 'Rusak Penyimpanan / Chiller', color: '#a855f7', bg: 'rgba(168, 85, 247, 0.15)', border: 'rgba(168, 85, 247, 0.35)', icon: Layers },
-  { value: 'OTHER',              label: 'Lainnya',                     color: '#94a3b8', bg: 'rgba(148, 163, 184, 0.15)', border: 'rgba(148, 163, 184, 0.35)', icon: FileText },
+  { value: 'EXPIRED', label: 'Basi / Kedaluwarsa', color: '#f43f5e', bg: 'rgba(244, 63, 94, 0.15)', border: 'rgba(244, 63, 94, 0.35)', icon: Flame },
+  { value: 'COOKING_ERROR', label: 'Gosong / Salah Masak', color: '#fb923c', bg: 'rgba(251, 146, 60, 0.15)', border: 'rgba(251, 146, 60, 0.35)', icon: AlertTriangle },
+  { value: 'DELIVERY_DAMAGE', label: 'Rusak saat Pengiriman', color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.15)', border: 'rgba(56, 189, 248, 0.35)', icon: Package },
+  { value: 'CUSTOMER_COMPLAINT', label: 'Komplain Tamu / Retur', color: '#ec4899', bg: 'rgba(236, 72, 153, 0.15)', border: 'rgba(236, 72, 153, 0.35)', icon: AlertCircle },
+  { value: 'DROPPED_SPILL', label: 'Tumpah / Jatuh', color: '#eab308', bg: 'rgba(234, 179, 8, 0.15)', border: 'rgba(234, 179, 8, 0.35)', icon: ArrowDownRight },
+  { value: 'STORAGE_DAMAGE', label: 'Rusak Penyimpanan / Chiller', color: '#a855f7', bg: 'rgba(168, 85, 247, 0.15)', border: 'rgba(168, 85, 247, 0.35)', icon: Layers },
+  { value: 'OTHER', label: 'Lainnya', color: '#94a3b8', bg: 'rgba(148, 163, 184, 0.15)', border: 'rgba(148, 163, 184, 0.35)', icon: FileText },
 ];
 
 export function getWasteCategoryMeta(val) {
@@ -175,7 +175,7 @@ export default function WasteTracking() {
     const konversi = Math.max(Number(selectedModalIng.konversi) || 1, 1);
     const isUnitBeli = form.unit_type === 'BELI';
     const qtyPakai = isUnitBeli ? Number(form.qty) * konversi : Number(form.qty);
-    
+
     let costPerPakai = (Number(selectedModalIng.harga) || 0) / konversi;
     if (costPerPakai <= 0 && Number(selectedModalIng.last_purchase_price) > 0) {
       costPerPakai = Number(selectedModalIng.last_purchase_price) / konversi;
