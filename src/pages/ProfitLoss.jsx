@@ -123,6 +123,8 @@ export default function ProfitLoss() {
         toast.error('Gagal memuat rincian OPEX');
         setDetailModal(p => ({ ...p, loading: false }));
       }
+    } else if (type === 'GROSS_PROFIT') {
+      setDetailModal({ open: true, type: 'GROSS_PROFIT', title: 'Rincian Kalkulasi Laba Kotor (Gross Profit)', loading: false, items: [] });
     } else if (type === 'NET_PROFIT') {
       setDetailModal({ open: true, type: 'NET_PROFIT', title: 'Rincian Formulasi & Sumber Kalkulasi Laba Bersih', loading: false, items: [] });
     }
@@ -1047,16 +1049,50 @@ export default function ProfitLoss() {
             )}
 
             {/* POS I: REVENUE */}
-            <div style={{ background: 'rgba(255, 255, 255, 0.02)', borderRadius: 10, padding: '14px 18px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <span style={{ fontSize: 14, fontWeight: 800, color: '#34d399', letterSpacing: 0.5 }}>
-                  1. PENDAPATAN OPERASIONAL USAHA (REVENUE)
-                </span>
-                {!isComp && (
-                  <span style={{ fontSize: 14, fontWeight: 800, color: '#34d399' }}>
-                    {rupiah(rev.net_sales)}
+            <div
+              className="card"
+              onClick={() => handleCardClick('REVENUE')}
+              style={{
+                background: 'rgba(255, 255, 255, 0.02)',
+                borderRadius: 10,
+                padding: '14px 18px',
+                border: '1px solid rgba(52, 211, 153, 0.2)',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+              title="Klik untuk melihat rincian transaksi omset penjualan"
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: '#34d399', letterSpacing: 0.5 }}>
+                    1. PENDAPATAN OPERASIONAL USAHA (REVENUE)
                   </span>
-                )}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <button
+                    className="btn btn-sm"
+                    style={{
+                      fontSize: 11,
+                      padding: '3px 10px',
+                      borderRadius: 6,
+                      background: 'rgba(52, 211, 153, 0.15)',
+                      color: '#34d399',
+                      border: '1px solid rgba(52, 211, 153, 0.35)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      fontWeight: 700,
+                    }}
+                    onClick={(e) => { e.stopPropagation(); handleCardClick('REVENUE'); }}
+                  >
+                    <Search size={12} /> Rincian Transaksi
+                  </button>
+                  {!isComp && (
+                    <span style={{ fontSize: 15, fontWeight: 800, color: '#34d399' }}>
+                      {rupiah(rev.net_sales)}
+                    </span>
+                  )}
+                </div>
               </div>
 
               {isComp ? (
@@ -1122,16 +1158,50 @@ export default function ProfitLoss() {
             </div>
 
             {/* POS II: COGS (HPP RIIL) */}
-            <div style={{ background: 'rgba(255, 255, 255, 0.02)', borderRadius: 10, padding: '14px 18px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <span style={{ fontSize: 14, fontWeight: 800, color: '#818cf8', letterSpacing: 0.5 }}>
-                  2. HARGA POKOK PENJUALAN (COGS / HPP RIIL)
-                </span>
-                {!isComp && (
-                  <span style={{ fontSize: 14, fontWeight: 800, color: '#818cf8' }}>
-                    ({rupiah(cogs.total_cogs)})
+            <div
+              className="card"
+              onClick={() => handleCardClick('COGS')}
+              style={{
+                background: 'rgba(255, 255, 255, 0.02)',
+                borderRadius: 10,
+                padding: '14px 18px',
+                border: '1px solid rgba(129, 140, 248, 0.2)',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+              title="Klik untuk melihat rincian HPP Resep & Susut Opname"
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: '#818cf8', letterSpacing: 0.5 }}>
+                    2. HARGA POKOK PENJUALAN (COGS / HPP RIIL)
                   </span>
-                )}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <button
+                    className="btn btn-sm"
+                    style={{
+                      fontSize: 11,
+                      padding: '3px 10px',
+                      borderRadius: 6,
+                      background: 'rgba(129, 140, 248, 0.15)',
+                      color: '#818cf8',
+                      border: '1px solid rgba(129, 140, 248, 0.35)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      fontWeight: 700,
+                    }}
+                    onClick={(e) => { e.stopPropagation(); handleCardClick('COGS'); }}
+                  >
+                    <Search size={12} /> Rincian Resep & Susut
+                  </button>
+                  {!isComp && (
+                    <span style={{ fontSize: 15, fontWeight: 800, color: '#818cf8' }}>
+                      ({rupiah(cogs.total_cogs)})
+                    </span>
+                  )}
+                </div>
               </div>
 
               {isComp ? (
@@ -1194,6 +1264,8 @@ export default function ProfitLoss() {
 
             {/* SUB-TOTAL: LABA KOTOR (GROSS PROFIT) */}
             <div
+              className="card"
+              onClick={() => handleCardClick('GROSS_PROFIT')}
               style={{
                 display: isComp ? 'grid' : 'flex',
                 gridTemplateColumns: isComp ? '2fr 1fr 1fr 1fr 1fr' : undefined,
@@ -1203,8 +1275,11 @@ export default function ProfitLoss() {
                 padding: '12px 20px',
                 borderRadius: 8,
                 background: 'linear-gradient(90deg, rgba(16, 185, 129, 0.15) 0%, rgba(99, 102, 241, 0.15) 100%)',
-                border: '1px solid rgba(16, 185, 129, 0.3)',
+                border: '1px solid rgba(16, 185, 129, 0.35)',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
               }}
+              title="Klik untuk melihat rincian kalkulasi Laba Kotor"
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <CheckCircle2 size={18} color="#34d399" />
@@ -1213,6 +1288,9 @@ export default function ProfitLoss() {
                 </span>
                 <span style={{ fontSize: 12, color: '#a7f3d0', fontWeight: 600 }}>
                   ({cogs.gross_margin_pct}%)
+                </span>
+                <span style={{ fontSize: 11, color: '#34d399', background: 'rgba(52, 211, 153, 0.15)', padding: '2px 6px', borderRadius: 4, marginLeft: 4 }}>
+                  🔍 Rincian
                 </span>
               </div>
               {isComp ? (
@@ -1234,16 +1312,50 @@ export default function ProfitLoss() {
             </div>
 
             {/* POS III: KERUGIAN WASTE & SPOILAGE */}
-            <div style={{ background: 'rgba(255, 255, 255, 0.02)', borderRadius: 10, padding: '14px 18px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <span style={{ fontSize: 14, fontWeight: 800, color: '#fb7185', letterSpacing: 0.5 }}>
-                  3. KERUGIAN BAHAN TERBUANG (WASTE & SPOILAGE LOSS)
-                </span>
-                {!isComp && (
-                  <span style={{ fontSize: 14, fontWeight: 800, color: '#fb7185' }}>
-                    ({rupiah(wst.total_waste_loss)})
+            <div
+              className="card"
+              onClick={() => handleCardClick('WASTE')}
+              style={{
+                background: 'rgba(255, 255, 255, 0.02)',
+                borderRadius: 10,
+                padding: '14px 18px',
+                border: '1px solid rgba(251, 113, 133, 0.2)',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+              title="Klik untuk melihat rincian log bahan/menu terbuang (waste)"
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: '#fb7185', letterSpacing: 0.5 }}>
+                    3. KERUGIAN BAHAN TERBUANG (WASTE & SPOILAGE LOSS)
                   </span>
-                )}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <button
+                    className="btn btn-sm"
+                    style={{
+                      fontSize: 11,
+                      padding: '3px 10px',
+                      borderRadius: 6,
+                      background: 'rgba(251, 113, 133, 0.15)',
+                      color: '#fb7185',
+                      border: '1px solid rgba(251, 113, 133, 0.35)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      fontWeight: 700,
+                    }}
+                    onClick={(e) => { e.stopPropagation(); handleCardClick('WASTE'); }}
+                  >
+                    <Search size={12} /> Log Waste
+                  </button>
+                  {!isComp && (
+                    <span style={{ fontSize: 15, fontWeight: 800, color: '#fb7185' }}>
+                      ({rupiah(wst.total_waste_loss)})
+                    </span>
+                  )}
+                </div>
               </div>
 
               {isComp ? (
@@ -1285,16 +1397,50 @@ export default function ProfitLoss() {
             </div>
 
             {/* POS IV: BEBAN OPERASIONAL TOKO (OPEX) */}
-            <div style={{ background: 'rgba(255, 255, 255, 0.02)', borderRadius: 10, padding: '14px 18px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <span style={{ fontSize: 14, fontWeight: 800, color: '#fbbf24', letterSpacing: 0.5 }}>
-                  4. BEBAN OPERASIONAL TOKO (OPEX)
-                </span>
-                {!isComp && (
-                  <span style={{ fontSize: 14, fontWeight: 800, color: '#fbbf24' }}>
-                    ({rupiah(opx.total_opex)})
+            <div
+              className="card"
+              onClick={() => handleCardClick('OPEX')}
+              style={{
+                background: 'rgba(255, 255, 255, 0.02)',
+                borderRadius: 10,
+                padding: '14px 18px',
+                border: '1px solid rgba(251, 191, 36, 0.2)',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+              title="Klik untuk melihat rincian beban operasional toko (OPEX)"
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: '#fbbf24', letterSpacing: 0.5 }}>
+                    4. BEBAN OPERASIONAL TOKO (OPEX)
                   </span>
-                )}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <button
+                    className="btn btn-sm"
+                    style={{
+                      fontSize: 11,
+                      padding: '3px 10px',
+                      borderRadius: 6,
+                      background: 'rgba(251, 191, 36, 0.15)',
+                      color: '#fbbf24',
+                      border: '1px solid rgba(251, 191, 36, 0.35)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      fontWeight: 700,
+                    }}
+                    onClick={(e) => { e.stopPropagation(); handleCardClick('OPEX'); }}
+                  >
+                    <Search size={12} /> Rincian Beban OPEX
+                  </button>
+                  {!isComp && (
+                    <span style={{ fontSize: 15, fontWeight: 800, color: '#fbbf24' }}>
+                      ({rupiah(opx.total_opex)})
+                    </span>
+                  )}
+                </div>
               </div>
 
               {isComp ? (
@@ -1364,6 +1510,8 @@ export default function ProfitLoss() {
 
             {/* GRAND TOTAL: LABA BERSIH USAHA (NET OPERATING PROFIT) */}
             <div
+              className="card"
+              onClick={() => handleCardClick('NET_PROFIT')}
               style={{
                 display: isComp ? 'grid' : 'flex',
                 gridTemplateColumns: isComp ? '2fr 1fr 1fr 1fr 1fr' : undefined,
@@ -1375,13 +1523,19 @@ export default function ProfitLoss() {
                 background: `linear-gradient(135deg, ${bot.health_color}25 0%, rgba(15, 23, 42, 0.95) 100%)`,
                 border: `2px solid ${bot.health_color}60`,
                 boxShadow: `0 10px 30px ${bot.health_color}20`,
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
               }}
+              title="Klik untuk melihat jembatan kalkulasi formula laba bersih"
             >
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Landmark size={22} color={bot.health_color} />
                   <span style={{ fontSize: 16, fontWeight: 900, color: '#ffffff', letterSpacing: 0.5 }}>
                     LABA BERSIH USAHA (NET PROFIT)
+                  </span>
+                  <span style={{ fontSize: 11, color: bot.health_color, background: `${bot.health_color}25`, padding: '2px 6px', borderRadius: 4, marginLeft: 4 }}>
+                    🔍 Formula
                   </span>
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
@@ -2632,6 +2786,48 @@ export default function ProfitLoss() {
                           )}
                         </tbody>
                       </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* 2.5 GROSS PROFIT DETAIL */}
+                {detailModal.type === 'GROSS_PROFIT' && (
+                  <div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 18 }}>
+                      <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: 10, padding: 14 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Laba Kotor (Gross Profit)</div>
+                        <div style={{ fontSize: 22, fontWeight: 800, color: '#34d399' }}>{rupiah(cogs.gross_profit)}</div>
+                        <div style={{ fontSize: 11, color: '#34d399', fontWeight: 600 }}>Gross Margin: {cogs.gross_margin_pct}%</div>
+                      </div>
+                      <div style={{ background: 'rgba(255, 255, 255, 0.04)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 10, padding: 14 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Omset Bersih (Net Revenue)</div>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: '#ffffff' }}>{rupiah(rev.net_sales)}</div>
+                      </div>
+                      <div style={{ background: 'rgba(99, 102, 241, 0.1)', border: '1px solid rgba(99, 102, 241, 0.25)', borderRadius: 10, padding: 14 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total HPP Riil (COGS)</div>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: '#818cf8' }}>({rupiah(cogs.total_cogs)})</div>
+                        <div style={{ fontSize: 11, color: '#818cf8' }}>Food Cost Ratio: {cogs.cogs_ratio_pct}%</div>
+                      </div>
+                    </div>
+
+                    <div style={{ background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(165, 180, 252, 0.15)', borderRadius: 12, padding: 20 }}>
+                      <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: '#f8fafc' }}>
+                        Penjelasan Kalkulasi Laba Kotor:
+                      </h4>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(16, 185, 129, 0.08)', borderRadius: 8 }}>
+                          <span>(+) Omset Penjualan Bersih (Net Sales):</span>
+                          <strong style={{ color: '#34d399' }}>{rupiah(rev.net_sales)}</strong>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(99, 102, 241, 0.08)', borderRadius: 8 }}>
+                          <span>(-) Total HPP Riil (Resep Terpakai + Susut Opname):</span>
+                          <strong style={{ color: '#818cf8' }}>({rupiah(cogs.total_cogs)})</strong>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 14px', background: 'linear-gradient(90deg, rgba(16, 185, 129, 0.2) 0%, rgba(99, 102, 241, 0.2) 100%)', borderRadius: 8, fontWeight: 800, fontSize: 14 }}>
+                          <span>(=) Laba Kotor (Gross Profit):</span>
+                          <strong style={{ color: '#34d399' }}>{rupiah(cogs.gross_profit)} ({cogs.gross_margin_pct}%)</strong>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
