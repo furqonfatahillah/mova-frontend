@@ -244,11 +244,11 @@ export default function ForgotPassword() {
             </div>
 
             <form onSubmit={handleVerifyOtp}>
-              <div style={{ marginBottom: 20 }}>
-                <label className="form-label" style={{ textAlign: 'center', display: 'block', marginBottom: 12 }}>
+              <div style={{ marginBottom: 24 }}>
+                <label className="form-label" style={{ textAlign: 'center', display: 'block', marginBottom: 16, color: '#ffffff', fontWeight: 600, fontSize: 13.5 }}>
                   Masukkan 6 Digit Kode Verifikasi (OTP)
                 </label>
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'center', padding: '6px 0' }}>
                   {otp.map((digit, idx) => (
                     <input
                       key={idx}
@@ -259,18 +259,30 @@ export default function ForgotPassword() {
                       value={digit}
                       onChange={e => handleOtpChange(idx, e.target.value)}
                       onKeyDown={e => handleOtpKeyDown(idx, e)}
+                      onFocus={e => {
+                        e.target.style.borderColor = '#c084fc';
+                        e.target.style.background = '#1e2548';
+                        e.target.style.boxShadow = '0 0 18px rgba(192, 132, 252, 0.45)';
+                      }}
+                      onBlur={e => {
+                        e.target.style.borderColor = digit ? '#8b5cf6' : 'rgba(165, 180, 252, 0.35)';
+                        e.target.style.background = digit ? 'rgba(30, 37, 72, 0.95)' : 'rgba(15, 20, 41, 0.95)';
+                        e.target.style.boxShadow = digit ? '0 0 12px rgba(139, 92, 246, 0.3)' : 'inset 0 2px 4px rgba(0,0,0,0.4)';
+                      }}
                       style={{
-                        width: 46,
-                        height: 52,
+                        width: 48,
+                        height: 56,
                         textAlign: 'center',
-                        fontSize: 22,
-                        fontWeight: 700,
-                        borderRadius: 10,
-                        background: 'var(--bg-secondary)',
-                        border: digit ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
-                        color: 'var(--text-primary)',
+                        fontSize: 24,
+                        fontWeight: 800,
+                        fontFamily: "'JetBrains Mono', 'Plus Jakarta Sans', monospace",
+                        borderRadius: 12,
+                        background: digit ? 'rgba(30, 37, 72, 0.95)' : 'rgba(15, 20, 41, 0.95)',
+                        border: digit ? '2px solid #8b5cf6' : '2px solid rgba(165, 180, 252, 0.35)',
+                        color: '#ffffff',
                         outline: 'none',
-                        transition: 'all 0.2s',
+                        boxShadow: digit ? '0 0 12px rgba(139, 92, 246, 0.3)' : 'inset 0 2px 4px rgba(0,0,0,0.4)',
+                        transition: 'all 0.2s ease',
                       }}
                     />
                   ))}
