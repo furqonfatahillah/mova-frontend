@@ -14,7 +14,6 @@ import ErrorBoundary from './ErrorBoundary';
 
 export default function Layout() {
   const navigate = useNavigate();
-  const user = JSON.parse(localStorage.getItem('pos_user') || '{}');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     return localStorage.getItem('pos_sidebar_collapsed') === 'true';
@@ -54,6 +53,8 @@ export default function Layout() {
     currentBusiness,
     activeBusinessId,
     changeBusiness,
+    currentUser,
+    setAuthUser,
     isSuperadminPlatform,
     isOwnerWebsite,
     isPlatformAdmin,
@@ -68,6 +69,8 @@ export default function Layout() {
     isCoinOut,
     userReferralCode,
   } = useOutletContext();
+
+  const user = currentUser || {};
 
   const navSections = useMemo(() => {
     // 1. Owner Website (Penyedia SaaS / Superadmin Platform)
@@ -318,8 +321,12 @@ export default function Layout() {
     try {
       await api.post('/logout');
     } catch { }
-    localStorage.removeItem('pos_token');
-    localStorage.removeItem('pos_user');
+    if (setAuthUser) {
+      setAuthUser(null);
+    } else {
+      localStorage.removeItem('pos_token');
+      localStorage.removeItem('pos_user');
+    }
     toast.success('Berhasil keluar');
     navigate('/login');
   }

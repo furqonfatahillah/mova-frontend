@@ -17,43 +17,39 @@ export function OutletProvider({ children }) {
     }
   });
 
-  const refreshCurrentUser = useCallback(async () => {
-    try {
-      const { data } = await api.get('/me');
-      if (data) {
-        setCurrentUser(data);
-        localStorage.setItem('pos_user', JSON.stringify(data));
-      }
-    } catch { }
-  }, []);
+  const isSuperadminPlatform = useMemo(() => {
+    return (
+      currentUser.role === 'superadmin_platform' ||
+      currentUser.role === 'superadmin' ||
+      Boolean(currentUser.is_superadmin_platform)
+    );
+  }, [currentUser]);
 
-  useEffect(() => {
-    if (localStorage.getItem('pos_token')) {
-      refreshCurrentUser();
-    }
-  }, [refreshCurrentUser]);
-
-  const isSuperadminPlatform =
-    currentUser.role === 'superadmin_platform' ||
-    currentUser.role === 'superadmin' ||
-    Boolean(currentUser.is_superadmin_platform);
-
-  const isOwnerWebsite =
-    currentUser.role === 'owner_website' ||
-    Boolean(currentUser.is_owner_website);
+  const isOwnerWebsite = useMemo(() => {
+    return (
+      currentUser.role === 'owner_website' ||
+      Boolean(currentUser.is_owner_website)
+    );
+  }, [currentUser]);
 
   const isPlatformAdmin = isSuperadminPlatform || isOwnerWebsite;
 
-  const isOwnerBisnis =
-    currentUser.role === 'owner_bisnis' ||
-    currentUser.role === 'owner' ||
-    currentUser.role === 'admin' ||
-    Boolean(currentUser.is_owner_bisnis);
+  const isOwnerBisnis = useMemo(() => {
+    return (
+      currentUser.role === 'owner_bisnis' ||
+      currentUser.role === 'owner' ||
+      currentUser.role === 'admin' ||
+      Boolean(currentUser.is_owner_bisnis)
+    );
+  }, [currentUser]);
 
-  const isOwnerOutlet =
-    currentUser.role === 'owner_outlet' ||
-    currentUser.role === 'manager_outlet' ||
-    Boolean(currentUser.is_owner_outlet);
+  const isOwnerOutlet = useMemo(() => {
+    return (
+      currentUser.role === 'owner_outlet' ||
+      currentUser.role === 'manager_outlet' ||
+      Boolean(currentUser.is_owner_outlet)
+    );
+  }, [currentUser]);
 
   const isPegawai = !isPlatformAdmin && !isOwnerBisnis && !isOwnerOutlet;
 
@@ -74,19 +70,83 @@ export function OutletProvider({ children }) {
     return localStorage.getItem('pos_active_outlet_id') || (currentUser.outlet_id ? String(currentUser.outlet_id) : '1');
   });
 
-  // Reactive lock: Always force employee/outlet users to their assigned outlet
-  useEffect(() => {
-    if (!isOwnerBisnis && !isPlatformAdmin && currentUser?.outlet_id) {
-      const forcedId = String(currentUser.outlet_id);
-      setActiveOutletIdState(forcedId);
-      localStorage.setItem('pos_active_outlet_id', forcedId);
-    }
-  }, [isOwnerBisnis, isPlatformAdmin, currentUser?.outlet_id]);
-
   const [coinData, setCoinData] = useState(null);
   const [loadingCoins, setLoadingCoins] = useState(false);
 
+  const refreshCurrentUser = useCallback(async () => {
+    try {
+      const { data } = await api.get('/me');
+      if (data) {
+        setCurrentUser(data);
+        localStorage.setItem('pos_user', JSON.stringify(data));
+      }
+    } catch { }
+  }, []);
+
+  const setAuthUser = useCallback((user) => {
+    const u = user || {};
+    setCurrentUser(u);
+    if (user && Object.keys(user).length > 0) {
+      localStorage.setItem('pos_user', JSON.stringify(user));
+      const isPlat =
+        u.role === 'superadmin_platform' ||
+        u.role === 'superadmin' ||
+        u.role === 'owner_website' ||
+        Boolean(u.is_superadmin_platform) ||
+        Boolean(u.is_owner_website);
+
+      const isOwnerB =
+        u.role === 'owner_bisnis' ||
+        u.role === 'owner' ||
+        u.role === 'admin' ||
+        Boolean(u.is_owner_bisnis);
+
+      if (isPlat) {
+        setActiveBusinessIdState(localStorage.getItem('pos_active_business_id') || '');
+        setActiveOutletIdState(localStorage.getItem('pos_active_outlet_id') || 'ALL');
+      } else if (isOwnerB) {
+        setActiveBusinessIdState(u.business_id ? String(u.business_id) : '');
+        const savedOutlet = localStorage.getItem('pos_active_outlet_id') || 'ALL';
+        setActiveOutletIdState(savedOutlet);
+      } else if (u.outlet_id) {
+        const forcedId = String(u.outlet_id);
+        setActiveOutletIdState(forcedId);
+        localStorage.setItem('pos_active_outlet_id', forcedId);
+      }
+    } else {
+      localStorage.removeItem('pos_user');
+      localStorage.removeItem('pos_token');
+      localStorage.removeItem('pos_active_outlet_id');
+      localStorage.removeItem('pos_active_business_id');
+      setActiveOutletIdState('1');
+      setActiveBusinessIdState('');
+      setOutlets([]);
+      setCurrentBusiness(null);
+      setCoinData(null);
+    }
+    window.dispatchEvent(new CustomEvent('pos:auth_changed', { detail: user }));
+  }, []);
+
+  // Listen to external auth events
+  useEffect(() => {
+    const handleAuthEvent = (e) => {
+      if (e.detail) {
+        setCurrentUser(e.detail);
+      } else {
+        try {
+          const stored = JSON.parse(localStorage.getItem('pos_user') || '{}');
+          setCurrentUser(stored);
+        } catch {
+          setCurrentUser({});
+        }
+      }
+    };
+    window.addEventListener('pos:auth_changed', handleAuthEvent);
+    return () => window.removeEventListener('pos:auth_changed', handleAuthEvent);
+  }, []);
+
   const fetchOutlets = useCallback(async () => {
+    if (!localStorage.getItem('pos_token')) return;
     setLoadingOutlets(true);
     try {
       const { data } = await api.get('/outlets');
@@ -99,6 +159,7 @@ export function OutletProvider({ children }) {
   }, []);
 
   const fetchBusinessData = useCallback(async () => {
+    if (!localStorage.getItem('pos_token')) return;
     try {
       if (isPlatformAdmin) {
         const { data } = await api.get('/businesses');
@@ -121,9 +182,9 @@ export function OutletProvider({ children }) {
   }, [isPlatformAdmin, activeBusinessId, currentUser]);
 
   const fetchCoinData = useCallback(async () => {
+    if (!localStorage.getItem('pos_token')) return;
     try {
       if (isPlatformAdmin && !activeBusinessId) {
-        // Platform admin in global view does NOT have a tenant coin balance
         setCoinData(null);
         return;
       }
@@ -142,10 +203,13 @@ export function OutletProvider({ children }) {
     }
   }, [isPlatformAdmin, activeBusinessId]);
 
+  // Initial fetch and token sync
   useEffect(() => {
-    fetchOutlets();
-    fetchBusinessData();
-    fetchCoinData();
+    if (localStorage.getItem('pos_token')) {
+      fetchOutlets();
+      fetchBusinessData();
+      fetchCoinData();
+    }
 
     const handleTxCompleted = () => {
       fetchCoinData();
@@ -154,10 +218,10 @@ export function OutletProvider({ children }) {
     return () => {
       window.removeEventListener('pos:transaction_completed', handleTxCompleted);
     };
-  }, [fetchOutlets, fetchBusinessData, fetchCoinData]);
+  }, [currentUser?.id, fetchOutlets, fetchBusinessData, fetchCoinData]);
 
   const changeOutlet = useCallback((outletId) => {
-    if (!isOwnerBisnis && !isPlatformAdmin) return; // Disallow branch users from switching
+    if (!isOwnerBisnis && !isPlatformAdmin) return;
     const val = String(outletId);
     setActiveOutletIdState(val);
     localStorage.setItem('pos_active_outlet_id', val);
@@ -197,13 +261,13 @@ export function OutletProvider({ children }) {
   }, [outlets, activeOutletId, isOwnerBisnis, isPlatformAdmin, currentUser]);
 
   const hasCoinBalance = !isPlatformAdmin || Boolean(activeBusinessId);
-
   const canSwitchOutlet = isPlatformAdmin || isOwnerBisnis;
 
   const value = useMemo(() => ({
     outlets,
     loadingOutlets,
     currentUser,
+    setAuthUser,
     activeOutletId,
     activeOutlet,
     changeOutlet,
@@ -238,6 +302,7 @@ export function OutletProvider({ children }) {
     outlets,
     loadingOutlets,
     currentUser,
+    setAuthUser,
     activeOutletId,
     activeOutlet,
     changeOutlet,

@@ -3,9 +3,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, ArrowRight, KeyRound } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
+import { useOutlet as useOutletContext } from '../context/OutletContext';
 
 export default function Login() {
   const navigate = useNavigate();
+  const { setAuthUser } = useOutletContext();
   const [form, setForm] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
 
@@ -16,6 +18,11 @@ export default function Login() {
       const { data } = await api.post('/login', form);
       localStorage.setItem('pos_token', data.token);
       localStorage.setItem('pos_user', JSON.stringify(data.user));
+
+      if (setAuthUser) {
+        setAuthUser(data.user);
+      }
+
       const u = data.user;
       const isSuperadminPlatform = u.role === 'superadmin_platform' || u.role === 'superadmin' || Boolean(u.is_superadmin_platform);
       const isOwnerWebsite = u.role === 'owner_website' || Boolean(u.is_owner_website);
