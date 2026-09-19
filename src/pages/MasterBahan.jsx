@@ -571,7 +571,7 @@ export default function MasterBahan() {
                             textDecoration: 'underline'
                           }}
                         >
-                          Rincian 4 Cabang
+                          Rincian {ing.outlet_stocks.length} Cabang
                         </button>
                       )}
                     </div>
