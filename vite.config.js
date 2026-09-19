@@ -3,6 +3,7 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   build: {
     sourcemap: false,
+    cssCodeSplit: true,
     chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
@@ -31,4 +32,3 @@ export default defineConfig({
     strictPort: false,
   },
 });
-

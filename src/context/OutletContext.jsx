@@ -156,15 +156,15 @@ export function OutletProvider({ children }) {
     };
   }, [fetchOutlets, fetchBusinessData, fetchCoinData]);
 
-  const changeOutlet = (outletId) => {
+  const changeOutlet = useCallback((outletId) => {
     if (!isOwnerBisnis && !isPlatformAdmin) return; // Disallow branch users from switching
     const val = String(outletId);
     setActiveOutletIdState(val);
     localStorage.setItem('pos_active_outlet_id', val);
     window.dispatchEvent(new CustomEvent('pos:outlet_changed', { detail: val }));
-  };
+  }, [isOwnerBisnis, isPlatformAdmin]);
 
-  const changeBusiness = (businessId) => {
+  const changeBusiness = useCallback((businessId) => {
     if (!isPlatformAdmin) return;
     const val = String(businessId);
     setActiveBusinessIdState(val);
@@ -178,7 +178,7 @@ export function OutletProvider({ children }) {
     fetchOutlets();
     fetchCoinData();
     window.dispatchEvent(new CustomEvent('pos:business_changed', { detail: val }));
-  };
+  }, [isPlatformAdmin, businesses, fetchOutlets, fetchCoinData]);
 
   // Find the active outlet object
   const activeOutlet = useMemo(() => {
@@ -240,9 +240,11 @@ export function OutletProvider({ children }) {
     currentUser,
     activeOutletId,
     activeOutlet,
+    changeOutlet,
     businesses,
     currentBusiness,
     activeBusinessId,
+    changeBusiness,
     isSuperadminPlatform,
     isOwnerWebsite,
     isPlatformAdmin,
