@@ -36,6 +36,9 @@ export default function TransferBahan() {
   // Modal Receive state
   const [receiveModalOpen, setReceiveModalOpen] = useState(false);
   const [receiveTargetTransfer, setReceiveTargetTransfer] = useState(null);
+  const [receiveItems, setReceiveItems] = useState([]);
+  const [receiveDisposition, setReceiveDisposition] = useState('RECORD_AS_WASTE');
+  const [receiveReturnReason, setReceiveReturnReason] = useState('Barang rusak saat pengiriman / rusak di jalan');
   const [receivedNotesInput, setReceivedNotesInput] = useState('');
   const [receiving, setReceiving] = useState(false);
 
@@ -538,8 +541,58 @@ export default function TransferBahan() {
   // Open Receive Modal
   function openReceiveModal(trf) {
     setReceiveTargetTransfer(trf);
-    setReceivedNotesInput('Barang diterima lengkap dan sesuai kondisi.');
+    setReceivedNotesInput('Barang diterima dalam kondisi baik.');
+    setReceiveDisposition('RECORD_AS_WASTE');
+    setReceiveReturnReason('Barang rusak saat pengiriman / rusak di jalan');
+
+    const mappedItems = (trf.items || []).map(it => {
+      const isProd = it.item_type === 'PRODUCT';
+      const name = isProd ? (it.menu?.name || it.item_name || 'Produk') : (it.ingredient?.name || it.item_name || 'Bahan');
+      const origQty = Number(it.input_qty || it.qty || 0);
+      return {
+        id: it.id,
+        name,
+        is_product: isProd,
+        unit: it.input_unit || it.unit || 'satuan',
+        input_qty: origQty,
+        received_qty: origQty,
+        difference: 0,
+        reason: ''
+      };
+    });
+    setReceiveItems(mappedItems);
     setReceiveModalOpen(true);
+  }
+
+  function handleReceiveItemQtyChange(idx, val) {
+    setReceiveItems(prev => {
+      const copy = [...prev];
+      const orig = copy[idx].input_qty;
+      const numVal = val === '' ? '' : Math.max(0, Number(val));
+      const validReceived = typeof numVal === 'number' ? Math.min(orig, numVal) : 0;
+      copy[idx] = {
+        ...copy[idx],
+        received_qty: val === '' ? '' : validReceived,
+        difference: Math.max(0, orig - (val === '' ? 0 : validReceived))
+      };
+      return copy;
+    });
+  }
+
+  function handleReceiveItemReasonChange(idx, val) {
+    setReceiveItems(prev => {
+      const copy = [...prev];
+      copy[idx] = { ...copy[idx], reason: val };
+      return copy;
+    });
+  }
+
+  function handleSetAllReceivedFull() {
+    setReceiveItems(prev => prev.map(it => ({
+      ...it,
+      received_qty: it.input_qty,
+      difference: 0
+    })));
   }
 
   // Submit Receive Transfer
@@ -547,11 +600,34 @@ export default function TransferBahan() {
     e?.preventDefault();
     if (!receiveTargetTransfer) return;
 
+    let totalDiff = 0;
+    for (const it of receiveItems) {
+      const recQ = Number(it.received_qty === '' ? 0 : it.received_qty);
+      if (recQ < 0) {
+        toast.error(`Jumlah diterima untuk ${it.name} tidak boleh negatif!`);
+        return;
+      }
+      if (recQ > it.input_qty) {
+        toast.error(`Jumlah diterima untuk ${it.name} (${recQ}) tidak boleh melebihi jumlah kirim (${it.input_qty})!`);
+        return;
+      }
+      totalDiff += (it.input_qty - recQ);
+    }
+
     setReceiving(true);
     try {
-      const { data } = await api.post(`/transfers/${receiveTargetTransfer.id}/receive`, {
-        received_notes: receivedNotesInput
-      });
+      const payload = {
+        received_notes: receivedNotesInput || null,
+        return_disposition: totalDiff > 0 ? receiveDisposition : undefined,
+        return_reason: totalDiff > 0 ? receiveReturnReason : undefined,
+        items: receiveItems.map(it => ({
+          id: it.id,
+          received_qty: Number(it.received_qty === '' ? 0 : it.received_qty),
+          reason: it.reason || undefined
+        }))
+      };
+
+      const { data } = await api.post(`/transfers/${receiveTargetTransfer.id}/receive`, payload);
 
       setTransfers(prev => prev.map(t => (t.id === data.transfer.id ? data.transfer : t)));
       if (selectedTransfer?.id === data.transfer.id) {
@@ -972,92 +1048,349 @@ export default function TransferBahan() {
       </div>
 
       {/* Modal Confirm Receive Transfer */}
-      {receiveModalOpen && receiveTargetTransfer && (
-        <div className="modal-backdrop" onClick={() => setReceiveModalOpen(false)}>
-          <div
-            className="modal-content card"
-            style={{ maxWidth: 540, width: '100%', margin: '20px' }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex-between mb-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <CheckCircle2 size={20} color="var(--ok)" />
-                <div>
-                  <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>
-                    Konfirmasi Penerimaan Transfer Barang
-                  </h3>
-                  <span style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
-                    No. Surat Jalan: <strong className="mono" style={{ color: 'var(--accent-bright)' }}>{receiveTargetTransfer.transfer_no}</strong>
-                  </span>
-                </div>
-              </div>
-              <button
-                className="btn btn-ghost btn-icon"
-                onClick={() => setReceiveModalOpen(false)}
-                style={{ padding: 4 }}
-              >
-                <X size={16} />
-              </button>
-            </div>
+      {receiveModalOpen && receiveTargetTransfer && (() => {
+        const totalSent = receiveItems.reduce((acc, it) => acc + it.input_qty, 0);
+        const totalReceived = receiveItems.reduce((acc, it) => acc + (Number(it.received_qty) || 0), 0);
+        const totalDiff = Math.max(0, totalSent - totalReceived);
 
-            <form onSubmit={handleConfirmReceive}>
-              <div style={{
-                background: 'rgba(16, 185, 129, 0.06)',
-                border: '1px solid rgba(16, 185, 129, 0.25)',
-                borderRadius: 10,
-                padding: 14,
-                marginBottom: 16
-              }}>
-                <div style={{ fontSize: 12.5, color: 'var(--text-primary)', marginBottom: 6 }}>
-                  📦 Cabang Penerima (Tujuan): <strong>{receiveTargetTransfer.destination_display_name || receiveTargetTransfer.destination_name}</strong>
+        return (
+          <div className="modal-backdrop" onClick={() => setReceiveModalOpen(false)}>
+            <div
+              className="modal-content card"
+              style={{ maxWidth: 680, width: '100%', margin: '20px', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="flex-between pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: '50%',
+                    background: 'rgba(16, 185, 129, 0.15)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#10b981'
+                  }}>
+                    <CheckCircle2 size={20} />
+                  </div>
+                  <div>
+                    <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>
+                      Konfirmasi & Verifikasi Penerimaan Barang
+                    </h3>
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                      No. Surat Jalan: <strong className="mono" style={{ color: 'var(--accent-bright)' }}>{receiveTargetTransfer.transfer_no}</strong>
+                      {' · '}Dari: <strong>{receiveTargetTransfer.source_display_name || receiveTargetTransfer.source_name}</strong>
+                    </span>
+                  </div>
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  Dengan mengonfirmasi penerimaan ini, seluruh stok <strong>{receiveTargetTransfer.items?.length || receiveTargetTransfer.total_items} jenis barang/bahan</strong> akan otomatis masuk dan menambah saldo inventaris cabang tujuan.
-                </div>
-              </div>
-
-              <div className="form-group mb-4">
-                <label className="form-label" style={{ fontWeight: 600 }}>Catatan Penerimaan / Kondisi Barang</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  placeholder="Contoh: Barang diterima lengkap dan sesuai kondisi"
-                  value={receivedNotesInput}
-                  onChange={e => setReceivedNotesInput(e.target.value)}
-                />
-              </div>
-
-              <div className="flex-between">
                 <button
-                  type="button"
-                  className="btn btn-secondary"
+                  className="btn btn-ghost btn-icon"
                   onClick={() => setReceiveModalOpen(false)}
-                  disabled={receiving}
+                  style={{ padding: 4 }}
                 >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="btn"
-                  disabled={receiving}
-                  style={{
-                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                    color: '#ffffff',
-                    fontWeight: 800,
-                    padding: '8px 18px'
-                  }}
-                >
-                  {receiving ? 'Memproses Penerimaan...' : (
-                    <>
-                      <CheckCircle2 size={15} /> Konfirmasi & Tambah Stok
-                    </>
-                  )}
+                  <X size={16} />
                 </button>
               </div>
-            </form>
+
+              <form onSubmit={handleConfirmReceive} style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: 1 }}>
+                <div style={{ overflowY: 'auto', padding: '16px 0', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  
+                  {/* Destination Info & Quick Action */}
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    background: 'rgba(99, 102, 241, 0.08)',
+                    border: '1px solid rgba(99, 102, 241, 0.25)',
+                    borderRadius: 10,
+                    padding: '10px 14px'
+                  }}>
+                    <div style={{ fontSize: 12.5 }}>
+                      🏢 Cabang Penerima: <strong>{receiveTargetTransfer.destination_display_name || receiveTargetTransfer.destination_name}</strong>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-ghost"
+                      onClick={handleSetAllReceivedFull}
+                      style={{ fontSize: 11, color: '#86efac', fontWeight: 600, border: '1px solid rgba(134, 239, 172, 0.3)' }}
+                    >
+                      ✓ Set Terima Semua Penuh
+                    </button>
+                  </div>
+
+                  {/* Items Verification List */}
+                  <div>
+                    <label className="form-label mb-2" style={{ fontWeight: 700, fontSize: 12.5, display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Daftar Barang yang Diterima:</span>
+                      <span style={{ fontSize: 11.5, color: 'var(--text-muted)', fontWeight: 400 }}>
+                        Periksa fisik dan masukkan jumlah aktual yang diterima
+                      </span>
+                    </label>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {receiveItems.map((it, idx) => {
+                        const isDiff = it.difference > 0;
+                        return (
+                          <div
+                            key={it.id || idx}
+                            style={{
+                              background: isDiff ? 'rgba(239, 68, 68, 0.06)' : 'var(--bg-main)',
+                              border: `1px solid ${isDiff ? 'rgba(239, 68, 68, 0.3)' : 'var(--border-soft)'}`,
+                              borderRadius: 8,
+                              padding: '10px 12px',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 130px 110px', gap: 10, alignItems: 'center' }}>
+                              {/* Item Name */}
+                              <div>
+                                <div style={{ fontWeight: 700, fontSize: 13, color: '#ffffff' }}>
+                                  {it.is_product ? '📦 ' : '🧪 '}{it.name}
+                                </div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                  Satuan: {it.unit}
+                                </div>
+                              </div>
+
+                              {/* Sent Qty */}
+                              <div style={{ textAlign: 'center' }}>
+                                <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Dikirim</div>
+                                <div className="mono" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+                                  {num(it.input_qty)} {it.unit}
+                                </div>
+                              </div>
+
+                              {/* Received Input Qty */}
+                              <div>
+                                <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, marginBottom: 2 }}>Diterima</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    min="0"
+                                    max={it.input_qty}
+                                    className="form-control"
+                                    style={{
+                                      padding: '4px 8px',
+                                      fontSize: 13,
+                                      fontWeight: 700,
+                                      textAlign: 'center',
+                                      borderColor: isDiff ? 'var(--danger)' : undefined
+                                    }}
+                                    value={it.received_qty}
+                                    onChange={e => handleReceiveItemQtyChange(idx, e.target.value)}
+                                    required
+                                  />
+                                  <span style={{ fontSize: 11, color: 'var(--text-muted)', minWidth: 28 }}>{it.unit}</span>
+                                </div>
+                              </div>
+
+                              {/* Difference / Status */}
+                              <div style={{ textAlign: 'right' }}>
+                                <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Status</div>
+                                {!isDiff ? (
+                                  <span className="pill pill-ok" style={{ fontSize: 10.5, fontWeight: 700 }}>
+                                    ✓ Lengkap
+                                  </span>
+                                ) : (
+                                  <span className="pill pill-danger" style={{ fontSize: 10.5, fontWeight: 700 }}>
+                                    - {num(it.difference)} {it.unit}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Row reason if difference */}
+                            {isDiff && (
+                              <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed rgba(239, 68, 68, 0.25)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ fontSize: 11, color: '#fca5a5', whiteSpace: 'nowrap' }}>
+                                  Alasan item ini kurang / rusak:
+                                </span>
+                                <input
+                                  type="text"
+                                  className="form-control"
+                                  style={{ padding: '3px 8px', fontSize: 11.5 }}
+                                  placeholder="Misal: 2 pcs kemasan pecah / bocor"
+                                  value={it.reason || ''}
+                                  onChange={e => handleReceiveItemReasonChange(idx, e.target.value)}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Summary Box based on totalDiff */}
+                  {totalDiff > 0 ? (
+                    <div style={{
+                      background: 'rgba(239, 68, 68, 0.08)',
+                      border: '1px solid rgba(239, 68, 68, 0.35)',
+                      borderRadius: 10,
+                      padding: 14,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 10
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#fb7185', fontWeight: 700, fontSize: 13 }}>
+                        <AlertTriangle size={16} />
+                        <span>Ditemukan Selisih Kurang / Retur: {num(totalDiff)} Satuan Barang</span>
+                      </div>
+                      <p style={{ fontSize: 11.5, color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4 }}>
+                        Cabang penerima hanya akan menerima stok sebanyak <strong>{num(totalReceived)} satuan barang</strong>. Pilih perlakuan untuk selisih barang tersebut:
+                      </p>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                        <label
+                          style={{
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: 8,
+                            padding: '10px 12px',
+                            borderRadius: 8,
+                            cursor: 'pointer',
+                            background: receiveDisposition === 'RECORD_AS_WASTE' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                            border: `1px solid ${receiveDisposition === 'RECORD_AS_WASTE' ? 'rgba(239, 68, 68, 0.5)' : 'var(--border-soft)'}`
+                          }}
+                        >
+                          <input
+                            type="radio"
+                            name="receive_disposition"
+                            value="RECORD_AS_WASTE"
+                            checked={receiveDisposition === 'RECORD_AS_WASTE'}
+                            onChange={() => setReceiveDisposition('RECORD_AS_WASTE')}
+                            style={{ marginTop: 2 }}
+                          />
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: '#ffffff' }}>💥 Catat Sebagai Waste</div>
+                            <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                              Barang rusak/pecah di jalan. Masuk ke Waste Tracking & HPP kerugian.
+                            </div>
+                          </div>
+                        </label>
+
+                        <label
+                          style={{
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: 8,
+                            padding: '10px 12px',
+                            borderRadius: 8,
+                            cursor: 'pointer',
+                            background: receiveDisposition === 'RETURN_TO_SOURCE' ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                            border: `1px solid ${receiveDisposition === 'RETURN_TO_SOURCE' ? 'rgba(99, 102, 241, 0.5)' : 'var(--border-soft)'}`
+                          }}
+                        >
+                          <input
+                            type="radio"
+                            name="receive_disposition"
+                            value="RETURN_TO_SOURCE"
+                            checked={receiveDisposition === 'RETURN_TO_SOURCE'}
+                            onChange={() => setReceiveDisposition('RETURN_TO_SOURCE')}
+                            style={{ marginTop: 2 }}
+                          />
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: '#ffffff' }}>↩️ Kembalikan ke Cabang Asal</div>
+                            <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                              Barang ditolak & dibawa pulang kurir. Stok cabang asal dipulihkan.
+                            </div>
+                          </div>
+                        </label>
+                      </div>
+
+                      <div className="form-group mb-0">
+                        <label className="form-label" style={{ fontSize: 11.5, fontWeight: 600 }}>Alasan Utama Retur / Selisih</label>
+                        <select
+                          className="form-control"
+                          style={{ fontSize: 12 }}
+                          value={receiveReturnReason}
+                          onChange={e => setReceiveReturnReason(e.target.value)}
+                        >
+                          <option value="Barang rusak saat pengiriman / rusak di jalan">Barang rusak saat pengiriman / rusak di jalan</option>
+                          <option value="Barang tidak segar / basi / kedaluwarsa">Barang tidak segar / basi / kedaluwarsa</option>
+                          <option value="Kemasan bocor / pecah">Kemasan bocor / pecah</option>
+                          <option value="Kurang kirim dari pihak pengirim">Kurang kirim dari pihak pengirim</option>
+                          <option value="Salah kirim varian / jenis item">Salah kirim varian / jenis item</option>
+                          <option value="Lainnya">Alasan Lainnya</option>
+                        </select>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{
+                      background: 'rgba(16, 185, 129, 0.08)',
+                      border: '1px solid rgba(16, 185, 129, 0.3)',
+                      borderRadius: 10,
+                      padding: 12,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      color: '#86efac',
+                      fontSize: 12.5,
+                      fontWeight: 600
+                    }}>
+                      <CheckCircle2 size={16} color="#10b981" />
+                      <span>Semua barang ({receiveItems.length} item) diterima lengkap sesuai fisik. Stok cabang tujuan akan bertambah penuh.</span>
+                    </div>
+                  )}
+
+                  {/* General Notes */}
+                  <div className="form-group mb-0">
+                    <label className="form-label" style={{ fontWeight: 600, fontSize: 12 }}>Catatan Penerimaan / No. Berita Acara (Opsional)</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Contoh: Diterima oleh staf piket, dicek bersama supir"
+                      value={receivedNotesInput}
+                      onChange={e => setReceivedNotesInput(e.target.value)}
+                    />
+                  </div>
+
+                </div>
+
+                {/* Modal Footer */}
+                <div className="flex-between pt-3" style={{ borderTop: '1px solid var(--border)', marginTop: 8 }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setReceiveModalOpen(false)}
+                    disabled={receiving}
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn"
+                    disabled={receiving}
+                    style={{
+                      background: totalDiff > 0
+                        ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
+                        : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                      color: '#ffffff',
+                      fontWeight: 800,
+                      padding: '8px 20px'
+                    }}
+                  >
+                    {receiving ? 'Memproses Penerimaan...' : (
+                      totalDiff > 0 ? (
+                        <>
+                          <AlertTriangle size={15} /> Terima {num(totalReceived)} Unit & Catat Retur
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 size={15} /> Konfirmasi & Tambah Stok Penuh
+                        </>
+                      )
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Modal Retur Transfer Barang (Rusak di Jalan / Pengembalian ke Asal) */}
       {returnModalOpen && returnTargetTransfer && (
@@ -1917,10 +2250,15 @@ export default function TransferBahan() {
                           {name}
                         </td>
                         <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, fontFamily: 'monospace' }}>
-                          {num(it.input_qty || it.qty)}
+                          <div>{num(it.input_qty || it.qty)}</div>
+                          {it.received_qty !== null && it.received_qty !== undefined && selectedTransfer.status !== 'IN_TRANSIT' && selectedTransfer.status !== 'PENDING' && (
+                            <div style={{ fontSize: 10, color: '#16a34a', fontWeight: 700 }}>
+                              Diterima: {num(it.received_qty)}
+                            </div>
+                          )}
                           {retQty > 0 && (
                             <div style={{ fontSize: 10, color: '#dc2626', fontWeight: 700 }}>
-                              Diretur: {num(retQty)}
+                              Retur: {num(retQty)}
                             </div>
                           )}
                         </td>
