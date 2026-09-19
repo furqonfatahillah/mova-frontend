@@ -31,13 +31,6 @@ export default function UrgentNotes() {
     from: getMonthStartStr(),
     to: getTodayStr(),
   }));
-  const [selectedOutlet, setSelectedOutlet] = useState(() => {
-    if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
-      return String(activeOutletId);
-    }
-    return '';
-  });
-
   // Modals
   const [resolveModal, setResolveModal] = useState({
     open: false,
@@ -58,21 +51,21 @@ export default function UrgentNotes() {
     note: null,
   });
 
-  useEffect(() => {
-    if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
-      setSelectedOutlet(String(activeOutletId));
-    }
+  const effectiveOutletId = useMemo(() => {
+    return (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all')
+      ? String(activeOutletId)
+      : '';
   }, [activeOutletId]);
 
   useEffect(() => {
     fetchData();
-  }, [selectedOutlet, statusFilter, period]);
+  }, [effectiveOutletId, statusFilter, period]);
 
   async function fetchData() {
     setLoading(true);
     try {
       const params = {};
-      if (selectedOutlet) params.outlet_id = selectedOutlet;
+      if (effectiveOutletId) params.outlet_id = effectiveOutletId;
       if (statusFilter !== 'ALL') params.status = statusFilter;
       if (period.from) params.from = period.from;
       if (period.to) params.to = period.to;
@@ -80,7 +73,7 @@ export default function UrgentNotes() {
       const [notesRes, sumRes] = await Promise.all([
         api.get('/urgent-notes', { params }),
         api.get('/urgent-notes/summary', { params: {
-          ...(selectedOutlet ? { outlet_id: selectedOutlet } : {}),
+          ...(effectiveOutletId ? { outlet_id: effectiveOutletId } : {}),
           ...(period.from ? { from: period.from } : {}),
           ...(period.to ? { to: period.to } : {})
         } }),
@@ -407,20 +400,6 @@ export default function UrgentNotes() {
             align="right"
           />
 
-          {/* Outlet Select */}
-          {outlets && outlets.length > 1 && (
-            <select
-              className="form-control"
-              value={selectedOutlet}
-              onChange={e => setSelectedOutlet(e.target.value)}
-              style={{ minWidth: 180, fontSize: 12.5, padding: '6px 12px', height: 36 }}
-            >
-              <option value="" style={{ background: '#11162d', color: '#ffffff' }}>Semua Cabang Outlet</option>
-              {outlets.map(o => (
-                <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>{o.name}</option>
-              ))}
-            </select>
-          )}
 
           {/* Search Input */}
           <div style={{ position: 'relative', width: 250 }}>
