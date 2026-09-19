@@ -85,7 +85,7 @@ export default function BatchPrep() {
       const targetOutlet = activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all' ? activeOutletId : undefined;
 
       const [recipeRes, batchRes, ingRes] = await Promise.all([
-        api.get('/prep-recipes'),
+        api.get('/prep-recipes', { params: { outlet_id: targetOutlet } }),
         api.get('/batch-preps', { params: { outlet_id: targetOutlet } }),
         api.get('/ingredients', { params: { outlet_id: targetOutlet } }),
       ]);
@@ -102,7 +102,11 @@ export default function BatchPrep() {
       const todayStr = getTodayStr();
       const todayBatches = bchs.filter(b => b.date === todayStr);
       const semiFinishedIngs = ings.filter(i => i.type === 'SEMI_FINISHED');
-      const lowStockCount = semiFinishedIngs.filter(i => Number(i.current_stock ?? 0) <= Number(i.current_stok_min ?? i.stok_min ?? 0)).length;
+      const lowStockCount = semiFinishedIngs.filter(i => {
+        const c = Number(i.current_stock ?? 0);
+        const m = Number(i.current_stok_min ?? i.stok_min ?? 0);
+        return m > 0 ? c <= m : c <= 0;
+      }).length;
 
       setStats({
         totalOlahan: semiFinishedIngs.length,
@@ -519,10 +523,10 @@ export default function BatchPrep() {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 16 }}>
                 {recipes.map(recipe => {
-                  const ing = recipe.ingredient;
-                  const currentStock = ing?.current_stock ?? 0;
-                  const minStock = ing?.current_stok_min ?? ing?.stok_min ?? 0;
-                  const isLow = currentStock <= minStock;
+                  const liveIng = ingredients.find(i => i.id === recipe.ingredient_id) || recipe.ingredient;
+                  const currentStock = Number(liveIng?.current_stock ?? recipe.ingredient?.current_stock ?? 0);
+                  const minStock = Number(liveIng?.current_stok_min ?? liveIng?.stok_min ?? recipe.ingredient?.stok_min ?? 0);
+                  const isLow = minStock > 0 ? currentStock <= minStock : currentStock <= 0;
 
                   return (
                     <div
@@ -543,10 +547,10 @@ export default function BatchPrep() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
                           <div>
                             <span className="mono" style={{ fontSize: 11, color: 'var(--accent-bright)', fontWeight: 600 }}>
-                              {ing?.code || 'PREP'}
+                              {liveIng?.code || recipe.ingredient?.code || 'PREP'}
                             </span>
                             <h3 style={{ fontSize: 15, fontWeight: 700, color: '#ffffff', marginTop: 2, marginBottom: 4 }}>
-                              {ing?.name || recipe.name}
+                              {liveIng?.name || recipe.ingredient?.name || recipe.name}
                             </h3>
                             <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
                               {recipe.name}
@@ -579,7 +583,7 @@ export default function BatchPrep() {
                           <div>
                             <div style={{ fontSize: 10.5, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Stok Siap Pakai</div>
                             <div style={{ fontSize: 17, fontWeight: 700, color: isLow ? '#fb7185' : '#ffffff', marginTop: 2 }}>
-                              {num(currentStock)} <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)' }}>{ing?.unit_pakai}</span>
+                              {num(currentStock)} <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)' }}>{liveIng?.unit_pakai || recipe.output_unit}</span>
                             </div>
                           </div>
                           <div>
