@@ -347,7 +347,7 @@ export default function TransferBahan() {
           const factor = Number(selected?.konversi) || 1;
           const isConvertible = selected && ub && selected.unit_pakai && ub.toLowerCase() !== selected.unit_pakai.toLowerCase() && factor > 1;
           const isBeli = isConvertible && value && value.toLowerCase() === ub.toLowerCase();
-          current.qty = isBeli ? (Number(current.input_qty || 0) * factor) : Number(value || 0);
+          current.qty = isBeli ? (Number(current.input_qty || 0) * factor) : Number(current.input_qty || 0);
         }
       } else {
         current[field] = value;
@@ -370,23 +370,41 @@ export default function TransferBahan() {
       if (!menu) return null;
       const om = menu.outlet_menus?.find(x => x.outlet_id === sourceOutletId);
       const availStock = om ? Number(om.stock) : Number(menu.stock || 0);
+      const neededQty = Number(item.input_qty || item.qty || 0);
+      const remaining = availStock - neededQty;
       return {
         stock: availStock,
+        remaining: remaining,
+        neededQty: neededQty,
         unit: menu.unit || 'pcs',
         isLow: availStock <= 5,
-        isDeficit: availStock < Number(item.input_qty || 0)
+        isDeficit: neededQty > 0 && remaining < 0
       };
     } else {
       const ing = ingredients.find(i => i.id === Number(item.ingredient_id));
       if (!ing) return null;
       const outStock = ing.outlet_stocks?.find(os => os.outlet_id === sourceOutletId);
-      const availStock = outStock ? Number(outStock.current) : Number(ing.current_stock ?? ing.stok_awal ?? 0);
-      const neededBaseQty = Number(item.qty || 0);
+      const availStock = outStock
+        ? Number(outStock.stock ?? outStock.current ?? 0)
+        : Number(ing.current_stock ?? ing.stok_awal ?? 0);
+
+      const ub = (ing.unit_beli || '').trim();
+      const up = (ing.unit_pakai || '').trim();
+      const factor = Number(ing.konversi) || 1;
+      const isConvertible = ub && up && ub.toLowerCase() !== up.toLowerCase() && factor > 1;
+      const isBeli = isConvertible && item.input_unit && item.input_unit.toLowerCase() === ub.toLowerCase();
+
+      const inputQ = Number(item.input_qty || 0);
+      const neededBaseQty = isBeli ? (inputQ * factor) : (item.qty !== '' && !isNaN(Number(item.qty)) ? Number(item.qty) : inputQ);
+      const remaining = availStock - neededBaseQty;
+
       return {
         stock: availStock,
-        unit: ing.unit_pakai || 'satuan',
+        remaining: remaining,
+        neededBaseQty: neededBaseQty,
+        unit: up || ing.unit_pakai || 'satuan',
         isLow: availStock <= 10,
-        isDeficit: neededBaseQty > 0 && availStock < neededBaseQty
+        isDeficit: neededBaseQty > 0 && remaining < 0
       };
     }
   }
@@ -1621,8 +1639,21 @@ export default function TransferBahan() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, fontSize: 11.5 }}>
                           {stockInfo ? (
                             <span style={{ color: stockInfo.isDeficit ? '#fb7185' : '#86efac', fontWeight: 600 }}>
-                              {stockInfo.isDeficit ? '⚠️ Defisit stok di cabang asal: ' : '✓ Sisa di cabang asal: '}
-                              <strong>{num(stockInfo.stock)} {stockInfo.unit}</strong>
+                              {stockInfo.isDeficit ? (
+                                <>
+                                  ⚠️ Stok tidak cukup di cabang asal: Tersedia <strong>{num(stockInfo.stock)} {stockInfo.unit}</strong> (Kurang {num(Math.abs(stockInfo.remaining))} {stockInfo.unit})
+                                </>
+                              ) : (
+                                Number(item.input_qty || item.qty) > 0 ? (
+                                  <>
+                                    ✓ Stok tersedia: <strong>{num(stockInfo.stock)} {stockInfo.unit}</strong> (Sisa setelah transfer: <strong>{num(stockInfo.remaining)} {stockInfo.unit}</strong>)
+                                  </>
+                                ) : (
+                                  <>
+                                    ✓ Stok tersedia di cabang asal: <strong>{num(stockInfo.stock)} {stockInfo.unit}</strong>
+                                  </>
+                                )
+                              )}
                             </span>
                           ) : <span />}
 
