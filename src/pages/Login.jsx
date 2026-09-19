@@ -6,7 +6,7 @@ import toast from 'react-hot-toast';
 
 export default function Login() {
   const navigate = useNavigate();
-  const [form, setForm] = useState({ email: 'admin@posmaroa.id', password: 'password' });
+  const [form, setForm] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e) {
@@ -31,7 +31,7 @@ export default function Login() {
       navigate(isPegawai ? '/pos' : isPlatformAdmin ? '/businesses' : '/');
     } catch (err) {
       if (!err.response) {
-        toast.error('Tidak dapat terhubung ke backend (pastikan php artisan serve berjalan).');
+        toast.error('Tidak dapat terhubung ke server.');
       } else if (err.response?.data?.errors) {
         Object.values(err.response.data.errors).flat().forEach(m => toast.error(m));
       } else {
@@ -67,7 +67,7 @@ export default function Login() {
               value={form.email}
               onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
               required
-              placeholder="admin@posmaroa.id"
+              placeholder="nama@email.com"
             />
           </div>
 
@@ -101,15 +101,6 @@ export default function Login() {
           Belum punya akun?{' '}
           <Link to="/register" className="auth-link">Daftar sekarang</Link>
         </p>
-
-        <div style={{
-          marginTop: 24, padding: '12px 14px',
-          background: 'var(--accent-dim)', border: '1px solid var(--border-accent)',
-          borderRadius: 10, fontSize: 12, color: 'var(--text-secondary)'
-        }}>
-          <strong style={{ color: 'var(--accent-bright)' }}>Demo credentials:</strong><br />
-          Email: admin@posmaroa.id · Password: password
-        </div>
       </div>
     </div>
   );

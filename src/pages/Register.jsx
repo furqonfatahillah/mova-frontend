@@ -22,7 +22,7 @@ export default function Register() {
     business_name: '',
     business_phone: '',
     business_address: '',
-    first_outlet_name: 'Outlet Pusat',
+    first_outlet_name: '',
     referral_code: '',
   });
 
