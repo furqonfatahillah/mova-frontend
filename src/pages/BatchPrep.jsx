@@ -518,151 +518,151 @@ export default function BatchPrep() {
                 </button>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 16 }}>
-              {recipes.map(recipe => {
-                const ing = recipe.ingredient;
-                const currentStock = ing?.current_stock ?? 0;
-                const minStock = ing?.current_stok_min ?? ing?.stok_min ?? 0;
-                const isLow = currentStock <= minStock;
+                {recipes.map(recipe => {
+                  const ing = recipe.ingredient;
+                  const currentStock = ing?.current_stock ?? 0;
+                  const minStock = ing?.current_stok_min ?? ing?.stok_min ?? 0;
+                  const isLow = currentStock <= minStock;
 
-                return (
-                  <div
-                    key={recipe.id}
-                    className="card"
-                    style={{
-                      padding: 18,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'space-between',
-                      border: isLow ? '1px solid rgba(244, 63, 94, 0.4)' : '1px solid var(--border)',
-                      background: isLow ? 'linear-gradient(135deg, rgba(244, 63, 94, 0.05) 0%, rgba(17, 22, 45, 0.8) 100%)' : 'var(--bg-card)',
-                      boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
-                    }}
-                  >
-                    <div>
-                      {/* Top header */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-                        <div>
-                          <span className="mono" style={{ fontSize: 11, color: 'var(--accent-bright)', fontWeight: 600 }}>
-                            {ing?.code || 'PREP'}
-                          </span>
-                          <h3 style={{ fontSize: 15, fontWeight: 700, color: '#ffffff', marginTop: 2, marginBottom: 4 }}>
-                            {ing?.name || recipe.name}
-                          </h3>
-                          <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
-                            {recipe.name}
-                          </div>
-                        </div>
-
-                        <span
-                          className="pill"
-                          style={{
-                            fontSize: 11,
-                            background: isLow ? 'rgba(244, 63, 94, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                            color: isLow ? '#fb7185' : '#34d399',
-                            border: `1px solid ${isLow ? 'rgba(244, 63, 94, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`,
-                          }}
-                        >
-                          {isLow ? '⚠️ Stok Menipis' : '🟢 Stok Aman'}
-                        </span>
-                      </div>
-
-                      {/* Stock on Hand & Par Level */}
-                      <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: '1fr 1fr',
-                        background: 'rgba(255, 255, 255, 0.03)',
-                        borderRadius: 8,
-                        padding: '10px 14px',
-                        marginBottom: 12,
-                        gap: 10
-                      }}>
-                        <div>
-                          <div style={{ fontSize: 10.5, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Stok Siap Pakai</div>
-                          <div style={{ fontSize: 17, fontWeight: 700, color: isLow ? '#fb7185' : '#ffffff', marginTop: 2 }}>
-                            {num(currentStock)} <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)' }}>{ing?.unit_pakai}</span>
-                          </div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 10.5, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Standar Batch</div>
-                          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginTop: 2 }}>
-                            {num(recipe.output_qty)} <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{recipe.output_unit} / batch</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Ingredients List */}
-                      <div style={{ marginBottom: 14 }}>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
-                          <span>Komposisi Bahan Mentah ({recipe.items?.length || 0} bahan):</span>
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                          {recipe.items?.map(it => (
-                            <div
-                              key={it.id}
-                              style={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                fontSize: 11.5,
-                                padding: '3px 0',
-                                borderBottom: '1px dashed rgba(255, 255, 255, 0.05)',
-                              }}
-                            >
-                              <span style={{ color: 'var(--text-primary)' }}>• {it.ingredient?.name || 'Bahan Mentah'}</span>
-                              <span className="mono" style={{ color: 'var(--accent-bright)' }}>
-                                {num(it.qty)} {it.unit}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Estimated Cost calculation */}
-                      <div style={{
-                        padding: '8px 12px',
-                        borderRadius: 6,
-                        background: 'rgba(99, 102, 241, 0.08)',
-                        border: '1px solid rgba(99, 102, 241, 0.2)',
-                        marginBottom: 16,
+                  return (
+                    <div
+                      key={recipe.id}
+                      className="card"
+                      style={{
+                        padding: 18,
                         display: 'flex',
+                        flexDirection: 'column',
                         justifyContent: 'space-between',
-                        alignItems: 'center'
-                      }}>
-                        <div>
-                          <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Estimasi Total 1 Batch</div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: '#ffffff' }}>
-                            {rupiah(recipe.estimated_batch_cost || 0)}
+                        border: isLow ? '1px solid rgba(244, 63, 94, 0.4)' : '1px solid var(--border)',
+                        background: isLow ? 'linear-gradient(135deg, rgba(244, 63, 94, 0.05) 0%, rgba(17, 22, 45, 0.8) 100%)' : 'var(--bg-card)',
+                        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
+                      }}
+                    >
+                      <div>
+                        {/* Top header */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                          <div>
+                            <span className="mono" style={{ fontSize: 11, color: 'var(--accent-bright)', fontWeight: 600 }}>
+                              {ing?.code || 'PREP'}
+                            </span>
+                            <h3 style={{ fontSize: 15, fontWeight: 700, color: '#ffffff', marginTop: 2, marginBottom: 4 }}>
+                              {ing?.name || recipe.name}
+                            </h3>
+                            <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                              {recipe.name}
+                            </div>
+                          </div>
+
+                          <span
+                            className="pill"
+                            style={{
+                              fontSize: 11,
+                              background: isLow ? 'rgba(244, 63, 94, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                              color: isLow ? '#fb7185' : '#34d399',
+                              border: `1px solid ${isLow ? 'rgba(244, 63, 94, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`,
+                            }}
+                          >
+                            {isLow ? '⚠️ Stok Menipis' : '🟢 Stok Aman'}
+                          </span>
+                        </div>
+
+                        {/* Stock on Hand & Par Level */}
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: '1fr 1fr',
+                          background: 'rgba(255, 255, 255, 0.03)',
+                          borderRadius: 8,
+                          padding: '10px 14px',
+                          marginBottom: 12,
+                          gap: 10
+                        }}>
+                          <div>
+                            <div style={{ fontSize: 10.5, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Stok Siap Pakai</div>
+                            <div style={{ fontSize: 17, fontWeight: 700, color: isLow ? '#fb7185' : '#ffffff', marginTop: 2 }}>
+                              {num(currentStock)} <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)' }}>{ing?.unit_pakai}</span>
+                            </div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10.5, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Standar Batch</div>
+                            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginTop: 2 }}>
+                              {num(recipe.output_qty)} <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{recipe.output_unit} / batch</span>
+                            </div>
                           </div>
                         </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>HPP / {recipe.output_unit}</div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-bright)' }}>
-                            {rupiah(recipe.estimated_unit_cost || 0)}
+
+                        {/* Ingredients List */}
+                        <div style={{ marginBottom: 14 }}>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <span>Komposisi Bahan Mentah ({recipe.items?.length || 0} bahan):</span>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            {recipe.items?.map(it => (
+                              <div
+                                key={it.id}
+                                style={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  fontSize: 11.5,
+                                  padding: '3px 0',
+                                  borderBottom: '1px dashed rgba(255, 255, 255, 0.05)',
+                                }}
+                              >
+                                <span style={{ color: 'var(--text-primary)' }}>• {it.ingredient?.name || 'Bahan Mentah'}</span>
+                                <span className="mono" style={{ color: 'var(--accent-bright)' }}>
+                                  {num(it.qty)} {it.unit}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Estimated Cost calculation */}
+                        <div style={{
+                          padding: '8px 12px',
+                          borderRadius: 6,
+                          background: 'rgba(99, 102, 241, 0.08)',
+                          border: '1px solid rgba(99, 102, 241, 0.2)',
+                          marginBottom: 16,
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center'
+                        }}>
+                          <div>
+                            <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Estimasi Total 1 Batch</div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: '#ffffff' }}>
+                              {rupiah(recipe.estimated_batch_cost || 0)}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>HPP / {recipe.output_unit}</div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-bright)' }}>
+                              {rupiah(recipe.estimated_unit_cost || 0)}
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
 
-                    {/* Action buttons */}
-                    <div style={{ display: 'flex', gap: 8, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-                      <button
-                        className="btn btn-secondary btn-sm"
-                        style={{ flex: 1 }}
-                        onClick={() => openSubRecipeEditor(recipe)}
-                      >
-                        <Layers size={13} /> Edit Resep
-                      </button>
-                      <button
-                        className="btn btn-primary btn-sm"
-                        style={{ flex: 1.3 }}
-                        onClick={() => openCookModal(recipe)}
-                      >
-                        <Flame size={13} /> Masak Batch Ini
-                      </button>
+                      {/* Action buttons */}
+                      <div style={{ display: 'flex', gap: 8, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          style={{ flex: 1 }}
+                          onClick={() => openSubRecipeEditor(recipe)}
+                        >
+                          <Layers size={13} /> Edit Resep
+                        </button>
+                        <button
+                          className="btn btn-primary btn-sm"
+                          style={{ flex: 1.3 }}
+                          onClick={() => openCookModal(recipe)}
+                        >
+                          <Flame size={13} /> Masak Batch Ini
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
@@ -844,43 +844,58 @@ export default function BatchPrep() {
                 </div>
               ) : (
                 <>
-                  {/* Step 1: Select Outlet, Recipe & Multiplier */}
-                  <div className="form-group mb-3">
-                    <label className="form-label" style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
-                      Gudang / Cabang Dapur Pelaksana:
-                    </label>
-                    {canSwitchOutlet ? (
-                      <select
+                  {/* Step 1: Select Outlet & Date */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 14, marginBottom: 16 }}>
+                    <div>
+                      <label className="form-label" style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                        Gudang / Cabang Dapur Pelaksana:
+                      </label>
+                      {canSwitchOutlet ? (
+                        <select
+                          className="form-control"
+                          style={{ fontSize: 13, fontWeight: 700, background: 'var(--card-bg)', color: '#ffffff' }}
+                          value={selectedCookOutletId}
+                          onChange={e => setSelectedCookOutletId(e.target.value)}
+                        >
+                          {outlets.map(o => (
+                            <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
+                              {o.is_main ? '🏢 ' : '📍 '} {o.name} ({o.code})
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div style={{
+                          padding: '9px 12px',
+                          background: 'rgba(99, 102, 241, 0.12)',
+                          border: '1px solid rgba(99, 102, 241, 0.25)',
+                          borderRadius: 8,
+                          fontWeight: 700,
+                          fontSize: 13,
+                          color: '#ffffff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between'
+                        }}>
+                          <span>📍 {activeOutlet?.name || userOutletName || 'Cabang Penempatan'}</span>
+                          <span style={{ fontSize: 10.5, color: 'var(--ok)', background: 'rgba(16, 217, 122, 0.15)', padding: '2px 6px', borderRadius: 4 }}>
+                            Terkunci
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="form-label" style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                        Tanggal Masak:
+                      </label>
+                      <input
+                        type="date"
                         className="form-control"
-                        style={{ fontSize: 13, fontWeight: 700, background: 'var(--card-bg)', color: '#ffffff' }}
-                        value={selectedCookOutletId}
-                        onChange={e => setSelectedCookOutletId(e.target.value)}
-                      >
-                        {outlets.map(o => (
-                          <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
-                            {o.is_main ? '🏢 ' : '📍 '} {o.name} ({o.code})
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <div style={{
-                        padding: '9px 12px',
-                        background: 'rgba(99, 102, 241, 0.12)',
-                        border: '1px solid rgba(99, 102, 241, 0.25)',
-                        borderRadius: 8,
-                        fontWeight: 700,
-                        fontSize: 13,
-                        color: '#ffffff',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
-                      }}>
-                        <span>📍 {activeOutlet?.name || userOutletName || 'Cabang Penempatan'}</span>
-                        <span style={{ fontSize: 10.5, color: 'var(--ok)', background: 'rgba(16, 217, 122, 0.15)', padding: '2px 6px', borderRadius: 4 }}>
-                          Terkunci
-                        </span>
-                      </div>
-                    )}
+                        style={{ fontSize: 13, fontWeight: 600 }}
+                        value={cookDate}
+                        onChange={e => setCookDate(e.target.value)}
+                      />
+                    </div>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', gap: 14, marginBottom: 16 }}>
@@ -976,175 +991,155 @@ export default function BatchPrep() {
                     </div>
                   </div>
 
-              {/* Outlet and Date */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 16 }}>
-                <div>
-                  <label className="form-label" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Tanggal Masak:</label>
-                  <input
-                    type="date"
-                    className="form-control"
-                    style={{ fontSize: 12.5 }}
-                    value={cookDate}
-                    onChange={e => setCookDate(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="form-label" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Outlet Lokasi Dapur:</label>
-                  <div className="form-control" style={{ fontSize: 12.5, color: 'var(--text-primary)', background: 'rgba(255, 255, 255, 0.04)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Store size={14} style={{ color: 'var(--accent-bright)' }} />
-                    {activeOutlet?.name || outlets[0]?.name || 'Outlet Pusat'}
-                  </div>
-                </div>
-              </div>
 
-              {/* Live Preview Box */}
-              {previewLoading ? (
-                <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>
-                  Menghitung kebutuhan bahan mentah...
-                </div>
-              ) : batchPreview && (
-                <div style={{
-                  background: 'rgba(15, 23, 42, 0.6)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  borderRadius: 10,
-                  padding: 14,
-                  marginBottom: 16
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 700, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span>Kebutuhan Bahan Mentah ({batchPreview.items.length} item)</span>
+                  {/* Live Preview Box */}
+                  {previewLoading ? (
+                    <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>
+                      Menghitung kebutuhan bahan mentah...
                     </div>
-                    {batchPreview.has_shortage ? (
-                      <span className="pill" style={{ background: 'rgba(244, 63, 94, 0.15)', color: '#fb7185', border: '1px solid rgba(244, 63, 94, 0.3)', fontSize: 11 }}>
-                        ⚠️ Ada Bahan Kurang
+                  ) : batchPreview && (
+                    <div style={{
+                      background: 'rgba(15, 23, 42, 0.6)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      borderRadius: 10,
+                      padding: 14,
+                      marginBottom: 16
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span>Kebutuhan Bahan Mentah ({batchPreview.items.length} item)</span>
+                        </div>
+                        {batchPreview.has_shortage ? (
+                          <span className="pill" style={{ background: 'rgba(244, 63, 94, 0.15)', color: '#fb7185', border: '1px solid rgba(244, 63, 94, 0.3)', fontSize: 11 }}>
+                            ⚠️ Ada Bahan Kurang
+                          </span>
+                        ) : (
+                          <span className="pill" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)', fontSize: 11 }}>
+                            🟢 Semua Stok Cukup
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="table-wrap" style={{ maxHeight: 200, overflowY: 'auto' }}>
+                        <table style={{ fontSize: 12 }}>
+                          <thead>
+                            <tr>
+                              <th>Bahan Mentah</th>
+                              <th className="right">Dibutuhkan</th>
+                              <th className="right">Stok Outlet</th>
+                              <th className="right">Biaya (HPP)</th>
+                              <th className="center">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {batchPreview.items.map(it => (
+                              <tr key={it.ingredient_id} style={{ background: !it.is_sufficient ? 'rgba(244, 63, 94, 0.08)' : 'transparent' }}>
+                                <td style={{ fontWeight: 500 }}>{it.name}</td>
+                                <td className="right mono" style={{ color: 'var(--accent-bright)' }}>
+                                  {num(it.needed_qty)} {it.unit_pakai}
+                                </td>
+                                <td className="right mono" style={{ color: it.is_sufficient ? '#ffffff' : '#fb7185' }}>
+                                  {num(it.available_stock)} {it.unit_pakai}
+                                </td>
+                                <td className="right mono">{rupiah(it.total_cost)}</td>
+                                <td className="center">
+                                  {it.is_sufficient ? (
+                                    <span style={{ color: '#34d399', fontSize: 11 }}>Cukup</span>
+                                  ) : (
+                                    <span style={{ color: '#fb7185', fontSize: 11, fontWeight: 700 }}>
+                                      Kurang {num(it.shortage)}
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Summary cost bar */}
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginTop: 12,
+                        paddingTop: 10,
+                        borderTop: '1px solid rgba(255, 255, 255, 0.08)'
+                      }}>
+                        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                          Total Biaya Bahan Mentah:
+                        </span>
+                        <span className="mono" style={{ fontSize: 15, fontWeight: 700, color: '#ffffff' }}>
+                          {rupiah(batchPreview.total_estimated_cost)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Step 3: Actual Yield Output & Chef Notes */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 16 }}>
+                    <div>
+                      <label className="form-label" style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                        Konfirmasi Hasil Jadi Fisik (Actual Yield):
+                      </label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <input
+                          type="number"
+                          step="any"
+                          min="0.001"
+                          className="form-control mono text-right"
+                          style={{ fontSize: 14, fontWeight: 700 }}
+                          value={actualOutputQty}
+                          onChange={e => setActualOutputQty(e.target.value)}
+                        />
+                        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', minWidth: 50 }}>
+                          {batchPreview?.output_unit || 'potong'}
+                        </span>
+                      </div>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginTop: 3 }}>
+                        Target resep: {num(batchPreview?.expected_output_qty || 0)} {batchPreview?.output_unit}. Ubah HANYA jika ada selisih susut timbangan matang fisik.
                       </span>
-                    ) : (
-                      <span className="pill" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)', fontSize: 11 }}>
-                        🟢 Semua Stok Cukup
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="table-wrap" style={{ maxHeight: 200, overflowY: 'auto' }}>
-                    <table style={{ fontSize: 12 }}>
-                      <thead>
-                        <tr>
-                          <th>Bahan Mentah</th>
-                          <th className="right">Dibutuhkan</th>
-                          <th className="right">Stok Outlet</th>
-                          <th className="right">Biaya (HPP)</th>
-                          <th className="center">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {batchPreview.items.map(it => (
-                          <tr key={it.ingredient_id} style={{ background: !it.is_sufficient ? 'rgba(244, 63, 94, 0.08)' : 'transparent' }}>
-                            <td style={{ fontWeight: 500 }}>{it.name}</td>
-                            <td className="right mono" style={{ color: 'var(--accent-bright)' }}>
-                              {num(it.needed_qty)} {it.unit_pakai}
-                            </td>
-                            <td className="right mono" style={{ color: it.is_sufficient ? '#ffffff' : '#fb7185' }}>
-                              {num(it.available_stock)} {it.unit_pakai}
-                            </td>
-                            <td className="right mono">{rupiah(it.total_cost)}</td>
-                            <td className="center">
-                              {it.is_sufficient ? (
-                                <span style={{ color: '#34d399', fontSize: 11 }}>Cukup</span>
-                              ) : (
-                                <span style={{ color: '#fb7185', fontSize: 11, fontWeight: 700 }}>
-                                  Kurang {num(it.shortage)}
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Summary cost bar */}
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginTop: 12,
-                    paddingTop: 10,
-                    borderTop: '1px solid rgba(255, 255, 255, 0.08)'
-                  }}>
-                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                      Total Biaya Bahan Mentah:
-                    </span>
-                    <span className="mono" style={{ fontSize: 15, fontWeight: 700, color: '#ffffff' }}>
-                      {rupiah(batchPreview.total_estimated_cost)}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* Step 3: Actual Yield Output & Chef Notes */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 16 }}>
-                <div>
-                  <label className="form-label" style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
-                    Konfirmasi Hasil Jadi Fisik (Actual Yield):
-                  </label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0.001"
-                      className="form-control mono text-right"
-                      style={{ fontSize: 14, fontWeight: 700 }}
-                      value={actualOutputQty}
-                      onChange={e => setActualOutputQty(e.target.value)}
-                    />
-                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', minWidth: 50 }}>
-                      {batchPreview?.output_unit || 'potong'}
-                    </span>
-                  </div>
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginTop: 3 }}>
-                    Target resep: {num(batchPreview?.expected_output_qty || 0)} {batchPreview?.output_unit}. Ubah HANYA jika ada selisih susut timbangan matang fisik.
-                  </span>
-                </div>
-
-                <div>
-                  <label className="form-label" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                    Catatan Koki / Batch Notes (Opsional):
-                  </label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    style={{ fontSize: 12.5 }}
-                    placeholder="Contoh: Dimasak oleh Chef Budi, hasil bagus..."
-                    value={cookNotes}
-                    onChange={e => setCookNotes(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              {/* Bottom Estimated Unit Cost */}
-              {actualOutputQty > 0 && batchPreview && (
-                <div style={{
-                  padding: '10px 14px',
-                  borderRadius: 8,
-                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(30, 27, 75, 0.3) 100%)',
-                  border: '1px solid rgba(99, 102, 241, 0.3)',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}>
-                  <div>
-                    <div style={{ fontSize: 11, color: 'var(--accent-bright)', fontWeight: 600 }}>
-                      ⚡ Kalkulasi HPP Unit Olahan Baru:
                     </div>
-                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
-                      Total Biaya Bahan ({rupiah(batchPreview.total_estimated_cost)}) ÷ {actualOutputQty} {batchPreview.output_unit}
+
+                    <div>
+                      <label className="form-label" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                        Catatan Koki / Batch Notes (Opsional):
+                      </label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        style={{ fontSize: 12.5 }}
+                        placeholder="Contoh: Dimasak oleh Chef Budi, hasil bagus..."
+                        value={cookNotes}
+                        onChange={e => setCookNotes(e.target.value)}
+                      />
                     </div>
                   </div>
-                  <div className="mono" style={{ fontSize: 18, fontWeight: 700, color: '#ffffff' }}>
-                    {rupiah(batchPreview.total_estimated_cost / Number(actualOutputQty))} <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)' }}>/{batchPreview.output_unit}</span>
-                  </div>
-                </div>
-              )}
+
+                  {/* Bottom Estimated Unit Cost */}
+                  {actualOutputQty > 0 && batchPreview && (
+                    <div style={{
+                      padding: '10px 14px',
+                      borderRadius: 8,
+                      background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(30, 27, 75, 0.3) 100%)',
+                      border: '1px solid rgba(99, 102, 241, 0.3)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <div>
+                        <div style={{ fontSize: 11, color: 'var(--accent-bright)', fontWeight: 600 }}>
+                          ⚡ Kalkulasi HPP Unit Olahan Baru:
+                        </div>
+                        <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                          Total Biaya Bahan ({rupiah(batchPreview.total_estimated_cost)}) ÷ {actualOutputQty} {batchPreview.output_unit}
+                        </div>
+                      </div>
+                      <div className="mono" style={{ fontSize: 18, fontWeight: 700, color: '#ffffff' }}>
+                        {rupiah(batchPreview.total_estimated_cost / Number(actualOutputQty))} <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)' }}>/{batchPreview.output_unit}</span>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>
