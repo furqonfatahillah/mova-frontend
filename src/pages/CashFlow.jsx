@@ -322,6 +322,36 @@ export default function CashFlow() {
     });
   }, [journalEntries, activityFilter, searchQuery]);
 
+  // Aggregate multi-item sales transactions by order_number for transparent drill-down
+  const groupedSalesOrders = useMemo(() => {
+    if (!detailModal.items || detailModal.type !== 'SALES_INFLOW') return [];
+    const map = new Map();
+    detailModal.items.forEach(t => {
+      const key = t.order_number || `TRX-${t.id}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          id: t.id,
+          order_number: key,
+          date: t.date,
+          created_at: t.created_at,
+          customer_name: t.customer_name,
+          table_number: t.table_number,
+          payment_method: t.payment_method || t.payment_type || 'CASH',
+          user_name: t.user?.name || t.creator?.name || t.cashier?.name || 'Kasir',
+          total_price: 0,
+          items: [],
+        });
+      }
+      const entry = map.get(key);
+      const price = Number(t.total_price != null ? t.total_price : (t.subtotal != null ? t.subtotal : (t.amount_paid != null ? t.amount_paid : 0)));
+      entry.total_price += price;
+      if (t.menu?.name) {
+        entry.items.push(`${t.qty || 1}x ${t.menu.name}`);
+      }
+    });
+    return Array.from(map.values());
+  }, [detailModal.items, detailModal.type]);
+
   function handlePrint() {
     printElement(
       'printable-cashflow-statement',
@@ -1566,41 +1596,62 @@ export default function CashFlow() {
                         💡 <strong>Dari mana angka ini berasal?</strong> Diambil secara real-time dari seluruh order kasir yang berstatus <em>PAID / Selesai</em>. Uang masuk langsung dihitung berdasarkan metode bayar riil.
                       </div>
 
-                      <div className="table-responsive" style={{ maxHeight: 320, overflowY: 'auto' }}>
+                      <div className="table-responsive" style={{ maxHeight: 340, overflowY: 'auto' }}>
                         <table className="table" style={{ fontSize: 12 }}>
                           <thead>
                             <tr>
-                              <th>No. Invoice</th>
+                              <th>No. Invoice / Order</th>
                               <th>Waktu Order</th>
                               <th>Metode Bayar</th>
                               <th>Pelanggan / Meja</th>
+                              <th>Item Menu Terjual</th>
                               <th>Kasir</th>
                               <th style={{ textAlign: 'right' }}>Total Bayar</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {detailModal.items && detailModal.items.length > 0 ? (
-                              detailModal.items.map((tx, idx) => (
-                                <tr key={tx.id || idx}>
+                            {groupedSalesOrders.length > 0 ? (
+                              groupedSalesOrders.map((ord, idx) => (
+                                <tr key={ord.order_number || idx}>
                                   <td className="mono" style={{ color: '#38bdf8', fontWeight: 600 }}>
-                                    {tx.invoice_number || tx.order_number || `#${tx.id}`}
+                                    {ord.order_number}
                                   </td>
-                                  <td>{tx.created_at ? new Date(tx.created_at).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' }) : '—'}</td>
                                   <td>
-                                    <span style={{ padding: '2px 6px', borderRadius: 4, background: 'rgba(255, 255, 255, 0.08)', fontWeight: 600, fontSize: 11 }}>
-                                      {tx.payment_method || tx.payment_type || 'CASH'}
+                                    {ord.created_at
+                                      ? new Date(ord.created_at).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })
+                                      : ord.date}
+                                  </td>
+                                  <td>
+                                    <span
+                                      style={{
+                                        padding: '2px 7px',
+                                        borderRadius: 4,
+                                        background: 'rgba(255, 255, 255, 0.08)',
+                                        fontWeight: 700,
+                                        fontSize: 11,
+                                        color: ord.payment_method === 'CASH' ? '#34d399' : '#38bdf8'
+                                      }}
+                                    >
+                                      {ord.payment_method}
                                     </span>
                                   </td>
-                                  <td>{tx.customer_name || (tx.table ? `Meja ${tx.table.number || tx.table.name}` : 'Pelanggan Umum')}</td>
-                                  <td>{tx.user?.name || tx.cashier?.name || 'Kasir'}</td>
-                                  <td style={{ textAlign: 'right', fontWeight: 700, color: '#34d399' }}>
-                                    {rupiah(tx.total_amount || tx.final_amount || tx.grand_total || tx.total)}
+                                  <td>
+                                    {ord.customer_name || (ord.table_number ? `Meja ${ord.table_number}` : 'Pelanggan Walk-in')}
+                                  </td>
+                                  <td style={{ color: '#cbd5e1', maxWidth: 220, fontSize: 11.5 }}>
+                                    {ord.items.length > 0 ? ord.items.join(', ') : 'Menu Penjualan'}
+                                  </td>
+                                  <td style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                                    {ord.user_name}
+                                  </td>
+                                  <td style={{ textAlign: 'right', fontWeight: 700, color: '#34d399', fontSize: 13 }}>
+                                    {rupiah(ord.total_price)}
                                   </td>
                                 </tr>
                               ))
                             ) : (
                               <tr>
-                                <td colSpan={6} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)' }}>
+                                <td colSpan={7} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)' }}>
                                   Tidak ada transaksi kasir pada periode ini.
                                 </td>
                               </tr>
