@@ -2772,9 +2772,15 @@ export default function ProfitLoss() {
                           {cogs.top_ingredients_usage && cogs.top_ingredients_usage.length > 0 ? (
                             cogs.top_ingredients_usage.map((ing, idx) => (
                               <tr key={idx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
-                                <td style={{ padding: '10px 14px', fontWeight: 600, color: '#ffffff' }}>{ing.name}</td>
-                                <td style={{ padding: '10px 14px', textAlign: 'right', color: '#cbd5e1' }}>{num(ing.qty, 1)} {ing.unit}</td>
-                                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: '#818cf8' }}>{rupiah(ing.total_hpp)}</td>
+                                <td style={{ padding: '10px 14px', fontWeight: 600, color: '#ffffff' }}>
+                                  {ing.name || ing.ingredient_name || 'Bahan Baku'}
+                                </td>
+                                <td style={{ padding: '10px 14px', textAlign: 'right', color: '#cbd5e1' }}>
+                                  {num(ing.qty, 1)} {ing.unit || 'Pcs'}
+                                </td>
+                                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: '#818cf8' }}>
+                                  {rupiah(ing.total_hpp ?? ing.cost ?? 0)}
+                                </td>
                               </tr>
                             ))
                           ) : (
