@@ -473,257 +473,256 @@ export default function Receivables() {
       </div>
 
       {/* Main Table */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div className="table-responsive">
-          <table className="table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
-            <thead>
-              <tr style={{ background: 'rgba(255, 255, 255, 0.03)', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                <th style={{ padding: '14px 16px', fontWeight: 700 }}>No. Tagihan & Tanggal</th>
-                <th style={{ padding: '14px 16px', fontWeight: 700 }}>Pelanggan / Debitur</th>
-                <th style={{ padding: '14px 16px', fontWeight: 700 }}>Jatuh Tempo</th>
-                <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'right' }}>Total Tagihan</th>
-                <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'right' }}>Sudah Dibayar</th>
-                <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'right' }}>Sisa Piutang</th>
-                <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'center' }}>Progress</th>
-                <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'center' }}>Status</th>
-                <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'center' }}>Aksi</th>
+      <div className="table-wrap" style={{ width: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch', borderRadius: '12px' }}>
+        <table style={{ width: '100%', minWidth: '1180px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+          <thead>
+            <tr style={{ background: 'rgba(23, 28, 56, 0.7)', borderBottom: '1px solid var(--border-strong)' }}>
+              <th style={{ padding: '14px 16px', fontWeight: 700 }}>No. Tagihan & Tanggal</th>
+              <th style={{ padding: '14px 16px', fontWeight: 700 }}>Pelanggan / Debitur</th>
+              <th style={{ padding: '14px 16px', fontWeight: 700 }}>Jatuh Tempo</th>
+              <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'right' }}>Total Tagihan</th>
+              <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'right' }}>Sudah Dibayar</th>
+              <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'right' }}>Sisa Piutang</th>
+              <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'center' }}>Progress</th>
+              <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'center' }}>Status</th>
+              <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'center', width: '220px', minWidth: '220px' }}>Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredItems.length === 0 ? (
+              <tr>
+                <td colSpan={9} style={{ textAlign: 'center', padding: '48px 16px', color: 'var(--text-secondary)' }}>
+                  <AlertCircle size={32} style={{ margin: '0 auto 10px', opacity: 0.5 }} />
+                  <div style={{ fontWeight: 600, fontSize: '14px' }}>Tidak ada data piutang yang ditemukan</div>
+                  <div style={{ fontSize: '12px', marginTop: '4px' }}>Coba ubah kata kunci pencarian atau filter status di atas</div>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {filteredItems.length === 0 ? (
-                <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: '48px 16px', color: 'var(--text-secondary)' }}>
-                    <AlertCircle size={32} style={{ margin: '0 auto 10px', opacity: 0.5 }} />
-                    <div style={{ fontWeight: 600, fontSize: '14px' }}>Tidak ada data piutang yang ditemukan</div>
-                    <div style={{ fontSize: '12px', marginTop: '4px' }}>Coba ubah kata kunci pencarian atau filter status di atas</div>
-                  </td>
-                </tr>
-              ) : (
-                filteredItems.map(item => {
-                  const isPaid = item.status === 'PAID';
-                  const isOverdue = item.is_overdue;
-                  const daysRem = item.days_remaining;
-                  const pctPaid = item.progress_pct ?? (item.total_amount > 0 ? Math.round((item.paid_amount / item.total_amount) * 100) : 0);
+            ) : (
+              filteredItems.map(item => {
+                const isPaid = item.status === 'PAID';
+                const isOverdue = item.is_overdue;
+                const daysRem = item.days_remaining;
+                const pctPaid = item.progress_pct ?? (item.total_amount > 0 ? Math.round((item.paid_amount / item.total_amount) * 100) : 0);
 
-                  return (
-                    <tr
-                      key={item.id}
-                      style={{
-                        borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-                        background: isOverdue ? 'rgba(239, 68, 68, 0.03)' : undefined,
-                        transition: 'background 0.2s ease'
-                      }}
-                    >
-                      {/* Invoice & Date */}
-                      <td style={{ padding: '14px 16px' }}>
-                        <div style={{ fontWeight: 700, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span>{item.receivable_no}</span>
+                return (
+                  <tr
+                    key={item.id}
+                    style={{
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                      background: isOverdue ? 'rgba(239, 68, 68, 0.04)' : undefined,
+                      transition: 'background 0.2s ease'
+                    }}
+                  >
+                    {/* Invoice & Date */}
+                    <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
+                      <div style={{ fontWeight: 700, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span>{item.receivable_no}</span>
+                      </div>
+                      <div className="mono" style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                        Terbit: {item.issue_date}
+                      </div>
+                      {item.outlet_name && (
+                        <div style={{ fontSize: '10.5px', color: 'var(--primary)', marginTop: '2px' }}>
+                          📍 {item.outlet_name}
                         </div>
-                        <div className="mono" style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                          Terbit: {item.issue_date}
+                      )}
+                    </td>
+
+                    {/* Customer Info */}
+                    <td style={{ padding: '14px 16px' }}>
+                      <div style={{ fontWeight: 700, color: '#ffffff', fontSize: '13.5px' }}>
+                        {item.customer_name}
+                      </div>
+                      {item.customer_phone ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', color: '#38bdf8', marginTop: '2px' }}>
+                          <Phone size={12} />
+                          <span>{item.customer_phone}</span>
+                          <button
+                            onClick={() => openWhatsApp(item)}
+                            title="Kirim Pesan WhatsApp"
+                            style={{
+                              background: 'rgba(34, 197, 94, 0.15)',
+                              border: '1px solid rgba(34, 197, 94, 0.3)',
+                              color: '#4ade80',
+                              borderRadius: '4px',
+                              padding: '1px 6px',
+                              fontSize: '10.5px',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '3px'
+                            }}
+                          >
+                            <MessageCircle size={10} /> WA
+                          </button>
                         </div>
-                        {item.outlet_name && (
-                          <div style={{ fontSize: '10.5px', color: 'var(--primary)', marginTop: '2px' }}>
-                            📍 {item.outlet_name}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Customer Info */}
-                      <td style={{ padding: '14px 16px' }}>
-                        <div style={{ fontWeight: 700, color: '#ffffff', fontSize: '13.5px' }}>
-                          {item.customer_name}
+                      ) : (
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>No HP: —</div>
+                      )}
+                      {item.notes && (
+                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '3px', fontStyle: 'italic', maxWidth: '220px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          "{item.notes}"
                         </div>
-                        {item.customer_phone ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', color: '#38bdf8', marginTop: '2px' }}>
-                            <Phone size={12} />
-                            <span>{item.customer_phone}</span>
-                            <button
-                              onClick={() => openWhatsApp(item)}
-                              title="Kirim Pesan WhatsApp"
-                              style={{
-                                background: 'rgba(34, 197, 94, 0.15)',
-                                border: '1px solid rgba(34, 197, 94, 0.3)',
-                                color: '#4ade80',
-                                borderRadius: '4px',
-                                padding: '1px 5px',
-                                fontSize: '10px',
-                                cursor: 'pointer',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '3px'
-                              }}
-                            >
-                              <MessageCircle size={10} /> WA
-                            </button>
-                          </div>
-                        ) : (
-                          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>No HP: —</div>
-                        )}
-                        {item.notes && (
-                          <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '3px', fontStyle: 'italic', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            "{item.notes}"
-                          </div>
-                        )}
-                      </td>
+                      )}
+                    </td>
 
-                      {/* Due Date & Countdown */}
-                      <td style={{ padding: '14px 16px' }}>
-                        <div className="mono" style={{ fontWeight: 600, color: '#ffffff' }}>
-                          {item.due_date}
-                        </div>
-                        {isPaid ? (
-                          <span style={{ fontSize: '11px', color: 'var(--ok)', display: 'inline-flex', alignItems: 'center', gap: '3px', marginTop: '2px' }}>
-                            <Check size={11} /> Lunas
-                          </span>
-                        ) : isOverdue ? (
-                          <span style={{
-                            fontSize: '10.5px',
-                            fontWeight: 700,
-                            color: '#ef4444',
-                            background: 'rgba(239, 68, 68, 0.15)',
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                            display: 'inline-block',
-                            marginTop: '2px'
-                          }}>
-                            Lewat {Math.abs(daysRem)} Hari!
-                          </span>
-                        ) : daysRem === 0 ? (
-                          <span style={{
-                            fontSize: '10.5px',
-                            fontWeight: 700,
-                            color: '#f59e0b',
-                            background: 'rgba(245, 158, 11, 0.15)',
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                            display: 'inline-block',
-                            marginTop: '2px'
-                          }}>
-                            ⚡ Jatuh Tempo Hari Ini
-                          </span>
-                        ) : (
-                          <span style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px', display: 'block' }}>
-                            Sisa {daysRem} hari
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Total Amount */}
-                      <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600, color: '#ffffff' }}>
-                        {rupiah(item.total_amount)}
-                      </td>
-
-                      {/* Paid Amount */}
-                      <td style={{ padding: '14px 16px', textAlign: 'right', color: 'var(--ok)', fontWeight: 600 }}>
-                        {rupiah(item.paid_amount)}
-                      </td>
-
-                      {/* Remaining Amount */}
-                      <td style={{ padding: '14px 16px', textAlign: 'right' }}>
-                        <span style={{
-                          fontWeight: 800,
-                          fontSize: '14px',
-                          color: isPaid ? 'var(--ok)' : (isOverdue ? '#f87171' : '#fbbf24')
-                        }}>
-                          {rupiah(item.remaining_amount)}
+                    {/* Due Date & Countdown */}
+                    <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
+                      <div className="mono" style={{ fontWeight: 600, color: '#ffffff' }}>
+                        {item.due_date}
+                      </div>
+                      {isPaid ? (
+                        <span style={{ fontSize: '11px', color: 'var(--ok)', display: 'inline-flex', alignItems: 'center', gap: '3px', marginTop: '2px' }}>
+                          <Check size={11} /> Lunas
                         </span>
-                      </td>
+                      ) : isOverdue ? (
+                        <span style={{
+                          fontSize: '10.5px',
+                          fontWeight: 700,
+                          color: '#ef4444',
+                          background: 'rgba(239, 68, 68, 0.15)',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          display: 'inline-block',
+                          marginTop: '2px'
+                        }}>
+                          Lewat {Math.abs(daysRem)} Hari!
+                        </span>
+                      ) : daysRem === 0 ? (
+                        <span style={{
+                          fontSize: '10.5px',
+                          fontWeight: 700,
+                          color: '#f59e0b',
+                          background: 'rgba(245, 158, 11, 0.15)',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          display: 'inline-block',
+                          marginTop: '2px'
+                        }}>
+                          ⚡ Jatuh Tempo Hari Ini
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px', display: 'block' }}>
+                          Sisa {daysRem} hari
+                        </span>
+                      )}
+                    </td>
 
-                      {/* Progress Bar */}
-                      <td style={{ padding: '14px 16px', textAlign: 'center', minWidth: '100px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                    {/* Total Amount */}
+                    <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600, color: '#ffffff', whiteSpace: 'nowrap' }}>
+                      {rupiah(item.total_amount)}
+                    </td>
+
+                    {/* Paid Amount */}
+                    <td style={{ padding: '14px 16px', textAlign: 'right', color: 'var(--ok)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                      {rupiah(item.paid_amount)}
+                    </td>
+
+                    {/* Remaining Amount */}
+                    <td style={{ padding: '14px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <span style={{
+                        fontWeight: 800,
+                        fontSize: '14px',
+                        color: isPaid ? 'var(--ok)' : (isOverdue ? '#f87171' : '#fbbf24')
+                      }}>
+                        {rupiah(item.remaining_amount)}
+                      </span>
+                    </td>
+
+                    {/* Progress Bar */}
+                    <td style={{ padding: '14px 16px', textAlign: 'center', minWidth: '100px', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                        <div style={{
+                          width: '60px',
+                          height: '6px',
+                          background: 'rgba(255, 255, 255, 0.1)',
+                          borderRadius: '3px',
+                          overflow: 'hidden'
+                        }}>
                           <div style={{
-                            width: '60px',
-                            height: '6px',
-                            background: 'rgba(255, 255, 255, 0.1)',
-                            borderRadius: '3px',
-                            overflow: 'hidden'
-                          }}>
-                            <div style={{
-                              width: `${Math.min(pctPaid, 100)}%`,
-                              height: '100%',
-                              background: isPaid ? '#10b981' : (pctPaid > 0 ? '#38bdf8' : 'transparent'),
-                              borderRadius: '3px'
-                            }} />
-                          </div>
-                          <span className="mono" style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                            {pctPaid}%
-                          </span>
+                            width: `${Math.min(pctPaid, 100)}%`,
+                            height: '100%',
+                            background: isPaid ? '#10b981' : (pctPaid > 0 ? '#38bdf8' : 'transparent'),
+                            borderRadius: '3px'
+                          }} />
                         </div>
-                      </td>
+                        <span className="mono" style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                          {pctPaid}%
+                        </span>
+                      </div>
+                    </td>
 
-                      {/* Status */}
-                      <td style={{ padding: '14px 16px', textAlign: 'center' }}>
-                        {isPaid ? (
-                          <span className="pill pill-ok mono">LUNAS</span>
-                        ) : isOverdue ? (
-                          <span className="pill pill-danger mono">JATUH TEMPO</span>
-                        ) : item.status === 'PARTIAL' ? (
-                          <span className="pill pill-warn mono">SEBAGIAN</span>
-                        ) : (
-                          <span className="pill pill-muted mono">BELUM BAYAR</span>
+                    {/* Status */}
+                    <td style={{ padding: '14px 16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      {isPaid ? (
+                        <span className="pill pill-ok mono">LUNAS</span>
+                      ) : isOverdue ? (
+                        <span className="pill pill-danger mono">JATUH TEMPO</span>
+                      ) : item.status === 'PARTIAL' ? (
+                        <span className="pill pill-warn mono">SEBAGIAN</span>
+                      ) : (
+                        <span className="pill pill-muted mono">BELUM BAYAR</span>
+                      )}
+                    </td>
+
+                    {/* Actions */}
+                    <td style={{ padding: '12px 16px', textAlign: 'center', width: '220px', minWidth: '220px' }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'nowrap' }}>
+                        {!isPaid && (
+                          <button
+                            className="btn btn-primary btn-sm"
+                            onClick={() => setPayModal({ open: true, item, amount: String(item.remaining_amount), payment_date: getTodayStr(), payment_method: 'TRANSFER', reference_no: '', notes: '' })}
+                            style={{ padding: '5px 10px', fontSize: '11.5px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}
+                            title="Catat Pembayaran / Cicilan"
+                          >
+                            <CreditCard size={12} /> Bayar
+                          </button>
                         )}
-                      </td>
 
-                      {/* Actions */}
-                      <td style={{ padding: '14px 16px', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                          {!isPaid && (
-                            <button
-                              className="btn btn-primary btn-sm"
-                              onClick={() => setPayModal({ open: true, item, amount: String(item.remaining_amount), payment_date: getTodayStr(), payment_method: 'TRANSFER', reference_no: '', notes: '' })}
-                              style={{ padding: '4px 8px', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                              title="Catat Pembayaran / Cicilan"
-                            >
-                              <CreditCard size={12} /> Bayar
-                            </button>
-                          )}
+                        <button
+                          className="btn btn-secondary btn-icon"
+                          onClick={() => setHistoryModal({ open: true, item })}
+                          style={{ padding: '6px', height: '30px', width: '30px', flexShrink: 0 }}
+                          title="Riwayat Pembayaran & Cicilan"
+                        >
+                          <Receipt size={13} />
+                        </button>
 
-                          <button
-                            className="btn btn-secondary btn-icon"
-                            onClick={() => setHistoryModal({ open: true, item })}
-                            style={{ padding: '5px', height: '28px', width: '28px' }}
-                            title="Riwayat Pembayaran & Cicilan"
-                          >
-                            <Receipt size={13} />
-                          </button>
+                        <button
+                          className="btn btn-secondary btn-icon"
+                          onClick={() => setInvoiceModal({ open: true, item })}
+                          style={{ padding: '6px', height: '30px', width: '30px', flexShrink: 0 }}
+                          title="Cetak Dokumen Invoice Tagihan"
+                        >
+                          <Printer size={13} />
+                        </button>
 
-                          <button
-                            className="btn btn-secondary btn-icon"
-                            onClick={() => setInvoiceModal({ open: true, item })}
-                            style={{ padding: '5px', height: '28px', width: '28px' }}
-                            title="Cetak Dokumen Invoice Tagihan"
-                          >
-                            <Printer size={13} />
-                          </button>
+                        <button
+                          className="btn btn-secondary btn-icon"
+                          onClick={() => openEditModal(item)}
+                          style={{ padding: '6px', height: '30px', width: '30px', flexShrink: 0 }}
+                          title="Edit Data Piutang"
+                        >
+                          <Edit3 size={13} />
+                        </button>
 
-                          <button
-                            className="btn btn-secondary btn-icon"
-                            onClick={() => openEditModal(item)}
-                            style={{ padding: '5px', height: '28px', width: '28px' }}
-                            title="Edit Data Piutang"
-                          >
-                            <Edit3 size={13} />
-                          </button>
-
-                          <button
-                            className="btn btn-danger btn-icon"
-                            onClick={() => handleDelete(item)}
-                            style={{ padding: '5px', height: '28px', width: '28px' }}
-                            title="Hapus Piutang"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                        <button
+                          className="btn btn-danger btn-icon"
+                          onClick={() => handleDelete(item)}
+                          style={{ padding: '6px', height: '30px', width: '30px', flexShrink: 0 }}
+                          title="Hapus Piutang"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
       </div>
 
       {/* ========================================================================= */}
