@@ -497,23 +497,25 @@ export default function KartuStok() {
                   <thead>
                     <tr>
                       <th style={{ width: 45 }} className="center">No</th>
-                      <th style={{ width: 100 }}>Kode</th>
-                      <th style={{ minWidth: 200 }}>Nama Bahan Baku</th>
-                      <th style={{ width: 110 }}>Kategori</th>
-                      <th className="right" style={{ width: 120 }}>Stok Awal ({period.from})</th>
-                      <th className="right" style={{ width: 110 }}>Masuk (+)</th>
-                      <th className="right" style={{ width: 110 }}>Keluar (-)</th>
-                      <th className="right" style={{ width: 130 }}>Stok Akhir ({period.to})</th>
-                      <th style={{ width: 80 }}>Satuan</th>
-                      <th className="right" style={{ width: 95 }}>Stok Min</th>
-                      <th className="center" style={{ width: 100 }}>Status</th>
-                      <th className="center" style={{ width: 130 }}>Aksi</th>
+                      <th style={{ width: 95 }}>Kode</th>
+                      <th style={{ minWidth: 180 }}>Nama Bahan Baku</th>
+                      <th style={{ width: 100 }}>Kategori</th>
+                      <th className="right" style={{ width: 110 }}>Stok Awal ({period.from})</th>
+                      <th className="right" style={{ width: 95 }}>Masuk (+)</th>
+                      <th className="right" style={{ width: 95 }}>Keluar (-)</th>
+                      <th className="right" style={{ width: 115 }}>Stok Akhir ({period.to})</th>
+                      <th style={{ width: 75 }}>Satuan</th>
+                      <th className="right" style={{ width: 120 }}>Harga Satuan</th>
+                      <th className="right" style={{ width: 135 }}>Nilai Stok (Rp)</th>
+                      <th className="right" style={{ width: 85 }}>Stok Min</th>
+                      <th className="center" style={{ width: 90 }}>Status</th>
+                      <th className="center" style={{ width: 115 }}>Aksi</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredSummaryItems.length === 0 ? (
                       <tr>
-                        <td colSpan={12} style={{ textAlign: 'center', padding: '36px 0', color: 'var(--text-muted)' }}>
+                        <td colSpan={14} style={{ textAlign: 'center', padding: '36px 0', color: 'var(--text-muted)' }}>
                           Tidak ada bahan baku yang sesuai dengan kriteria pencarian.
                         </td>
                       </tr>
@@ -563,6 +565,15 @@ export default function KartuStok() {
                             <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>
                               {it.unit_pakai}
                             </td>
+                            {/* Harga Satuan */}
+                            <td className="mono right" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                              {rupiah(it.harga_satuan || (it.harga_beli && it.konversi ? it.harga_beli / it.konversi : 0))}
+                              <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 2 }}>/{it.unit_pakai}</span>
+                            </td>
+                            {/* Nilai Stok (Rp) */}
+                            <td className="mono right" style={{ fontWeight: 800, fontSize: 13, color: '#34d399' }} title="Estimasi Nilai Persediaan Stok Akhir">
+                              {rupiah(it.nilai_stok || 0)}
+                            </td>
                             <td className="mono right" style={{ color: 'var(--text-muted)', fontSize: 12 }}>
                               {num(it.stok_min)}
                             </td>
@@ -585,6 +596,33 @@ export default function KartuStok() {
                       })
                     )}
                   </tbody>
+                  {filteredSummaryItems.length > 0 && (
+                    <tfoot>
+                      <tr style={{ background: 'rgba(255, 255, 255, 0.03)', fontWeight: 700, borderTop: '2px solid var(--border)' }}>
+                        <td colSpan={4} style={{ textAlign: 'right', padding: '12px 14px', fontSize: 12.5, color: 'var(--text-secondary)' }}>
+                          TOTAL KESELURUHAN:
+                        </td>
+                        <td className="mono right" style={{ color: 'var(--text-secondary)' }}>
+                          {num(filteredSummaryItems.reduce((acc, x) => acc + Number(x.stok_awal || 0), 0))}
+                        </td>
+                        <td className="mono right" style={{ color: 'var(--ok)' }}>
+                          +{num(filteredSummaryItems.reduce((acc, x) => acc + Number(x.total_masuk || 0), 0))}
+                        </td>
+                        <td className="mono right" style={{ color: 'var(--danger)' }}>
+                          -{num(filteredSummaryItems.reduce((acc, x) => acc + Number(x.total_keluar || 0), 0))}
+                        </td>
+                        <td className="mono right" style={{ color: 'var(--accent-bright)' }}>
+                          {num(filteredSummaryItems.reduce((acc, x) => acc + Number(x.stok_akhir || 0), 0))}
+                        </td>
+                        <td></td>
+                        <td></td>
+                        <td className="mono right" style={{ color: '#34d399', fontSize: 13.5, fontWeight: 800 }}>
+                          {rupiah(filteredSummaryItems.reduce((acc, x) => acc + Number(x.nilai_stok || 0), 0))}
+                        </td>
+                        <td colSpan={3}></td>
+                      </tr>
+                    </tfoot>
+                  )}
                 </table>
               </div>
             )}
@@ -669,6 +707,9 @@ export default function KartuStok() {
                 <div className="stat-label">Saldo Akhir Berjalan</div>
                 <div className={`stat-value ${stockCard.is_below_min ? 'danger' : 'ok'}`}>
                   {num(stockCard.stok_akhir)} <span style={{ fontSize: 14, fontWeight: 500 }}>{stockCard.ingredient.unit_pakai}</span>
+                </div>
+                <div style={{ marginTop: 4, fontWeight: 700, color: '#34d399', fontSize: 13.5 }}>
+                  ≈ {rupiah(stockCard.nilai_stok_akhir || 0)}
                 </div>
                 <div className="stat-sub" style={{ color: stockCard.is_below_min ? 'var(--danger)' : 'var(--ok)' }}>
                   {stockCard.is_below_min ? '⚠️ Di bawah batas stok minimum' : '✓ Stok aman di atas batas minimum'}
@@ -792,6 +833,7 @@ export default function KartuStok() {
                     <th className="right" style={{ width: 110 }}>Masuk (+)</th>
                     <th className="right" style={{ width: 110 }}>Keluar (-)</th>
                     <th className="right" style={{ width: 130 }}>Saldo Berjalan</th>
+                    <th className="right" style={{ width: 135 }}>Nilai Saldo (Rp)</th>
                     <th style={{ minWidth: 140 }}>Petugas / Audit</th>
                   </tr>
                 </thead>
@@ -808,6 +850,9 @@ export default function KartuStok() {
                     <td className="mono right">—</td>
                     <td className="mono right" style={{ fontWeight: 700, color: 'var(--accent)', fontSize: 13.5 }}>
                       {num(stockCard?.stok_awal)} {selectedIng?.unit_pakai}
+                    </td>
+                    <td className="mono right" style={{ fontWeight: 700, color: '#34d399', fontSize: 12.5 }}>
+                      {rupiah(Math.max(0, stockCard?.stok_awal || 0) * (selectedIng?.harga / (selectedIng?.konversi || 1)))}
                     </td>
                     <td style={{ color: 'var(--text-muted)', fontSize: 11 }}>Sistem</td>
                   </tr>
@@ -866,6 +911,14 @@ export default function KartuStok() {
                         <td className="mono right" style={{ fontWeight: 700, fontSize: 13, color: row.balance < 0 ? 'var(--danger)' : 'var(--text-primary)' }}>
                           {num(row.balance)} {selectedIng?.unit_pakai}
                         </td>
+                        <td className="mono right" style={{ fontWeight: 700, fontSize: 12.5, color: row.balance < 0 ? 'var(--danger)' : '#34d399' }}>
+                          {rupiah(Math.max(0, row.balance || 0) * (selectedIng?.harga / (selectedIng?.konversi || 1)))}
+                          {row.unit_price ? (
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>
+                              PO: @{rupiah(row.unit_price)}
+                            </div>
+                          ) : null}
+                        </td>
                         <td>
                           <AuditInfo
                             createdAt={row.created_at}
@@ -878,7 +931,7 @@ export default function KartuStok() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={10} style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--text-muted)' }}>
+                      <td colSpan={11} style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--text-muted)' }}>
                         Tidak ada transaksi mutasi stok yang sesuai dengan filter.
                       </td>
                     </tr>
