@@ -15,7 +15,34 @@ export default function Layout() {
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem('pos_user') || '{}');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    return localStorage.getItem('pos_sidebar_collapsed') === 'true';
+  });
   const [pendingCount, setPendingCount] = useState(0);
+
+  const toggleSidebar = () => {
+    if (window.innerWidth <= 768) {
+      setSidebarOpen(prev => !prev);
+    } else {
+      setSidebarCollapsed(prev => {
+        const next = !prev;
+        localStorage.setItem('pos_sidebar_collapsed', String(next));
+        return next;
+      });
+    }
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target?.tagName)) return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        toggleSidebar();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const {
     outlets,
@@ -331,20 +358,29 @@ export default function Layout() {
       )}
 
       {/* Sidebar Navigation */}
-      <aside className={`sidebar${sidebarOpen ? ' open' : ''}`}>
+      <aside className={`sidebar${sidebarOpen ? ' open' : ''}${sidebarCollapsed ? ' collapsed' : ''}`}>
         {/* Logo */}
         <div className="sidebar-logo">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div className="sidebar-logo-icon">
               <img src="/mova%20logo.svg" alt="MOVA POS Logo" />
             </div>
-            {/* Close Button on Mobile Drawer */}
+            {/* Close / Collapse Button */}
             <button
-              className="btn btn-ghost btn-icon mobile-close-btn"
-              onClick={() => setSidebarOpen(false)}
+              type="button"
+              className="btn btn-ghost btn-icon sidebar-close-btn"
+              onClick={() => {
+                if (window.innerWidth <= 768) {
+                  setSidebarOpen(false);
+                } else {
+                  setSidebarCollapsed(true);
+                  localStorage.setItem('pos_sidebar_collapsed', 'true');
+                }
+              }}
+              title="Tutup Navigasi [Ctrl+B]"
               aria-label="Tutup Menu"
             >
-              <X size={20} />
+              <X size={18} />
             </button>
           </div>
           <h1>MOVA POS</h1>
@@ -479,6 +515,16 @@ export default function Layout() {
         {/* Top Header Bar: Active Branch Status & Quick Switcher */}
         <div className="top-header-bar">
           <div className="top-header-left">
+            {/* Sidebar Toggle Button (Desktop & Tablet) */}
+            <button
+              type="button"
+              className={`sidebar-toggle-btn${sidebarCollapsed ? ' collapsed' : ''}`}
+              onClick={toggleSidebar}
+              title={sidebarCollapsed ? "Buka Navigasi Sidebar [Ctrl+B]" : "Tutup Navigasi (Perlebar Layar) [Ctrl+B]"}
+              aria-label="Buka atau Tutup Sidebar"
+            >
+              <Menu size={18} />
+            </button>
             {isPlatformAdmin && !activeBusinessId ? (
               <div className="top-header-outlet-info">
                 <div className="top-header-icon" style={{ background: 'rgba(99, 102, 241, 0.2)', color: 'var(--accent-bright)' }}>

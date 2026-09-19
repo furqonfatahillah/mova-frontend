@@ -278,10 +278,10 @@ export default function MasterBahan() {
               onClick={() => navigate('/waste')}
               style={{ display: 'flex', alignItems: 'center', gap: 6, borderColor: 'rgba(244, 63, 94, 0.4)', color: '#f43f5e' }}
             >
-              <Trash2 size={15} /> Bahan Terbuang (Waste)
+              Bahan Terbuang (Waste)
             </button>
             <button className="btn btn-primary" onClick={() => setShowAdd(!showAdd)}>
-              <Plus size={15} /> Tambah Bahan
+              + Tambah Bahan
             </button>
           </div>
         }
@@ -649,8 +649,7 @@ export default function MasterBahan() {
           <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <div>
-                <h3 style={{ fontSize: 16, fontWeight: 800, color: '#ffffff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Store size={18} style={{ color: 'var(--accent)' }} />
+                <h3 style={{ fontSize: 16, fontWeight: 800, color: '#ffffff', margin: 0 }}>
                   Sebaran Stok Bahan Antar-Cabang
                 </h3>
                 <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
@@ -790,7 +789,7 @@ export default function MasterBahan() {
                   items: [...p.items, { ingredient_id: '', qty: 1, unit: 'gram', waste_std: 0 }]
                 }))}
               >
-                <Plus size={12} /> Tambah Bahan
+                + Tambah Bahan
               </button>
             </div>
 
@@ -908,7 +907,7 @@ export default function MasterBahan() {
                   navigate('/batch-prep');
                 }}
               >
-                <Flame size={13} /> Buka Halaman Produksi Dapur
+                Buka Halaman Produksi Dapur
               </button>
 
               <div style={{ display: 'flex', gap: 8 }}>
@@ -916,7 +915,7 @@ export default function MasterBahan() {
                   Batal
                 </button>
                 <button className="btn btn-primary" onClick={handleSaveSubRecipe} disabled={savingSubRecipe}>
-                  {savingSubRecipe ? 'Menyimpan...' : <><Check size={14} /> Simpan Resep</>}
+                  {savingSubRecipe ? 'Menyimpan...' : 'Simpan Resep'}
                 </button>
               </div>
             </div>

@@ -224,16 +224,15 @@ export default function OpexManagement() {
             className="btn btn-secondary btn-sm"
             onClick={fetchData}
             title="Refresh Data"
-            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
           >
-            <RefreshCw size={14} /> Refresh
+            Refresh
           </button>
           <button
             className="btn btn-primary btn-sm"
             onClick={handleOpenCreateModal}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
+            style={{ fontWeight: 700 }}
           >
-            <Plus size={16} /> Catat OPEX Baru
+            + Catat OPEX Baru
           </button>
         </div>
       </div>

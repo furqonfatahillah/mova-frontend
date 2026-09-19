@@ -628,7 +628,7 @@ export default function MasterMenu() {
         subtitle="Kelola produk olahan resep (F&B/BOM), barang jadi retail langsung (stok & modal), dan jasa layanan non-stok."
         action={
           <button className="btn btn-primary" onClick={openCreateModal}>
-            <Plus size={15} /> Tambah Produk / Menu
+            + Tambah Produk / Menu
           </button>
         }
       />
@@ -676,7 +676,7 @@ export default function MasterMenu() {
               style={{ fontSize: 11, padding: '3px 8px' }}
               onClick={openCreateModal}
             >
-              <Plus size={12} /> Tambah
+              + Tambah
             </button>
           </div>
 
@@ -830,7 +830,7 @@ export default function MasterMenu() {
                     onClick={() => openEditModal(selected)}
                     title="Edit info menu"
                   >
-                    <Edit2 size={12} /> Edit Menu
+                    Edit Menu
                   </button>
                   <button
                     className="btn btn-ghost btn-sm"
@@ -838,7 +838,7 @@ export default function MasterMenu() {
                     onClick={() => handleDeleteMenu(selected)}
                     title="Hapus menu"
                   >
-                    <Trash2 size={12} /> Hapus
+                    Hapus
                   </button>
                 </div>
                 <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 4 }}>
@@ -1126,7 +1126,7 @@ export default function MasterMenu() {
                                 style={{ fontSize: 11.5, color: '#60a5fa' }}
                                 onClick={() => openEditModal(selected)}
                               >
-                                <Edit2 size={12} /> Set Estimasi HPP Dasar
+                                Set Estimasi HPP Dasar
                               </button>
                             )}
                           </div>
@@ -1220,7 +1220,7 @@ export default function MasterMenu() {
 
                         <div style={{ display: 'flex', gap: 10 }}>
                           <button className="btn btn-primary" onClick={startEdit}>
-                            <Plus size={14} /> Revisi Resep (Versi Baru)
+                            + Revisi Resep (Versi Baru)
                           </button>
                         </div>
                       </>
@@ -1357,14 +1357,14 @@ export default function MasterMenu() {
                               setRestockModalOpen(true);
                             }}
                           >
-                            <Plus size={14} /> Tambah Stok Cepat (Restock)
+                            + Tambah Stok Cepat (Restock)
                           </button>
                           <button
                             type="button"
                             className="btn btn-secondary"
                             onClick={() => openEditModal(selected)}
                           >
-                            <Edit2 size={14} /> Ubah Data Retail
+                            Ubah Data Retail
                           </button>
                           <button
                             type="button"
@@ -1425,7 +1425,7 @@ export default function MasterMenu() {
                           className="btn btn-secondary"
                           onClick={() => openEditModal(selected)}
                         >
-                          <Edit2 size={14} /> Ubah Data Layanan
+                          Ubah Data Layanan
                         </button>
                       </div>
                     ) : (
@@ -1443,7 +1443,7 @@ export default function MasterMenu() {
                           Tentukan bahan baku dan gramasi standar yang dipakai saat menu ini dipesan pelanggan agar sistem dapat menghitung pemakaian stok otomatis.
                         </p>
                         <button className="btn btn-primary" onClick={startEdit}>
-                          <Plus size={14} /> Tentukan Resep Sekarang
+                          Tentukan Resep Sekarang
                         </button>
                       </div>
                     )}
@@ -1613,10 +1613,10 @@ export default function MasterMenu() {
 
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                       <button className="btn btn-secondary" onClick={addItem}>
-                        <Plus size={13} /> Tambah Bahan
+                        + Tambah Bahan
                       </button>
                       <button className="btn btn-primary" onClick={commitRecipe} disabled={saving}>
-                        <Save size={13} /> {saving ? 'Menyimpan...' : 'Simpan Versi Resep'}
+                        {saving ? 'Menyimpan...' : 'Simpan Versi Resep'}
                       </button>
                       <button className="btn btn-ghost" onClick={() => setDraft(null)} disabled={saving}>
                         Batal
@@ -1646,7 +1646,7 @@ export default function MasterMenu() {
                     className="btn btn-primary btn-sm"
                     onClick={openCreateGroupModal}
                   >
-                    <Plus size={13} /> Buat Kelompok Modifier Baru
+                    + Buat Kelompok Modifier Baru
                   </button>
                 </div>
 
@@ -1801,7 +1801,7 @@ export default function MasterMenu() {
                                 onClick={() => openEditGroupModal(grp)}
                                 style={{ fontSize: 11, padding: '3px 8px' }}
                               >
-                                <Edit2 size={12} /> Edit Kelompok
+                                Edit Kelompok
                               </button>
                             </div>
                           </div>
@@ -2118,7 +2118,7 @@ export default function MasterMenu() {
                     </div>
 
                     <button type="button" className="btn btn-secondary btn-sm" onClick={addBundleItem}>
-                      <Plus size={12} /> Tambah Item Paket
+                      + Tambah Item Paket
                     </button>
                   </div>
                 )}
@@ -2292,7 +2292,7 @@ export default function MasterMenu() {
                   className="btn btn-primary"
                   disabled={saving}
                 >
-                  <Check size={14} /> {saving ? 'Menyimpan...' : (modalMode === 'create' ? 'Simpan Menu' : 'Update Menu')}
+                  {saving ? 'Menyimpan...' : (modalMode === 'create' ? 'Simpan Menu' : 'Update Menu')}
                 </button>
               </div>
             </form>
@@ -2508,7 +2508,7 @@ export default function MasterMenu() {
                       onClick={addGroupOption}
                       style={{ fontSize: 11.5, padding: '3px 10px' }}
                     >
-                      <Plus size={12} /> Tambah Opsi
+                      + Tambah Opsi
                     </button>
                   </div>
 
@@ -2752,7 +2752,7 @@ export default function MasterMenu() {
                   className="btn btn-primary"
                   disabled={saving}
                 >
-                  <Check size={14} /> {saving ? 'Menyimpan...' : (editingGroup ? 'Update Kelompok Modifier' : 'Simpan Kelompok Modifier')}
+                  {saving ? 'Menyimpan...' : (editingGroup ? 'Update Kelompok Modifier' : 'Simpan Kelompok Modifier')}
                 </button>
               </div>
             </form>
@@ -2825,7 +2825,7 @@ export default function MasterMenu() {
                   className="btn btn-primary"
                   disabled={restocking}
                 >
-                  <Check size={14} /> {restocking ? 'Menambah...' : 'Konfirmasi Restock'}
+                  {restocking ? 'Menambah...' : 'Konfirmasi Restock'}
                 </button>
               </div>
             </form>

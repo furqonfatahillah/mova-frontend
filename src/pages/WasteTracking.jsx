@@ -267,19 +267,15 @@ export default function WasteTracking() {
         subtitle="Pantau dan kendalikan kebocoran profit F&B akibat basi, gosong, tumpah, atau retur. Otomatis potong stok dan hitung Loss Cost."
         action={
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={fetchData}
-              title="Segarkan data"
-            >
-              <RefreshCw size={14} style={{ marginRight: 6 }} /> Segarkan
+            <button className="btn btn-secondary btn-sm" onClick={fetchData} title="Muat ulang riwayat waste">
+              Segarkan
             </button>
             <button
               className="btn btn-primary btn-sm"
               onClick={() => handleOpenModal()}
               style={{ fontWeight: 700 }}
             >
-              <Plus size={15} style={{ marginRight: 6 }} /> Catat Bahan Terbuang
+              + Catat Bahan Terbuang
             </button>
           </div>
         }
@@ -1056,11 +1052,7 @@ export default function WasteTracking() {
                   disabled={saving || !form.qty || Number(form.qty) <= 0}
                   style={{ flex: 2, justifyContent: 'center', fontWeight: 800 }}
                 >
-                  {saving ? 'Memproses...' : (
-                    <>
-                      <Trash2 size={15} style={{ marginRight: 6 }} /> Catat Waste & Potong Stok
-                    </>
-                  )}
+                  {saving ? 'Memproses...' : 'Catat Waste & Potong Stok'}
                 </button>
               </div>
             </form>

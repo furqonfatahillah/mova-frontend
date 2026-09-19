@@ -795,7 +795,7 @@ export default function TransferBahan() {
         subtitle={`Distribusi bahan baku dan produk retail langsung antar cabang di dalam ${userBusinessName || 'perusahaan Anda'} dengan bukti surat jalan dan fitur penerimaan.`}
         action={
           <button className="btn btn-primary" onClick={openCreateModal}>
-            <Send size={15} /> Buat Transfer Antar Cabang
+            + Buat Transfer Antar Cabang
           </button>
         }
       />
@@ -1012,7 +1012,7 @@ export default function TransferBahan() {
                                 boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)',
                               }}
                             >
-                              <CheckCircle2 size={12} /> Terima
+                              Terima
                             </button>
                           )}
                           {isInTransit && (
@@ -1033,7 +1033,7 @@ export default function TransferBahan() {
                                 boxShadow: '0 2px 8px rgba(245, 158, 11, 0.3)',
                               }}
                             >
-                              <RotateCcw size={12} /> Retur
+                              Retur
                             </button>
                           )}
                           <button
@@ -1395,15 +1395,7 @@ export default function TransferBahan() {
                     }}
                   >
                     {receiving ? 'Memproses Penerimaan...' : (
-                      totalDiff > 0 ? (
-                        <>
-                          <AlertTriangle size={15} /> Terima {num(totalReceived)} Unit & Catat Retur
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle2 size={15} /> Konfirmasi & Tambah Stok Penuh
-                        </>
-                      )
+                      totalDiff > 0 ? `Terima ${num(totalReceived)} Unit & Catat Retur` : 'Konfirmasi & Tambah Stok Penuh'
                     )}
                   </button>
                 </div>
@@ -1598,11 +1590,7 @@ export default function TransferBahan() {
                     padding: '8px 18px'
                   }}
                 >
-                  {returning ? 'Memproses Retur...' : (
-                    <>
-                      <RotateCcw size={15} /> Proses Retur Barang
-                    </>
-                  )}
+                  {returning ? 'Memproses Retur...' : 'Proses Retur Barang'}
                 </button>
               </div>
             </form>
@@ -1861,7 +1849,7 @@ export default function TransferBahan() {
                       onClick={() => handleAddItem('INGREDIENT')}
                       style={{ fontSize: 11.5, padding: '3px 8px' }}
                     >
-                      <Plus size={13} /> Tambah Bahan Baku
+                      + Tambah Bahan Baku
                     </button>
                     {directMenus.length > 0 && (
                       <button
@@ -1870,7 +1858,7 @@ export default function TransferBahan() {
                         onClick={() => handleAddItem('PRODUCT')}
                         style={{ fontSize: 11.5, padding: '3px 8px', color: 'var(--accent-bright)' }}
                       >
-                        <Plus size={13} /> Tambah Produk Retail
+                        + Tambah Produk Retail
                       </button>
                     )}
                   </div>
@@ -2076,11 +2064,7 @@ export default function TransferBahan() {
                   disabled={saving}
                   style={{ fontWeight: 800 }}
                 >
-                  {saving ? 'Mengirim & Memproses...' : (
-                    <>
-                      <Send size={14} /> Kirim & Cetak Surat Jalan
-                    </>
-                  )}
+                  {saving ? 'Mengirim & Memproses...' : 'Kirim & Cetak Surat Jalan'}
                 </button>
               </div>
             </form>
@@ -2118,7 +2102,7 @@ export default function TransferBahan() {
                       fontWeight: 700
                     }}
                   >
-                    <CheckCircle2 size={14} /> Terima Transfer
+                    Terima Transfer
                   </button>
                 )}
                 {(selectedTransfer.status === 'IN_TRANSIT' || selectedTransfer.status === 'PENDING') && (
@@ -2134,14 +2118,14 @@ export default function TransferBahan() {
                       fontWeight: 700
                     }}
                   >
-                    <RotateCcw size={14} /> Retur Barang
+                    Retur Barang
                   </button>
                 )}
                 <button
                   className="btn btn-primary btn-sm"
                   onClick={printDeliveryOrder}
                 >
-                  <Printer size={13} /> Cetak Surat Jalan
+                  Cetak Surat Jalan
                 </button>
                 <button
                   className="btn btn-ghost btn-icon"

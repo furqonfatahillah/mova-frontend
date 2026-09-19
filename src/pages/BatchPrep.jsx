@@ -469,12 +469,9 @@ export default function BatchPrep() {
             border: 'none',
             borderBottom: activeTab === 'katalog' ? '2px solid var(--accent-bright)' : '2px solid transparent',
             color: activeTab === 'katalog' ? 'var(--accent-bright)' : 'var(--text-secondary)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
           }}
         >
-          <Layers size={15} /> Katalog Bahan Olahan & Sub-Recipes ({recipes.length})
+          Katalog Bahan Olahan & Sub-Recipes ({recipes.length})
         </button>
 
         <button
@@ -488,12 +485,9 @@ export default function BatchPrep() {
             border: 'none',
             borderBottom: activeTab === 'riwayat' ? '2px solid var(--accent-bright)' : '2px solid transparent',
             color: activeTab === 'riwayat' ? 'var(--accent-bright)' : 'var(--text-secondary)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
           }}
         >
-          <Clock size={15} /> Riwayat Masak Batch ({batches.length})
+          Riwayat Masak Batch ({batches.length})
         </button>
       </div>
 
@@ -518,7 +512,7 @@ export default function BatchPrep() {
                   Formula bahan olahan dapur & standar pemotongan bahan mentah.
                 </div>
                 <button className="btn btn-primary btn-sm" onClick={() => openSubRecipeEditor(null)}>
-                  <Plus size={14} /> + Buat Bahan Olahan Baru
+                  + Buat Bahan Olahan Baru
                 </button>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 16 }}>
@@ -650,17 +644,17 @@ export default function BatchPrep() {
                       <div style={{ display: 'flex', gap: 8, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
                         <button
                           className="btn btn-secondary btn-sm"
-                          style={{ flex: 1 }}
+                          style={{ flex: 1, fontWeight: 600 }}
                           onClick={() => openSubRecipeEditor(recipe)}
                         >
-                          <Layers size={13} /> Edit Resep
+                          Edit Resep
                         </button>
                         <button
                           className="btn btn-primary btn-sm"
-                          style={{ flex: 1.3 }}
+                          style={{ flex: 1.3, fontWeight: 600 }}
                           onClick={() => openCookModal(recipe)}
                         >
-                          <Flame size={13} /> Masak Batch Ini
+                          Masak Batch Ini
                         </button>
                       </div>
                     </div>
@@ -767,8 +761,9 @@ export default function BatchPrep() {
                             className="btn btn-secondary btn-sm"
                             onClick={() => setDetailModalBatch(batch)}
                             title="Lihat Detail Pemotongan Bahan"
+                            style={{ fontWeight: 600 }}
                           >
-                            <Eye size={12} /> Detail
+                            Detail
                           </button>
                           <button
                             className="btn btn-ghost btn-icon btn-sm"

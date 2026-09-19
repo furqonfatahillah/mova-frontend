@@ -223,10 +223,10 @@ export default function DiscountManagement() {
         action={
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-secondary btn-sm" onClick={fetchDiscounts} title="Segarkan Data">
-              <RefreshCw size={14} /> Segarkan
+              Segarkan
             </button>
             <button className="btn btn-primary" onClick={handleOpenAdd}>
-              <Plus size={15} /> Buat Promo Baru
+              + Buat Promo Baru
             </button>
           </div>
         }
@@ -421,7 +421,7 @@ export default function DiscountManagement() {
                   <Percent size={32} style={{ opacity: 0.3, marginBottom: 8 }} />
                   <div>Tidak ada promo atau voucher yang sesuai filter.</div>
                   <button className="btn btn-secondary btn-sm" style={{ marginTop: 12 }} onClick={handleOpenAdd}>
-                    <Plus size={13} /> Buat Promo Pertama
+                    + Buat Promo Pertama
                   </button>
                 </td>
               </tr>
@@ -873,8 +873,7 @@ export default function DiscountManagement() {
                 <button type="button" className="btn btn-secondary" onClick={() => setModalOpen(false)}>
                   Batal
                 </button>
-                <button type="submit" className="btn btn-primary" disabled={saving} style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, padding: '10px 20px', minWidth: 140, justifyContent: 'center' }}>
-                  <Check size={16} />
+                <button type="submit" className="btn btn-primary" disabled={saving} style={{ fontWeight: 700, padding: '10px 20px', minWidth: 140, textAlign: 'center' }}>
                   {saving ? 'Menyimpan...' : (editingId ? 'Simpan Perubahan' : 'Buat Promo')}
                 </button>
               </div>

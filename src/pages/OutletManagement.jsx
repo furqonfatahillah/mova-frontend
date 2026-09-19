@@ -130,7 +130,7 @@ export default function OutletManagement() {
         subtitle="Kelola data cabang outlet, gudang utama/pusat, kontak, dan alokasi transfer bahan baku."
         action={
           <button className="btn btn-primary" onClick={openCreateModal}>
-            <Plus size={15} /> Tambah Cabang Baru
+            + Tambah Cabang Baru
           </button>
         }
       />
@@ -403,11 +403,7 @@ export default function OutletManagement() {
                   className="btn btn-primary"
                   disabled={saving}
                 >
-                  {saving ? 'Menyimpan...' : (
-                    <>
-                      <Check size={14} /> Simpan Cabang
-                    </>
-                  )}
+                  {saving ? 'Menyimpan...' : 'Simpan Cabang'}
                 </button>
               </div>
             </form>

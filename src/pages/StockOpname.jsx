@@ -335,21 +335,21 @@ export default function StockOpname() {
       <div style={{ display: 'flex', gap: 10, borderBottom: '1px solid var(--border)', marginBottom: 20, paddingBottom: 8 }}>
         <button
           className={`btn ${activeTab === 'INPUT' ? 'btn-primary' : 'btn-ghost'}`}
-          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 18px', fontSize: 13.5 }}
+          style={{ padding: '8px 18px', fontSize: 13.5, fontWeight: 600 }}
           onClick={() => setActiveTab('INPUT')}
         >
-          <ClipboardCheck size={16} /> Input Hitung Fisik (Opname Aktif)
+          Input Hitung Fisik (Opname Aktif)
         </button>
 
         <button
           className={`btn ${activeTab === 'HISTORY' ? 'btn-primary' : 'btn-ghost'}`}
-          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 18px', fontSize: 13.5 }}
+          style={{ padding: '8px 18px', fontSize: 13.5, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}
           onClick={() => {
             setActiveTab('HISTORY');
             fetchSessions();
           }}
         >
-          <History size={16} /> Riwayat Sesi Opname
+          <span>Riwayat Sesi Opname</span>
           {sessions.length > 0 && (
             <span
               style={{
@@ -391,7 +391,6 @@ export default function StockOpname() {
                   </select>
                 ) : (
                   <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13, color: '#ffffff', padding: '6px 12px', background: 'rgba(99, 102, 241, 0.12)', borderRadius: 8, border: '1px solid rgba(99, 102, 241, 0.25)' }}>
-                    <Store size={15} color="var(--accent-bright)" />
                     <span>{activeOutlet?.name || userOutletName || 'Cabang Penempatan'}</span>
                     <span style={{ fontSize: 10, padding: '1px 5px', background: 'rgba(16, 217, 122, 0.2)', color: 'var(--ok)', borderRadius: 4, marginLeft: 6 }}>
                       Terkunci
@@ -464,15 +463,15 @@ export default function StockOpname() {
                 {(isOwnerBisnis || isSuperadminPlatform) ? (
                   <>
                     <button className="btn btn-secondary" onClick={() => handleSave('DRAFT')} disabled={saving}>
-                      <Save size={14} /> {saving ? 'Menyimpan...' : 'Simpan Draft'}
+                      {saving ? 'Menyimpan...' : 'Simpan Draft'}
                     </button>
                     <button className="btn btn-primary" onClick={() => handleSave('RELEASE')} disabled={saving} style={{ background: '#10b981', borderColor: '#10b981', color: '#ffffff', fontWeight: 700 }}>
-                      <CheckCircle2 size={14} /> {saving ? 'Menyimpan...' : 'Release & Setujui Opname'}
+                      {saving ? 'Menyimpan...' : 'Release & Setujui Opname'}
                     </button>
                   </>
                 ) : (
                   <button className="btn btn-primary" onClick={() => handleSave('DRAFT')} disabled={saving}>
-                    <Save size={14} /> {saving ? 'Menyimpan...' : 'Simpan Draft Opname (Menunggu Release Owner)'}
+                    {saving ? 'Menyimpan...' : 'Simpan Draft Opname (Menunggu Release Owner)'}
                   </button>
                 )}
               </div>
@@ -581,7 +580,7 @@ export default function StockOpname() {
               💡 <strong>Panduan Opname:</strong> Sisa Teoritis = Stok Awal + Masuk (Beli/Trf/Prep) − Keluar (POS/Waste/Prep). Selisih Bersih = Stok Fisik Lapangan − Sisa Teoritis Sistem (<strong>0</strong> = Sesuai, <strong style={{ color: 'var(--danger)' }}>Minus (-)</strong> = Stok Hilang/Kurang, <strong style={{ color: 'var(--ok)' }}>Plus (+)</strong> = Stok Berlebih).
             </div>
             <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-              <Save size={14} /> {saving ? 'Menyimpan...' : 'Simpan & Terbitkan Berita Acara'}
+              {saving ? 'Menyimpan...' : 'Simpan & Terbitkan Berita Acara'}
             </button>
           </div>
         </div>
@@ -743,10 +742,7 @@ export default function StockOpname() {
                             {s.period_from} s/d {s.period_to}
                           </td>
                           <td>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <Store size={13} color="var(--text-muted)" />
-                              <span style={{ fontWeight: 600, color: '#ffffff' }}>{s.outlet_name}</span>
-                            </div>
+                            <span style={{ fontWeight: 600, color: '#ffffff' }}>{s.outlet_name}</span>
                           </td>
                           <td>
                             <span style={{ fontSize: 12.5, fontWeight: 500 }}>{s.created_by_name}</span>
@@ -788,19 +784,19 @@ export default function StockOpname() {
                               {!s.is_closed && (
                                 <button
                                   className="btn btn-secondary btn-sm"
-                                  style={{ padding: '4px 8px', fontSize: 11.5, borderColor: '#fbbf24', color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 4 }}
+                                  style={{ padding: '4px 10px', fontSize: 11.5, borderColor: '#fbbf24', color: '#fbbf24', fontWeight: 600 }}
                                   onClick={() => handleEditDraft(s)}
                                   title="Ubah angka fisik opname draft ini"
                                 >
-                                  <Edit3 size={12} /> Ubah
+                                  Ubah
                                 </button>
                               )}
                               <button
                                 className="btn btn-primary btn-sm"
-                                style={{ padding: '4px 10px', fontSize: 11.5 }}
+                                style={{ padding: '4px 10px', fontSize: 11.5, fontWeight: 600 }}
                                 onClick={() => openSessionDetail(s.opname_no)}
                               >
-                                <Eye size={12} /> Berita Acara
+                                Berita Acara
                               </button>
                             </div>
                           </td>
@@ -828,7 +824,6 @@ export default function StockOpname() {
             {/* Modal Header Actions */}
             <div className="flex-between mb-4 pb-2 no-print" style={{ borderBottom: '1px solid var(--border)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <FileText size={18} color="var(--accent-bright)" />
                 <span style={{ fontSize: 15, fontWeight: 700 }}>
                   Dokumen Berita Acara Opname — {selectedSessionNo}
                 </span>
@@ -850,23 +845,23 @@ export default function StockOpname() {
                 {sessionDetail?.session && !sessionDetail.session.is_closed && (
                   <button
                     className="btn btn-secondary btn-sm"
-                    style={{ borderColor: '#fbbf24', color: '#fbbf24', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}
+                    style={{ borderColor: '#fbbf24', color: '#fbbf24', fontWeight: 600 }}
                     onClick={() => handleEditDraft(sessionDetail.session)}
                   >
-                    <Edit3 size={13} /> Ubah Inputan Fisik
+                    Ubah Inputan Fisik
                   </button>
                 )}
                 {(isOwnerBisnis || isSuperadminPlatform) && sessionDetail?.session && !sessionDetail.session.is_closed && (
                   <button
                     className="btn btn-sm"
-                    style={{ background: '#10b981', borderColor: '#10b981', color: '#ffffff', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}
+                    style={{ background: '#10b981', borderColor: '#10b981', color: '#ffffff', fontWeight: 700 }}
                     onClick={() => handleReleaseSession(selectedSessionNo)}
                   >
-                    <CheckCircle2 size={14} /> Release & Setujui Opname Ini
+                    Release & Setujui Opname Ini
                   </button>
                 )}
                 <button className="btn btn-primary btn-sm" onClick={printBeritaAcara}>
-                  <Printer size={13} /> Cetak Berita Acara
+                  Cetak Berita Acara
                 </button>
                 <button
                   className="btn btn-ghost btn-icon"
