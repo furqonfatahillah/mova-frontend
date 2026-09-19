@@ -170,7 +170,14 @@ export default function StockOpname() {
     }
   }
 
+  const isSessionClosed = Boolean(currentOpnameSession?.is_closed);
+
   async function handleSave(actionType = 'DRAFT') {
+    if (isSessionClosed) {
+      toast.error('Sesi opname periode ini telah di-release dan terkunci. Dokumen tidak dapat diubah lagi.');
+      return;
+    }
+
     const todayStr = getTodayStr();
     if (sessionForm.opname_date < todayStr) {
       toast.error('Tanggal pelaksanaan opname tidak boleh di-inputkan tanggal mundur (sebelum hari ini)!');
@@ -412,8 +419,13 @@ export default function StockOpname() {
                 <input
                   type="date"
                   className="form-control mono"
-                  style={{ fontSize: 12.5 }}
+                  style={{
+                    fontSize: 12.5,
+                    background: isSessionClosed ? 'rgba(255,255,255,0.04)' : undefined,
+                    cursor: isSessionClosed ? 'not-allowed' : undefined
+                  }}
                   min={getTodayStr()}
+                  disabled={isSessionClosed}
                   value={sessionForm.opname_date}
                   onChange={e => setSessionForm(p => ({ ...p, opname_date: e.target.value }))}
                 />
@@ -425,7 +437,12 @@ export default function StockOpname() {
                   type="text"
                   className="form-control"
                   placeholder="Nama Store Manager / Saksi"
-                  style={{ fontSize: 12.5 }}
+                  style={{
+                    fontSize: 12.5,
+                    background: isSessionClosed ? 'rgba(255,255,255,0.04)' : undefined,
+                    cursor: isSessionClosed ? 'not-allowed' : undefined
+                  }}
+                  disabled={isSessionClosed}
                   value={sessionForm.approver}
                   onChange={e => setSessionForm(p => ({ ...p, approver: e.target.value }))}
                 />
@@ -435,7 +452,7 @@ export default function StockOpname() {
 
           {/* Table Input Hitung Fisik */}
           <div className="card mb-4">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 12 }}>
               <div>
                 <div style={{ fontWeight: 700, fontSize: 15, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <span>Formulir Hitung Fisik Bahan Baku — {activeOutlet?.name || 'Cabang'}</span>
@@ -454,7 +471,9 @@ export default function StockOpname() {
                   )}
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 3 }}>
-                  {currentOpnameSession && !currentOpnameSession.is_closed ? (
+                  {isSessionClosed ? (
+                    <span>Sesi opname periode ini (<strong>{currentOpnameSession?.opname_no}</strong>) telah <strong>DI-RELEASE & DISETUJUI</strong>. Formulir terkunci (Read-Only) untuk menjaga integritas stok & pembukuan akuntansi.</span>
+                  ) : currentOpnameSession && !currentOpnameSession.is_closed ? (
                     <span>Sesi ini berstatus <strong>DRAFT</strong>. Anda dapat mengedit kembali angka fisik kapan saja, lalu klik <strong>Simpan Draft</strong> untuk memperbarui atau <strong>Release</strong> untuk mengunci.</span>
                   ) : (
                     <span>Ketikkan angka timbangan fisik pada kolom <strong>Stok Akhir Fisik</strong>. Inputan pegawai akan berstatus <strong>DRAFT</strong> dan di-release oleh Owner.</span>
@@ -462,8 +481,34 @@ export default function StockOpname() {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: 8 }}>
-                {canRelease ? (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {isSessionClosed ? (
+                  <>
+                    <span style={{
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: '#34d399',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '6px 12px',
+                      background: 'rgba(16, 185, 129, 0.12)',
+                      borderRadius: 8,
+                      border: '1px solid rgba(16, 185, 129, 0.3)'
+                    }}>
+                      <CheckCircle2 size={15} /> Sesi Opname Terkunci
+                    </span>
+                    {currentOpnameSession?.opname_no && (
+                      <button
+                        className="btn btn-primary"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
+                        onClick={() => openSessionDetail(currentOpnameSession.opname_no)}
+                      >
+                        <FileText size={15} /> Lihat & Cetak Berita Acara
+                      </button>
+                    )}
+                  </>
+                ) : canRelease ? (
                   <>
                     <button className="btn btn-secondary" onClick={() => handleSave('DRAFT')} disabled={saving}>
                       {saving ? 'Menyimpan...' : 'Simpan Draft'}
@@ -524,9 +569,19 @@ export default function StockOpname() {
                               type="number"
                               step="any"
                               className="form-control mono right"
-                              style={{ width: 110, padding: '5px 8px', fontSize: 12.5, fontWeight: 700, borderColor: 'var(--accent)' }}
-                              placeholder="Input fisik..."
+                              style={{
+                                width: 110,
+                                padding: '5px 8px',
+                                fontSize: 12.5,
+                                fontWeight: 700,
+                                borderColor: isSessionClosed ? 'rgba(255,255,255,0.1)' : 'var(--accent)',
+                                background: isSessionClosed ? 'rgba(255,255,255,0.04)' : undefined,
+                                cursor: isSessionClosed ? 'not-allowed' : undefined,
+                                color: isSessionClosed ? '#94a3b8' : undefined
+                              }}
+                              placeholder={isSessionClosed ? 'Terkunci' : 'Input fisik...'}
                               value={actuals[ingId] ?? ''}
+                              disabled={isSessionClosed}
                               onChange={e => setActuals(prev => ({ ...prev, [ingId]: e.target.value }))}
                             />
                           </td>
@@ -551,9 +606,16 @@ export default function StockOpname() {
                             <input
                               type="text"
                               className="form-control"
-                              style={{ padding: '4px 8px', fontSize: 11.5 }}
-                              placeholder="Alasan selisih..."
+                              style={{
+                                padding: '4px 8px',
+                                fontSize: 11.5,
+                                background: isSessionClosed ? 'rgba(255,255,255,0.04)' : undefined,
+                                cursor: isSessionClosed ? 'not-allowed' : undefined,
+                                color: isSessionClosed ? '#94a3b8' : undefined
+                              }}
+                              placeholder={isSessionClosed ? '—' : 'Alasan selisih...'}
                               value={reasons[ingId] ?? ''}
+                              disabled={isSessionClosed}
                               onChange={e => setReasons(p => ({ ...p, [ingId]: e.target.value }))}
                             />
                           </td>
@@ -578,13 +640,25 @@ export default function StockOpname() {
             )}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px', flexWrap: 'wrap', gap: 12 }}>
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', maxWidth: 750 }}>
               💡 <strong>Panduan Opname:</strong> Sisa Teoritis = Stok Awal + Masuk (Beli/Trf/Prep) − Keluar (POS/Waste/Prep). Selisih Bersih = Stok Fisik Lapangan − Sisa Teoritis Sistem (<strong>0</strong> = Sesuai, <strong style={{ color: 'var(--danger)' }}>Minus (-)</strong> = Stok Hilang/Kurang, <strong style={{ color: 'var(--ok)' }}>Plus (+)</strong> = Stok Berlebih).
             </div>
-            <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-              {saving ? 'Menyimpan...' : 'Simpan & Terbitkan Berita Acara'}
-            </button>
+            {isSessionClosed ? (
+              currentOpnameSession?.opname_no ? (
+                <button
+                  className="btn btn-primary"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
+                  onClick={() => openSessionDetail(currentOpnameSession.opname_no)}
+                >
+                  <FileText size={15} /> Buka Detail & Cetak Berita Acara ({currentOpnameSession.opname_no})
+                </button>
+              ) : null
+            ) : (
+              <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+                {saving ? 'Menyimpan...' : 'Simpan & Terbitkan Berita Acara'}
+              </button>
+            )}
           </div>
         </div>
       )}
