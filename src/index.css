@@ -3040,3 +3040,88 @@ textarea.form-control {
 .helpdesk-floating-btn:active {
   transform: translateY(-1px) scale(0.98);
 }
+
+/* =====================================================
+   GLOBAL INK-SAVER & MONOCHROME PRINT STYLES
+   Pure Black & White, Zero Dark Fill, Razor Sharp Text
+   ===================================================== */
+@media print {
+  *, *::before, *::after {
+    background-color: transparent !important;
+    background-image: none !important;
+    color: #000000 !important;
+    border-color: #000000 !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  html, body, #root, .app-layout, .main-content {
+    background: #ffffff !important;
+    color: #000000 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Hide navigation, topbar, floating buttons, and non-print elements */
+  .no-print,
+  .sidebar,
+  .mobile-topbar,
+  .top-header-bar,
+  .helpdesk-floating-btn,
+  .btn,
+  button,
+  .modal-overlay:not(.print-active),
+  input,
+  select,
+  textarea {
+    display: none !important;
+  }
+
+  /* Tables in Monochrome */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    border: 1px solid #000000 !important;
+    margin: 8px 0 !important;
+  }
+
+  th {
+    background-color: #f4f4f4 !important;
+    color: #000000 !important;
+    font-weight: 800 !important;
+    font-size: 10px !important;
+    border: 1px solid #000000 !important;
+    padding: 6px 8px !important;
+  }
+
+  td {
+    border: 1px solid #444444 !important;
+    padding: 5px 8px !important;
+    color: #000000 !important;
+    font-size: 10.5px !important;
+  }
+
+  tr {
+    page-break-inside: avoid !important;
+  }
+
+  /* Badges & Pills */
+  .badge, .tag, [class*="badge"], [class*="chip"] {
+    background: transparent !important;
+    color: #000000 !important;
+    border: 1px solid #000000 !important;
+    border-radius: 4px !important;
+    padding: 1px 6px !important;
+    font-weight: 700 !important;
+  }
+
+  /* Images & Logos */
+  img, svg {
+    filter: grayscale(100%) contrast(160%) !important;
+  }
+}
