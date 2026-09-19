@@ -628,10 +628,10 @@ export default function DiscountManagement() {
       {/* Add / Edit Promo Modal */}
       {modalOpen && (
         <div className="modal-overlay" onClick={() => setModalOpen(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 560 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 580, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+            <div className="modal-header">
               <div>
-                <h3 style={{ fontSize: 16, fontWeight: 800, color: '#ffffff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
                   <Percent size={18} style={{ color: 'var(--accent)' }} />
                   {editingId ? 'Edit Promo & Diskon' : 'Buat Promo & Diskon Baru'}
                 </h3>
@@ -644,234 +644,237 @@ export default function DiscountManagement() {
               </button>
             </div>
 
-            {/* Live Voucher Badge Preview */}
-            <div style={{
-              padding: '12px 16px',
-              borderRadius: 8,
-              marginBottom: 16,
-              background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.08) 100%)',
-              border: '1px solid rgba(99, 102, 241, 0.3)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between'
-            }}>
-              <div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700 }}>
-                  PREVIEW TAMPILAN DI KASIR
-                </div>
-                <div style={{ fontSize: 14, fontWeight: 800, color: '#ffffff', marginTop: 2 }}>
-                  {form.name || 'Nama Promo'}
-                </div>
-                <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>
-                  {form.min_order_amount > 0 ? `Min. Belanja ${rupiah(form.min_order_amount)}` : 'Tanpa minimal belanja'}
-                  {form.type === 'PERCENTAGE' && form.max_discount_amount ? ` • Maks. ${rupiah(form.max_discount_amount)}` : ''}
-                </div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+              <div className="modal-body" style={{ flex: 1, overflowY: 'auto', padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {/* Live Voucher Badge Preview */}
                 <div style={{
-                  fontSize: 18,
-                  fontWeight: 900,
-                  color: form.type === 'PERCENTAGE' ? '#10b981' : '#38bdf8',
-                  fontFamily: 'monospace'
+                  padding: '12px 16px',
+                  borderRadius: 8,
+                  marginBottom: 4,
+                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.08) 100%)',
+                  border: '1px solid rgba(99, 102, 241, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
                 }}>
-                  {form.type === 'PERCENTAGE' ? `${form.value || 0}% OFF` : `-${rupiah(form.value || 0)}`}
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700 }}>
+                      PREVIEW TAMPILAN DI KASIR
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: '#ffffff', marginTop: 2 }}>
+                      {form.name || 'Nama Promo'}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+                      {form.min_order_amount > 0 ? `Min. Belanja ${rupiah(form.min_order_amount)}` : 'Tanpa minimal belanja'}
+                      {form.type === 'PERCENTAGE' && form.max_discount_amount ? ` • Maks. ${rupiah(form.max_discount_amount)}` : ''}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{
+                      fontSize: 18,
+                      fontWeight: 900,
+                      color: form.type === 'PERCENTAGE' ? '#10b981' : '#38bdf8',
+                      fontFamily: 'monospace'
+                    }}>
+                      {form.type === 'PERCENTAGE' ? `${form.value || 0}% OFF` : `-${rupiah(form.value || 0)}`}
+                    </div>
+                    {form.code && (
+                      <span style={{
+                        fontFamily: 'monospace',
+                        fontSize: 10,
+                        fontWeight: 800,
+                        padding: '2px 6px',
+                        borderRadius: 4,
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        color: '#ffffff',
+                        display: 'inline-block',
+                        marginTop: 2
+                      }}>
+                        {form.code.toUpperCase()}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                {form.code && (
-                  <span style={{
-                    fontFamily: 'monospace',
-                    fontSize: 10,
-                    fontWeight: 800,
-                    padding: '2px 6px',
-                    borderRadius: 4,
-                    background: 'rgba(255, 255, 255, 0.1)',
-                    color: '#ffffff',
-                    display: 'inline-block',
-                    marginTop: 2
-                  }}>
-                    {form.code.toUpperCase()}
-                  </span>
-                )}
-              </div>
-            </div>
 
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {/* Promo Name */}
-              <div>
-                <label className="form-label required">Nama Promo / Program Diskon</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  placeholder="Contoh: Diskon Pelajar 15%, Promo Grand Opening, dll"
-                  value={form.name}
-                  onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
-                  required
-                />
-              </div>
-
-              {/* Voucher Code & Auto Apply */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 10 }}>
+                {/* Promo Name */}
                 <div>
-                  <label className="form-label">
-                    Kode Voucher (Opsional)
-                    <span style={{ fontSize: 10.5, color: 'var(--text-muted)', marginLeft: 6 }}>Kosongkan jika bukan kupon</span>
-                  </label>
+                  <label className="form-label required">Nama Promo / Program Diskon</label>
                   <input
                     type="text"
-                    className="form-control mono"
-                    placeholder="Contoh: PROMO15, JUMATHEBAT"
-                    value={form.code}
-                    onChange={e => setForm(p => ({ ...p, code: e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '') }))}
-                  />
-                </div>
-                <div>
-                  <label className="form-label">Tipe Potongan</label>
-                  <select
                     className="form-control"
-                    value={form.type}
-                    onChange={e => setForm(p => ({ ...p, type: e.target.value }))}
-                  >
-                    <option value="PERCENTAGE">Persentase (%)</option>
-                    <option value="FIXED">Nominal Tetap (Rp)</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Value & Max Cap */}
-              <div style={{ display: 'grid', gridTemplateColumns: form.type === 'PERCENTAGE' ? '1fr 1fr' : '1fr', gap: 10 }}>
-                <div>
-                  <label className="form-label required">
-                    {form.type === 'PERCENTAGE' ? 'Persentase Diskon (%)' : 'Nominal Potongan (Rp)'}
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    className="form-control mono"
-                    placeholder={form.type === 'PERCENTAGE' ? 'Contoh: 15' : 'Contoh: 10000'}
-                    value={form.value}
-                    onChange={e => setForm(p => ({ ...p, value: e.target.value }))}
+                    placeholder="Contoh: Diskon Pelajar 15%, Promo Grand Opening, dll"
+                    value={form.name}
+                    onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
                     required
                   />
                 </div>
-                {form.type === 'PERCENTAGE' && (
+
+                {/* Voucher Code & Auto Apply */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 10 }}>
                   <div>
                     <label className="form-label">
-                      Maksimal Diskon (Rp)
-                      <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 4 }}>Plafon</span>
+                      Kode Voucher (Opsional)
+                      <span style={{ fontSize: 10.5, color: 'var(--text-muted)', marginLeft: 6 }}>Kosongkan jika bukan kupon</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control mono"
+                      placeholder="Contoh: PROMO15, JUMATHEBAT"
+                      value={form.code}
+                      onChange={e => setForm(p => ({ ...p, code: e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '') }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label">Tipe Potongan</label>
+                    <select
+                      className="form-control"
+                      value={form.type}
+                      onChange={e => setForm(p => ({ ...p, type: e.target.value }))}
+                    >
+                      <option value="PERCENTAGE">Persentase (%)</option>
+                      <option value="FIXED">Nominal Tetap (Rp)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Value & Max Cap */}
+                <div style={{ display: 'grid', gridTemplateColumns: form.type === 'PERCENTAGE' ? '1fr 1fr' : '1fr', gap: 10 }}>
+                  <div>
+                    <label className="form-label required">
+                      {form.type === 'PERCENTAGE' ? 'Persentase Diskon (%)' : 'Nominal Potongan (Rp)'}
                     </label>
                     <input
                       type="number"
                       step="any"
                       className="form-control mono"
-                      placeholder="Kosongkan jika tanpa batas"
-                      value={form.max_discount_amount}
-                      onChange={e => setForm(p => ({ ...p, max_discount_amount: e.target.value }))}
+                      placeholder={form.type === 'PERCENTAGE' ? 'Contoh: 15' : 'Contoh: 10000'}
+                      value={form.value}
+                      onChange={e => setForm(p => ({ ...p, value: e.target.value }))}
+                      required
                     />
                   </div>
-                )}
-              </div>
-
-              {/* Min Order & Usage Quota */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div>
-                  <label className="form-label">Minimal Belanja (Rp)</label>
-                  <input
-                    type="number"
-                    step="any"
-                    className="form-control mono"
-                    placeholder="0 = Tanpa minimal belanja"
-                    value={form.min_order_amount}
-                    onChange={e => setForm(p => ({ ...p, min_order_amount: e.target.value }))}
-                  />
+                  {form.type === 'PERCENTAGE' && (
+                    <div>
+                      <label className="form-label">
+                        Maksimal Diskon (Rp)
+                        <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 4 }}>Plafon</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        className="form-control mono"
+                        placeholder="Kosongkan jika tanpa batas"
+                        value={form.max_discount_amount}
+                        onChange={e => setForm(p => ({ ...p, max_discount_amount: e.target.value }))}
+                      />
+                    </div>
+                  )}
                 </div>
-                <div>
-                  <label className="form-label">Kuota Pemakaian Total</label>
-                  <input
-                    type="number"
-                    min="1"
-                    className="form-control mono"
-                    placeholder="Kosongkan jika tak terbatas"
-                    value={form.usage_limit}
-                    onChange={e => setForm(p => ({ ...p, usage_limit: e.target.value }))}
-                  />
-                </div>
-              </div>
 
-              {/* Validity Dates */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                {/* Min Order & Usage Quota */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div>
+                    <label className="form-label">Minimal Belanja (Rp)</label>
+                    <input
+                      type="number"
+                      step="any"
+                      className="form-control mono"
+                      placeholder="0 = Tanpa minimal belanja"
+                      value={form.min_order_amount}
+                      onChange={e => setForm(p => ({ ...p, min_order_amount: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label">Kuota Pemakaian Total</label>
+                    <input
+                      type="number"
+                      min="1"
+                      className="form-control mono"
+                      placeholder="Kosongkan jika tak terbatas"
+                      value={form.usage_limit}
+                      onChange={e => setForm(p => ({ ...p, usage_limit: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                {/* Validity Dates */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div>
+                    <label className="form-label">Tanggal Mulai Berlaku</label>
+                    <input
+                      type="date"
+                      className="form-control"
+                      value={form.start_date}
+                      onChange={e => setForm(p => ({ ...p, start_date: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label">Tanggal Berakhir</label>
+                    <input
+                      type="date"
+                      className="form-control"
+                      value={form.end_date}
+                      onChange={e => setForm(p => ({ ...p, end_date: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                {/* Target Outlet */}
                 <div>
-                  <label className="form-label">Tanggal Mulai Berlaku</label>
-                  <input
-                    type="date"
+                  <label className="form-label">Berlaku di Cabang</label>
+                  <select
                     className="form-control"
-                    value={form.start_date}
-                    onChange={e => setForm(p => ({ ...p, start_date: e.target.value }))}
-                  />
+                    value={form.outlet_id}
+                    onChange={e => setForm(p => ({ ...p, outlet_id: e.target.value }))}
+                  >
+                    <option value="">🌐 Semua Cabang Outlet (Nasional)</option>
+                    {outlets.map(o => (
+                      <option key={o.id} value={o.id.toString()}>📍 {o.name}</option>
+                    ))}
+                  </select>
                 </div>
+
+                {/* Notes / S&K */}
                 <div>
-                  <label className="form-label">Tanggal Berakhir</label>
-                  <input
-                    type="date"
+                  <label className="form-label">Catatan / Syarat & Ketentuan (S&K)</label>
+                  <textarea
                     className="form-control"
-                    value={form.end_date}
-                    onChange={e => setForm(p => ({ ...p, end_date: e.target.value }))}
+                    rows={2}
+                    placeholder="Contoh: Khusus makan di tempat (Dine-in). Tunjukkan kartu pelajar ke kasir."
+                    value={form.notes}
+                    onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
                   />
+                </div>
+
+                {/* Checkboxes: Active & Auto Apply */}
+                <div style={{ display: 'flex', gap: 18, marginTop: 4 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: '#ffffff' }}>
+                    <input
+                      type="checkbox"
+                      checked={form.active}
+                      onChange={e => setForm(p => ({ ...p, active: e.target.checked }))}
+                    />
+                    <span>Status Aktif</span>
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: '#ffffff' }}>
+                    <input
+                      type="checkbox"
+                      checked={form.is_auto_apply}
+                      onChange={e => setForm(p => ({ ...p, is_auto_apply: e.target.checked }))}
+                    />
+                    <span>Auto-Apply jika syarat terpenuhi</span>
+                  </label>
                 </div>
               </div>
 
-              {/* Target Outlet */}
-              <div>
-                <label className="form-label">Berlaku di Cabang</label>
-                <select
-                  className="form-control"
-                  value={form.outlet_id}
-                  onChange={e => setForm(p => ({ ...p, outlet_id: e.target.value }))}
-                >
-                  <option value="">🌐 Semua Cabang Outlet (Nasional)</option>
-                  {outlets.map(o => (
-                    <option key={o.id} value={o.id.toString()}>📍 {o.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Notes / S&K */}
-              <div>
-                <label className="form-label">Catatan / Syarat & Ketentuan (S&K)</label>
-                <textarea
-                  className="form-control"
-                  rows={2}
-                  placeholder="Contoh: Khusus makan di tempat (Dine-in). Tunjukkan kartu pelajar ke kasir."
-                  value={form.notes}
-                  onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
-                />
-              </div>
-
-              {/* Checkboxes: Active & Auto Apply */}
-              <div style={{ display: 'flex', gap: 18, marginTop: 4 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: '#ffffff' }}>
-                  <input
-                    type="checkbox"
-                    checked={form.active}
-                    onChange={e => setForm(p => ({ ...p, active: e.target.checked }))}
-                  />
-                  <span>Status Aktif</span>
-                </label>
-
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: '#ffffff' }}>
-                  <input
-                    type="checkbox"
-                    checked={form.is_auto_apply}
-                    onChange={e => setForm(p => ({ ...p, is_auto_apply: e.target.checked }))}
-                  />
-                  <span>Auto-Apply jika syarat terpenuhi</span>
-                </label>
-              </div>
-
-              {/* Buttons */}
-              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 12 }}>
+              {/* Modal Footer with Submit & Cancel Buttons */}
+              <div className="modal-footer" style={{ borderTop: '1px solid var(--border)', padding: '14px 22px', display: 'flex', justifyContent: 'flex-end', gap: 10, background: '#11162d', flexShrink: 0 }}>
                 <button type="button" className="btn btn-secondary" onClick={() => setModalOpen(false)}>
                   Batal
                 </button>
-                <button type="submit" className="btn btn-primary" disabled={saving}>
+                <button type="submit" className="btn btn-primary" disabled={saving} style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, padding: '10px 20px', minWidth: 140, justifyContent: 'center' }}>
+                  <Check size={16} />
                   {saving ? 'Menyimpan...' : (editingId ? 'Simpan Perubahan' : 'Buat Promo')}
                 </button>
               </div>

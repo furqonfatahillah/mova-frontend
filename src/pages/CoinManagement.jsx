@@ -1523,7 +1523,7 @@ function CoinDateDetailModal({ open, group, onClose }) {
   if (!open || !group) return null;
 
   return (
-    <div className="modal-overlay" onClick={onClose} style={{ zIndex: 1100 }}>
+    <div className="modal-overlay" onClick={onClose}>
       <div
         className="modal-content"
         onClick={(e) => e.stopPropagation()}

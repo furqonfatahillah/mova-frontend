@@ -475,7 +475,7 @@ export default function Layout() {
       </aside>
 
       {/* Main Content Area */}
-      <main className="main-content fade-in">
+      <main className="main-content">
         {/* Top Header Bar: Active Branch Status & Quick Switcher */}
         <div className="top-header-bar">
           <div className="top-header-left">
