@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   Save, Store, ClipboardCheck, History, Eye, Printer, X, Check,
   Calendar, Search, RefreshCw, AlertTriangle, FileText, ArrowRight,
-  TrendingDown, TrendingUp, CheckCircle2, UserCheck
+  TrendingDown, TrendingUp, CheckCircle2, UserCheck, Edit3
 } from 'lucide-react';
 import api from '../api/client';
 import { num, pct, rupiah, fmtQtyVal, StatusPill, LoadingState, PeriodPicker, PageHeader, AuditInfo, MiniCard } from '../components/ui';
@@ -76,6 +76,17 @@ export default function StockOpname() {
   const [selectedSessionNo, setSelectedSessionNo] = useState(null);
   const [sessionDetail, setSessionDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+
+  // Detect if current selected period & outlet already has an opname session
+  const currentOpnameSession = useMemo(() => {
+    const list = Object.values(opnameMap || {});
+    if (list.length === 0) return null;
+    return {
+      opname_no: list[0]?.opname_no,
+      is_closed: !!list[0]?.is_closed,
+      opname_date: list[0]?.opname_date,
+    };
+  }, [opnameMap]);
 
   useEffect(() => {
     if (!canSwitchOutlet) {
@@ -220,6 +231,27 @@ export default function StockOpname() {
     } catch (err) {
       toast.error(err.response?.data?.message || 'Gagal merilis sesi opname');
     }
+  }
+
+  function handleEditDraft(session) {
+    if (!session) return;
+    if (session.period_from && session.period_to) {
+      setPeriod({ from: session.period_from, to: session.period_to });
+    }
+    if (session.outlet_id) {
+      setSelectedOutletId(String(session.outlet_id));
+    }
+    if (session.opname_date) {
+      setSessionForm(p => ({
+        ...p,
+        opname_date: session.opname_date,
+        approver: session.approver || '',
+        notes: session.notes || '',
+      }));
+    }
+    setDetailModalOpen(false);
+    setActiveTab('INPUT');
+    toast.success(`Membuka sesi draft ${session.opname_no || ''}. Silakan ubah angka fisik di tabel.`);
   }
 
   async function openSessionDetail(opnameNo) {
@@ -403,11 +435,28 @@ export default function StockOpname() {
           <div className="card mb-4">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <div>
-                <div style={{ fontWeight: 700, fontSize: 15 }}>
-                  Formulir Hitung Fisik Bahan Baku — {activeOutlet?.name || 'Cabang'}
+                <div style={{ fontWeight: 700, fontSize: 15, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span>Formulir Hitung Fisik Bahan Baku — {activeOutlet?.name || 'Cabang'}</span>
+                  {currentOpnameSession && (
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      padding: '2px 8px',
+                      borderRadius: 6,
+                      background: currentOpnameSession.is_closed ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                      color: currentOpnameSession.is_closed ? '#34d399' : '#fbbf24',
+                      border: `1px solid ${currentOpnameSession.is_closed ? 'rgba(16, 185, 129, 0.35)' : 'rgba(245, 158, 11, 0.35)'}`
+                    }}>
+                      {currentOpnameSession.is_closed ? '🟢 TELAH DI-RELEASE' : `⏳ DRAFT (${currentOpnameSession.opname_no || 'Belum Final'})`}
+                    </span>
+                  )}
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-                  Ketikkan angka timbangan fisik pada kolom <strong>Stok Akhir Fisik</strong>. Inputan pegawai akan berstatus <strong>DRAFT</strong> dan di-release oleh Owner.
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 3 }}>
+                  {currentOpnameSession && !currentOpnameSession.is_closed ? (
+                    <span>Sesi ini berstatus <strong>DRAFT</strong>. Anda dapat mengedit kembali angka fisik kapan saja, lalu klik <strong>Simpan Draft</strong> untuk memperbarui atau <strong>Release</strong> untuk mengunci.</span>
+                  ) : (
+                    <span>Ketikkan angka timbangan fisik pada kolom <strong>Stok Akhir Fisik</strong>. Inputan pegawai akan berstatus <strong>DRAFT</strong> dan di-release oleh Owner.</span>
+                  )}
                 </div>
               </div>
 
@@ -466,27 +515,7 @@ export default function StockOpname() {
                           <td className="mono right">{fmtQtyVal(iv.pemakaian_teoritis, iv.ingredient?.unit_pakai, iv.cost_per_unit)}</td>
                           <td className="mono right" style={{ color: '#fb923c' }}>{fmtQtyVal(iv.waste, iv.ingredient?.unit_pakai, iv.cost_per_unit)}</td>
                           <td className="mono right" style={{ fontWeight: 700, color: 'var(--accent-bright)' }}>
-                            <div>{fmtQtyVal(iv.stok_akhir_teoritis, iv.ingredient?.unit_pakai, iv.cost_per_unit)}</div>
-                            {Number(iv.prep_usage || 0) > 0 && (
-                              <div style={{ fontSize: 10, color: '#f59e0b', fontWeight: 500 }}>
-                                Masak Prep: -{num(iv.prep_usage)}
-                              </div>
-                            )}
-                            {Number(iv.prep_output || 0) > 0 && (
-                              <div style={{ fontSize: 10, color: '#10b981', fontWeight: 500 }}>
-                                Hasil Masak: +{num(iv.prep_output)}
-                              </div>
-                            )}
-                            {Number(iv.transfer_out || 0) > 0 && (
-                              <div style={{ fontSize: 10, color: '#f87171', fontWeight: 500 }}>
-                                Trf Keluar: -{num(iv.transfer_out)}
-                              </div>
-                            )}
-                            {Number(iv.transfer_in || 0) > 0 && (
-                              <div style={{ fontSize: 10, color: '#38bdf8', fontWeight: 500 }}>
-                                Trf Masuk: +{num(iv.transfer_in)}
-                              </div>
-                            )}
+                            {fmtQtyVal(iv.stok_akhir_teoritis, iv.ingredient?.unit_pakai, iv.cost_per_unit)}
                           </td>
                           <td style={{ textAlign: 'right' }}>
                             <input
@@ -755,13 +784,25 @@ export default function StockOpname() {
                             {s.net_variance_value > 0 ? '+' : ''}{rupiah(s.net_variance_value)}
                           </td>
                           <td className="center" onClick={e => e.stopPropagation()}>
-                            <button
-                              className="btn btn-primary btn-sm"
-                              style={{ padding: '4px 10px', fontSize: 11.5 }}
-                              onClick={() => openSessionDetail(s.opname_no)}
-                            >
-                              <Eye size={12} /> Berita Acara
-                            </button>
+                            <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                              {!s.is_closed && (
+                                <button
+                                  className="btn btn-secondary btn-sm"
+                                  style={{ padding: '4px 8px', fontSize: 11.5, borderColor: '#fbbf24', color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 4 }}
+                                  onClick={() => handleEditDraft(s)}
+                                  title="Ubah angka fisik opname draft ini"
+                                >
+                                  <Edit3 size={12} /> Ubah
+                                </button>
+                              )}
+                              <button
+                                className="btn btn-primary btn-sm"
+                                style={{ padding: '4px 10px', fontSize: 11.5 }}
+                                onClick={() => openSessionDetail(s.opname_no)}
+                              >
+                                <Eye size={12} /> Berita Acara
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))
@@ -806,6 +847,15 @@ export default function StockOpname() {
                 )}
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {sessionDetail?.session && !sessionDetail.session.is_closed && (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    style={{ borderColor: '#fbbf24', color: '#fbbf24', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}
+                    onClick={() => handleEditDraft(sessionDetail.session)}
+                  >
+                    <Edit3 size={13} /> Ubah Inputan Fisik
+                  </button>
+                )}
                 {(isOwnerBisnis || isSuperadminPlatform) && sessionDetail?.session && !sessionDetail.session.is_closed && (
                   <button
                     className="btn btn-sm"
