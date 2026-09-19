@@ -457,10 +457,10 @@ export default function Layout() {
               <div className="sidebar-user-name">{user.name || 'User'}</div>
               <div className="sidebar-user-role" style={{ fontSize: 11, color: 'var(--accent-bright)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 140 }}>
                 {user.role === 'superadmin_platform' || user.role === 'superadmin' ? 'Superadmin Platform' :
-                 user.role === 'owner_bisnis' || user.role === 'owner' ? 'Owner Bisnis' :
-                 user.role === 'owner_website' ? 'Owner Website' :
-                 isOwnerOutlet ? `Owner (${user.outlet_name || 'Outlet'})` :
-                 `Pegawai (${user.outlet_name || 'Kasir'})`}
+                  user.role === 'owner_bisnis' || user.role === 'owner' ? 'Owner Bisnis' :
+                    user.role === 'owner_website' ? 'Owner Website' :
+                      isOwnerOutlet ? `Owner (${user.outlet_name || 'Outlet'})` :
+                        `Pegawai (${user.outlet_name || 'Kasir'})`}
               </div>
             </div>
             <button
@@ -787,30 +787,6 @@ export default function Layout() {
 
         <Outlet />
       </main>
-
-      {/* Floating WhatsApp Helpdesk Corner Button */}
-      <a
-        href="https://wa.me/6281244295923?text=Halo%20Admin%20Helpdesk%20MOVA%20POS,%20saya%20butuh%20bantuan."
-        target="_blank"
-        rel="noopener noreferrer"
-        className="helpdesk-floating-btn"
-        title="Hubungi Admin Helpdesk WA (+62 812-4429-5923)"
-      >
-        <div style={{
-          width: 26,
-          height: 26,
-          borderRadius: '50%',
-          background: '#ffffff',
-          color: '#128C7E',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontWeight: 900
-        }}>
-          <Headset size={15} />
-        </div>
-        <span>Helpdesk WA</span>
-      </a>
     </div>
   );
 }

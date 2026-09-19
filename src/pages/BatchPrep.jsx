@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   ChefHat, Plus, Search, Filter, Check, AlertTriangle, Clock,
   ArrowRight, Sparkles, Calculator, Package, Store, X, Eye,
-  RefreshCw, Layers, Calendar, Flame, ChevronRight, CheckCircle2
+  RefreshCw, Layers, Calendar, Flame, ChevronRight, CheckCircle2, Trash2
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, num, fmtQtyVal, LoadingState, PageHeader, AuditInfo, UnitSelect, SATUAN_PAKAI_OPTIONS, PeriodPicker } from '../components/ui';
@@ -50,6 +50,7 @@ export default function BatchPrep() {
 
   // Modal Detail Batch
   const [detailModalBatch, setDetailModalBatch] = useState(null);
+  const [deletingBatchId, setDeletingBatchId] = useState(null);
 
   // Modal Edit / Buat Sub-Recipe
   const [subRecipeModal, setSubRecipeModal] = useState(null);
@@ -144,6 +145,49 @@ export default function BatchPrep() {
       toast.error('Gagal menghitung kalkulasi batch');
     } finally {
       setPreviewLoading(false);
+    }
+  }
+
+  // Auto-sync between Target Output Qty and Batch Multiplier
+  const handleMultiplierChange = (newMult) => {
+    const mult = Math.max(0.01, Number(newMult) || 0);
+    setBatchMultiplier(mult);
+    const rec = recipes.find(r => r.id === Number(selectedRecipeId));
+    if (rec) {
+      const baseOut = Number(rec.output_qty || 1);
+      setActualOutputQty(Number((baseOut * mult).toFixed(3)));
+    }
+  };
+
+  const handleTargetOutputChange = (newQty) => {
+    setActualOutputQty(newQty);
+    const numQty = Number(newQty);
+    const rec = recipes.find(r => r.id === Number(selectedRecipeId));
+    if (rec && numQty > 0) {
+      const baseOut = Number(rec.output_qty || 1);
+      if (baseOut > 0) {
+        const calculatedMult = Math.max(0.01, Number((numQty / baseOut).toFixed(3)));
+        setBatchMultiplier(calculatedMult);
+      }
+    }
+  };
+
+  async function handleDeleteBatch(batch) {
+    if (!batch) return;
+    const confirmMsg = `Batalkan produksi ${batch.batch_no}?\n\n• Semua pemotongan bahan mentah akan DIBATALKAN & stok dikembalikan ke gudang.\n• Penambahan stok olahan ${batch.ingredient?.name || ''} (+${batch.actual_output_qty} ${batch.output_unit}) akan DITARIK kembali.\n\nLanjutkan pembatalan?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setDeletingBatchId(batch.id);
+    try {
+      const { data } = await api.delete(`/batch-preps/${batch.id}`);
+      toast.success(data.message || `Batch ${batch.batch_no} berhasil dibatalkan.`);
+      setDetailModalBatch(null);
+      fetchAllData();
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Gagal membatalkan batch';
+      toast.error(msg);
+    } finally {
+      setDeletingBatchId(null);
     }
   }
 
@@ -714,13 +758,24 @@ export default function BatchPrep() {
                         {batch.user_name || batch.user?.name || batch.creator?.name || 'Koki Dapur'}
                       </td>
                       <td className="center">
-                        <button
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => setDetailModalBatch(batch)}
-                          title="Lihat Detail Pemotongan Bahan"
-                        >
-                          <Eye size={12} /> Detail
-                        </button>
+                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6 }}>
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => setDetailModalBatch(batch)}
+                            title="Lihat Detail Pemotongan Bahan"
+                          >
+                            <Eye size={12} /> Detail
+                          </button>
+                          <button
+                            className="btn btn-ghost btn-icon btn-sm"
+                            style={{ color: '#fb7185' }}
+                            onClick={() => handleDeleteBatch(batch)}
+                            disabled={deletingBatchId === batch.id}
+                            title="Batalkan & Kembalikan Stok Batch Ini"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -828,7 +883,7 @@ export default function BatchPrep() {
                     )}
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14, marginBottom: 16 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', gap: 14, marginBottom: 16 }}>
                     <div>
                       <label className="form-label" style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
                         Pilih Bahan Olahan / Resep:
@@ -838,10 +893,11 @@ export default function BatchPrep() {
                         style={{ fontSize: 13, fontWeight: 600 }}
                         value={selectedRecipeId}
                         onChange={e => {
-                          setSelectedRecipeId(e.target.value);
-                          const rec = recipes.find(r => r.id === Number(e.target.value));
+                          const newId = e.target.value;
+                          setSelectedRecipeId(newId);
+                          const rec = recipes.find(r => r.id === Number(newId));
                           if (rec) {
-                            setActualOutputQty(rec.output_qty * batchMultiplier);
+                            setActualOutputQty(Number((rec.output_qty * batchMultiplier).toFixed(3)));
                           }
                         }}
                       >
@@ -851,53 +907,74 @@ export default function BatchPrep() {
                           </option>
                         ))}
                       </select>
+                      <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>
+                        Standar resep: <strong>{recipes.find(r => r.id === Number(selectedRecipeId))?.output_qty || 1} {recipes.find(r => r.id === Number(selectedRecipeId))?.output_unit || 'satuan'}</strong> / 1x batch
+                      </div>
                     </div>
 
-                <div>
-                  <label className="form-label" style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
-                    Pengali Batch (Jumlah Masak):
-                  </label>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="0.1"
-                      className="form-control mono text-center"
-                      style={{ fontSize: 14, fontWeight: 700 }}
-                      value={batchMultiplier}
-                      onChange={e => {
-                        const val = Math.max(0.1, Number(e.target.value || 1));
-                        setBatchMultiplier(val);
-                        if (batchPreview) {
-                          setActualOutputQty(Number((batchPreview.recipe.output_qty * val).toFixed(3)));
-                        }
-                      }}
-                    />
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        style={{ padding: '2px 6px', fontSize: 10 }}
-                        onClick={() => {
-                          const n = batchMultiplier + 1;
-                          setBatchMultiplier(n);
-                          if (batchPreview) setActualOutputQty(Number((batchPreview.recipe.output_qty * n).toFixed(3)));
-                        }}
-                      >+1x</button>
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        style={{ padding: '2px 6px', fontSize: 10 }}
-                        onClick={() => {
-                          const n = Math.max(0.5, batchMultiplier - 0.5);
-                          setBatchMultiplier(n);
-                          if (batchPreview) setActualOutputQty(Number((batchPreview.recipe.output_qty * n).toFixed(3)));
-                        }}
-                      >-0.5</button>
+                    <div>
+                      <label className="form-label" style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent-bright)' }}>
+                        Target Jumlah yang Dibuat:
+                      </label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <input
+                          type="number"
+                          step="any"
+                          min="0.1"
+                          className="form-control mono text-right"
+                          style={{ fontSize: 14, fontWeight: 800, borderColor: 'var(--accent-bright)', background: 'rgba(99, 102, 241, 0.08)' }}
+                          value={actualOutputQty}
+                          onChange={e => handleTargetOutputChange(e.target.value)}
+                          placeholder="Misal: 5"
+                        />
+                        <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-secondary)', minWidth: 45 }}>
+                          {recipes.find(r => r.id === Number(selectedRecipeId))?.output_unit || 'satuan'}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 10.5, color: 'var(--text-secondary)', marginTop: 4 }}>
+                        Ketik target porsi di sini
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="form-label" style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                        Pengali Batch:
+                      </label>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <div style={{ position: 'relative', flex: 1 }}>
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0.01"
+                            className="form-control mono text-center"
+                            style={{ fontSize: 14, fontWeight: 700, paddingRight: 20 }}
+                            value={batchMultiplier}
+                            onChange={e => handleMultiplierChange(e.target.value)}
+                          />
+                          <span style={{ position: 'absolute', right: 7, top: 9, fontSize: 11, color: 'var(--text-muted)', pointerEvents: 'none' }}>x</span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ padding: '2px 6px', fontSize: 10 }}
+                            onClick={() => handleMultiplierChange(Number((batchMultiplier + 1).toFixed(2)))}
+                            title="Tambah 1 batch"
+                          >+1x</button>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ padding: '2px 6px', fontSize: 10 }}
+                            onClick={() => handleMultiplierChange(Math.max(0.1, Number((batchMultiplier - 0.5).toFixed(2))))}
+                            title="Kurang 0.5 batch"
+                          >-0.5</button>
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 10.5, color: '#34d399', marginTop: 4 }}>
+                        ✓ Bahan dipotong {batchMultiplier}x
+                      </div>
                     </div>
                   </div>
-                </div>
-              </div>
 
               {/* Outlet and Date */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 16 }}>
@@ -1008,15 +1085,15 @@ export default function BatchPrep() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 16 }}>
                 <div>
                   <label className="form-label" style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
-                    Hasil Jadi Matang Aktual (Actual Yield):
+                    Konfirmasi Hasil Jadi Fisik (Actual Yield):
                   </label>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <input
                       type="number"
                       step="any"
-                      min="0.1"
+                      min="0.001"
                       className="form-control mono text-right"
-                      style={{ fontSize: 14, fontWeight: 700, borderColor: 'var(--accent-bright)' }}
+                      style={{ fontSize: 14, fontWeight: 700 }}
                       value={actualOutputQty}
                       onChange={e => setActualOutputQty(e.target.value)}
                     />
@@ -1024,8 +1101,8 @@ export default function BatchPrep() {
                       {batchPreview?.output_unit || 'potong'}
                     </span>
                   </div>
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                    Target resep: {num(batchPreview?.expected_output_qty || 0)} {batchPreview?.output_unit}. Sesuaikan jika ada selisih susut masak.
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginTop: 3 }}>
+                    Target resep: {num(batchPreview?.expected_output_qty || 0)} {batchPreview?.output_unit}. Ubah HANYA jika ada selisih susut timbangan matang fisik.
                   </span>
                 </div>
 
@@ -1185,7 +1262,16 @@ export default function BatchPrep() {
               </div>
             </div>
 
-            <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', textAlign: 'right' }}>
+            <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                onClick={() => handleDeleteBatch(detailModalBatch)}
+                disabled={deletingBatchId === detailModalBatch.id}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
+              >
+                <Trash2 size={13} /> {deletingBatchId === detailModalBatch.id ? 'Membatalkan...' : 'Batalkan & Hapus Batch (Rollback Stok)'}
+              </button>
               <button className="btn btn-secondary" onClick={() => setDetailModalBatch(null)}>
                 Tutup
               </button>
