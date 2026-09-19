@@ -994,11 +994,11 @@ export default function TransferBahan() {
                               <CheckCircle2 size={12} /> Terima
                             </button>
                           )}
-                          {!isCancelled && !isReturned && (
+                          {isInTransit && (
                             <button
                               className="btn btn-sm"
                               onClick={() => openReturnModal(trf)}
-                              title="Retur Barang Transfer (Rusak di Jalan / Dikembalikan)"
+                              title="Retur Barang Transfer (Ditolak Langsung / Batal Terima)"
                               style={{
                                 background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
                                 color: '#ffffff',
@@ -2074,7 +2074,7 @@ export default function TransferBahan() {
                     <CheckCircle2 size={14} /> Terima Transfer
                   </button>
                 )}
-                {selectedTransfer.status !== 'CANCELLED' && selectedTransfer.status !== 'RETURNED' && (
+                {(selectedTransfer.status === 'IN_TRANSIT' || selectedTransfer.status === 'PENDING') && (
                   <button
                     className="btn btn-sm"
                     onClick={() => {
