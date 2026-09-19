@@ -33,6 +33,7 @@ const CashFlow = lazy(() => import('./pages/CashFlow'));
 const CoinManagement = lazy(() => import('./pages/CoinManagement'));
 const OpexManagement = lazy(() => import('./pages/OpexManagement'));
 const UrgentNotes = lazy(() => import('./pages/UrgentNotes'));
+const Receivables = lazy(() => import('./pages/Receivables'));
 
 function PrivateRoute({ children }) {
   const token = localStorage.getItem('pos_token');
@@ -124,6 +125,7 @@ export default function App() {
               <Route path="variance/menu"  element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><VarianceMenu /></RoleRoute>} />
               <Route path="profit-loss"    element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><ProfitLoss /></RoleRoute>} />
               <Route path="cash-flow"      element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><CashFlow /></RoleRoute>} />
+              <Route path="piutang"        element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><Receivables /></RoleRoute>} />
               <Route path="profitability"  element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><Profitability /></RoleRoute>} />
               <Route path="root-cause"     element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><RootCause /></RoleRoute>} />
             </Route>

@@ -5,7 +5,7 @@ import {
   ArrowUpDown, ClipboardList, BarChart2, TrendingUp, DollarSign,
   AlertTriangle, LogOut, ScrollText, Menu, X, Clock,
   Store, Send, Users, Building2, ChefHat, Trash2, Percent, Landmark, Wallet, Coins, Gift, Copy, Check, Receipt, Headset,
-  AlertOctagon
+  AlertOctagon, CreditCard
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
@@ -112,6 +112,7 @@ export default function Layout() {
               { to: '/opex', label: 'Biaya Operasional (OPEX)', icon: Receipt },
               { to: '/profit-loss', label: 'Laba Rugi (P&L)', icon: Landmark },
               { to: '/cash-flow', label: 'Arus Kas (Cash Flow)', icon: Wallet },
+              { to: '/piutang', label: 'Buku Piutang', icon: CreditCard },
               { to: '/variance/bahan', label: 'Variance Bahan', icon: BarChart2 },
               { to: '/variance/menu', label: 'Variance Menu', icon: TrendingUp },
               { to: '/profitability', label: 'Profitability', icon: DollarSign },
@@ -194,6 +195,7 @@ export default function Layout() {
           items: [
             { to: '/profit-loss', label: 'Laba Rugi (P&L)', icon: Landmark },
             { to: '/cash-flow', label: 'Arus Kas (Cash Flow)', icon: Wallet },
+            { to: '/piutang', label: 'Buku Piutang Usaha', icon: CreditCard },
             { to: '/variance/bahan', label: 'Analisis Varian Bahan', icon: BarChart2 },
             { to: '/variance/menu', label: 'Analisis Varian Menu', icon: TrendingUp },
             { to: '/profitability', label: 'Profitability (Menu Eng.)', icon: DollarSign },
@@ -238,6 +240,7 @@ export default function Layout() {
             { to: '/batch-prep', label: 'Batch Prep Dapur', icon: ChefHat },
             { to: '/waste', label: 'Waste Log', icon: Trash2 },
             { to: '/opex', label: 'Biaya Operasional Cabang', icon: Receipt },
+            { to: '/piutang', label: 'Buku Piutang Cabang', icon: CreditCard },
           ],
         },
         {

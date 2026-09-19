@@ -368,3 +368,65 @@ export async function exportVarianceMenuToExcel({ menuData = [], period, outletN
   XLSX.writeFile(wb, filename);
   return filename;
 }
+
+/**
+ * 5. Export Buku Piutang (Accounts Receivable Ledger) to Excel
+ */
+export async function exportReceivablesToExcel({ items = [], stats = {}, outletName = 'Semua Cabang', businessName = 'MOVA POS', userName = 'Administrator' }) {
+  const XLSX = await getXLSX();
+  const wb = XLSX.utils.book_new();
+  const dateStr = new Date().toLocaleString('id-ID');
+
+  const rows = [
+    ['BUKU PIUTANG USAHA (ACCOUNTS RECEIVABLE LEDGER)'],
+    ['MOVA POS — Customer & Corporate Credit Ledger'],
+    [],
+    ['Bisnis / Brand', businessName, '', 'Waktu Ekspor', dateStr],
+    ['Cabang / Outlet', outletName, '', 'Dicetak Oleh', userName],
+    ['Total Tagihan Piutang', stats.total_receivables || 0, '', 'Sisa Piutang Berjalan', stats.total_remaining || 0],
+    ['Total Telah Dilunasi', stats.total_paid || 0, '', 'Piutang Jatuh Tempo (Overdue)', stats.total_overdue || 0],
+    [],
+    [
+      'No',
+      'No Piutang / Invoice',
+      'Tanggal Terbit',
+      'Jatuh Tempo',
+      'Nama Pelanggan',
+      'No. Telepon / WA',
+      'Cabang Outlet',
+      'Total Tagihan (Rp)',
+      'Sudah Dibayar (Rp)',
+      'Sisa Piutang (Rp)',
+      'Progress (%)',
+      'Status Pelunasan',
+      'Keterangan / Rincian',
+    ],
+  ];
+
+  items.forEach((r, idx) => {
+    rows.push([
+      idx + 1,
+      r.receivable_no || '-',
+      r.issue_date || '-',
+      r.due_date || '-',
+      r.customer_name || '-',
+      r.customer_phone || '-',
+      r.outlet_name || '-',
+      r.total_amount || 0,
+      r.paid_amount || 0,
+      r.remaining_amount || 0,
+      r.progress_pct ?? (r.total_amount > 0 ? Math.round((r.paid_amount / r.total_amount) * 100) : 0),
+      r.status_label || r.status || '-',
+      r.notes || '-',
+    ]);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = fitColumns(rows);
+  XLSX.utils.book_append_sheet(wb, ws, 'Buku Piutang');
+
+  const filename = `Buku_Piutang_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  XLSX.writeFile(wb, filename);
+  return filename;
+}
+
