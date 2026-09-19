@@ -246,22 +246,26 @@ export default function StockOpname() {
     const ingId = iv.ingredient?.id;
     const actualQty = actuals[ingId] !== '' && actuals[ingId] !== undefined ? Number(actuals[ingId]) : null;
     if (actualQty === null) return { ...iv };
-    const wasteQty = Number(iv.waste_qty ?? iv.waste ?? 0);
-    const pemakaianAktual = iv.stok_awal_periode + iv.pembelian - actualQty;
-    const varianceGross = pemakaianAktual - iv.pemakaian_teoritis;
-    const varianceQty = varianceGross - wasteQty;
-    const variancePct = iv.pemakaian_teoritis > 0 ? (varianceQty / iv.pemakaian_teoritis) * 100 : null;
+
+    const teoritis = Number(iv.stok_akhir_teoritis ?? 0);
+    // Selisih Bersih = Fisik Lapangan - Sisa Teoritis Komputer
+    // Fisik == Teoritis => 0 (Sesuai / Pass)
+    // Fisik < Teoritis => Negatif (Stok Kurang/Hilang)
+    // Fisik > Teoritis => Positif (Stok Berlebih/Surplus)
+    const varianceQty = Number((actualQty - teoritis).toFixed(4));
+    const denom = teoritis !== 0 ? Math.abs(teoritis) : (actualQty !== 0 ? Math.abs(actualQty) : 1);
+    const variancePct = Number(((varianceQty / denom) * 100).toFixed(1));
     const tol = iv.ingredient?.tolerance || 5;
-    let status = null;
-    if (variancePct !== null) {
-      const abs = Math.abs(variancePct);
-      status = abs <= tol ? 'NORMAL' : abs <= tol * 2 ? 'WASPADA' : 'TIDAK WAJAR';
+
+    let status = 'NORMAL';
+    if (Math.abs(varianceQty) > 0.0001) {
+      const absPct = Math.abs(variancePct);
+      status = absPct <= tol ? 'NORMAL' : absPct <= tol * 2 ? 'WASPADA' : 'TIDAK WAJAR';
     }
+
     return {
       ...iv,
       stok_akhir_aktual: actualQty,
-      pemakaian_aktual: pemakaianAktual,
-      variance_gross_qty: varianceGross,
       variance_qty: varianceQty,
       variance_pct: variancePct,
       status
@@ -462,7 +466,27 @@ export default function StockOpname() {
                           <td className="mono right">{fmtQtyVal(iv.pemakaian_teoritis, iv.ingredient?.unit_pakai, iv.cost_per_unit)}</td>
                           <td className="mono right" style={{ color: '#fb923c' }}>{fmtQtyVal(iv.waste, iv.ingredient?.unit_pakai, iv.cost_per_unit)}</td>
                           <td className="mono right" style={{ fontWeight: 700, color: 'var(--accent-bright)' }}>
-                            {fmtQtyVal(iv.stok_akhir_teoritis, iv.ingredient?.unit_pakai, iv.cost_per_unit)}
+                            <div>{fmtQtyVal(iv.stok_akhir_teoritis, iv.ingredient?.unit_pakai, iv.cost_per_unit)}</div>
+                            {Number(iv.prep_usage || 0) > 0 && (
+                              <div style={{ fontSize: 10, color: '#f59e0b', fontWeight: 500 }}>
+                                Masak Prep: -{num(iv.prep_usage)}
+                              </div>
+                            )}
+                            {Number(iv.prep_output || 0) > 0 && (
+                              <div style={{ fontSize: 10, color: '#10b981', fontWeight: 500 }}>
+                                Hasil Masak: +{num(iv.prep_output)}
+                              </div>
+                            )}
+                            {Number(iv.transfer_out || 0) > 0 && (
+                              <div style={{ fontSize: 10, color: '#f87171', fontWeight: 500 }}>
+                                Trf Keluar: -{num(iv.transfer_out)}
+                              </div>
+                            )}
+                            {Number(iv.transfer_in || 0) > 0 && (
+                              <div style={{ fontSize: 10, color: '#38bdf8', fontWeight: 500 }}>
+                                Trf Masuk: +{num(iv.transfer_in)}
+                              </div>
+                            )}
                           </td>
                           <td style={{ textAlign: 'right' }}>
                             <input
@@ -477,10 +501,16 @@ export default function StockOpname() {
                           </td>
                           <td className="mono right" style={{
                             fontWeight: 700,
-                            color: iv.variance_qty > 0 ? 'var(--ok)' : iv.variance_qty < 0 ? 'var(--danger)' : 'var(--text-muted)'
+                            color: Math.abs(iv.variance_qty || 0) < 0.0001
+                              ? 'var(--text-muted)'
+                              : iv.variance_qty > 0
+                                ? 'var(--ok)'
+                                : 'var(--danger)'
                           }}>
                             {iv.variance_qty !== null
-                              ? `${iv.variance_qty > 0 ? '+' : ''}${fmtQtyVal(iv.variance_qty, iv.ingredient?.unit_pakai, iv.cost_per_unit)} (${pct(iv.variance_pct)})`
+                              ? Math.abs(iv.variance_qty) < 0.0001
+                                ? `0 ${iv.ingredient?.unit_pakai || ''} (0%)`
+                                : `${iv.variance_qty > 0 ? '+' : ''}${fmtQtyVal(iv.variance_qty, iv.ingredient?.unit_pakai, iv.cost_per_unit)} (${pct(iv.variance_pct)})`
                               : '—'}
                           </td>
                           <td className="center">
@@ -518,8 +548,8 @@ export default function StockOpname() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', maxWidth: 650 }}>
-              💡 <strong>Rumus Rekonsiliasi:</strong> Pemakaian Fisik Lapangan = Stok Awal + Pembelian − Stok Akhir Fisik. Selisih Bersih (Net Variance) = Pemakaian Fisik − Pemakaian Teoritis POS − Waste Tercatat.
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', maxWidth: 750 }}>
+              💡 <strong>Panduan Opname:</strong> Sisa Teoritis = Stok Awal + Masuk (Beli/Trf/Prep) − Keluar (POS/Waste/Prep). Selisih Bersih = Stok Fisik Lapangan − Sisa Teoritis Sistem (<strong>0</strong> = Sesuai, <strong style={{ color: 'var(--danger)' }}>Minus (-)</strong> = Stok Hilang/Kurang, <strong style={{ color: 'var(--ok)' }}>Plus (+)</strong> = Stok Berlebih).
             </div>
             <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
               <Save size={14} /> {saving ? 'Menyimpan...' : 'Simpan & Terbitkan Berita Acara'}
