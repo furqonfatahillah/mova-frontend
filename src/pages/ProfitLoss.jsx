@@ -2529,7 +2529,7 @@ export default function ProfitLoss() {
                       </div>
                       <div style={{ background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.25)', borderRadius: 10, padding: 12 }}>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Jumlah Pesanan / Rata-rata</div>
-                        <div style={{ fontSize: 16, fontWeight: 800, color: '#60a5fa' }}>{rev.transaction_count} pesanan (~{rupiah(rev.avg_order_value)})</div>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: '#60a5fa' }}>{rev.transaction_count} pesanan (Rata-rata: {rupiah(rev.avg_order_value)})</div>
                       </div>
                     </div>
 

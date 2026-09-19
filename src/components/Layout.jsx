@@ -554,7 +554,7 @@ export default function Layout() {
                     {coinBalance.toLocaleString()} Koin
                   </span>
                   <span style={{ fontSize: 10, color: isCoinOut ? '#fca5a5' : isCoinLow ? '#fde68a' : 'var(--text-secondary)', fontWeight: 600 }}>
-                    ~{remainingTransactions.toLocaleString()} Nota Sisa
+                    {remainingTransactions.toLocaleString()} Nota Sisa
                   </span>
                 </div>
               </NavLink>
@@ -774,8 +774,8 @@ export default function Layout() {
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
                   {isPlatformAdmin
-                    ? `Sisa koin bisnis penyewa ini tinggal ${coinBalance.toLocaleString()} koin (~${remainingTransactions.toLocaleString()} nota tersisa). Anda dapat melakukan top up koin untuk penyewa ini.`
-                    : <>Sisa koin perusahaan Anda tinggal <strong>{coinBalance.toLocaleString()} koin</strong> (hanya dapat digunakan untuk <strong>~{remainingTransactions.toLocaleString()} nota transaksi lagi</strong> di semua cabang). Segera hubungi <strong>Pemilik Website</strong> untuk top-up koin agar operasional kasir tidak terhenti.</>}
+                    ? `Sisa koin bisnis penyewa ini tinggal ${coinBalance.toLocaleString()} koin (${remainingTransactions.toLocaleString()} nota tersisa). Anda dapat melakukan top up koin untuk penyewa ini.`
+                    : <>Sisa koin perusahaan Anda tinggal <strong>{coinBalance.toLocaleString()} koin</strong> (hanya dapat digunakan untuk <strong>{remainingTransactions.toLocaleString()} nota transaksi lagi</strong> di semua cabang). Segera hubungi <strong>Pemilik Website</strong> untuk top-up koin agar operasional kasir tidak terhenti.</>}
                 </div>
               </div>
             </div>

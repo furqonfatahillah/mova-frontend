@@ -2131,7 +2131,7 @@ export default function POS() {
                                 </span>
                               ) : (
                                 <span className="pos-stock-badge in-stock" style={{ background: 'rgba(244, 63, 94, 0.15)', borderColor: 'rgba(244, 63, 94, 0.35)', color: '#fda4af' }}>
-                                  ~{status.availableServings} paket
+                                  {status.availableServings} paket
                                 </span>
                               )
                             ) : (
@@ -2145,7 +2145,7 @@ export default function POS() {
                                 </span>
                               ) : (
                                 <span className="pos-stock-badge in-stock">
-                                  ~{status.availableServings} porsi
+                                  {status.availableServings} porsi
                                 </span>
                               )
                             )}
@@ -2840,7 +2840,7 @@ export default function POS() {
                       {num(item.stock)} {item.unit}
                     </span>
                     <div style={{ fontSize: 10, color: item.isDeficit ? 'var(--danger)' : 'var(--text-muted)' }}>
-                      {item.isDeficit ? '❌ Habis / Defisit' : (stockAlertModal.menu.item_type === 'BUNDLE' ? `✓ ~${item.possibleServings} paket` : `✓ ~${item.possibleServings} porsi`)}
+                      {item.isDeficit ? '❌ Habis / Defisit' : (stockAlertModal.menu.item_type === 'BUNDLE' ? `✓ ${item.possibleServings} paket` : `✓ ${item.possibleServings} porsi`)}
                     </div>
                   </div>
                 </div>
@@ -3154,7 +3154,7 @@ export default function POS() {
                   <div style={{ fontSize: 11, color: isCoinOut ? '#fca5a5' : 'var(--text-secondary)' }}>
                     {isCoinOut
                       ? 'Transaksi kasir terkunci hingga koin diisi oleh Pemilik Website.'
-                      : `Nota ini memotong ${coinsPerTransaction} koin (~${remainingTransactions} nota lagi)`
+                      : `Nota ini memotong ${coinsPerTransaction} koin (${remainingTransactions} nota lagi)`
                     }
                   </div>
                 </div>

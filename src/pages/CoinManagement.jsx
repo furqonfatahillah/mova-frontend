@@ -397,7 +397,7 @@ export default function CoinManagement() {
                 Estimasi Sisa Transaksi
               </div>
               <div style={{ fontSize: 24, fontWeight: 800, color: '#ffffff', marginTop: 4 }}>
-                ~{num(remTx)} Nota Kasir
+                {num(remTx)} Nota Kasir
               </div>
             </div>
           </div>
@@ -878,7 +878,7 @@ export default function CoinManagement() {
                             fontSize: 14, fontWeight: 700,
                             color: b.is_coin_out ? '#ef4444' : b.is_coin_low ? '#f59e0b' : '#ffffff'
                           }}>
-                            ~{num(b.remaining_transactions)} Nota
+                            {num(b.remaining_transactions)} Nota
                           </span>
                         </td>
                         <td style={{ textAlign: 'center' }}>
@@ -1376,7 +1376,7 @@ export default function CoinManagement() {
                 <span style={{ color: 'var(--text-secondary)' }}>Saldo Baru Setelah Top Up:</span>
                 <strong style={{ color: '#34d399' }}>
                   🪙 {num(Number(topUpModal.business.coin_balance || 0) + Number(topUpModal.coins || 0))} Koin
-                  {' '} (~{Math.floor((Number(topUpModal.business.coin_balance || 0) + Number(topUpModal.coins || 0)) / (Number(topUpModal.business.coins_per_transaction) || 1))} Nota)
+                  {' '} ({Math.floor((Number(topUpModal.business.coin_balance || 0) + Number(topUpModal.coins || 0)) / (Number(topUpModal.business.coins_per_transaction) || 1))} Nota)
                 </strong>
               </div>
 
