@@ -72,10 +72,18 @@ export default function Login() {
           </div>
 
           <div className="form-group">
-            <label className="form-label">
-              <Lock size={12} style={{ display: 'inline', marginRight: 5 }} />
-              Password
-            </label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <label className="form-label" style={{ margin: 0 }}>
+                <Lock size={12} style={{ display: 'inline', marginRight: 5 }} />
+                Password
+              </label>
+              <Link
+                to="/forgot-password"
+                style={{ fontSize: 12, color: 'var(--accent-bright)', textDecoration: 'none', fontWeight: 500 }}
+              >
+                Lupa password?
+              </Link>
+            </div>
             <input
               type="password"
               className="form-control"

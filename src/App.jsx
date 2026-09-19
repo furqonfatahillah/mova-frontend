@@ -9,6 +9,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 // Lazy loaded page components for fast initial load and code-splitting
 const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const MasterBahan = lazy(() => import('./pages/MasterBahan'));
 const MasterMenu = lazy(() => import('./pages/MasterMenu'));
@@ -88,8 +89,9 @@ export default function App() {
       <ErrorBoundary>
         <Suspense fallback={<LoadingState />}>
           <Routes>
-            <Route path="/login"    element={<Login />} />
-            <Route path="/register" element={<Register />} />
+            <Route path="/login"           element={<Login />} />
+            <Route path="/register"        element={<Register />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/" element={
               <PrivateRoute><Layout /></PrivateRoute>
             }>
