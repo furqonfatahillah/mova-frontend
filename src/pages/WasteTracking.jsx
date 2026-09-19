@@ -39,6 +39,7 @@ export default function WasteTracking() {
     activeOutlet,
     isOwnerBisnis,
     isPlatformAdmin,
+    isOwnerWebsite,
     canSwitchOutlet,
     outlets,
     currentUser,
