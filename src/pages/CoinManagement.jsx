@@ -425,7 +425,7 @@ export default function CoinManagement() {
                 Status Saldo
               </div>
               <div style={{ fontSize: 16, fontWeight: 800, color: isOut ? '#f87171' : isLow ? '#fbbf24' : '#34d399', marginTop: 4 }}>
-                {isOut ? '🔴 SALDO HABIS (0 Nota)' : isLow ? '🟡 MENIPIS (≤ 20 Nota)' : '🟢 SALDO AMAN'}
+                {isOut ? 'SALDO HABIS (0 Nota)' : isLow ? 'MENIPIS (≤ 20 Nota)' : 'SALDO AMAN'}
               </div>
             </div>
           </div>
@@ -887,21 +887,21 @@ export default function CoinManagement() {
                               padding: '4px 10px', borderRadius: 12, fontSize: 11, fontWeight: 700,
                               background: 'rgba(239, 68, 68, 0.15)', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.3)'
                             }}>
-                              🔴 Saldo Habis
+                              Saldo Habis
                             </span>
                           ) : b.is_coin_low ? (
                             <span style={{
                               padding: '4px 10px', borderRadius: 12, fontSize: 11, fontWeight: 700,
                               background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', border: '1px solid rgba(245, 158, 11, 0.3)'
                             }}>
-                              🟡 Kritis (&le; 20)
+                              Kritis (&le; 20)
                             </span>
                           ) : (
                             <span style={{
                               padding: '4px 10px', borderRadius: 12, fontSize: 11, fontWeight: 700,
                               background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)'
                             }}>
-                              🟢 Aman
+                              Aman
                             </span>
                           )}
                         </td>

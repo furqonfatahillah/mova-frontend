@@ -323,7 +323,7 @@ export default function BusinessManagement() {
                   <th>Nama Bisnis / Brand</th>
                   <th>Pemilik & Kontak</th>
                   <th style={{ width: 140 }}>Paket Sewa</th>
-                  <th style={{ width: 130 }}>Kuota Cabang</th>
+                  <th style={{ width: 150 }}>Jumlah Cabang</th>
                   <th style={{ width: 130 }}>Status Sewa</th>
                   <th style={{ width: 150 }}>Masa Aktif</th>
                   <th className="right" style={{ width: 140 }}>Aksi Superadmin</th>
@@ -396,29 +396,14 @@ export default function BusinessManagement() {
                     </td>
                     <td>{getPackageBadge(b.package_type)}</td>
                     <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontWeight: 700, fontSize: 13.5, color: b.outlets_count >= b.max_outlets ? 'var(--warning)' : 'var(--accent-bright)' }}>
-                          {b.outlets_count || 0}
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '4px 10px', borderRadius: 8, background: 'rgba(99, 102, 241, 0.12)', border: '1px solid rgba(165, 180, 252, 0.25)' }}>
+                        <Store size={13} style={{ color: 'var(--accent-bright)' }} />
+                        <span style={{ fontWeight: 700, fontSize: 13, color: '#ffffff' }}>
+                          {b.outlets_count || 0} Cabang
                         </span>
-                        <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>/ {b.max_outlets} cabang</span>
-                      </div>
-                      <div
-                        style={{
-                          width: 80,
-                          height: 4,
-                          background: 'rgba(255,255,255,0.1)',
-                          borderRadius: 2,
-                          marginTop: 4,
-                          overflow: 'hidden',
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: `${Math.min(100, ((b.outlets_count || 0) / (b.max_outlets || 1)) * 100)}%`,
-                            height: '100%',
-                            background: b.outlets_count >= b.max_outlets ? 'var(--warning)' : 'var(--accent-bright)',
-                          }}
-                        />
+                        <span style={{ fontSize: 10.5, color: '#34d399', fontWeight: 700, background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '1px 6px', borderRadius: 4 }}>
+                          Unlimited
+                        </span>
                       </div>
                     </td>
                     <td>{getStatusBadge(b.status)}</td>
@@ -522,21 +507,16 @@ export default function BusinessManagement() {
                       value={formData.package_type}
                       onChange={(e) => setFormData({ ...formData, package_type: e.target.value })}
                     >
-                      <option value="starter">Starter (Maks. 2 Cabang)</option>
-                      <option value="pro">Pro (Maks. 5 Cabang)</option>
-                      <option value="enterprise">Enterprise (Maks. 20 Cabang)</option>
+                      <option value="starter">Starter</option>
+                      <option value="pro">Pro</option>
+                      <option value="enterprise">Enterprise</option>
                     </select>
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Kuota Maksimal Cabang</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="100"
-                      className="form-control"
-                      value={formData.max_outlets}
-                      onChange={(e) => setFormData({ ...formData, max_outlets: parseInt(e.target.value) || 1 })}
-                    />
+                    <label className="form-label">Ketentuan Cabang</label>
+                    <div style={{ height: 42, display: 'flex', alignItems: 'center', gap: 6, padding: '0 12px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: 8, fontSize: 12.5, color: '#34d399', fontWeight: 600 }}>
+                      <Store size={14} /> Bebas Cabang (Unlimited)
+                    </div>
                   </div>
                 </div>
 
@@ -649,15 +629,10 @@ export default function BusinessManagement() {
                     </select>
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Batas Kuota Cabang</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="100"
-                      className="form-control"
-                      value={formData.max_outlets}
-                      onChange={(e) => setFormData({ ...formData, max_outlets: parseInt(e.target.value) || 1 })}
-                    />
+                    <label className="form-label">Ketentuan Cabang</label>
+                    <div style={{ height: 42, display: 'flex', alignItems: 'center', gap: 6, padding: '0 12px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: 8, fontSize: 12.5, color: '#34d399', fontWeight: 600 }}>
+                      <Store size={14} /> Bebas Cabang (Unlimited)
+                    </div>
                   </div>
                 </div>
 
