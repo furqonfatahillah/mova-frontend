@@ -22,7 +22,12 @@ api.interceptors.request.use((config) => {
   }
 
   const user = JSON.parse(localStorage.getItem('pos_user') || '{}');
-  const activeOutletId = localStorage.getItem('pos_active_outlet_id') || user.outlet_id;
+  const isEmployeeOrOutletUser = user.role && !['owner_bisnis', 'owner', 'admin', 'owner_website', 'superadmin_platform', 'superadmin'].includes(user.role);
+
+  // If user is employee/outlet user, ALWAYS force their user.outlet_id
+  const activeOutletId = (isEmployeeOrOutletUser && user.outlet_id)
+    ? String(user.outlet_id)
+    : (localStorage.getItem('pos_active_outlet_id') || user.outlet_id);
 
   if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
     config.headers['X-Outlet-Id'] = activeOutletId;

@@ -34,7 +34,16 @@ export function getWasteCategoryMeta(val) {
 
 export default function WasteTracking() {
   const location = useLocation();
-  const { activeOutletId, activeOutlet, isOwnerWebsite, outlets } = useOutlet();
+  const {
+    activeOutletId,
+    activeOutlet,
+    isOwnerBisnis,
+    isPlatformAdmin,
+    canSwitchOutlet,
+    outlets,
+    currentUser,
+    userOutletName,
+  } = useOutlet();
 
   // Filters
   const [dateFrom, setDateFrom] = useState(() => getMonthStartStr());
@@ -65,9 +74,17 @@ export default function WasteTracking() {
     notes: '',
   });
 
-  const currentTargetOutlet = activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all'
-    ? activeOutletId
-    : (outlets[0]?.id?.toString() || '1');
+  const currentTargetOutlet = !canSwitchOutlet
+    ? String(currentUser?.outlet_id || activeOutletId || '1')
+    : (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all'
+      ? String(activeOutletId)
+      : (outlets[0]?.id?.toString() || '1'));
+
+  useEffect(() => {
+    if (!canSwitchOutlet && currentUser?.outlet_id) {
+      setForm(p => ({ ...p, outlet_id: String(currentUser.outlet_id) }));
+    }
+  }, [canSwitchOutlet, currentUser?.outlet_id]);
 
   useEffect(() => {
     fetchData();
@@ -766,16 +783,36 @@ export default function WasteTracking() {
                 {/* Outlet Cabang */}
                 <div className="form-group">
                   <label className="form-label">Outlet Cabang</label>
-                  <select
-                    className="form-control"
-                    value={form.outlet_id}
-                    onChange={e => setForm(p => ({ ...p, outlet_id: e.target.value }))}
-                    required
-                  >
-                    {outlets.map(o => (
-                      <option key={o.id} value={o.id}>{o.name}</option>
-                    ))}
-                  </select>
+                  {canSwitchOutlet ? (
+                    <select
+                      className="form-control"
+                      value={form.outlet_id}
+                      onChange={e => setForm(p => ({ ...p, outlet_id: e.target.value }))}
+                      required
+                    >
+                      {outlets.map(o => (
+                        <option key={o.id} value={o.id}>{o.name}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div style={{
+                      padding: '9px 12px',
+                      background: 'rgba(99, 102, 241, 0.12)',
+                      border: '1px solid rgba(99, 102, 241, 0.25)',
+                      borderRadius: 8,
+                      fontWeight: 700,
+                      fontSize: 13,
+                      color: '#ffffff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}>
+                      <span>📍 {activeOutlet?.name || userOutletName || 'Cabang Penempatan'}</span>
+                      <span style={{ fontSize: 10.5, color: 'var(--ok)', background: 'rgba(16, 217, 122, 0.15)', padding: '2px 6px', borderRadius: 4 }}>
+                        Terkunci
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 

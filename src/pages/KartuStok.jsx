@@ -23,10 +23,23 @@ const MUTATION_TYPES = [
 ];
 
 export default function KartuStok() {
-  const { activeOutletId, activeOutlet, isOwnerBisnis, isSuperadminPlatform, outlets } = useOutlet();
+  const {
+    activeOutletId,
+    activeOutlet,
+    isOwnerBisnis,
+    isSuperadminPlatform,
+    isPlatformAdmin,
+    canSwitchOutlet,
+    outlets,
+    currentUser,
+    userOutletName,
+  } = useOutlet();
 
   // Selected warehouse/outlet and date period
   const [selectedOutletId, setSelectedOutletId] = useState(() => {
+    if (!canSwitchOutlet) {
+      return String(currentUser?.outlet_id || activeOutletId || '');
+    }
     if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
       return String(activeOutletId);
     }
@@ -75,13 +88,18 @@ export default function KartuStok() {
   });
   const [saving, setSaving] = useState(false);
 
-  // Initialize selectedOutletId when outlets load
+  // Reactive lock for employee or default for owners
   useEffect(() => {
-    if (outlets.length > 0 && !selectedOutletId) {
+    if (!canSwitchOutlet) {
+      const lockedId = String(currentUser?.outlet_id || activeOutletId || '');
+      if (lockedId && selectedOutletId !== lockedId) {
+        setSelectedOutletId(lockedId);
+      }
+    } else if (outlets.length > 0 && !selectedOutletId) {
       const defaultOut = outlets.find(o => o.is_main) || outlets[0];
       setSelectedOutletId(String(defaultOut.id));
     }
-  }, [outlets, selectedOutletId]);
+  }, [outlets, selectedOutletId, canSwitchOutlet, currentUser?.outlet_id, activeOutletId]);
 
   // Initial fetch ingredients for master list
   useEffect(() => {
@@ -212,7 +230,7 @@ export default function KartuStok() {
     setStockCard(null);
   }
 
-  const currentOutlet = outlets.find(o => String(o.id) === String(selectedOutletId));
+  const currentOutlet = outlets.find(o => String(o.id) === String(selectedOutletId)) || activeOutlet || { name: userOutletName || 'Cabang Penempatan' };
   const selectedIng = ingredients.find(i => i.id === Number(selectedIngId));
   const activeModalIng = ingredients.find(i => Number(i.id) === Number(mutationForm.ingredient_id));
 
@@ -291,7 +309,9 @@ export default function KartuStok() {
     <div className="fade-in">
       <PageHeader
         title="Kartu Stok (Stock Card)"
-        subtitle="Pilih gudang/cabang dan periode tanggal untuk memantau pergerakan stok per bahan baku."
+        subtitle={canSwitchOutlet
+          ? "Pilih gudang/cabang dan periode tanggal untuk memantau pergerakan stok per bahan baku."
+          : "Pantau pergerakan kartu stok dan riwayat mutasi bahan baku pada cabang penempatan Anda."}
         action={
           <div style={{ display: 'flex', gap: 10 }}>
             {selectedIngId && (
@@ -327,28 +347,53 @@ export default function KartuStok() {
         }
       />
 
-      {/* Control Bar: Pilih Gudang & Range Tanggal */}
+      {/* Control Bar: Pilih Gudang (Owner) / Info Cabang (Pegawai) & Range Tanggal */}
       <div className="card mb-5" style={{ padding: '16px 20px', border: '1px solid var(--border-accent)', background: 'linear-gradient(135deg, rgba(30, 27, 75, 0.4) 0%, rgba(15, 23, 42, 0.6) 100%)' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center', justifyContent: 'space-between' }}>
-          {/* Gudang / Outlet Selector */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: '1 1 280px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--accent-bright)', fontWeight: 700, fontSize: 12.5, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
-              <Store size={16} /> Pilih Gudang:
-            </div>
-            <select
-              className="form-control"
-              style={{ fontWeight: 700, fontSize: 13.5, borderColor: 'var(--accent)', background: 'var(--bg-card)', color: '#ffffff' }}
-              value={selectedOutletId}
-              onChange={e => {
-                setSelectedOutletId(e.target.value);
-              }}
-            >
-              {outlets.map(o => (
-                <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
-                  {o.is_main ? '🏢 ' : '📍 '} {o.name} {o.is_main ? '(Gudang Utama / Pusat)' : ''}
-                </option>
-              ))}
-            </select>
+          {/* Gudang / Outlet Selector for Owner, or Fixed Badge for Pegawai */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: canSwitchOutlet ? '1 1 280px' : '0 1 auto' }}>
+            {canSwitchOutlet ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--accent-bright)', fontWeight: 700, fontSize: 12.5, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
+                  <Store size={16} /> Pilih Gudang:
+                </div>
+                <select
+                  className="form-control"
+                  style={{ fontWeight: 700, fontSize: 13.5, borderColor: 'var(--accent)', background: 'var(--bg-card)', color: '#ffffff' }}
+                  value={selectedOutletId}
+                  onChange={e => {
+                    setSelectedOutletId(e.target.value);
+                  }}
+                >
+                  {outlets.map(o => (
+                    <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
+                      {o.is_main ? '🏢 ' : '📍 '} {o.name} {o.is_main ? '(Gudang Utama / Pusat)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </>
+            ) : (
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '7px 14px',
+                background: 'rgba(99, 102, 241, 0.12)',
+                border: '1px solid rgba(99, 102, 241, 0.32)',
+                borderRadius: 8,
+              }}>
+                <Store size={16} style={{ color: 'var(--accent-bright)' }} />
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#ffffff' }}>
+                  Cabang:{' '}
+                  <span style={{ color: 'var(--accent-bright)' }}>
+                    {currentOutlet?.name || userOutletName || 'Cabang Penempatan'}
+                  </span>
+                </span>
+                <span style={{ fontSize: 10.5, padding: '2px 7px', background: 'rgba(16, 217, 122, 0.18)', color: 'var(--ok)', borderRadius: 4, fontWeight: 600, marginLeft: 4 }}>
+                  Penempatan Anda
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Date Period Selector */}
@@ -1001,17 +1046,37 @@ export default function KartuStok() {
 
                 <div className="form-group">
                   <label className="form-label">Gudang / Cabang Outlet</label>
-                  <select
-                    className="form-control"
-                    value={mutationForm.outlet_id || selectedOutletId}
-                    onChange={e => setMutationForm(f => ({ ...f, outlet_id: e.target.value }))}
-                  >
-                    {outlets.map(o => (
-                      <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
-                        {o.is_main ? '🏢 ' : '📍 '} {o.name}
-                      </option>
-                    ))}
-                  </select>
+                  {canSwitchOutlet ? (
+                    <select
+                      className="form-control"
+                      value={mutationForm.outlet_id || selectedOutletId}
+                      onChange={e => setMutationForm(f => ({ ...f, outlet_id: e.target.value }))}
+                    >
+                      {outlets.map(o => (
+                        <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
+                          {o.is_main ? '🏢 ' : '📍 '} {o.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div style={{
+                      padding: '9px 12px',
+                      background: 'rgba(99, 102, 241, 0.12)',
+                      border: '1px solid rgba(99, 102, 241, 0.25)',
+                      borderRadius: 8,
+                      fontWeight: 700,
+                      fontSize: 13,
+                      color: '#ffffff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}>
+                      <span>📍 {currentOutlet?.name || userOutletName || 'Cabang Penempatan'}</span>
+                      <span style={{ fontSize: 10.5, color: 'var(--ok)', background: 'rgba(16, 217, 122, 0.15)', padding: '2px 6px', borderRadius: 4 }}>
+                        Terkunci
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="form-group">

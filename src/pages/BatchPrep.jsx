@@ -11,7 +11,16 @@ import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 
 export default function BatchPrep() {
-  const { activeOutletId, activeOutlet, outlets } = useOutlet();
+  const {
+    activeOutletId,
+    activeOutlet,
+    isOwnerBisnis,
+    isPlatformAdmin,
+    canSwitchOutlet,
+    outlets,
+    currentUser,
+    userOutletName,
+  } = useOutlet();
 
   const [activeTab, setActiveTab] = useState('katalog'); // 'katalog' | 'riwayat'
   const [recipes, setRecipes] = useState([]);
@@ -52,6 +61,18 @@ export default function BatchPrep() {
     from: '',
     to: '',
   });
+
+  useEffect(() => {
+    if (!canSwitchOutlet) {
+      const lockedId = String(currentUser?.outlet_id || activeOutletId || '');
+      if (lockedId && selectedCookOutletId !== lockedId) {
+        setSelectedCookOutletId(lockedId);
+      }
+    } else if (outlets.length > 0 && !selectedCookOutletId) {
+      const defaultOut = outlets.find(o => o.is_main) || outlets[0];
+      setSelectedCookOutletId(String(defaultOut.id));
+    }
+  }, [outlets, selectedCookOutletId, canSwitchOutlet, currentUser?.outlet_id, activeOutletId]);
 
   useEffect(() => {
     fetchAllData();
@@ -773,18 +794,38 @@ export default function BatchPrep() {
                     <label className="form-label" style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
                       Gudang / Cabang Dapur Pelaksana:
                     </label>
-                    <select
-                      className="form-control"
-                      style={{ fontSize: 13, fontWeight: 700, background: 'var(--card-bg)', color: '#ffffff' }}
-                      value={selectedCookOutletId}
-                      onChange={e => setSelectedCookOutletId(e.target.value)}
-                    >
-                      {outlets.map(o => (
-                        <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
-                          {o.is_main ? '🏢 ' : '📍 '} {o.name} ({o.code})
-                        </option>
-                      ))}
-                    </select>
+                    {canSwitchOutlet ? (
+                      <select
+                        className="form-control"
+                        style={{ fontSize: 13, fontWeight: 700, background: 'var(--card-bg)', color: '#ffffff' }}
+                        value={selectedCookOutletId}
+                        onChange={e => setSelectedCookOutletId(e.target.value)}
+                      >
+                        {outlets.map(o => (
+                          <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
+                            {o.is_main ? '🏢 ' : '📍 '} {o.name} ({o.code})
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div style={{
+                        padding: '9px 12px',
+                        background: 'rgba(99, 102, 241, 0.12)',
+                        border: '1px solid rgba(99, 102, 241, 0.25)',
+                        borderRadius: 8,
+                        fontWeight: 700,
+                        fontSize: 13,
+                        color: '#ffffff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                      }}>
+                        <span>📍 {activeOutlet?.name || userOutletName || 'Cabang Penempatan'}</span>
+                        <span style={{ fontSize: 10.5, color: 'var(--ok)', background: 'rgba(16, 217, 122, 0.15)', padding: '2px 6px', borderRadius: 4 }}>
+                          Terkunci
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14, marginBottom: 16 }}>

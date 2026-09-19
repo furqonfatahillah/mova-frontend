@@ -24,6 +24,10 @@ export default function Login() {
       const isOwnerOutlet = u.role === 'owner_outlet' || u.role === 'manager_outlet' || Boolean(u.is_owner_outlet);
       const isPegawai = !isPlatformAdmin && !isOwnerBisnis && !isOwnerOutlet;
 
+      if (u.outlet_id && (isPegawai || isOwnerOutlet)) {
+        localStorage.setItem('pos_active_outlet_id', String(u.outlet_id));
+      }
+
       navigate(isPegawai ? '/pos' : isPlatformAdmin ? '/businesses' : '/');
     } catch (err) {
       if (!err.response) {

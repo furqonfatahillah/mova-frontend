@@ -74,6 +74,15 @@ export function OutletProvider({ children }) {
     return localStorage.getItem('pos_active_outlet_id') || (currentUser.outlet_id ? String(currentUser.outlet_id) : '1');
   });
 
+  // Reactive lock: Always force employee/outlet users to their assigned outlet
+  useEffect(() => {
+    if (!isOwnerBisnis && !isPlatformAdmin && currentUser?.outlet_id) {
+      const forcedId = String(currentUser.outlet_id);
+      setActiveOutletIdState(forcedId);
+      localStorage.setItem('pos_active_outlet_id', forcedId);
+    }
+  }, [isOwnerBisnis, isPlatformAdmin, currentUser?.outlet_id]);
+
   const [coinData, setCoinData] = useState(null);
   const [loadingCoins, setLoadingCoins] = useState(false);
 
@@ -173,13 +182,23 @@ export function OutletProvider({ children }) {
 
   // Find the active outlet object
   const activeOutlet = useMemo(() => {
+    if (!isOwnerBisnis && !isPlatformAdmin && currentUser?.outlet_id) {
+      return outlets.find((o) => String(o.id) === String(currentUser.outlet_id)) || {
+        id: currentUser.outlet_id,
+        name: currentUser.outlet_name || 'Cabang Penempatan',
+        code: 'OUT',
+        is_main: false,
+      };
+    }
     if (activeOutletId === 'ALL' || activeOutletId === 'all') {
       return { id: 'ALL', name: 'Semua Cabang (Konsolidasi)', code: 'ALL', is_main: false };
     }
     return outlets.find((o) => String(o.id) === String(activeOutletId)) || outlets[0] || null;
-  }, [outlets, activeOutletId]);
+  }, [outlets, activeOutletId, isOwnerBisnis, isPlatformAdmin, currentUser]);
 
   const hasCoinBalance = !isPlatformAdmin || Boolean(activeBusinessId);
+
+  const canSwitchOutlet = isPlatformAdmin || isOwnerBisnis;
 
   const value = useMemo(() => ({
     outlets,
@@ -198,6 +217,7 @@ export function OutletProvider({ children }) {
     isOwnerBisnis,
     isOwnerOutlet,
     isPegawai,
+    canSwitchOutlet,
     userOutletId: currentUser.outlet_id,
     userOutletName: currentUser.outlet_name,
     userBusinessName: currentUser.business_name || currentBusiness?.name || (isPlatformAdmin ? '🌐 Platform Provider MOVA' : 'MOVA Cloud'),
@@ -229,6 +249,7 @@ export function OutletProvider({ children }) {
     isOwnerBisnis,
     isOwnerOutlet,
     isPegawai,
+    canSwitchOutlet,
     fetchOutlets,
     fetchBusinessData,
     coinData,

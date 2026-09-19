@@ -15,7 +15,17 @@ import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
 import { useOutlet } from '../context/OutletContext';
 
 export default function TransferBahan() {
-  const { currentBusiness, userBusinessName } = useOutlet();
+  const {
+    currentBusiness,
+    userBusinessName,
+    activeOutletId,
+    activeOutlet,
+    isOwnerBisnis,
+    isPlatformAdmin,
+    canSwitchOutlet,
+    currentUser,
+    userOutletName,
+  } = useOutlet();
   const [searchParams] = useSearchParams();
   const [transfers, setTransfers] = useState([]);
   const [outlets, setOutlets] = useState([]);
@@ -77,6 +87,17 @@ export default function TransferBahan() {
       }
     ]
   });
+
+  // Reactive lock for employee accounts: source outlet is always their assigned branch
+  useEffect(() => {
+    if (!canSwitchOutlet && currentUser?.outlet_id) {
+      setFormData(prev => ({
+        ...prev,
+        source_mode: 'OUTLET',
+        source_outlet_id: String(currentUser.outlet_id)
+      }));
+    }
+  }, [canSwitchOutlet, currentUser?.outlet_id]);
 
   const [period, setPeriod] = useState(() => ({
     from: getMonthStartStr(),
@@ -1647,72 +1668,96 @@ export default function TransferBahan() {
                       <label className="form-label mb-0" style={{ fontWeight: 700, color: '#93c5fd', fontSize: 12 }}>
                         Cabang Asal (Pengirim)
                       </label>
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        <button
-                          type="button"
-                          className={`btn btn-xs ${formData.source_mode === 'OUTLET' ? 'btn-primary' : 'btn-ghost'}`}
-                          onClick={() => setFormData(p => ({ ...p, source_mode: 'OUTLET' }))}
-                          style={{ fontSize: 10, padding: '1px 6px' }}
-                        >
-                          Cabang
-                        </button>
-                        <button
-                          type="button"
-                          className={`btn btn-xs ${formData.source_mode === 'CUSTOM' ? 'btn-primary' : 'btn-ghost'}`}
-                          onClick={() => setFormData(p => ({ ...p, source_mode: 'CUSTOM' }))}
-                          style={{ fontSize: 10, padding: '1px 6px' }}
-                        >
-                          Manual
-                        </button>
-                      </div>
+                      {canSwitchOutlet && (
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button
+                            type="button"
+                            className={`btn btn-xs ${formData.source_mode === 'OUTLET' ? 'btn-primary' : 'btn-ghost'}`}
+                            onClick={() => setFormData(p => ({ ...p, source_mode: 'OUTLET' }))}
+                            style={{ fontSize: 10, padding: '1px 6px' }}
+                          >
+                            Cabang
+                          </button>
+                          <button
+                            type="button"
+                            className={`btn btn-xs ${formData.source_mode === 'CUSTOM' ? 'btn-primary' : 'btn-ghost'}`}
+                            onClick={() => setFormData(p => ({ ...p, source_mode: 'CUSTOM' }))}
+                            style={{ fontSize: 10, padding: '1px 6px' }}
+                          >
+                            Manual
+                          </button>
+                        </div>
+                      )}
                     </div>
 
-                    {formData.source_mode === 'OUTLET' ? (
-                      <select
-                        className="form-control"
-                        style={{ fontWeight: 600 }}
-                        value={formData.source_outlet_id}
-                        onChange={e => setFormData(p => ({ ...p, source_outlet_id: e.target.value }))}
-                        required
-                      >
-                        <option value="">-- Pilih Cabang Pengirim --</option>
-                        {outlets.map(o => (
-                          <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
-                            {o.name} {o.is_main ? '(Pusat)' : ''}
-                          </option>
-                        ))}
-                      </select>
+                    {canSwitchOutlet ? (
+                      formData.source_mode === 'OUTLET' ? (
+                        <select
+                          className="form-control"
+                          style={{ fontWeight: 600 }}
+                          value={formData.source_outlet_id}
+                          onChange={e => setFormData(p => ({ ...p, source_outlet_id: e.target.value }))}
+                          required
+                        >
+                          <option value="">-- Pilih Cabang Pengirim --</option>
+                          {outlets.map(o => (
+                            <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
+                              {o.name} {o.is_main ? '(Pusat)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="Misal: Gudang Utama / Supplier A"
+                          value={formData.source_name}
+                          onChange={e => setFormData(p => ({ ...p, source_name: e.target.value }))}
+                          required
+                        />
+                      )
                     ) : (
-                      <input
-                        type="text"
-                        className="form-control"
-                        placeholder="Misal: Gudang Utama / Supplier A"
-                        value={formData.source_name}
-                        onChange={e => setFormData(p => ({ ...p, source_name: e.target.value }))}
-                        required
-                      />
+                      <div style={{
+                        padding: '9px 12px',
+                        background: 'rgba(99, 102, 241, 0.12)',
+                        border: '1px solid rgba(99, 102, 241, 0.25)',
+                        borderRadius: 8,
+                        fontWeight: 700,
+                        fontSize: 13,
+                        color: '#ffffff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                      }}>
+                        <span>🏢 {activeOutlet?.name || userOutletName || 'Cabang Penempatan'}</span>
+                        <span style={{ fontSize: 10.5, color: 'var(--ok)', background: 'rgba(16, 217, 122, 0.15)', padding: '2px 6px', borderRadius: 4 }}>
+                          Cabang Anda
+                        </span>
+                      </div>
                     )}
                   </div>
 
-                  {/* 1-CLICK SWAP BUTTON */}
-                  <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 16 }}>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-icon"
-                      onClick={handleSwapLocations}
-                      title="Tukar Lokasi Asal <-> Tujuan"
-                      style={{
-                        borderRadius: '50%',
-                        width: 36,
-                        height: 36,
-                        padding: 0,
-                        border: '1px solid var(--accent)',
-                        color: 'var(--accent-bright)'
-                      }}
-                    >
-                      <ArrowLeftRight size={15} />
-                    </button>
-                  </div>
+                  {/* 1-CLICK SWAP BUTTON (Owners only) */}
+                  {canSwitchOutlet && (
+                    <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 16 }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-icon"
+                        onClick={handleSwapLocations}
+                        title="Tukar Lokasi Asal <-> Tujuan"
+                        style={{
+                          borderRadius: '50%',
+                          width: 36,
+                          height: 36,
+                          padding: 0,
+                          border: '1px solid var(--accent)',
+                          color: 'var(--accent-bright)'
+                        }}
+                      >
+                        <ArrowLeftRight size={15} />
+                      </button>
+                    </div>
+                  )}
 
                   {/* CABANG PENERIMA (TUJUAN) */}
                   <div>
@@ -1749,11 +1794,13 @@ export default function TransferBahan() {
                         required
                       >
                         <option value="">-- Pilih Cabang Penerima --</option>
-                        {outlets.map(o => (
-                          <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
-                            {o.name} {o.is_main ? '(Pusat)' : ''}
-                          </option>
-                        ))}
+                        {outlets
+                          .filter(o => !canSwitchOutlet ? String(o.id) !== String(formData.source_outlet_id) : true)
+                          .map(o => (
+                            <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
+                              {o.name} {o.is_main ? '(Pusat)' : ''}
+                            </option>
+                          ))}
                       </select>
                     ) : (
                       <input

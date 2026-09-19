@@ -146,6 +146,10 @@ export default function POS() {
     activeOutletId,
     activeOutlet,
     isOwnerWebsite,
+    isPlatformAdmin,
+    isOwnerBisnis,
+    isOwnerOutlet,
+    isPegawai,
     changeOutlet,
     outlets,
     coinBalance,
@@ -156,9 +160,11 @@ export default function POS() {
     refreshCoins,
   } = useOutlet();
 
-  const currentTargetOutlet = activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all'
-    ? Number(activeOutletId)
-    : (currentUser.outlet_id || 1);
+  const currentTargetOutlet = (!isOwnerBisnis && !isPlatformAdmin && currentUser.outlet_id)
+    ? Number(currentUser.outlet_id)
+    : (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all'
+      ? Number(activeOutletId)
+      : (currentUser.outlet_id || 1));
 
   useEffect(() => {
     fetchAll();

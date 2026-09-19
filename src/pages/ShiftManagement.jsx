@@ -16,26 +16,39 @@ export default function ShiftManagement() {
     activeOutletId,
     activeOutlet,
     outlets,
+    isOwnerBisnis,
+    isPlatformAdmin,
     isOwnerWebsite,
     isOwnerOutlet,
+    isPegawai,
+    canSwitchOutlet,
     changeOutlet,
     currentUser,
+    userOutletName,
     userBusinessName
   } = useOutlet();
 
   const [selectedOutlet, setSelectedOutlet] = useState(() => {
+    if (!canSwitchOutlet) {
+      return Number(currentUser?.outlet_id || activeOutletId || 1);
+    }
     if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
       return Number(activeOutletId);
     }
     return outlets.find(o => o.is_main)?.id || outlets[0]?.id || 1;
   });
 
-  // Keep in sync if activeOutletId changes from header navigation
+  // Keep in sync if activeOutletId changes
   useEffect(() => {
-    if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
+    if (!canSwitchOutlet) {
+      const lockedId = Number(currentUser?.outlet_id || activeOutletId || 1);
+      if (lockedId && selectedOutlet !== lockedId) {
+        setSelectedOutlet(lockedId);
+      }
+    } else if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
       setSelectedOutlet(Number(activeOutletId));
     }
-  }, [activeOutletId]);
+  }, [activeOutletId, canSwitchOutlet, currentUser?.outlet_id, selectedOutlet]);
 
   // Tab: 'operational' | 'schedules'
   const [activeTab, setActiveTab] = useState('operational');
@@ -487,26 +500,45 @@ export default function ShiftManagement() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Ganti Cabang:</label>
-          <select
-            className="form-control"
-            style={{ width: '100%', maxWidth: 240, minWidth: 160, padding: '6px 12px', fontSize: 12.5, fontWeight: 600, borderColor: 'var(--accent-bright)' }}
-            value={selectedOutlet}
-            onChange={e => {
-              const val = Number(e.target.value);
-              setSelectedOutlet(val);
-              changeOutlet(val);
-            }}
-            disabled={isOwnerOutlet}
-          >
-            {outlets.map(o => (
-              <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
-                {o.name} {o.is_main ? '(Pusat)' : ''}
-              </option>
-            ))}
-          </select>
-        </div>
+        {canSwitchOutlet ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Ganti Cabang:</label>
+            <select
+              className="form-control"
+              style={{ width: '100%', maxWidth: 240, minWidth: 160, padding: '6px 12px', fontSize: 12.5, fontWeight: 600, borderColor: 'var(--accent-bright)' }}
+              value={selectedOutlet}
+              onChange={e => {
+                const val = Number(e.target.value);
+                setSelectedOutlet(val);
+                changeOutlet(val);
+              }}
+            >
+              {outlets.map(o => (
+                <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
+                  {o.name} {o.is_main ? '(Pusat)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '5px 12px',
+            background: 'rgba(99, 102, 241, 0.12)',
+            border: '1px solid rgba(99, 102, 241, 0.25)',
+            borderRadius: 6,
+            fontSize: 12.5,
+            fontWeight: 700,
+            color: '#ffffff'
+          }}>
+            <span>📍 {activeOutlet?.name || userOutletName || 'Cabang Penempatan'}</span>
+            <span style={{ fontSize: 10, padding: '1px 5px', background: 'rgba(16, 217, 122, 0.2)', color: 'var(--ok)', borderRadius: 4, marginLeft: 4 }}>
+              Terkunci
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Hero Active Shift Card */}
@@ -782,22 +814,24 @@ export default function ShiftManagement() {
             flexWrap: 'wrap',
             gap: 12
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Store size={18} style={{ color: 'var(--accent-bright)' }} />
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#ffffff' }}>Filter Cabang / Outlet:</span>
-              <select
-                className="form-control"
-                style={{ width: 'auto', minWidth: 200, fontSize: 13, fontWeight: 600 }}
-                value={selectedOutlet}
-                onChange={e => setSelectedOutlet(Number(e.target.value))}
-              >
-                {outlets.map(o => (
-                  <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
-                    {o.name} {o.is_main ? '(Pusat)' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {canSwitchOutlet && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Store size={18} style={{ color: 'var(--accent-bright)' }} />
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#ffffff' }}>Filter Cabang / Outlet:</span>
+                <select
+                  className="form-control"
+                  style={{ width: 'auto', minWidth: 200, fontSize: 13, fontWeight: 600 }}
+                  value={selectedOutlet}
+                  onChange={e => setSelectedOutlet(Number(e.target.value))}
+                >
+                  {outlets.map(o => (
+                    <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
+                      {o.name} {o.is_main ? '(Pusat)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
               Total Master Shift Terdaftar: <strong style={{ color: 'var(--accent-bright)' }}>{schedules.length}</strong> Shift
@@ -1023,26 +1057,45 @@ export default function ShiftManagement() {
                   {/* Cabang Outlet Selector */}
                   <div className="form-group mb-3">
                     <label className="form-label" style={{ fontWeight: 700, color: '#ffffff' }}>Cabang / Outlet Penugasan *</label>
-                    <select
-                      className="form-control"
-                      style={{ fontSize: 13, fontWeight: 600, borderColor: 'var(--accent-bright)' }}
-                      value={openForm.outlet_id}
-                      onChange={e => {
-                        const newOid = Number(e.target.value);
-                        setOpenForm(f => ({ ...f, outlet_id: newOid }));
-                        fetchOutletSchedules(newOid);
-                      }}
-                      disabled={isOwnerOutlet}
-                      required
-                    >
-                      {outlets.map(o => (
-                        <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
-                          {o.name} {o.is_main ? '(Pusat)' : ''}
-                        </option>
-                      ))}
-                    </select>
+                    {canSwitchOutlet ? (
+                      <select
+                        className="form-control"
+                        style={{ fontSize: 13, fontWeight: 600, borderColor: 'var(--accent-bright)' }}
+                        value={openForm.outlet_id}
+                        onChange={e => {
+                          const newOid = Number(e.target.value);
+                          setOpenForm(f => ({ ...f, outlet_id: newOid }));
+                          fetchOutletSchedules(newOid);
+                        }}
+                        required
+                      >
+                        {outlets.map(o => (
+                          <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
+                            {o.name} {o.is_main ? '(Pusat)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div style={{
+                        padding: '9px 12px',
+                        background: 'rgba(99, 102, 241, 0.12)',
+                        border: '1px solid rgba(99, 102, 241, 0.25)',
+                        borderRadius: 8,
+                        fontWeight: 700,
+                        fontSize: 13,
+                        color: '#ffffff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                      }}>
+                        <span>📍 {activeOutlet?.name || userOutletName || 'Cabang Penempatan'}</span>
+                        <span style={{ fontSize: 10.5, color: 'var(--ok)', background: 'rgba(16, 217, 122, 0.15)', padding: '2px 6px', borderRadius: 4 }}>
+                          Terkunci
+                        </span>
+                      </div>
+                    )}
                     <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4 }}>
-                      Shift kasir ini akan dibuka untuk operasional <strong>{outlets.find(o => Number(o.id) === Number(openForm.outlet_id))?.name || 'cabang terpilih'}</strong>.
+                      Shift kasir ini akan dibuka untuk operasional <strong>{outlets.find(o => Number(o.id) === Number(openForm.outlet_id))?.name || activeOutlet?.name || 'cabang terpilih'}</strong>.
                     </div>
                   </div>
 
@@ -1624,18 +1677,38 @@ export default function ShiftManagement() {
                   <label className="form-label" style={{ fontWeight: 700, color: '#ffffff' }}>
                     Cabang / Outlet Penugasan *
                   </label>
-                  <select
-                    className="form-control"
-                    value={scheduleForm.outlet_id}
-                    onChange={e => setScheduleForm(f => ({ ...f, outlet_id: Number(e.target.value) }))}
-                    required
-                  >
-                    {outlets.map(o => (
-                      <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
-                        {o.name} {o.is_main ? '(Pusat)' : ''}
-                      </option>
-                    ))}
-                  </select>
+                  {canSwitchOutlet ? (
+                    <select
+                      className="form-control"
+                      value={scheduleForm.outlet_id}
+                      onChange={e => setScheduleForm(f => ({ ...f, outlet_id: Number(e.target.value) }))}
+                      required
+                    >
+                      {outlets.map(o => (
+                        <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
+                          {o.name} {o.is_main ? '(Pusat)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div style={{
+                      padding: '9px 12px',
+                      background: 'rgba(99, 102, 241, 0.12)',
+                      border: '1px solid rgba(99, 102, 241, 0.25)',
+                      borderRadius: 8,
+                      fontWeight: 700,
+                      fontSize: 13,
+                      color: '#ffffff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}>
+                      <span>📍 {activeOutlet?.name || userOutletName || 'Cabang Penempatan'}</span>
+                      <span style={{ fontSize: 10.5, color: 'var(--ok)', background: 'rgba(16, 217, 122, 0.15)', padding: '2px 6px', borderRadius: 4 }}>
+                        Terkunci
+                      </span>
+                    </div>
+                  )}
                   <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4 }}>
                     Shift ini akan berlaku untuk operasional cabang terpilih dalam perusahaan Anda.
                   </div>

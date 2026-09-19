@@ -13,9 +13,22 @@ import { printElement } from '../utils/print';
 
 export default function StockOpname() {
   const [activeTab, setActiveTab] = useState('INPUT'); // 'INPUT' | 'HISTORY'
-  const { activeOutletId, activeOutlet, isOwnerBisnis, isSuperadminPlatform, outlets } = useOutlet();
+  const {
+    activeOutletId,
+    activeOutlet,
+    isOwnerBisnis,
+    isSuperadminPlatform,
+    isPlatformAdmin,
+    canSwitchOutlet,
+    outlets,
+    currentUser,
+    userOutletName,
+  } = useOutlet();
 
   const [selectedOutletId, setSelectedOutletId] = useState(() => {
+    if (!canSwitchOutlet) {
+      return String(currentUser?.outlet_id || activeOutletId || '');
+    }
     if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
       return String(activeOutletId);
     }
@@ -23,6 +36,9 @@ export default function StockOpname() {
   });
 
   const targetOutlet = useMemo(() => {
+    if (!canSwitchOutlet) {
+      return Number(currentUser?.outlet_id || activeOutletId || outlets?.[0]?.id || 1);
+    }
     if (selectedOutletId && selectedOutletId !== 'ALL' && selectedOutletId !== 'all') {
       return Number(selectedOutletId);
     }
@@ -30,7 +46,7 @@ export default function StockOpname() {
       return Number(activeOutletId);
     }
     return outlets?.[0]?.id || 1;
-  }, [selectedOutletId, activeOutletId, outlets]);
+  }, [selectedOutletId, activeOutletId, outlets, canSwitchOutlet, currentUser?.outlet_id]);
 
   // --- TAB 1: INPUT OPNAME STATE ---
   const [period, setPeriod] = useState(() => ({
@@ -60,6 +76,18 @@ export default function StockOpname() {
   const [selectedSessionNo, setSelectedSessionNo] = useState(null);
   const [sessionDetail, setSessionDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+
+  useEffect(() => {
+    if (!canSwitchOutlet) {
+      const lockedId = String(currentUser?.outlet_id || activeOutletId || '');
+      if (lockedId && selectedOutletId !== lockedId) {
+        setSelectedOutletId(lockedId);
+      }
+      if (lockedId && historyOutlet !== lockedId) {
+        setHistoryOutlet(lockedId);
+      }
+    }
+  }, [canSwitchOutlet, currentUser?.outlet_id, activeOutletId, selectedOutletId, historyOutlet]);
 
   // Load input data when period, targetOutlet, historyOutlet, or activeTab changes
   useEffect(() => {
@@ -312,7 +340,7 @@ export default function StockOpname() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, alignItems: 'center' }}>
               <div>
                 <label className="form-label" style={{ fontSize: 11.5 }}>Gudang / Cabang Pelaksana</label>
-                {outlets && outlets.length > 0 ? (
+                {canSwitchOutlet && outlets && outlets.length > 0 ? (
                   <select
                     className="form-control"
                     style={{ fontSize: 13, fontWeight: 700, background: 'var(--card-bg)', color: '#ffffff', cursor: 'pointer' }}
@@ -326,9 +354,12 @@ export default function StockOpname() {
                     ))}
                   </select>
                 ) : (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13.5, color: '#ffffff' }}>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13, color: '#ffffff', padding: '6px 12px', background: 'rgba(99, 102, 241, 0.12)', borderRadius: 8, border: '1px solid rgba(99, 102, 241, 0.25)' }}>
                     <Store size={15} color="var(--accent-bright)" />
-                    <span>{activeOutlet?.name || 'Gudang Utama (Pusat)'}</span>
+                    <span>{activeOutlet?.name || userOutletName || 'Cabang Penempatan'}</span>
+                    <span style={{ fontSize: 10, padding: '1px 5px', background: 'rgba(16, 217, 122, 0.2)', color: 'var(--ok)', borderRadius: 4, marginLeft: 6 }}>
+                      Terkunci
+                    </span>
                   </div>
                 )}
               </div>
@@ -532,24 +563,26 @@ export default function StockOpname() {
           {/* Filter Bar */}
           <div className="card mb-4" style={{ padding: '14px 18px' }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-                  Filter Gudang:
-                </span>
-                <select
-                  className="form-control"
-                  style={{ fontSize: 12.5, minWidth: 200 }}
-                  value={historyOutlet}
-                  onChange={e => setHistoryOutlet(e.target.value)}
-                >
-                  <option value="ALL">Semua Cabang / Gudang</option>
-                  {outlets.map(o => (
-                    <option key={o.id} value={o.id}>
-                      {o.is_main ? '🏢 ' : '📍 '} {o.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {canSwitchOutlet && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+                    Filter Gudang:
+                  </span>
+                  <select
+                    className="form-control"
+                    style={{ fontSize: 12.5, minWidth: 200 }}
+                    value={historyOutlet}
+                    onChange={e => setHistoryOutlet(e.target.value)}
+                  >
+                    <option value="ALL">Semua Cabang / Gudang</option>
+                    {outlets.map(o => (
+                      <option key={o.id} value={o.id}>
+                        {o.is_main ? '🏢 ' : '📍 '} {o.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div style={{ position: 'relative', width: 260 }}>
