@@ -10,6 +10,7 @@ import {
 import api from '../api/client';
 import toast from 'react-hot-toast';
 import { useOutlet as useOutletContext } from '../context/OutletContext';
+import ErrorBoundary from './ErrorBoundary';
 
 export default function Layout() {
   const navigate = useNavigate();
@@ -831,7 +832,9 @@ export default function Layout() {
           </div>
         )}
 
-        <Outlet />
+        <ErrorBoundary>
+          <Outlet />
+        </ErrorBoundary>
       </main>
     </div>
   );
