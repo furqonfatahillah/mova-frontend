@@ -508,6 +508,24 @@ export default function MasterMenu() {
   const isBundle = selected?.item_type === 'BUNDLE';
   const isRecipe = !isDirect && !isService && !isBundle;
 
+  const estimatedHpp = Number(selected?.cost_price || 0);
+
+  const bomHpp = activeRecipe
+    ? (activeRecipe.items || []).reduce((sum, it) => {
+        const ing = ingredients.find(i => i.id === it.ingredient_id);
+        return ing ? sum + (Number(it.qty) || 0) * (Number(ing.harga || 0) / Math.max(Number(ing.konversi || 1), 1)) : sum;
+      }, 0)
+    : 0;
+
+  const draftHpp = draft
+    ? draft.reduce((sum, it) => {
+        const ing = ingredients.find(i => i.id === it.ingredient_id);
+        return ing ? sum + (Number(it.qty) || 0) * (Number(ing.harga || 0) / Math.max(Number(ing.konversi || 1), 1)) : sum;
+      }, 0)
+    : 0;
+
+  const effectiveRecipeHpp = draft ? draftHpp : bomHpp;
+
   const hpp = isBundle
     ? (selected?.bundle_items || selected?.bundleItems || []).reduce((sum, bi) => {
         const bm = menus.find(m => m.id === (bi.bundled_menu_id || bi.bundledMenu?.id));
@@ -523,15 +541,30 @@ export default function MasterMenu() {
         return sum;
       }, 0)
     : (isDirect || isService
-      ? Number(selected?.cost_price || 0)
-      : (activeRecipe
-        ? (activeRecipe.items || []).reduce((sum, it) => {
-          const ing = ingredients.find(i => i.id === it.ingredient_id);
-          return ing ? sum + it.qty * (ing.harga / (ing.konversi || 1)) : sum;
-        }, 0)
-        : Number(selected?.cost_price || 0)));
+      ? estimatedHpp
+      : (activeRecipe || draft ? effectiveRecipeHpp : estimatedHpp));
+
+  const targetMarginPct = selected?.price > 0 && estimatedHpp > 0
+    ? Math.round(((selected.price - estimatedHpp) / selected.price) * 100)
+    : null;
 
   const marginPct = selected?.price > 0 ? Math.round(((selected.price - hpp) / selected.price) * 100) : 0;
+
+  const targetGrossProfit = selected?.price > 0 && estimatedHpp > 0
+    ? (selected.price - estimatedHpp)
+    : null;
+
+  const actualGrossProfit = selected?.price > 0
+    ? (selected.price - hpp)
+    : null;
+
+  const hppDiff = isRecipe && (activeRecipe || draft) && estimatedHpp > 0
+    ? (effectiveRecipeHpp - estimatedHpp)
+    : 0;
+
+  const profitDiff = targetGrossProfit !== null && actualGrossProfit !== null
+    ? (actualGrossProfit - targetGrossProfit)
+    : 0;
 
   function startEdit() {
     if (activeRecipe?.items?.length) {
@@ -724,6 +757,60 @@ export default function MasterMenu() {
                       )}
                     </div>
                   </div>
+
+                  {/* Secondary Comparative Row: Estimasi HPP vs BOM HPP */}
+                  {!mIsService && (
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginTop: 5,
+                      paddingTop: 4,
+                      borderTop: '1px dashed rgba(255, 255, 255, 0.06)',
+                      fontSize: 10.5,
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <span style={{ color: 'var(--text-muted)' }} title="Estimasi HPP Dasar Target">
+                          Est: <strong style={{ color: '#93c5fd' }}>{m.cost_price > 0 ? rupiah(m.cost_price) : '-'}</strong>
+                        </span>
+                        <span style={{ color: 'rgba(255, 255, 255, 0.2)' }}>·</span>
+                        <span style={{ color: 'var(--text-muted)' }} title="HPP Resep (Kalkulasi BOM)">
+                          BOM: <strong style={{ color: 'var(--accent-bright)' }}>
+                            {(() => {
+                              const r = m.recipes?.[0];
+                              if (!r) return m.cost_price > 0 ? rupiah(m.cost_price) : '-';
+                              const bCost = (r.items || []).reduce((s, it) => {
+                                const ing = ingredients.find(i => i.id === it.ingredient_id);
+                                return ing ? s + (Number(it.qty) || 0) * (Number(ing.harga || 0) / Math.max(Number(ing.konversi || 1), 1)) : s;
+                              }, 0);
+                              return rupiah(bCost);
+                            })()}
+                          </strong>
+                        </span>
+                      </div>
+                      {m.cost_price > 0 && m.recipes?.[0] && (() => {
+                        const r = m.recipes[0];
+                        const bCost = (r.items || []).reduce((s, it) => {
+                          const ing = ingredients.find(i => i.id === it.ingredient_id);
+                          return ing ? s + (Number(it.qty) || 0) * (Number(ing.harga || 0) / Math.max(Number(ing.konversi || 1), 1)) : s;
+                        }, 0);
+                        const isHemat = bCost <= Number(m.cost_price);
+                        return (
+                          <span style={{
+                            fontSize: 9.5,
+                            fontWeight: 700,
+                            padding: '1px 5px',
+                            borderRadius: 4,
+                            background: isHemat ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)',
+                            color: isHemat ? '#34d399' : '#fb7185',
+                            border: `1px solid ${isHemat ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)'}`,
+                          }}>
+                            {isHemat ? '🟢 Hemat' : '⚠️ Over'}
+                          </span>
+                        );
+                      })()}
+                    </div>
+                  )}
                 </button>
               );
             })}
@@ -786,15 +873,110 @@ export default function MasterMenu() {
                   )}
                 </div>
               </div>
-              <div style={{ textAlign: 'right', background: 'var(--accent-dim)', padding: '10px 16px', borderRadius: 10, border: '1px solid var(--border-accent)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
-                  <span style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>HPP Teoritis</span>
-                  <span className="pill pill-accent mono" style={{ fontSize: 9 }}>Moving Avg</span>
+              {/* Header Cards Comparison: Estimasi HPP Dasar vs HPP Resep (BOM) vs Varians */}
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                {/* Card 1: Estimasi HPP Dasar (Target Input) */}
+                <div style={{
+                  minWidth: 140,
+                  textAlign: 'right',
+                  background: 'rgba(59, 130, 246, 0.08)',
+                  padding: '9px 14px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(59, 130, 246, 0.25)',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 5 }}>
+                    <span style={{ fontSize: 10.5, color: '#93c5fd', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+                      Estimasi HPP Dasar
+                    </span>
+                    <span className="pill" style={{ fontSize: 9, background: 'rgba(59, 130, 246, 0.2)', color: '#bfdbfe', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
+                      Target
+                    </span>
+                  </div>
+                  <div className="mono" style={{ fontWeight: 700, color: '#60a5fa', fontSize: 17, marginTop: 2 }}>
+                    {estimatedHpp > 0 ? rupiah(estimatedHpp) : <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Belum diset</span>}
+                  </div>
+                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                    {targetMarginPct !== null ? `Target Margin: ${targetMarginPct}%` : 'Margin: -'}
+                  </div>
                 </div>
-                <div className="mono" style={{ fontWeight: 700, color: 'var(--accent-bright)', fontSize: 18, marginTop: 2 }}>{rupiah(hpp)}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                  Margin: {selected.price > 0 ? Math.round(((selected.price - hpp) / selected.price) * 100) : 0}%
+
+                {/* Card 2: HPP Resep (BOM) / Aktual */}
+                <div style={{
+                  minWidth: 140,
+                  textAlign: 'right',
+                  background: 'var(--accent-dim)',
+                  padding: '9px 14px',
+                  borderRadius: 10,
+                  border: '1px solid var(--border-accent)',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 5 }}>
+                    <span style={{ fontSize: 10.5, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+                      {isRecipe ? 'HPP Resep (BOM)' : 'HPP Aktual'}
+                    </span>
+                    <span className="pill pill-accent mono" style={{ fontSize: 9 }}>
+                      {isRecipe ? 'Moving Avg' : 'Modal'}
+                    </span>
+                  </div>
+                  <div className="mono" style={{ fontWeight: 700, color: 'var(--accent-bright)', fontSize: 17, marginTop: 2 }}>
+                    {rupiah(hpp)}
+                  </div>
+                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                    Aktual Margin: {marginPct}%
+                  </div>
                 </div>
+
+                {/* Card 3: Varians / Selisih (Khusus Menu Resep / Olahan) */}
+                {isRecipe && (activeRecipe || draft) && (
+                  <div style={{
+                    minWidth: 140,
+                    textAlign: 'right',
+                    background: estimatedHpp > 0
+                      ? (hppDiff <= 0 ? 'rgba(16, 185, 129, 0.08)' : 'rgba(244, 63, 94, 0.08)')
+                      : 'rgba(255, 255, 255, 0.03)',
+                    padding: '9px 14px',
+                    borderRadius: 10,
+                    border: estimatedHpp > 0
+                      ? (hppDiff <= 0 ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(244, 63, 94, 0.3)')
+                      : '1px solid var(--border)',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 5 }}>
+                      <span style={{ fontSize: 10.5, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+                        Varians HPP
+                      </span>
+                      {estimatedHpp > 0 && (
+                        <span className="pill" style={{
+                          fontSize: 9,
+                          background: hppDiff <= 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(244, 63, 94, 0.2)',
+                          color: hppDiff <= 0 ? '#34d399' : '#fb7185',
+                          border: `1px solid ${hppDiff <= 0 ? 'rgba(16, 185, 129, 0.4)' : 'rgba(244, 63, 94, 0.4)'}`,
+                        }}>
+                          {hppDiff <= 0 ? 'Hemat' : 'Over'}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mono" style={{
+                      fontWeight: 700,
+                      color: estimatedHpp > 0 ? (hppDiff <= 0 ? '#34d399' : '#fb7185') : 'var(--text-muted)',
+                      fontSize: 17,
+                      marginTop: 2
+                    }}>
+                      {estimatedHpp > 0 ? (
+                        hppDiff < 0 ? `-${rupiah(Math.abs(hppDiff))}` : (hppDiff > 0 ? `+${rupiah(hppDiff)}` : 'Rp0 (Sesuai)')
+                      ) : (
+                        '—'
+                      )}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                      {estimatedHpp > 0 ? (
+                        hppDiff <= 0
+                          ? `Lebih hemat ${Math.abs(Math.round((hppDiff / estimatedHpp) * 100))}%`
+                          : `Lebih mahal ${Math.round((hppDiff / estimatedHpp) * 100)}%`
+                      ) : (
+                        'Set estimasi di edit menu'
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -889,8 +1071,153 @@ export default function MasterMenu() {
                                 );
                               })}
                             </tbody>
+                            <tfoot>
+                              <tr style={{ background: 'rgba(255, 255, 255, 0.04)', fontWeight: 700 }}>
+                                <td colSpan={4} style={{ textAlign: 'right', color: 'var(--text-secondary)', fontSize: 12 }}>
+                                  Total HPP Resep (Kalkulasi BOM):
+                                </td>
+                                <td className="mono right" style={{ color: 'var(--accent-bright)', fontSize: 14 }}>
+                                  {rupiah(bomHpp)}
+                                </td>
+                              </tr>
+                            </tfoot>
                           </table>
                         </div>
+
+                        {/* Komparasi Estimasi HPP Dasar vs HPP Resep (BOM) */}
+                        <div style={{
+                          marginBottom: 18,
+                          background: 'rgba(255, 255, 255, 0.02)',
+                          border: '1px solid var(--border)',
+                          borderRadius: 12,
+                          padding: '16px 20px',
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(99, 102, 241, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-bright)' }}>
+                                <Sliders size={16} />
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 13.5, fontWeight: 700, color: '#ffffff' }}>
+                                  Perbandingan Target Estimasi HPP vs Kalkulasi Resep (BOM)
+                                </div>
+                                <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                                  Evaluasi apakah komposisi bahan baku riil lebih hemat atau melebihi estimasi modal yang Anda rencanakan.
+                                </div>
+                              </div>
+                            </div>
+                            {estimatedHpp > 0 ? (
+                              <span className="pill" style={{
+                                fontSize: 11,
+                                padding: '4px 10px',
+                                fontWeight: 700,
+                                background: hppDiff <= 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)',
+                                color: hppDiff <= 0 ? '#34d399' : '#fb7185',
+                                border: `1px solid ${hppDiff <= 0 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)'}`,
+                              }}>
+                                {hppDiff < 0
+                                  ? `🟢 Efisien: Hemat ${rupiah(Math.abs(hppDiff))} / ${selected.unit || 'porsi'}`
+                                  : (hppDiff > 0 ? `⚠️ Over Budget: +${rupiah(hppDiff)} / ${selected.unit || 'porsi'}` : '⚪ Tepat Sesuai Anggaran')}
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                style={{ fontSize: 11.5, color: '#60a5fa' }}
+                                onClick={() => openEditModal(selected)}
+                              >
+                                <Edit2 size={12} /> Set Estimasi HPP Dasar
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="table-wrap" style={{ border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: 8 }}>
+                            <table style={{ margin: 0 }}>
+                              <thead>
+                                <tr style={{ background: 'rgba(255, 255, 255, 0.03)' }}>
+                                  <th style={{ fontSize: 11.5 }}>Parameter Evaluasi</th>
+                                  <th className="right" style={{ fontSize: 11.5, color: '#93c5fd' }}>Estimasi HPP Dasar (Target)</th>
+                                  <th className="right" style={{ fontSize: 11.5, color: 'var(--accent-bright)' }}>HPP Resep (BOM Riil)</th>
+                                  <th className="right" style={{ fontSize: 11.5 }}>Selisih / Varians</th>
+                                  <th className="center" style={{ fontSize: 11.5, width: 140 }}>Kesimpulan Margin</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <tr>
+                                  <td style={{ fontWeight: 600 }}>
+                                    Biaya Pokok (HPP / {selected.unit || 'porsi'})
+                                  </td>
+                                  <td className="mono right" style={{ fontWeight: 600, color: '#93c5fd' }}>
+                                    {estimatedHpp > 0 ? rupiah(estimatedHpp) : <span style={{ color: 'var(--text-muted)' }}>Belum diset</span>}
+                                  </td>
+                                  <td className="mono right" style={{ fontWeight: 700, color: 'var(--accent-bright)' }}>
+                                    {rupiah(bomHpp)}
+                                  </td>
+                                  <td className="mono right" style={{ fontWeight: 700, color: estimatedHpp > 0 ? (hppDiff <= 0 ? '#34d399' : '#fb7185') : 'var(--text-muted)' }}>
+                                    {estimatedHpp > 0 ? (
+                                      hppDiff < 0 ? `-${rupiah(Math.abs(hppDiff))} (${Math.abs(Math.round((hppDiff / estimatedHpp) * 100))}%)` :
+                                      (hppDiff > 0 ? `+${rupiah(hppDiff)} (+${Math.round((hppDiff / estimatedHpp) * 100)}%)` : 'Rp0 (0%)')
+                                    ) : '-'}
+                                  </td>
+                                  <td className="center">
+                                    {estimatedHpp > 0 ? (
+                                      <span style={{ fontSize: 11, fontWeight: 600, color: hppDiff <= 0 ? '#34d399' : '#fb7185' }}>
+                                        {hppDiff <= 0 ? '✓ Lebih Murah' : '⚠ Lebih Mahal'}
+                                      </span>
+                                    ) : <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>-</span>}
+                                  </td>
+                                </tr>
+                                <tr>
+                                  <td style={{ fontWeight: 600 }}>
+                                    Laba Kotor (Gross Profit / {selected.unit || 'porsi'})
+                                  </td>
+                                  <td className="mono right" style={{ color: '#93c5fd' }}>
+                                    {targetGrossProfit !== null ? rupiah(targetGrossProfit) : '-'}
+                                  </td>
+                                  <td className="mono right" style={{ fontWeight: 700, color: 'var(--ok)' }}>
+                                    {actualGrossProfit !== null ? rupiah(actualGrossProfit) : '-'}
+                                  </td>
+                                  <td className="mono right" style={{ fontWeight: 700, color: profitDiff >= 0 ? '#34d399' : '#fb7185' }}>
+                                    {targetGrossProfit !== null && actualGrossProfit !== null ? (
+                                      profitDiff >= 0 ? `+${rupiah(profitDiff)}` : `-${rupiah(Math.abs(profitDiff))}`
+                                    ) : '-'}
+                                  </td>
+                                  <td className="center">
+                                    {targetGrossProfit !== null && actualGrossProfit !== null ? (
+                                      <span style={{ fontSize: 11, fontWeight: 600, color: profitDiff >= 0 ? '#34d399' : '#fb7185' }}>
+                                        {profitDiff >= 0 ? '↑ Profit Naik' : '↓ Profit Turun'}
+                                      </span>
+                                    ) : <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>-</span>}
+                                  </td>
+                                </tr>
+                                <tr>
+                                  <td style={{ fontWeight: 600 }}>
+                                    Gross Profit Margin (%)
+                                  </td>
+                                  <td className="mono right" style={{ color: '#93c5fd' }}>
+                                    {targetMarginPct !== null ? `${targetMarginPct}%` : '-'}
+                                  </td>
+                                  <td className="mono right" style={{ fontWeight: 700, color: 'var(--ok)' }}>
+                                    {marginPct}%
+                                  </td>
+                                  <td className="mono right" style={{ fontWeight: 700, color: targetMarginPct !== null ? (marginPct >= targetMarginPct ? '#34d399' : '#fb7185') : 'var(--text-muted)' }}>
+                                    {targetMarginPct !== null ? (
+                                      `${marginPct >= targetMarginPct ? '+' : ''}${marginPct - targetMarginPct}%`
+                                    ) : '-'}
+                                  </td>
+                                  <td className="center">
+                                    {targetMarginPct !== null ? (
+                                      <span style={{ fontSize: 11, fontWeight: 600, color: marginPct >= targetMarginPct ? '#34d399' : '#fb7185' }}>
+                                        {marginPct >= targetMarginPct ? '★ Margin Sehat' : '⚠ Perlu Ditinjau'}
+                                      </span>
+                                    ) : <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>-</span>}
+                                  </td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+
                         <div style={{ display: 'flex', gap: 10 }}>
                           <button className="btn btn-primary" onClick={startEdit}>
                             <Plus size={14} /> Revisi Resep (Versi Baru)
@@ -1156,6 +1483,54 @@ export default function MasterMenu() {
                       fontSize: 12.5
                     }}>
                       <strong style={{ color: 'var(--accent-bright)' }}>Mode Input Resep:</strong> Tentukan komposisi bahan dan gramasi. Setiap kali disimpan, sistem otomatis mencatat sebagai versi resep baru.
+                    </div>
+
+                    {/* Live Comparison Cards in Draft Mode */}
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                      gap: 10,
+                      marginBottom: 14,
+                    }}>
+                      <div style={{ background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.25)', borderRadius: 8, padding: '10px 14px' }}>
+                        <div style={{ fontSize: 11, color: '#93c5fd', fontWeight: 600 }}>ESTIMASI HPP DASAR (TARGET)</div>
+                        <div className="mono" style={{ fontSize: 16, fontWeight: 700, color: '#60a5fa', marginTop: 2 }}>
+                          {estimatedHpp > 0 ? rupiah(estimatedHpp) : <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Belum diset</span>}
+                        </div>
+                        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>Target Margin: {targetMarginPct !== null ? `${targetMarginPct}%` : '-'}</div>
+                      </div>
+                      <div style={{ background: 'var(--accent-dim)', border: '1px solid var(--border-accent)', borderRadius: 8, padding: '10px 14px' }}>
+                        <div style={{ fontSize: 11, color: 'var(--accent-bright)', fontWeight: 600 }}>HPP RESEP DRAFT (LIVE)</div>
+                        <div className="mono" style={{ fontSize: 16, fontWeight: 700, color: 'var(--accent-bright)', marginTop: 2 }}>
+                          {rupiah(draftHpp)}
+                        </div>
+                        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>Margin Aktual: {marginPct}%</div>
+                      </div>
+                      <div style={{
+                        background: estimatedHpp > 0
+                          ? (hppDiff <= 0 ? 'rgba(16, 185, 129, 0.08)' : 'rgba(244, 63, 94, 0.08)')
+                          : 'rgba(255, 255, 255, 0.03)',
+                        border: estimatedHpp > 0
+                          ? (hppDiff <= 0 ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid rgba(244, 63, 94, 0.25)')
+                          : '1px solid var(--border)',
+                        borderRadius: 8,
+                        padding: '10px 14px',
+                      }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>SELISIH ANGGARAN</div>
+                        <div className="mono" style={{
+                          fontSize: 16,
+                          fontWeight: 700,
+                          color: estimatedHpp > 0 ? (hppDiff <= 0 ? '#34d399' : '#fb7185') : 'var(--text-muted)',
+                          marginTop: 2
+                        }}>
+                          {estimatedHpp > 0 ? (
+                            hppDiff < 0 ? `-${rupiah(Math.abs(hppDiff))}` : (hppDiff > 0 ? `+${rupiah(hppDiff)}` : 'Rp0 (Sesuai)')
+                          ) : '—'}
+                        </div>
+                        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                          {estimatedHpp > 0 ? (hppDiff <= 0 ? '🟢 Masih dalam batas target' : '⚠️ Melebihi estimasi target!') : 'Target belum diset'}
+                        </div>
+                      </div>
                     </div>
 
                     <div className="table-wrap" style={{ marginBottom: 14 }}>
