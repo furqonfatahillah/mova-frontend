@@ -19,11 +19,14 @@ export default function StockOpname() {
     isOwnerBisnis,
     isSuperadminPlatform,
     isPlatformAdmin,
+    isOwnerOutlet,
     canSwitchOutlet,
     outlets,
     currentUser,
     userOutletName,
   } = useOutlet();
+
+  const canRelease = isOwnerBisnis || isPlatformAdmin || isOwnerOutlet || isSuperadminPlatform;
 
   const [selectedOutletId, setSelectedOutletId] = useState(() => {
     if (!canSwitchOutlet) {
@@ -460,7 +463,7 @@ export default function StockOpname() {
               </div>
 
               <div style={{ display: 'flex', gap: 8 }}>
-                {(isOwnerBisnis || isSuperadminPlatform) ? (
+                {canRelease ? (
                   <>
                     <button className="btn btn-secondary" onClick={() => handleSave('DRAFT')} disabled={saving}>
                       {saving ? 'Menyimpan...' : 'Simpan Draft'}
@@ -851,7 +854,7 @@ export default function StockOpname() {
                     Ubah Inputan Fisik
                   </button>
                 )}
-                {(isOwnerBisnis || isSuperadminPlatform) && sessionDetail?.session && !sessionDetail.session.is_closed && (
+                {canRelease && sessionDetail?.session && !sessionDetail.session.is_closed && (
                   <button
                     className="btn btn-sm"
                     style={{ background: '#10b981', borderColor: '#10b981', color: '#ffffff', fontWeight: 700 }}

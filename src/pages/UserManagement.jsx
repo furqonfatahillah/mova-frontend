@@ -19,6 +19,7 @@ export default function UserManagement() {
   const [users, setUsers] = useState([]);
   const [counts, setCounts] = useState({ total: 0, pending: 0, active: 0, rejected: 0, suspended: 0 });
   const [outlets, setOutlets] = useState([]);
+  const [masterRoles, setMasterRoles] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Filters
@@ -68,13 +69,15 @@ export default function UserManagement() {
   async function loadData() {
     setLoading(true);
     try {
-      const [usersRes, outletsRes] = await Promise.all([
+      const [usersRes, outletsRes, rolesRes] = await Promise.all([
         api.get('/users'),
         api.get('/outlets'),
+        api.get('/roles').catch(() => ({ data: [] })),
       ]);
       setUsers(usersRes.data.users);
       setCounts(usersRes.data.counts);
       setOutlets(outletsRes.data);
+      setMasterRoles(Array.isArray(rolesRes.data) ? rolesRes.data : []);
 
       // If no pending users, default tab to all
       if (usersRes.data.counts.pending === 0) {
@@ -754,12 +757,22 @@ export default function UserManagement() {
                       onChange={e => setApproveForm(p => ({ ...p, role: e.target.value }))}
                       required
                     >
-                      <option value="pegawai" style={{ background: '#11162d', color: '#ffffff' }}>Pegawai (Kasir & Operasional Cabang)</option>
-                      <option value="owner_outlet" style={{ background: '#11162d', color: '#ffffff' }}>Owner Outlet (Pemilik Cabang)</option>
-                      {isPlatformAdmin && (
+                      {masterRoles.length > 0 ? (
+                        masterRoles.map(r => (
+                          <option key={r.id} value={r.name} style={{ background: '#11162d', color: '#ffffff' }}>
+                            {r.label}
+                          </option>
+                        ))
+                      ) : (
                         <>
-                          <option value="owner_bisnis" style={{ background: '#11162d', color: '#ffffff' }}>Owner Bisnis (Pemilik Usaha)</option>
-                          <option value="owner_website" style={{ background: '#11162d', color: '#ffffff' }}>Owner Website</option>
+                          <option value="pegawai" style={{ background: '#11162d', color: '#ffffff' }}>Pegawai (Kasir & Operasional Cabang)</option>
+                          <option value="owner_outlet" style={{ background: '#11162d', color: '#ffffff' }}>Owner Outlet (Pemilik Cabang)</option>
+                          {isPlatformAdmin && (
+                            <>
+                              <option value="owner_bisnis" style={{ background: '#11162d', color: '#ffffff' }}>Owner Bisnis (Pemilik Usaha)</option>
+                              <option value="owner_website" style={{ background: '#11162d', color: '#ffffff' }}>Owner Website</option>
+                            </>
+                          )}
                         </>
                       )}
                     </select>
@@ -896,12 +909,22 @@ export default function UserManagement() {
                       onChange={e => setCreateForm(p => ({ ...p, role: e.target.value }))}
                       required
                     >
-                      <option value="pegawai" style={{ background: '#11162d', color: '#ffffff' }}>Pegawai Cabang</option>
-                      <option value="owner_outlet" style={{ background: '#11162d', color: '#ffffff' }}>Owner Outlet</option>
-                      {isPlatformAdmin && (
+                      {masterRoles.length > 0 ? (
+                        masterRoles.map(r => (
+                          <option key={r.id} value={r.name} style={{ background: '#11162d', color: '#ffffff' }}>
+                            {r.label}
+                          </option>
+                        ))
+                      ) : (
                         <>
-                          <option value="owner_bisnis" style={{ background: '#11162d', color: '#ffffff' }}>Owner Bisnis</option>
-                          <option value="owner_website" style={{ background: '#11162d', color: '#ffffff' }}>Owner Website</option>
+                          <option value="pegawai" style={{ background: '#11162d', color: '#ffffff' }}>Pegawai Cabang</option>
+                          <option value="owner_outlet" style={{ background: '#11162d', color: '#ffffff' }}>Owner Outlet</option>
+                          {isPlatformAdmin && (
+                            <>
+                              <option value="owner_bisnis" style={{ background: '#11162d', color: '#ffffff' }}>Owner Bisnis</option>
+                              <option value="owner_website" style={{ background: '#11162d', color: '#ffffff' }}>Owner Website</option>
+                            </>
+                          )}
                         </>
                       )}
                     </select>
@@ -1019,12 +1042,22 @@ export default function UserManagement() {
                       onChange={e => setEditForm(p => ({ ...p, role: e.target.value }))}
                       disabled={selectedUser.id === currentUser.id}
                     >
-                      <option value="pegawai" style={{ background: '#11162d', color: '#ffffff' }}>Pegawai</option>
-                      <option value="owner_outlet" style={{ background: '#11162d', color: '#ffffff' }}>Owner Outlet</option>
-                      {isPlatformAdmin && (
+                      {masterRoles.length > 0 ? (
+                        masterRoles.map(r => (
+                          <option key={r.id} value={r.name} style={{ background: '#11162d', color: '#ffffff' }}>
+                            {r.label}
+                          </option>
+                        ))
+                      ) : (
                         <>
-                          <option value="owner_bisnis" style={{ background: '#11162d', color: '#ffffff' }}>Owner Bisnis</option>
-                          <option value="owner_website" style={{ background: '#11162d', color: '#ffffff' }}>Owner Website</option>
+                          <option value="pegawai" style={{ background: '#11162d', color: '#ffffff' }}>Pegawai</option>
+                          <option value="owner_outlet" style={{ background: '#11162d', color: '#ffffff' }}>Owner Outlet</option>
+                          {isPlatformAdmin && (
+                            <>
+                              <option value="owner_bisnis" style={{ background: '#11162d', color: '#ffffff' }}>Owner Bisnis</option>
+                              <option value="owner_website" style={{ background: '#11162d', color: '#ffffff' }}>Owner Website</option>
+                            </>
+                          )}
                         </>
                       )}
                     </select>
