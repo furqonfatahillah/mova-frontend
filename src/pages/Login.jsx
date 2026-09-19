@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Mail, Lock, ArrowRight } from 'lucide-react';
+import { Mail, Lock, ArrowRight, KeyRound } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
 
@@ -79,9 +79,20 @@ export default function Login() {
               </label>
               <Link
                 to="/forgot-password"
-                style={{ fontSize: 12, color: 'var(--accent-bright)', textDecoration: 'none', fontWeight: 500 }}
+                style={{
+                  fontSize: 12.5,
+                  color: '#c4b5fd',
+                  textDecoration: 'none',
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  transition: 'color 0.2s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.color = '#ffffff'}
+                onMouseLeave={e => e.currentTarget.style.color = '#c4b5fd'}
               >
-                Lupa password?
+                Lupa kata sandi?
               </Link>
             </div>
             <input
@@ -109,6 +120,26 @@ export default function Login() {
           Belum punya akun?{' '}
           <Link to="/register" className="auth-link">Daftar sekarang</Link>
         </p>
+
+        <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(165, 180, 252, 0.1)', textAlign: 'center' }}>
+          <Link
+            to="/forgot-password"
+            style={{
+              fontSize: 12.5,
+              color: 'var(--text-secondary)',
+              textDecoration: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              transition: 'color 0.2s',
+            }}
+            onMouseEnter={e => e.currentTarget.style.color = '#c4b5fd'}
+            onMouseLeave={e => e.currentTarget.style.color = 'var(--text-secondary)'}
+          >
+            <KeyRound size={13} style={{ color: '#818cf8' }} />
+            Lupa kata sandi akun Anda?
+          </Link>
+        </div>
       </div>
     </div>
   );
