@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   Save, Store, ClipboardCheck, History, Eye, Printer, X, Check,
   Calendar, Search, RefreshCw, AlertTriangle, FileText, ArrowRight,
-  TrendingDown, TrendingUp, CheckCircle2, UserCheck, Edit3
+  TrendingDown, TrendingUp, CheckCircle2, UserCheck, Edit3,
+  ChevronLeft, ChevronRight
 } from 'lucide-react';
 import api from '../api/client';
 import { num, pct, rupiah, fmtQtyVal, StatusPill, LoadingState, PeriodPicker, PageHeader, AuditInfo, MiniCard } from '../components/ui';
@@ -56,6 +57,35 @@ export default function StockOpname() {
     from: getMonthStartStr(),
     to: getMonthEndStr(),
   }));
+
+  const selectedMonthStr = useMemo(() => {
+    if (!period.from) return getTodayStr().slice(0, 7);
+    return period.from.slice(0, 7);
+  }, [period.from]);
+
+  function handleMonthChange(newMonthStr) {
+    if (!newMonthStr) return;
+    const [yearStr, monthStr] = newMonthStr.split('-');
+    const y = parseInt(yearStr, 10);
+    const m = parseInt(monthStr, 10);
+    if (isNaN(y) || isNaN(m)) return;
+
+    const from = `${y}-${String(m).padStart(2, '0')}-01`;
+    const lastDay = new Date(y, m, 0).getDate();
+    const to = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+    setPeriod({ from, to });
+  }
+
+  function handleShiftMonth(offset) {
+    const current = selectedMonthStr || getTodayStr().slice(0, 7);
+    const [yStr, mStr] = current.split('-');
+    const d = new Date(parseInt(yStr, 10), parseInt(mStr, 10) - 1 + offset, 1);
+    const newY = d.getFullYear();
+    const newM = String(d.getMonth() + 1).padStart(2, '0');
+    handleMonthChange(`${newY}-${newM}`);
+  }
+
   const [varData, setVarData] = useState([]);
   const [actuals, setActuals] = useState({});
   const [reasons, setReasons] = useState({});
@@ -410,8 +440,43 @@ export default function StockOpname() {
               </div>
 
               <div>
-                <label className="form-label" style={{ fontSize: 11.5 }}>Periode Buku yang Diperiksa</label>
-                <PeriodPicker from={period.from} to={period.to} onChange={setPeriod} />
+                <label className="form-label" style={{ fontSize: 11.5 }}>Periode Bulan Buku Opname</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-icon"
+                    style={{ padding: '6px 10px', height: 38 }}
+                    onClick={() => handleShiftMonth(-1)}
+                    title="Bulan Sebelumnya"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  <input
+                    type="month"
+                    className="form-control mono"
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 700,
+                      background: 'var(--card-bg)',
+                      color: '#ffffff',
+                      cursor: 'pointer',
+                      padding: '6px 10px',
+                      height: 38,
+                      textAlign: 'center'
+                    }}
+                    value={selectedMonthStr}
+                    onChange={e => handleMonthChange(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-icon"
+                    style={{ padding: '6px 10px', height: 38 }}
+                    onClick={() => handleShiftMonth(1)}
+                    title="Bulan Berikutnya"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
               </div>
 
               <div>
@@ -812,7 +877,7 @@ export default function StockOpname() {
                               color: s.is_closed ? '#34d399' : '#fbbf24',
                               border: `1px solid ${s.is_closed ? 'rgba(16, 185, 129, 0.35)' : 'rgba(245, 158, 11, 0.35)'}`
                             }}>
-                              {s.is_closed ? '🟢 RELEASED' : '⏳ DRAFT'}
+                              {s.is_closed ? 'RELEASED' : 'DRAFT'}
                             </span>
                           </td>
                           <td className="mono" style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
@@ -914,7 +979,7 @@ export default function StockOpname() {
                     color: sessionDetail.session.is_closed ? '#34d399' : '#fbbf24',
                     border: `1px solid ${sessionDetail.session.is_closed ? 'rgba(16, 185, 129, 0.35)' : 'rgba(245, 158, 11, 0.35)'}`
                   }}>
-                    {sessionDetail.session.is_closed ? '🟢 RELEASED' : '⏳ DRAFT'}
+                    {sessionDetail.session.is_closed ? 'RELEASED' : 'DRAFT'}
                   </span>
                 )}
               </div>
