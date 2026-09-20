@@ -104,6 +104,10 @@ export default function KartuStok() {
     qty: '',
     note: '',
     waste_reason: 'SPOILED',
+    is_in_transit: false,
+    transit_source_name: 'Shopee',
+    transit_expedition: 'Shopee Xpress',
+    transit_tracking_no: '',
   });
   const [saving, setSaving] = useState(false);
 
@@ -300,9 +304,71 @@ export default function KartuStok() {
     setSaving(true);
     try {
       const targetOutlet = mutationForm.outlet_id || selectedOutletId || 1;
+      const targetIngId = Number(mutationForm.ingredient_id || ingredients[0]?.id);
+      const targetIng = ingredients.find(i => Number(i.id) === targetIngId);
+
+      // Kategori PERSIDIAAN DALAM PERJALANAN (Online / Shopee / Ekspedisi)
+      if (mutationForm.type === 'PURCHASE' && mutationForm.is_in_transit) {
+        const factor = Number(targetIng?.konversi) || 1;
+        const isBeli = mutationForm.unit_type === 'BELI';
+        const inputQ = Number(mutationForm.qty);
+        const baseQ = isBeli ? Number((inputQ * factor).toFixed(4)) : inputQ;
+        const inputUnit = isBeli ? (targetIng?.unit_beli || 'Kg') : (targetIng?.unit_pakai || 'gram');
+        const baseUnit = targetIng?.unit_pakai || 'gram';
+
+        const sourceName = (mutationForm.transit_source_name || '').trim() || 'Shopee';
+        const courier = (mutationForm.transit_expedition || '').trim() || 'Kurir Ekspedisi';
+        const tracking = (mutationForm.transit_tracking_no || '').trim() || null;
+
+        const payload = {
+          date: mutationForm.date,
+          source_type: 'EXTERNAL',
+          source_name: sourceName,
+          destination_type: 'OUTLET',
+          destination_outlet_id: Number(targetOutlet),
+          transfer_type: 'INBOUND',
+          status: 'IN_TRANSIT',
+          driver_name: courier,
+          vehicle_no: tracking,
+          notes: mutationForm.note ? `${mutationForm.note} (via ${sourceName})` : `Pembelian online via ${sourceName}`,
+          items: [
+            {
+              item_type: 'INGREDIENT',
+              ingredient_id: targetIngId,
+              input_qty: inputQ,
+              input_unit: inputUnit,
+              qty: baseQ,
+              unit: baseUnit,
+              unit_price: mutationForm.unit_price !== '' ? Number(mutationForm.unit_price) : undefined,
+              total_price: mutationForm.total_price !== '' ? Number(mutationForm.total_price) : undefined,
+              notes: tracking ? `No. Resi: ${tracking}` : null,
+            }
+          ]
+        };
+
+        const { data } = await api.post('/transfers', payload);
+        toast.success(`Pembelian dari ${sourceName} (${data.transfer_no}) berhasil dicatat ke Persediaan Dalam Perjalanan! Menunggu Approval Receive saat paket tiba.`);
+        setModalOpen(false);
+        setMutationForm(f => ({
+          ...f,
+          qty: '',
+          note: '',
+          unit_price: '',
+          total_price: '',
+          is_in_transit: false,
+          transit_tracking_no: '',
+        }));
+
+        // Pindah otomatis ke tab Persediaan Dalam Perjalanan agar user langsung melihatnya
+        setActiveTab('in_transit');
+        fetchInTransitTransfers();
+        return;
+      }
+
+      // Kategori BUKAN DALAM PERJALANAN (Belanja Langsung / Offline / Pasar)
       const payload = {
         ...mutationForm,
-        ingredient_id: Number(mutationForm.ingredient_id || ingredients[0]?.id),
+        ingredient_id: targetIngId,
         qty: Number(mutationForm.qty),
         outlet_id: Number(targetOutlet),
         unit_type: mutationForm.type === 'PURCHASE' ? (mutationForm.unit_type || 'BELI') : 'PAKAI',
@@ -583,6 +649,10 @@ export default function KartuStok() {
                   qty: '',
                   note: '',
                   waste_reason: 'SPOILED',
+                  is_in_transit: false,
+                  transit_source_name: 'Shopee',
+                  transit_expedition: 'Shopee Xpress',
+                  transit_tracking_no: '',
                 });
                 setModalOpen(true);
               }}
@@ -1441,7 +1511,8 @@ export default function KartuStok() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {filteredInTransitList.map(trf => {
                 const totalItemCount = trf.items?.length || 0;
-                const sourceName = trf.source_display_name || trf.source_outlet?.name || trf.source_name || 'Cabang Asal';
+                const isOnlinePurchase = trf.source_type === 'EXTERNAL' || trf.transfer_type === 'INBOUND';
+                const sourceName = trf.source_display_name || trf.source_outlet?.name || trf.source_name || (isOnlinePurchase ? 'Shopee' : 'Cabang Asal');
                 const destName = trf.destination_display_name || trf.destination_outlet?.name || trf.destination_name || currentOutlet?.name || 'Cabang Tujuan';
 
                 return (
@@ -1449,7 +1520,7 @@ export default function KartuStok() {
                     key={trf.id}
                     className="card"
                     style={{
-                      border: '1px solid rgba(245, 166, 35, 0.35)',
+                      border: isOnlinePurchase ? '1px solid rgba(238, 77, 45, 0.4)' : '1px solid rgba(245, 166, 35, 0.35)',
                       background: 'linear-gradient(135deg, rgba(26, 22, 48, 0.6) 0%, rgba(15, 23, 42, 0.8) 100%)',
                       padding: 0,
                       overflow: 'hidden'
@@ -1458,8 +1529,8 @@ export default function KartuStok() {
                     {/* Card Header Bar */}
                     <div style={{
                       padding: '14px 20px',
-                      background: 'rgba(245, 166, 35, 0.08)',
-                      borderBottom: '1px solid rgba(245, 166, 35, 0.2)',
+                      background: isOnlinePurchase ? 'rgba(238, 77, 45, 0.08)' : 'rgba(245, 166, 35, 0.08)',
+                      borderBottom: isOnlinePurchase ? '1px solid rgba(238, 77, 45, 0.25)' : '1px solid rgba(245, 166, 35, 0.2)',
                       display: 'flex',
                       flexWrap: 'wrap',
                       alignItems: 'center',
@@ -1470,22 +1541,39 @@ export default function KartuStok() {
                         <span className="mono" style={{ fontSize: 15, fontWeight: 800, color: '#fbbf24', letterSpacing: '0.02em' }}>
                           {trf.transfer_no}
                         </span>
-                        <span style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 5,
-                          padding: '3px 10px',
-                          borderRadius: 20,
-                          fontSize: 11,
-                          fontWeight: 700,
-                          background: 'rgba(245, 158, 11, 0.18)',
-                          color: '#f59e0b',
-                          border: '1px solid rgba(245, 158, 11, 0.4)'
-                        }}>
-                          <Truck size={13} /> DALAM PERJALANAN
-                        </span>
+                        {isOnlinePurchase ? (
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            padding: '3px 10px',
+                            borderRadius: 20,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            background: 'rgba(238, 77, 45, 0.18)',
+                            color: '#ff6b4a',
+                            border: '1px solid rgba(238, 77, 45, 0.4)'
+                          }}>
+                            <ShoppingBag size={13} /> BELANJA ONLINE: {sourceName}
+                          </span>
+                        ) : (
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            padding: '3px 10px',
+                            borderRadius: 20,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            background: 'rgba(245, 158, 11, 0.18)',
+                            color: '#f59e0b',
+                            border: '1px solid rgba(245, 158, 11, 0.4)'
+                          }}>
+                            <Truck size={13} /> DALAM PERJALANAN
+                          </span>
+                        )}
                         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                          📅 Tanggal Kirim: <strong style={{ color: '#ffffff' }}>{trf.date}</strong>
+                          📅 Tanggal Pesan/Kirim: <strong style={{ color: '#ffffff' }}>{trf.date}</strong>
                         </span>
                       </div>
 
@@ -1523,9 +1611,11 @@ export default function KartuStok() {
                       fontSize: 12
                     }}>
                       <div>
-                        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Cabang Pengirim (Asal)</div>
-                        <div style={{ fontWeight: 700, color: '#93c5fd', marginTop: 2 }}>
-                          🏢 {sourceName}
+                        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>
+                          {isOnlinePurchase ? '🛒 Sumber / Marketplace' : 'Cabang Pengirim (Asal)'}
+                        </div>
+                        <div style={{ fontWeight: 700, color: isOnlinePurchase ? '#fbbf24' : '#93c5fd', marginTop: 2 }}>
+                          {isOnlinePurchase ? `🛒 ${sourceName}` : `🏢 ${sourceName}`}
                         </div>
                       </div>
 
@@ -1537,9 +1627,16 @@ export default function KartuStok() {
                       </div>
 
                       <div>
-                        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Kurir / Supir</div>
+                        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>
+                          {isOnlinePurchase ? '🚚 Kurir & No. Resi' : 'Kurir / Supir'}
+                        </div>
                         <div style={{ fontWeight: 600, color: '#ffffff', marginTop: 2 }}>
-                          {trf.driver_name || 'Kurir Internal'} {trf.vehicle_no ? `(${trf.vehicle_no})` : ''}
+                          {trf.driver_name || (isOnlinePurchase ? 'Ekspedisi Online' : 'Kurir Internal')}
+                          {trf.vehicle_no && (
+                            <span className="mono" style={{ color: '#fbbf24', marginLeft: 6 }}>
+                              [{trf.vehicle_no}]
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -1600,7 +1697,15 @@ export default function KartuStok() {
                                   {hasConv ? `${num(it.qty)} ${it.unit}` : '— (Tetap)'}
                                 </td>
                                 <td style={{ color: 'var(--text-muted)', fontSize: 11.5 }}>
-                                  {it.notes || '—'}
+                                  {it.total_price ? (
+                                    <span>
+                                      <strong style={{ color: '#34d399' }}>{rupiah(it.total_price)}</strong>
+                                      {it.unit_price ? <span style={{ color: '#94a3b8', marginLeft: 4 }}>({rupiah(it.unit_price)}/{it.input_unit || it.unit})</span> : ''}
+                                      {it.notes ? <span style={{ marginLeft: 6 }}>• {it.notes}</span> : ''}
+                                    </span>
+                                  ) : (
+                                    it.notes || '—'
+                                  )}
                                 </td>
                               </tr>
                             );
@@ -2112,6 +2217,146 @@ export default function KartuStok() {
 
                 {mutationForm.type === 'PURCHASE' && (
                   <>
+                    {/* PILIHAN KATEGORI: APAKAH PERSEDIAAN DALAM PERJALANAN ATAU BUKAN */}
+                    <div className="form-group" style={{
+                      background: mutationForm.is_in_transit ? 'rgba(245, 158, 11, 0.08)' : 'rgba(99, 102, 241, 0.05)',
+                      border: `1px solid ${mutationForm.is_in_transit ? 'rgba(245, 158, 11, 0.35)' : 'var(--border)'}`,
+                      borderRadius: 10,
+                      padding: 12,
+                      marginBottom: 14,
+                      transition: 'all 0.2s'
+                    }}>
+                      <label className="form-label" style={{ fontWeight: 700, fontSize: 12, color: mutationForm.is_in_transit ? '#fbbf24' : '#93c5fd', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                        <Truck size={14} />
+                        Kategori Penerimaan / Pengiriman Fisik:
+                      </label>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={() => setMutationForm(f => ({ ...f, is_in_transit: false }))}
+                          style={{
+                            padding: '8px 10px',
+                            fontSize: 12,
+                            fontWeight: 700,
+                            borderRadius: 8,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            gap: 4,
+                            background: !mutationForm.is_in_transit ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.03)',
+                            border: !mutationForm.is_in_transit ? '1.5px solid #10b981' : '1px solid var(--border)',
+                            color: !mutationForm.is_in_transit ? '#34d399' : 'var(--text-secondary)',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <CheckCircle2 size={14} />
+                            <span>Bukan Transit</span>
+                          </div>
+                          <span style={{ fontSize: 10, fontWeight: 500, opacity: 0.85 }}>
+                            (Langsung Masuk Kartu Stok)
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={() => setMutationForm(f => ({ ...f, is_in_transit: true }))}
+                          style={{
+                            padding: '8px 10px',
+                            fontSize: 12,
+                            fontWeight: 700,
+                            borderRadius: 8,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            gap: 4,
+                            background: mutationForm.is_in_transit ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255,255,255,0.03)',
+                            border: mutationForm.is_in_transit ? '1.5px solid #f59e0b' : '1px solid var(--border)',
+                            color: mutationForm.is_in_transit ? '#fbbf24' : 'var(--text-secondary)',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <Truck size={14} />
+                            <span>Dalam Perjalanan</span>
+                          </div>
+                          <span style={{ fontSize: 10, fontWeight: 500, opacity: 0.85 }}>
+                            (Online / Shopee / Ekspedisi)
+                          </span>
+                        </button>
+                      </div>
+
+                      {/* Jika Dalam Perjalanan: Tampilkan input marketplace, kurir, dan nomor resi */}
+                      {mutationForm.is_in_transit && (
+                        <div style={{ marginTop: 12, borderTop: '1px dashed rgba(245, 158, 11, 0.3)', paddingTop: 10 }}>
+                          <div style={{ fontSize: 11, color: '#fde68a', marginBottom: 10, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                            <span>💡</span>
+                            <span>Barang <strong>belum menambah stok di Kartu Stok</strong> sekarang. Data akan masuk ke tab <strong>Persediaan Dalam Perjalanan</strong> dan menunggu Approval Receive saat paket kurir tiba di outlet.</span>
+                          </div>
+
+                          <div className="form-group mb-2">
+                            <label className="form-label" style={{ fontSize: 11, color: 'var(--text-muted)' }}>Sumber Pembelian / Marketplace</label>
+                            <div style={{ display: 'flex', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
+                              {['Shopee', 'Tokopedia', 'TikTok Shop', 'Supplier Eksternal'].map(mkt => (
+                                <button
+                                  key={mkt}
+                                  type="button"
+                                  className="btn btn-xs"
+                                  onClick={() => setMutationForm(f => ({ ...f, transit_source_name: mkt }))}
+                                  style={{
+                                    fontSize: 10.5,
+                                    padding: '2px 8px',
+                                    background: mutationForm.transit_source_name === mkt ? '#f59e0b' : 'rgba(255,255,255,0.06)',
+                                    color: mutationForm.transit_source_name === mkt ? '#000000' : '#ffffff',
+                                    fontWeight: mutationForm.transit_source_name === mkt ? 700 : 500
+                                  }}
+                                >
+                                  {mkt}
+                                </button>
+                              ))}
+                            </div>
+                            <input
+                              type="text"
+                              className="form-control"
+                              style={{ fontSize: 12 }}
+                              placeholder="Contoh: Shopee / Toko Bahan Kue ABC"
+                              value={mutationForm.transit_source_name}
+                              onChange={e => setMutationForm(f => ({ ...f, transit_source_name: e.target.value }))}
+                              required={mutationForm.is_in_transit}
+                            />
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                            <div>
+                              <label className="form-label" style={{ fontSize: 11, color: 'var(--text-muted)' }}>Kurir / Ekspedisi</label>
+                              <input
+                                type="text"
+                                className="form-control"
+                                style={{ fontSize: 12 }}
+                                placeholder="Misal: Shopee Xpress / J&T"
+                                value={mutationForm.transit_expedition}
+                                onChange={e => setMutationForm(f => ({ ...f, transit_expedition: e.target.value }))}
+                              />
+                            </div>
+                            <div>
+                              <label className="form-label" style={{ fontSize: 11, color: 'var(--text-muted)' }}>No. Resi / Pesanan (Opsional)</label>
+                              <input
+                                type="text"
+                                className="form-control mono"
+                                style={{ fontSize: 12 }}
+                                placeholder="Contoh: SPXID01234567"
+                                value={mutationForm.transit_tracking_no}
+                                onChange={e => setMutationForm(f => ({ ...f, transit_tracking_no: e.target.value }))}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     <div className="form-group">
                       <label className="form-label">Satuan Input Qty & Harga</label>
                       <div style={{ display: 'flex', gap: 16, marginTop: 4, background: 'rgba(255,255,255,0.04)', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)' }}>
@@ -2283,8 +2528,23 @@ export default function KartuStok() {
                 <button type="button" className="btn btn-ghost" onClick={() => setModalOpen(false)} disabled={saving}>
                   Batal
                 </button>
-                <button type="submit" className="btn btn-primary" disabled={saving}>
-                  <Check size={14} /> {saving ? 'Menyimpan...' : 'Simpan Mutasi'}
+                <button
+                  type="submit"
+                  className="btn"
+                  disabled={saving}
+                  style={{
+                    fontWeight: 800,
+                    background: (mutationForm.type === 'PURCHASE' && mutationForm.is_in_transit)
+                      ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
+                      : 'var(--primary)',
+                    color: '#ffffff'
+                  }}
+                >
+                  <Check size={14} /> {saving
+                    ? 'Menyimpan...'
+                    : (mutationForm.type === 'PURCHASE' && mutationForm.is_in_transit)
+                      ? '🚚 Simpan ke Persediaan Dalam Perjalanan'
+                      : 'Simpan Mutasi'}
                 </button>
               </div>
             </form>

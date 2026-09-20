@@ -433,6 +433,112 @@ export default function TransferBahan() {
     }
   }
 
+  // Hitung total kebutuhan stok dan periksa ketersediaan di cabang asal untuk semua baris
+  const deficitItems = useMemo(() => {
+    if (formData.source_mode !== 'OUTLET' || !formData.source_outlet_id) {
+      return [];
+    }
+    const sourceOutletId = Number(formData.source_outlet_id);
+
+    // Kumpulkan kebutuhan per bahan baku dan per produk
+    const neededIngredients = {};
+    const neededProducts = {};
+
+    (formData.items || []).forEach((item, index) => {
+      const isProd = item.item_type === 'PRODUCT';
+
+      if (isProd) {
+        const menuId = Number(item.menu_id);
+        if (!menuId) return;
+        const q = Number(item.input_qty || item.qty || 0);
+        if (q <= 0) return;
+
+        if (!neededProducts[menuId]) {
+          const menu = menus.find(m => m.id === menuId);
+          const om = menu?.outlet_menus?.find(x => x.outlet_id === sourceOutletId);
+          const avail = om ? Number(om.stock) : Number(menu?.stock ?? 0);
+          neededProducts[menuId] = {
+            id: menuId,
+            name: menu?.name || 'Produk',
+            unit: menu?.unit || 'pcs',
+            availStock: avail,
+            totalNeeded: 0,
+            trackStock: Boolean(menu?.track_stock),
+            rowIndices: [],
+          };
+        }
+        neededProducts[menuId].totalNeeded += q;
+        neededProducts[menuId].rowIndices.push(index);
+      } else {
+        const ingId = Number(item.ingredient_id);
+        if (!ingId) return;
+        const ing = ingredients.find(i => i.id === ingId);
+        if (!ing) return;
+
+        const ub = (ing.unit_beli || '').trim();
+        const up = (ing.unit_pakai || '').trim();
+        const factor = Number(ing.konversi) || 1;
+        const isConvertible = ub && up && ub.toLowerCase() !== up.toLowerCase() && factor > 1;
+        const isBeli = isConvertible && item.input_unit && item.input_unit.toLowerCase() === ub.toLowerCase();
+        const inputQ = Number(item.input_qty || 0);
+        const baseQ = isBeli ? (inputQ * factor) : (item.qty !== '' && !isNaN(Number(item.qty)) ? Number(item.qty) : inputQ);
+        if (baseQ <= 0) return;
+
+        if (!neededIngredients[ingId]) {
+          const outStock = ing.outlet_stocks?.find(os => os.outlet_id === sourceOutletId);
+          const avail = outStock
+            ? Number(outStock.stock ?? outStock.current ?? 0)
+            : Number(ing.current_stock ?? ing.stok_awal ?? 0);
+
+          neededIngredients[ingId] = {
+            id: ingId,
+            name: ing.name || 'Bahan Baku',
+            unit: up || ing.unit_pakai || 'satuan',
+            availStock: avail,
+            totalNeeded: 0,
+            rowIndices: [],
+          };
+        }
+        neededIngredients[ingId].totalNeeded += baseQ;
+        neededIngredients[ingId].rowIndices.push(index);
+      }
+    });
+
+    const deficits = [];
+
+    Object.values(neededIngredients).forEach(ing => {
+      if (ing.totalNeeded > ing.availStock) {
+        deficits.push({
+          type: 'INGREDIENT',
+          id: ing.id,
+          name: ing.name,
+          avail: ing.availStock,
+          needed: ing.totalNeeded,
+          shortfall: ing.totalNeeded - ing.availStock,
+          unit: ing.unit,
+          rowIndices: ing.rowIndices,
+        });
+      }
+    });
+
+    Object.values(neededProducts).forEach(prod => {
+      if (prod.trackStock && prod.totalNeeded > prod.availStock) {
+        deficits.push({
+          type: 'PRODUCT',
+          id: prod.id,
+          name: prod.name,
+          avail: prod.availStock,
+          needed: prod.totalNeeded,
+          shortfall: prod.totalNeeded - prod.availStock,
+          unit: prod.unit,
+          rowIndices: prod.rowIndices,
+        });
+      }
+    });
+
+    return deficits;
+  }, [formData.source_mode, formData.source_outlet_id, formData.items, ingredients, menus]);
+
   // Submit Create Transfer
   async function handleCreateTransfer(e) {
     e.preventDefault();
@@ -487,6 +593,16 @@ export default function TransferBahan() {
         toast.error('Jumlah transfer harus lebih besar dari 0!');
         return;
       }
+    }
+
+    // Blokir pengiriman jika ada stok bahan atau produk yang kurang di cabang asal
+    if (deficitItems.length > 0) {
+      const itemNames = deficitItems.map(d => d.name).join(', ');
+      toast.error(
+        `Transfer tidak boleh dilakukan karena stok di cabang asal tidak mencukupi untuk: ${itemNames}. Silakan sesuaikan jumlah atau lakukan pengadaan stok terlebih dahulu.`,
+        { duration: 6000 }
+      );
+      return;
     }
 
     setSaving(true);
@@ -1864,10 +1980,48 @@ export default function TransferBahan() {
                   </div>
                 </div>
 
+                {/* Deficit Alert Banner */}
+                {deficitItems.length > 0 && (
+                  <div
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: 8,
+                      marginBottom: 12,
+                      background: 'rgba(239, 68, 68, 0.12)',
+                      border: '1px solid rgba(239, 68, 68, 0.45)',
+                      display: 'flex',
+                      gap: 12,
+                      alignItems: 'flex-start'
+                    }}
+                  >
+                    <AlertTriangle size={20} style={{ color: '#ef4444', flexShrink: 0, marginTop: 2 }} />
+                    <div style={{ fontSize: 12.5, color: '#fca5a5', flex: 1 }}>
+                      <div style={{ fontWeight: 700, color: '#f87171', marginBottom: 4 }}>
+                        Transfer Tidak Dapat Diproses: Stok Cabang Asal Kurang!
+                      </div>
+                      <div>Jumlah transfer untuk bahan/produk berikut melebihi stok yang tersedia di cabang asal:</div>
+                      <ul style={{ margin: '6px 0 0 0', paddingLeft: 18 }}>
+                        {deficitItems.map(d => (
+                          <li key={`${d.type}-${d.id}`} style={{ marginBottom: 2 }}>
+                            <strong>{d.name}</strong>: Tersedia <strong>{num(d.avail)} {d.unit}</strong> | Dibutuhkan: <strong>{num(d.needed)} {d.unit}</strong> (Kurang <span style={{ color: '#ff8080', fontWeight: 700 }}>{num(d.shortfall)} {d.unit}</span>)
+                          </li>
+                        ))}
+                      </ul>
+                      <div style={{ marginTop: 6, fontSize: 11.5, opacity: 0.9 }}>
+                        💡 Silakan kurangi jumlah transfer atau lakukan pengadaan/pembelian stok terlebih dahulu di cabang asal sebelum mengirim transfer.
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {formData.items.map((item, idx) => {
                     const isProd = item.item_type === 'PRODUCT';
                     const stockInfo = getSourceStockInfo(item);
+                    const isItemInDeficit = deficitItems.some(d =>
+                      (item.item_type === 'PRODUCT' && d.type === 'PRODUCT' && d.id === Number(item.menu_id)) ||
+                      (item.item_type !== 'PRODUCT' && d.type === 'INGREDIENT' && d.id === Number(item.ingredient_id))
+                    );
                     const selectedIng = !isProd ? ingredients.find(i => i.id === Number(item.ingredient_id)) : null;
                     const ub = selectedIng ? (selectedIng.unit_beli || '').trim() : '';
                     const up = selectedIng ? (selectedIng.unit_pakai || '').trim() : '';
@@ -1882,8 +2036,8 @@ export default function TransferBahan() {
                         style={{
                           padding: 10,
                           borderRadius: 8,
-                          background: 'var(--bg-main)',
-                          border: '1px solid var(--border-soft)'
+                          background: isItemInDeficit ? 'rgba(239, 68, 68, 0.08)' : 'var(--bg-main)',
+                          border: isItemInDeficit ? '1px solid rgba(239, 68, 68, 0.45)' : '1px solid var(--border-soft)'
                         }}
                       >
                         <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr 110px 100px 1fr 32px', gap: 8, alignItems: 'center' }}>
@@ -2006,8 +2160,8 @@ export default function TransferBahan() {
                         {/* Stock & Conversion Subtext */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, fontSize: 11.5 }}>
                           {stockInfo ? (
-                            <span style={{ color: stockInfo.isDeficit ? '#fb7185' : '#86efac', fontWeight: 600 }}>
-                              {stockInfo.isDeficit ? (
+                            <span style={{ color: (stockInfo.isDeficit || isItemInDeficit) ? '#fb7185' : '#86efac', fontWeight: 600 }}>
+                              {(stockInfo.isDeficit || isItemInDeficit) ? (
                                 <>
                                   ⚠️ Stok tidak cukup di cabang asal: Tersedia <strong>{num(stockInfo.stock)} {stockInfo.unit}</strong> (Kurang {num(Math.abs(stockInfo.remaining))} {stockInfo.unit})
                                 </>
@@ -2061,10 +2215,17 @@ export default function TransferBahan() {
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  disabled={saving}
-                  style={{ fontWeight: 800 }}
+                  disabled={saving || deficitItems.length > 0}
+                  style={{
+                    fontWeight: 800,
+                    opacity: (saving || deficitItems.length > 0) ? 0.65 : 1,
+                    cursor: deficitItems.length > 0 ? 'not-allowed' : 'pointer',
+                    background: deficitItems.length > 0 ? '#475569' : undefined,
+                    borderColor: deficitItems.length > 0 ? '#475569' : undefined
+                  }}
+                  title={deficitItems.length > 0 ? 'Stok bahan atau produk di cabang asal tidak mencukupi' : 'Kirim transfer'}
                 >
-                  {saving ? 'Mengirim & Memproses...' : 'Kirim & Cetak Surat Jalan'}
+                  {saving ? 'Mengirim & Memproses...' : (deficitItems.length > 0 ? '⛔ Stok Cabang Asal Kurang' : 'Kirim & Cetak Surat Jalan')}
                 </button>
               </div>
             </form>
