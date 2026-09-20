@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import api from '../api/client';
 import { num, pct, rupiah, fmtQtyVal, StatusPill, LoadingState, PeriodPicker, PageHeader, AuditInfo, MiniCard } from '../components/ui';
-import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
+import { getTodayStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 import { printElement } from '../utils/print';
@@ -53,37 +53,51 @@ export default function StockOpname() {
   }, [selectedOutletId, activeOutletId, outlets, canSwitchOutlet, currentUser?.outlet_id]);
 
   // --- TAB 1: INPUT OPNAME STATE ---
-  const [period, setPeriod] = useState(() => ({
-    from: getMonthStartStr(),
-    to: getMonthEndStr(),
+  const [opnameMode, setOpnameMode] = useState('DAILY'); // 'DAILY' | 'RANGE'
+  const [opnameDate, setOpnameDate] = useState(() => getTodayStr());
+  const [rangePeriod, setRangePeriod] = useState(() => ({
+    from: getTodayStr(),
+    to: getTodayStr(),
   }));
 
-  const selectedMonthStr = useMemo(() => {
-    if (!period.from) return getTodayStr().slice(0, 7);
-    return period.from.slice(0, 7);
-  }, [period.from]);
+  // Effective period for querying variance and opname records
+  const period = useMemo(() => {
+    if (opnameMode === 'DAILY') {
+      return { from: opnameDate, to: opnameDate };
+    }
+    return {
+      from: rangePeriod.from || getTodayStr(),
+      to: rangePeriod.to || getTodayStr(),
+    };
+  }, [opnameMode, opnameDate, rangePeriod]);
 
-  function handleMonthChange(newMonthStr) {
-    if (!newMonthStr) return;
-    const [yearStr, monthStr] = newMonthStr.split('-');
-    const y = parseInt(yearStr, 10);
-    const m = parseInt(monthStr, 10);
-    if (isNaN(y) || isNaN(m)) return;
-
-    const from = `${y}-${String(m).padStart(2, '0')}-01`;
-    const lastDay = new Date(y, m, 0).getDate();
-    const to = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-
-    setPeriod({ from, to });
+  function handleOpnameDateChange(newDate) {
+    if (!newDate) return;
+    const today = getTodayStr();
+    if (newDate < today) {
+      toast.error('Tanggal opname tidak boleh mundur (sebelum hari ini)!');
+      return;
+    }
+    setOpnameDate(newDate);
+    setSessionForm(p => ({ ...p, opname_date: newDate }));
   }
 
-  function handleShiftMonth(offset) {
-    const current = selectedMonthStr || getTodayStr().slice(0, 7);
-    const [yStr, mStr] = current.split('-');
-    const d = new Date(parseInt(yStr, 10), parseInt(mStr, 10) - 1 + offset, 1);
-    const newY = d.getFullYear();
-    const newM = String(d.getMonth() + 1).padStart(2, '0');
-    handleMonthChange(`${newY}-${newM}`);
+  function handleRangeChange(field, value) {
+    const today = getTodayStr();
+    if (field === 'to' && value < today) {
+      toast.error('Tanggal akhir opname tidak boleh mundur (sebelum hari ini)!');
+      return;
+    }
+    setRangePeriod(p => {
+      const next = { ...p, [field]: value };
+      if (field === 'from' && next.to && next.to < value) {
+        next.to = value;
+      }
+      return next;
+    });
+    if (field === 'to') {
+      setSessionForm(p => ({ ...p, opname_date: value }));
+    }
   }
 
   const [varData, setVarData] = useState([]);
@@ -209,8 +223,12 @@ export default function StockOpname() {
     }
 
     const todayStr = getTodayStr();
-    if (sessionForm.opname_date < todayStr) {
-      toast.error('Tanggal pelaksanaan opname tidak boleh di-inputkan tanggal mundur (sebelum hari ini)!');
+    const effectiveOpnameDate = opnameMode === 'DAILY' ? opnameDate : (sessionForm.opname_date || getTodayStr());
+    const effectiveFrom = period.from;
+    const effectiveTo = period.to;
+
+    if (effectiveOpnameDate < todayStr || effectiveTo < todayStr) {
+      toast.error('Tanggal pelaksanaan opname tidak boleh tanggal mundur (sebelum hari ini)!');
       return;
     }
 
@@ -232,10 +250,10 @@ export default function StockOpname() {
     setSaving(true);
     try {
       const { data } = await api.post('/opnames/bulk', {
-        period_from: period.from,
-        period_to: period.to,
+        period_from: effectiveFrom,
+        period_to: effectiveTo,
         outlet_id: targetOutlet,
-        opname_date: sessionForm.opname_date,
+        opname_date: effectiveOpnameDate,
         approver: sessionForm.approver || null,
         notes: sessionForm.notes || null,
         action: actionType, // 'DRAFT' or 'RELEASE'
@@ -275,20 +293,29 @@ export default function StockOpname() {
 
   function handleEditDraft(session) {
     if (!session) return;
+    const today = getTodayStr();
     if (session.period_from && session.period_to) {
-      setPeriod({ from: session.period_from, to: session.period_to });
+      if (session.period_from === session.period_to) {
+        setOpnameMode('DAILY');
+        setOpnameDate(session.period_to >= today ? session.period_to : today);
+      } else {
+        setOpnameMode('RANGE');
+        setRangePeriod({
+          from: session.period_from,
+          to: session.period_to >= today ? session.period_to : today
+        });
+      }
     }
     if (session.outlet_id) {
       setSelectedOutletId(String(session.outlet_id));
     }
-    if (session.opname_date) {
-      setSessionForm(p => ({
-        ...p,
-        opname_date: session.opname_date,
-        approver: session.approver || '',
-        notes: session.notes || '',
-      }));
-    }
+    const safeDate = session.opname_date && session.opname_date >= today ? session.opname_date : today;
+    setSessionForm(p => ({
+      ...p,
+      opname_date: safeDate,
+      approver: session.approver || '',
+      notes: session.notes || '',
+    }));
     setDetailModalOpen(false);
     setActiveTab('INPUT');
     toast.success(`Membuka sesi draft ${session.opname_no || ''}. Silakan ubah angka fisik di tabel.`);
@@ -440,60 +467,98 @@ export default function StockOpname() {
               </div>
 
               <div>
-                <label className="form-label" style={{ fontSize: 11.5 }}>Periode Bulan Buku Opname</label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <label className="form-label" style={{ fontSize: 11.5 }}>Mode Opname</label>
+                <div style={{ display: 'flex', gap: 6 }}>
                   <button
                     type="button"
-                    className="btn btn-secondary btn-icon"
-                    style={{ padding: '6px 10px', height: 38 }}
-                    onClick={() => handleShiftMonth(-1)}
-                    title="Bulan Sebelumnya"
-                  >
-                    <ChevronLeft size={16} />
-                  </button>
-                  <input
-                    type="month"
-                    className="form-control mono"
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 700,
-                      background: 'var(--card-bg)',
-                      color: '#ffffff',
-                      cursor: 'pointer',
-                      padding: '6px 10px',
-                      height: 38,
-                      textAlign: 'center'
+                    className={`btn ${opnameMode === 'DAILY' ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ flex: 1, padding: '7px 8px', fontSize: 11.5, fontWeight: 600 }}
+                    onClick={() => {
+                      setOpnameMode('DAILY');
+                      setSessionForm(p => ({ ...p, opname_date: opnameDate }));
                     }}
-                    value={selectedMonthStr}
-                    onChange={e => handleMonthChange(e.target.value)}
-                  />
+                  >
+                    📅 Harian (Per Hari)
+                  </button>
                   <button
                     type="button"
-                    className="btn btn-secondary btn-icon"
-                    style={{ padding: '6px 10px', height: 38 }}
-                    onClick={() => handleShiftMonth(1)}
-                    title="Bulan Berikutnya"
+                    className={`btn ${opnameMode === 'RANGE' ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ flex: 1, padding: '7px 8px', fontSize: 11.5, fontWeight: 600 }}
+                    onClick={() => {
+                      setOpnameMode('RANGE');
+                      setSessionForm(p => ({ ...p, opname_date: rangePeriod.to || getTodayStr() }));
+                    }}
                   >
-                    <ChevronRight size={16} />
+                    📆 Rentang Tanggal
                   </button>
                 </div>
               </div>
 
               <div>
-                <label className="form-label" style={{ fontSize: 11.5 }}>Tanggal Pelaksanaan Opname</label>
-                <input
-                  type="date"
-                  className="form-control mono"
-                  style={{
-                    fontSize: 12.5,
-                    background: isSessionClosed ? 'rgba(255,255,255,0.04)' : undefined,
-                    cursor: isSessionClosed ? 'not-allowed' : undefined
-                  }}
-                  min={getTodayStr()}
-                  disabled={isSessionClosed}
-                  value={sessionForm.opname_date}
-                  onChange={e => setSessionForm(p => ({ ...p, opname_date: e.target.value }))}
-                />
+                {opnameMode === 'DAILY' ? (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                      <label className="form-label" style={{ fontSize: 11.5, margin: 0 }}>Tanggal Opname (Harian)</label>
+                      {opnameDate !== getTodayStr() && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-xs"
+                          style={{ padding: '0 6px', fontSize: 10.5, color: 'var(--accent-bright)' }}
+                          onClick={() => handleOpnameDateChange(getTodayStr())}
+                        >
+                          Hari Ini
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="date"
+                      className="form-control mono"
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 700,
+                        background: isSessionClosed ? 'rgba(255,255,255,0.04)' : 'var(--card-bg)',
+                        color: '#ffffff',
+                        cursor: isSessionClosed ? 'not-allowed' : 'pointer',
+                        padding: '6px 10px',
+                        height: 38
+                      }}
+                      min={getTodayStr()}
+                      disabled={isSessionClosed}
+                      value={opnameDate}
+                      onChange={e => handleOpnameDateChange(e.target.value)}
+                    />
+                    <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>
+                      🔒 Tidak boleh tanggal mundur (sebelum hari ini).
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <label className="form-label" style={{ fontSize: 11.5 }}>Rentang Tanggal Opname</label>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <input
+                        type="date"
+                        className="form-control mono"
+                        style={{ fontSize: 11.5, height: 38, padding: '6px 6px' }}
+                        value={rangePeriod.from}
+                        disabled={isSessionClosed}
+                        onChange={e => handleRangeChange('from', e.target.value)}
+                      />
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>s/d</span>
+                      <input
+                        type="date"
+                        className="form-control mono"
+                        style={{ fontSize: 11.5, height: 38, padding: '6px 6px' }}
+                        min={getTodayStr()}
+                        value={rangePeriod.to}
+                        disabled={isSessionClosed}
+                        onChange={e => handleRangeChange('to', e.target.value)}
+                      />
+                    </div>
+                    <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>
+                      🔒 Tanggal akhir tidak boleh mundur sebelum hari ini.
+                    </div>
+                  </>
+                )}
               </div>
 
               <div>
@@ -537,7 +602,7 @@ export default function StockOpname() {
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 3 }}>
                   {isSessionClosed ? (
-                    <span>Sesi opname periode ini (<strong>{currentOpnameSession?.opname_no}</strong>) telah <strong>DI-RELEASE & DISETUJUI</strong>. Formulir terkunci (Read-Only) untuk menjaga integritas stok & pembukuan akuntansi.</span>
+                    <span>Sesi opname tanggal ini (<strong>{currentOpnameSession?.opname_no}</strong>) telah <strong>DI-RELEASE & DISETUJUI</strong>. Formulir terkunci (Read-Only) untuk menjaga integritas stok & pembukuan akuntansi.</span>
                   ) : currentOpnameSession && !currentOpnameSession.is_closed ? (
                     <span>Sesi ini berstatus <strong>DRAFT</strong>. Anda dapat mengedit kembali angka fisik kapan saja, lalu klik <strong>Simpan Draft</strong> untuk memperbarui atau <strong>Release</strong> untuk mengunci.</span>
                   ) : (
