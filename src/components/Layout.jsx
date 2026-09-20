@@ -103,7 +103,7 @@ export default function Layout() {
               { to: '/menu', label: 'Master Menu & Harga', icon: UtensilsCrossed },
               { to: '/outlet', label: 'Cabang Outlet', icon: Store },
               { to: '/pos', label: 'POS / Transaksi', icon: ShoppingCart },
-              { to: '/urgent-notes', label: 'Nota Urgent', icon: AlertOctagon },
+              { to: '/urgent-notes', label: 'Nota Urgent / Manual', icon: AlertOctagon },
               { to: '/shift', label: 'Kelola Shift', icon: Clock },
               { to: '/batch-prep', label: 'Produksi Batch', icon: ChefHat },
               { to: '/waste', label: 'Bahan Terbuang (Waste)', icon: Trash2 },
@@ -181,7 +181,7 @@ export default function Layout() {
           label: 'Operasional',
           items: [
             { to: '/pos', label: 'POS / Transaksi', icon: ShoppingCart },
-            { to: '/urgent-notes', label: 'Nota Urgent (Bahan)', icon: AlertOctagon },
+            { to: '/urgent-notes', label: 'Nota Urgent / Manual', icon: AlertOctagon },
             { to: '/shift', label: 'Kelola Shift Kasir', icon: Clock },
             { to: '/batch-prep', label: 'Produksi Batch (Prep)', icon: ChefHat },
             { to: '/waste', label: 'Bahan Terbuang (Waste)', icon: Trash2 },
@@ -238,7 +238,7 @@ export default function Layout() {
           label: 'Operasional Cabang',
           items: [
             { to: '/pos', label: 'POS Kasir', icon: ShoppingCart },
-            { to: '/urgent-notes', label: 'Nota Urgent', icon: AlertOctagon },
+            { to: '/urgent-notes', label: 'Nota Urgent / Manual', icon: AlertOctagon },
             { to: '/shift', label: 'Shift Kasir', icon: Clock },
             { to: '/batch-prep', label: 'Batch Prep Dapur', icon: ChefHat },
             { to: '/waste', label: 'Waste Log', icon: Trash2 },
@@ -282,7 +282,7 @@ export default function Layout() {
         label: 'Operasional Kasir & Dapur',
         items: [
           { to: '/pos', label: 'POS / Transaksi', icon: ShoppingCart },
-          { to: '/urgent-notes', label: 'Nota Urgent', icon: AlertOctagon },
+          { to: '/urgent-notes', label: 'Nota Urgent / Manual', icon: AlertOctagon },
           { to: '/shift', label: 'Shift Kasir', icon: Clock },
           { to: '/batch-prep', label: 'Produksi Batch (Dapur)', icon: ChefHat },
           { to: '/waste', label: 'Bahan Terbuang (Waste)', icon: Trash2 },
