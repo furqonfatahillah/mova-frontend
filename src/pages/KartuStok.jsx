@@ -3,7 +3,8 @@ import {
   ScrollText, Plus, Search, Filter, ArrowUpRight, ArrowDownLeft,
   AlertTriangle, Calendar, Printer, X, Check, RefreshCw, Eye, Store,
   ArrowLeft, Building2, ChevronRight, Calculator,
-  Truck, PackageCheck, CheckCircle2, ShieldCheck, Clock, ArrowRight, RotateCcw, AlertCircle
+  Truck, PackageCheck, CheckCircle2, ShieldCheck, Clock, ArrowRight, RotateCcw, AlertCircle,
+  ShoppingBag
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, num, LoadingState, PageHeader, AuditInfo, PeriodPicker } from '../components/ui';
