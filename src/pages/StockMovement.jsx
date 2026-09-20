@@ -84,6 +84,7 @@ export default function StockMovement() {
     waste_reason: 'SPOILED',
     unit_type: 'BELI', // 'BELI' or 'PAKAI'
     unit_price: '',
+    total_price: '',
     qty: '',
     date: getTodayStr(),
     note: '',
@@ -127,6 +128,76 @@ export default function StockMovement() {
   const conversion = Number(selectedIng?.konversi) || 1;
   const isUnitBeli = form.unit_type === 'BELI';
 
+  // Smart two-way calculation for Qty, Total Price, and Unit Price (auto-divide)
+  function handleQtyChange(val) {
+    const q = val;
+    setForm(prev => {
+      const numQ = parseFloat(q) || 0;
+      let newUnitPrice = prev.unit_price;
+      let newTotalPrice = prev.total_price;
+
+      if (numQ > 0) {
+        if (prev.total_price !== '' && !isNaN(Number(prev.total_price))) {
+          // If total_price was entered, automatically divide by qty to calculate unit_price
+          newUnitPrice = Number((parseFloat(prev.total_price) / numQ).toFixed(2));
+        } else if (prev.unit_price !== '' && !isNaN(Number(prev.unit_price))) {
+          // If unit_price was entered, multiply by qty to calculate total_price
+          newTotalPrice = Math.round(numQ * parseFloat(prev.unit_price));
+        }
+      }
+
+      return {
+        ...prev,
+        qty: q,
+        unit_price: newUnitPrice,
+        total_price: newTotalPrice,
+      };
+    });
+  }
+
+  function handleTotalPriceChange(val) {
+    const tot = val;
+    setForm(prev => {
+      const numTot = parseFloat(tot) || 0;
+      const numQ = parseFloat(prev.qty) || 0;
+      let newUnitPrice = prev.unit_price;
+
+      if (numQ > 0 && tot !== '') {
+        // Automatically divide total by qty
+        newUnitPrice = Number((numTot / numQ).toFixed(2));
+      } else if (tot === '') {
+        newUnitPrice = '';
+      }
+
+      return {
+        ...prev,
+        total_price: tot,
+        unit_price: newUnitPrice,
+      };
+    });
+  }
+
+  function handleUnitPriceChange(val) {
+    const up = val;
+    setForm(prev => {
+      const numUp = parseFloat(up) || 0;
+      const numQ = parseFloat(prev.qty) || 0;
+      let newTotalPrice = prev.total_price;
+
+      if (numQ > 0 && up !== '') {
+        newTotalPrice = Math.round(numQ * numUp);
+      } else if (up === '') {
+        newTotalPrice = '';
+      }
+
+      return {
+        ...prev,
+        unit_price: up,
+        total_price: newTotalPrice,
+      };
+    });
+  }
+
   // Live simulation of Moving Average for PURCHASE
   const liveMovingAverage = useMemo(() => {
     if (!selectedIng || form.type !== 'PURCHASE') return null;
@@ -154,7 +225,9 @@ export default function StockMovement() {
     const incomingPricePakai = isUnitBeli ? (inputPrice / conversion) : inputPrice;
     const incomingPriceBeli = isUnitBeli ? inputPrice : (inputPrice * conversion);
 
-    const totalBeliValue = (incomingQtyPakai / conversion) * incomingPriceBeli;
+    const totalBeliValue = form.total_price !== '' && !isNaN(Number(form.total_price))
+      ? Number(form.total_price)
+      : (incomingQtyPakai / conversion) * incomingPriceBeli;
 
     let newCostPerPakai = incomingPricePakai;
     if (effectiveStock + incomingQtyPakai > 0) {
@@ -177,7 +250,7 @@ export default function StockMovement() {
       newHargaBeli,
       deltaHarga,
     };
-  }, [selectedIng, form.type, form.qty, form.unit_price, form.unit_type, conversion, isUnitBeli]);
+  }, [selectedIng, form.type, form.qty, form.unit_price, form.total_price, form.unit_type, conversion, isUnitBeli]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -192,6 +265,7 @@ export default function StockMovement() {
         qty: Number(form.qty),
         unit_type: form.unit_type,
         unit_price: form.type === 'PURCHASE' && form.unit_price !== '' ? Number(form.unit_price) : null,
+        total_price: form.type === 'PURCHASE' && form.total_price !== '' ? Number(form.total_price) : null,
         note: form.note,
         outlet_id: targetOutlet,
         waste_reason: form.type === 'WASTE' ? form.waste_reason : null,
@@ -199,7 +273,7 @@ export default function StockMovement() {
 
       const { data } = await api.post('/movements', payload);
       setMovements(prev => [data, ...prev]);
-      setForm(f => ({ ...f, qty: '', note: '' }));
+      setForm(f => ({ ...f, qty: '', total_price: '', note: '' }));
       setIsModalOpen(false);
       toast.success(
         form.type === 'PURCHASE'
@@ -456,32 +530,38 @@ export default function StockMovement() {
 
               {/* Qty & Unit Selection */}
               <div className="form-group">
-                <label className="form-label">
+                <label className="form-label" style={{ fontWeight: 700 }}>
                   Jumlah Qty {form.type === 'PURCHASE' ? 'Pembelian' : `(${selectedIng?.unit_pakai || 'satuan'})`}
                 </label>
                 {form.type === 'PURCHASE' ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 130px', gap: 8 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 8 }}>
                     <input
                       type="number"
-                      className="form-control"
+                      className="form-control mono"
                       min="0.001"
                       step="any"
-                      placeholder="0"
+                      placeholder="Contoh: 5"
                       value={form.qty}
-                      onChange={e => setForm(f => ({ ...f, qty: e.target.value }))}
+                      onChange={e => handleQtyChange(e.target.value)}
+                      required
                     />
                     <select
                       className="form-control"
                       value={form.unit_type}
                       onChange={e => {
                         const newUnit = e.target.value;
-                        setForm(f => ({
-                          ...f,
-                          unit_type: newUnit,
-                          unit_price: selectedIng
+                        setForm(f => {
+                          const basePrice = selectedIng
                             ? (newUnit === 'BELI' ? selectedIng.harga : Number((selectedIng.harga / (selectedIng.konversi || 1)).toFixed(2)))
-                            : f.unit_price
-                        }));
+                            : f.unit_price;
+                          const numQ = parseFloat(f.qty) || 0;
+                          return {
+                            ...f,
+                            unit_type: newUnit,
+                            unit_price: basePrice,
+                            total_price: numQ > 0 && basePrice ? Math.round(numQ * basePrice) : f.total_price,
+                          };
+                        });
                       }}
                     >
                       <option value="BELI">{selectedIng?.unit_beli || 'Satuan Beli'} ({selectedIng?.konversi || 1000}x)</option>
@@ -501,56 +581,85 @@ export default function StockMovement() {
                 )}
               </div>
 
-              {/* PURCHASE ONLY: Purchase Price & Moving Average Simulation */}
+              {/* PURCHASE ONLY: Total Price & Unit Price (Langsung Dibagi) */}
               {form.type === 'PURCHASE' && (
                 <div className="form-group fade-in" style={{
-                  background: 'linear-gradient(135deg, rgba(30, 27, 75, 0.3) 0%, rgba(16, 185, 129, 0.08) 100%)',
-                  padding: '12px 14px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(16, 185, 129, 0.25)',
+                  background: 'linear-gradient(135deg, rgba(30, 27, 75, 0.4) 0%, rgba(16, 185, 129, 0.1) 100%)',
+                  padding: '14px 16px',
+                  borderRadius: 12,
+                  border: '1px solid rgba(16, 185, 129, 0.35)',
                   marginBottom: 16
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <label className="form-label" style={{ color: '#34d399', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}>
-                      <Calculator size={14} /> Harga Beli Satuan Baru (Rp)
-                    </label>
-                    <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
-                      per {form.unit_type === 'BELI' ? selectedIng?.unit_beli : selectedIng?.unit_pakai}
-                    </span>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    {/* Input 1: TOTAL HARGA NOTA (LANGSUNG DARI STRUK / BON BELANJA) */}
                     <div>
+                      <label className="form-label" style={{ color: '#34d399', fontWeight: 800, fontSize: 12.5, margin: '0 0 6px 0', display: 'flex', alignItems: 'center', gap: 5 }}>
+                        💵 Total Harga Nota (Rp)
+                      </label>
                       <input
                         type="number"
                         step="any"
                         min="0"
                         className="form-control mono"
-                        style={{ fontSize: 13, fontWeight: 700, borderColor: 'rgba(16, 185, 129, 0.4)' }}
-                        placeholder="Harga satuan beli..."
-                        value={form.unit_price}
-                        onChange={e => setForm(f => ({ ...f, unit_price: e.target.value }))}
+                        style={{ fontSize: 14, fontWeight: 800, borderColor: 'rgba(16, 185, 129, 0.5)', background: 'rgba(0,0,0,0.25)', color: '#34d399' }}
+                        placeholder="Total di bon (misal: 150000)"
+                        value={form.total_price}
+                        onChange={e => handleTotalPriceChange(e.target.value)}
                       />
+                      <span style={{ fontSize: 10.5, color: 'var(--text-secondary)', marginTop: 3, display: 'block' }}>
+                        Ketik total belanja di bon/nota kasir.
+                      </span>
                     </div>
 
+                    {/* Input 2: HARGA SATUAN (OTOMATIS DIBAGI DARI TOTAL ÷ QTY) */}
                     <div>
-                      <div style={{
-                        padding: '8px 10px',
-                        background: 'rgba(255, 255, 255, 0.04)',
-                        borderRadius: 8,
-                        border: '1px solid var(--border)',
-                        height: '100%',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'center'
-                      }}>
-                        <div style={{ fontSize: 10, color: 'var(--text-secondary)' }}>Total Nilai Pembelian</div>
-                        <div className="mono" style={{ fontSize: 13, fontWeight: 700, color: '#34d399' }}>
-                          {liveMovingAverage?.totalBeliValue ? rupiah(liveMovingAverage.totalBeliValue) : 'Rp 0'}
-                        </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <label className="form-label" style={{ color: '#60a5fa', fontWeight: 800, fontSize: 12.5, margin: 0, display: 'flex', alignItems: 'center', gap: 5 }}>
+                          <Calculator size={14} /> Harga Satuan (Rp)
+                        </label>
+                        <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                          per {form.unit_type === 'BELI' ? selectedIng?.unit_beli : selectedIng?.unit_pakai}
+                        </span>
                       </div>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        className="form-control mono"
+                        style={{ fontSize: 14, fontWeight: 800, borderColor: 'rgba(96, 165, 250, 0.5)', background: 'rgba(0,0,0,0.25)', color: '#60a5fa' }}
+                        placeholder="Hasil bagi otomatis..."
+                        value={form.unit_price}
+                        onChange={e => handleUnitPriceChange(e.target.value)}
+                      />
+                      <span style={{ fontSize: 10.5, color: 'var(--text-secondary)', marginTop: 3, display: 'block' }}>
+                        Otomatis terhitung: Total ÷ Qty.
+                      </span>
                     </div>
                   </div>
+
+                  {/* Visual calculation formula banner */}
+                  {Number(form.qty) > 0 && (Number(form.total_price) > 0 || Number(form.unit_price) > 0) && (
+                    <div style={{
+                      marginTop: 12,
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      background: 'rgba(0,0,0,0.35)',
+                      border: '1px dashed rgba(52, 211, 153, 0.4)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      fontSize: 12,
+                      flexWrap: 'wrap',
+                      gap: 6
+                    }}>
+                      <div style={{ color: 'var(--text-secondary)' }}>
+                        💡 Hasil Bagi: <strong style={{ color: '#34d399' }}>{rupiah(form.total_price || (Number(form.qty) * Number(form.unit_price)))}</strong> ÷ <strong style={{ color: '#ffffff' }}>{form.qty} {form.unit_type === 'BELI' ? selectedIng?.unit_beli : selectedIng?.unit_pakai}</strong> =
+                      </div>
+                      <div className="mono" style={{ fontWeight: 800, color: '#60a5fa', fontSize: 13 }}>
+                        {rupiah(form.unit_price || (Number(form.total_price) / Number(form.qty)))} / {form.unit_type === 'BELI' ? selectedIng?.unit_beli : selectedIng?.unit_pakai}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Live Moving Average Result Box */}
                   {liveMovingAverage?.newHargaBeli !== null && liveMovingAverage?.newHargaBeli !== undefined && (

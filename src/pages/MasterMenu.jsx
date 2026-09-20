@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   Plus, Save, X, Edit2, Trash2, UtensilsCrossed, Check, Layers, Sliders,
   CheckSquare, Tag, Package, Scissors, Sparkles, AlertCircle, RefreshCw, Barcode, Info,
-  Copy, Search
+  Copy, Search, Calculator
 } from 'lucide-react';
 import api from '../api/client';
 import {
@@ -26,6 +26,7 @@ export default function MasterMenu() {
   // Quick Restock State for Direct Product
   const [restockModalOpen, setRestockModalOpen] = useState(false);
   const [restockQty, setRestockQty] = useState(10);
+  const [restockTotalCost, setRestockTotalCost] = useState('');
   const [restockCost, setRestockCost] = useState('');
   const [restocking, setRestocking] = useState(false);
 
@@ -250,6 +251,41 @@ export default function MasterMenu() {
     }
   }
 
+  function handleRestockQtyChange(val) {
+    const q = val;
+    setRestockQty(q);
+    const numQ = parseFloat(q) || 0;
+    if (numQ > 0) {
+      if (restockTotalCost !== '' && !isNaN(Number(restockTotalCost))) {
+        setRestockCost(Number((parseFloat(restockTotalCost) / numQ).toFixed(2)));
+      } else if (restockCost !== '' && !isNaN(Number(restockCost))) {
+        setRestockTotalCost(Math.round(numQ * parseFloat(restockCost)));
+      }
+    }
+  }
+
+  function handleRestockTotalCostChange(val) {
+    setRestockTotalCost(val);
+    const numTot = parseFloat(val) || 0;
+    const numQ = parseFloat(restockQty) || 0;
+    if (numQ > 0 && val !== '') {
+      setRestockCost(Number((numTot / numQ).toFixed(2)));
+    } else if (val === '') {
+      setRestockCost('');
+    }
+  }
+
+  function handleRestockCostChange(val) {
+    setRestockCost(val);
+    const numUp = parseFloat(val) || 0;
+    const numQ = parseFloat(restockQty) || 0;
+    if (numQ > 0 && val !== '') {
+      setRestockTotalCost(Math.round(numQ * numUp));
+    } else if (val === '') {
+      setRestockTotalCost('');
+    }
+  }
+
   async function handleQuickRestockDirect(e) {
     e.preventDefault();
     if (!selected) return;
@@ -263,6 +299,7 @@ export default function MasterMenu() {
       await api.post(`/menus/${selected.id}/restock`, {
         qty: Number(restockQty),
         cost_price: restockCost !== '' ? Number(restockCost) : null,
+        total_cost: restockTotalCost !== '' ? Number(restockTotalCost) : null,
       });
       toast.success(`Stok "${selected.name}" bertambah +${num(restockQty)} ${selected.unit || 'pcs'}!`);
       setRestockModalOpen(false);
@@ -1352,8 +1389,11 @@ export default function MasterMenu() {
                             type="button"
                             className="btn btn-primary"
                             onClick={() => {
-                              setRestockQty(10);
-                              setRestockCost(selected.cost_price || '');
+                              const defaultQ = 10;
+                              const defaultCost = selected.cost_price || '';
+                              setRestockQty(defaultQ);
+                              setRestockCost(defaultCost);
+                              setRestockTotalCost(defaultCost ? Math.round(defaultQ * Number(defaultCost)) : '');
                               setRestockModalOpen(true);
                             }}
                           >
@@ -2791,25 +2831,79 @@ export default function MasterMenu() {
                     step="1"
                     required
                     value={restockQty}
-                    onChange={e => setRestockQty(e.target.value)}
+                    onChange={e => handleRestockQtyChange(e.target.value)}
                   />
                 </div>
 
-                <div className="form-group mb-3">
-                  <label className="form-label">Harga Modal Beli Baru (Rp) (Opsional)</label>
-                  <input
-                    type="number"
-                    className="form-control mono"
-                    min="0"
-                    step="100"
-                    value={restockCost}
-                    onChange={e => setRestockCost(e.target.value)}
-                    placeholder={`Saat ini: ${rupiah(selected.cost_price || 0)}`}
-                  />
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                    Jika diisi, modal pokok (HPP) produk akan diperbarui.
-                  </span>
+                {/* Two-way Auto-Division: Total Nota vs Unit Price */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                  <div>
+                    <label className="form-label" style={{ color: '#34d399', fontWeight: 800, fontSize: 12, margin: '0 0 5px 0' }}>
+                      💵 Total Nota (Rp)
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      className="form-control mono"
+                      style={{ borderColor: 'rgba(16, 185, 129, 0.5)', background: 'rgba(0,0,0,0.25)', color: '#34d399', fontWeight: 700 }}
+                      placeholder="Total di bon belanja"
+                      value={restockTotalCost}
+                      onChange={e => handleRestockTotalCostChange(e.target.value)}
+                    />
+                    <span style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 2, display: 'block' }}>
+                      Ketik total belanja di bon.
+                    </span>
+                  </div>
+
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                      <label className="form-label" style={{ color: '#60a5fa', fontWeight: 800, fontSize: 12, margin: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Calculator size={13} /> Modal Satuan (Rp)
+                      </label>
+                      <span style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>
+                        per {selected.unit || 'pcs'}
+                      </span>
+                    </div>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      className="form-control mono"
+                      style={{ borderColor: 'rgba(96, 165, 250, 0.5)', background: 'rgba(0,0,0,0.25)', color: '#60a5fa', fontWeight: 700 }}
+                      placeholder="Harga modal baru"
+                      value={restockCost}
+                      onChange={e => handleRestockCostChange(e.target.value)}
+                    />
+                    <span style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 2, display: 'block' }}>
+                      Otomatis: Total ÷ Qty.
+                    </span>
+                  </div>
                 </div>
+
+                {/* Formula Preview Banner */}
+                {Number(restockQty) > 0 && (Number(restockTotalCost) > 0 || Number(restockCost) > 0) && (
+                  <div style={{
+                    marginBottom: 12,
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    background: 'rgba(0,0,0,0.3)',
+                    border: '1px dashed rgba(52, 211, 153, 0.4)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    fontSize: 11.5,
+                    flexWrap: 'wrap',
+                    gap: 4
+                  }}>
+                    <div style={{ color: 'var(--text-secondary)' }}>
+                      💡 Hasil Bagi: <strong style={{ color: '#34d399' }}>{rupiah(restockTotalCost || (Number(restockQty) * Number(restockCost)))}</strong> ÷ <strong style={{ color: '#ffffff' }}>{restockQty} {selected.unit || 'pcs'}</strong> =
+                    </div>
+                    <div className="mono" style={{ fontWeight: 800, color: '#60a5fa' }}>
+                      {rupiah(restockCost || (Number(restockTotalCost) / Number(restockQty)))} / {selected.unit || 'pcs'}
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="modal-footer">
                 <button

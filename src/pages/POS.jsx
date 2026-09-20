@@ -9,7 +9,7 @@ import {
   FileText, CheckCircle2, ChevronRight, PauseCircle, RefreshCw, XCircle, Users,
   Percent, Tag, Gift, Scissors, Split, Divide,
   ShoppingBag, Briefcase, Barcode, Utensils, Coins,
-  Zap, AlertOctagon
+  Zap, AlertOctagon, Calculator
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, num, LoadingState, PageHeader } from '../components/ui';
@@ -80,6 +80,7 @@ export default function POS() {
     ingredientId: '',
     qty: 10,
     unitType: 'BELI', // 'BELI' or 'PAKAI'
+    totalPrice: '',
     unitPrice: '',
     notes: 'Restok Cepat Kasir',
     submitting: false,
@@ -639,6 +640,9 @@ export default function POS() {
     // If out of stock, trigger quick restock for direct items or ingredient alert for recipes
     if (currentStatus.isSoldOut) {
       if (currentStatus.itemType === 'DIRECT') {
+        const defaultQty = 10;
+        const defaultUnitPrice = menu.cost_price || '';
+        const defaultTotalPrice = defaultUnitPrice ? Math.round(defaultQty * Number(defaultUnitPrice)) : '';
         setRestockModal({
           open: true,
           isDirectProduct: true,
@@ -647,9 +651,10 @@ export default function POS() {
           unit: menu.unit || 'pcs',
           currentStock: currentStatus.availableServings,
           ingredientId: '',
-          qty: 10,
+          qty: defaultQty,
           unitType: 'PAKAI',
-          unitPrice: menu.cost_price || '',
+          totalPrice: defaultTotalPrice,
+          unitPrice: defaultUnitPrice,
           notes: 'Restok Cepat Kasir',
           submitting: false,
         });
@@ -877,13 +882,87 @@ export default function POS() {
 
   // Open Quick Restock Modal
   function handleOpenRestock(ingredientId) {
+    const ingId = ingredientId || (ingredients[0]?.id?.toString() || '');
+    const ing = ingredients.find(i => String(i.id) === String(ingId));
+    const defaultQty = 5;
+    const defaultUnitPrice = ing?.harga || '';
+    const defaultTotalPrice = defaultUnitPrice ? Math.round(defaultQty * Number(defaultUnitPrice)) : '';
     setRestockModal({
       open: true,
-      ingredientId: ingredientId || (ingredients[0]?.id?.toString() || ''),
-      qty: 5,
+      ingredientId: ingId,
+      qty: defaultQty,
       unitType: 'BELI',
+      totalPrice: defaultTotalPrice,
+      unitPrice: defaultUnitPrice,
       notes: 'Pembelian darurat kasir',
       submitting: false,
+    });
+  }
+
+  // Quick Restock Auto-Calculation handlers
+  function handleRestockQtyChange(val) {
+    const q = val;
+    setRestockModal(prev => {
+      const numQ = parseFloat(q) || 0;
+      let newUnitPrice = prev.unitPrice;
+      let newTotalPrice = prev.totalPrice;
+
+      if (numQ > 0) {
+        if (prev.totalPrice !== '' && !isNaN(Number(prev.totalPrice))) {
+          newUnitPrice = Number((parseFloat(prev.totalPrice) / numQ).toFixed(2));
+        } else if (prev.unitPrice !== '' && !isNaN(Number(prev.unitPrice))) {
+          newTotalPrice = Math.round(numQ * parseFloat(prev.unitPrice));
+        }
+      }
+
+      return {
+        ...prev,
+        qty: q,
+        unitPrice: newUnitPrice,
+        totalPrice: newTotalPrice,
+      };
+    });
+  }
+
+  function handleRestockTotalPriceChange(val) {
+    const tot = val;
+    setRestockModal(prev => {
+      const numTot = parseFloat(tot) || 0;
+      const numQ = parseFloat(prev.qty) || 0;
+      let newUnitPrice = prev.unitPrice;
+
+      if (numQ > 0 && tot !== '') {
+        newUnitPrice = Number((numTot / numQ).toFixed(2));
+      } else if (tot === '') {
+        newUnitPrice = '';
+      }
+
+      return {
+        ...prev,
+        totalPrice: tot,
+        unitPrice: newUnitPrice,
+      };
+    });
+  }
+
+  function handleRestockUnitPriceChange(val) {
+    const up = val;
+    setRestockModal(prev => {
+      const numUp = parseFloat(up) || 0;
+      const numQ = parseFloat(prev.qty) || 0;
+      let newTotalPrice = prev.totalPrice;
+
+      if (numQ > 0 && up !== '') {
+        newTotalPrice = Math.round(numQ * numUp);
+      } else if (up === '') {
+        newTotalPrice = '';
+      }
+
+      return {
+        ...prev,
+        unitPrice: up,
+        totalPrice: newTotalPrice,
+      };
     });
   }
 
@@ -914,6 +993,7 @@ export default function POS() {
         await api.post(`/menus/${restockModal.menuId}/restock`, {
           qty: Number(restockModal.qty),
           cost_price: restockModal.unitPrice !== '' ? Number(restockModal.unitPrice) : undefined,
+          total_cost: restockModal.totalPrice !== '' ? Number(restockModal.totalPrice) : undefined,
           outlet_id: currentTargetOutlet,
           notes: restockModal.notes || 'Restok barang retail kasir',
         });
@@ -949,6 +1029,7 @@ export default function POS() {
         qty: Number(restockModal.qty),
         unit_type: restockModal.unitType,
         unit_price: restockModal.unitPrice !== '' ? Number(restockModal.unitPrice) : null,
+        total_price: restockModal.totalPrice !== '' ? Number(restockModal.totalPrice) : null,
         outlet_id: currentTargetOutlet,
         note: restockModal.notes || 'Pembelian darurat kasir',
       });
@@ -2922,7 +3003,7 @@ export default function POS() {
          ======================================================== */}
       {restockModal.open && (
         <div className="modal-overlay" onClick={() => setRestockModal(p => ({ ...p, open: false }))}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <div>
                 <h3 style={{ fontSize: 16, fontWeight: 800, color: '#ffffff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -2963,38 +3044,84 @@ export default function POS() {
                       type="number"
                       step="any"
                       min="1"
-                      className="form-control"
+                      className="form-control mono"
                       value={restockModal.qty}
-                      onChange={e => setRestockModal(p => ({ ...p, qty: e.target.value }))}
+                      onChange={e => handleRestockQtyChange(e.target.value)}
                       required
                       placeholder="Contoh: 10"
                       autoFocus
                     />
                   </div>
 
-                  <div className="form-group mb-3">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <label className="form-label" style={{ color: '#34d399', fontWeight: 600 }}>
-                        Harga Modal / Beli Satuan (Rp)
+                  {/* Two-Way Auto-Division: Total Nota vs Unit Price */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                    <div>
+                      <label className="form-label" style={{ color: '#34d399', fontWeight: 800, fontSize: 12, margin: '0 0 5px 0' }}>
+                        💵 Total Nota (Rp)
                       </label>
-                      <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
-                        per {restockModal.unit || 'pcs'}
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        className="form-control mono"
+                        style={{ borderColor: 'rgba(16, 185, 129, 0.5)', background: 'rgba(0,0,0,0.25)', color: '#34d399', fontWeight: 700 }}
+                        placeholder="Total di bon belanja"
+                        value={restockModal.totalPrice}
+                        onChange={e => handleRestockTotalPriceChange(e.target.value)}
+                      />
+                      <span style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 2, display: 'block' }}>
+                        Ketik total belanja di bon.
                       </span>
                     </div>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0"
-                      className="form-control mono"
-                      style={{ borderColor: 'rgba(16, 185, 129, 0.4)' }}
-                      placeholder="Harga beli modal per satuan"
-                      value={restockModal.unitPrice}
-                      onChange={e => setRestockModal(p => ({ ...p, unitPrice: e.target.value }))}
-                    />
-                    <span style={{ fontSize: 10.5, color: 'var(--text-secondary)', marginTop: 3, display: 'block' }}>
-                      ⚡ Nilai modal digunakan sebagai HPP untuk perhitungan laba kotor toko retail.
-                    </span>
+
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                        <label className="form-label" style={{ color: '#60a5fa', fontWeight: 800, fontSize: 12, margin: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <Calculator size={13} /> Modal/Satuan (Rp)
+                        </label>
+                        <span style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>
+                          per {restockModal.unit || 'pcs'}
+                        </span>
+                      </div>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        className="form-control mono"
+                        style={{ borderColor: 'rgba(96, 165, 250, 0.5)', background: 'rgba(0,0,0,0.25)', color: '#60a5fa', fontWeight: 700 }}
+                        placeholder="Harga satuan modal"
+                        value={restockModal.unitPrice}
+                        onChange={e => handleRestockUnitPriceChange(e.target.value)}
+                      />
+                      <span style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 2, display: 'block' }}>
+                        Otomatis: Total ÷ Qty.
+                      </span>
+                    </div>
                   </div>
+
+                  {/* Formula Preview Banner */}
+                  {Number(restockModal.qty) > 0 && (Number(restockModal.totalPrice) > 0 || Number(restockModal.unitPrice) > 0) && (
+                    <div style={{
+                      marginBottom: 12,
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      background: 'rgba(0,0,0,0.3)',
+                      border: '1px dashed rgba(52, 211, 153, 0.4)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      fontSize: 11.5,
+                      flexWrap: 'wrap',
+                      gap: 4
+                    }}>
+                      <div style={{ color: 'var(--text-secondary)' }}>
+                        💡 Hasil Bagi: <strong style={{ color: '#34d399' }}>{rupiah(restockModal.totalPrice || (Number(restockModal.qty) * Number(restockModal.unitPrice)))}</strong> ÷ <strong style={{ color: '#ffffff' }}>{restockModal.qty} {restockModal.unit || 'pcs'}</strong> =
+                      </div>
+                      <div className="mono" style={{ fontWeight: 800, color: '#60a5fa' }}>
+                        {rupiah(restockModal.unitPrice || (Number(restockModal.totalPrice) / Number(restockModal.qty)))} / {restockModal.unit || 'pcs'}
+                      </div>
+                    </div>
+                  )}
                 </>
               ) : (
                 <>
@@ -3004,7 +3131,19 @@ export default function POS() {
                     <select
                       className="form-control"
                       value={restockModal.ingredientId}
-                      onChange={e => setRestockModal(p => ({ ...p, ingredientId: e.target.value }))}
+                      onChange={e => {
+                        const newId = e.target.value;
+                        const ing = ingredients.find(i => String(i.id) === String(newId));
+                        const curQ = Number(restockModal.qty) || 5;
+                        const defaultUnitPrice = ing?.harga || '';
+                        const defaultTotalPrice = defaultUnitPrice ? Math.round(curQ * Number(defaultUnitPrice)) : '';
+                        setRestockModal(p => ({
+                          ...p,
+                          ingredientId: newId,
+                          unitPrice: defaultUnitPrice,
+                          totalPrice: defaultTotalPrice,
+                        }));
+                      }}
                       required
                     >
                       {ingredients.map(ing => (
@@ -3023,15 +3162,18 @@ export default function POS() {
                         type="number"
                         step="any"
                         min="0.001"
-                        className="form-control"
+                        className="form-control mono"
                         value={restockModal.qty}
-                        onChange={e => setRestockModal(p => ({ ...p, qty: e.target.value }))}
+                        onChange={e => handleRestockQtyChange(e.target.value)}
                         required
                       />
                       <select
                         className="form-control"
                         value={restockModal.unitType}
-                        onChange={e => setRestockModal(p => ({ ...p, unitType: e.target.value }))}
+                        onChange={e => {
+                          const newType = e.target.value;
+                          setRestockModal(p => ({ ...p, unitType: newType }));
+                        }}
                       >
                         <option value="BELI">
                           {restockSelectedIng?.unit_beli || 'Satuan Beli'} ({restockSelectedIng?.konversi || 1000}x)
@@ -3048,30 +3190,79 @@ export default function POS() {
                     )}
                   </div>
 
-                  {/* Purchase Price (Moving Average Costing) */}
-                  <div className="form-group mb-3">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <label className="form-label" style={{ color: '#34d399', fontWeight: 600 }}>
-                        Harga Beli Satuan (Rp)
+                  {/* Two-Way Auto-Division: Total Nota vs Unit Price for Ingredients */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                    <div>
+                      <label className="form-label" style={{ color: '#34d399', fontWeight: 800, fontSize: 12, margin: '0 0 5px 0' }}>
+                        💵 Total Nota (Rp)
                       </label>
-                      <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
-                        per {restockModal.unitType === 'BELI' ? restockSelectedIng?.unit_beli : restockSelectedIng?.unit_pakai}
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        className="form-control mono"
+                        style={{ borderColor: 'rgba(16, 185, 129, 0.5)', background: 'rgba(0,0,0,0.25)', color: '#34d399', fontWeight: 700 }}
+                        placeholder="Total di bon belanja"
+                        value={restockModal.totalPrice}
+                        onChange={e => handleRestockTotalPriceChange(e.target.value)}
+                      />
+                      <span style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 2, display: 'block' }}>
+                        Ketik total belanja di bon/nota.
                       </span>
                     </div>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0"
-                      className="form-control mono"
-                      style={{ borderColor: 'rgba(16, 185, 129, 0.4)' }}
-                      placeholder={`Standar: ${restockModal.unitType === 'BELI' ? restockSelectedIng?.harga : Number((Number(restockSelectedIng?.harga || 0) / Number(restockSelectedIng?.konversi || 1)).toFixed(2))}`}
-                      value={restockModal.unitPrice}
-                      onChange={e => setRestockModal(p => ({ ...p, unitPrice: e.target.value }))}
-                    />
-                    <span style={{ fontSize: 10.5, color: 'var(--text-secondary)', marginTop: 3, display: 'block' }}>
-                      ⚡ Sistem otomatis mengupdate HPP menu menggunakan metode <strong>Moving Average</strong>.
-                    </span>
+
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                        <label className="form-label" style={{ color: '#60a5fa', fontWeight: 800, fontSize: 12, margin: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <Calculator size={13} /> Harga Satuan (Rp)
+                        </label>
+                        <span style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>
+                          per {restockModal.unitType === 'BELI' ? restockSelectedIng?.unit_beli : restockSelectedIng?.unit_pakai}
+                        </span>
+                      </div>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        className="form-control mono"
+                        style={{ borderColor: 'rgba(96, 165, 250, 0.5)', background: 'rgba(0,0,0,0.25)', color: '#60a5fa', fontWeight: 700 }}
+                        placeholder="Hasil bagi otomatis..."
+                        value={restockModal.unitPrice}
+                        onChange={e => handleRestockUnitPriceChange(e.target.value)}
+                      />
+                      <span style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 2, display: 'block' }}>
+                        Otomatis: Total ÷ Qty.
+                      </span>
+                    </div>
                   </div>
+
+                  {/* Formula Preview Banner */}
+                  {Number(restockModal.qty) > 0 && (Number(restockModal.totalPrice) > 0 || Number(restockModal.unitPrice) > 0) && (
+                    <div style={{
+                      marginBottom: 12,
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      background: 'rgba(0,0,0,0.3)',
+                      border: '1px dashed rgba(52, 211, 153, 0.4)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      fontSize: 11.5,
+                      flexWrap: 'wrap',
+                      gap: 4
+                    }}>
+                      <div style={{ color: 'var(--text-secondary)' }}>
+                        💡 Hasil Bagi: <strong style={{ color: '#34d399' }}>{rupiah(restockModal.totalPrice || (Number(restockModal.qty) * Number(restockModal.unitPrice)))}</strong> ÷ <strong style={{ color: '#ffffff' }}>{restockModal.qty} {restockModal.unitType === 'BELI' ? restockSelectedIng?.unit_beli : restockSelectedIng?.unit_pakai}</strong> =
+                      </div>
+                      <div className="mono" style={{ fontWeight: 800, color: '#60a5fa' }}>
+                        {rupiah(restockModal.unitPrice || (Number(restockModal.totalPrice) / Number(restockModal.qty)))} / {restockModal.unitType === 'BELI' ? restockSelectedIng?.unit_beli : restockSelectedIng?.unit_pakai}
+                      </div>
+                    </div>
+                  )}
+
+                  <span style={{ fontSize: 10.5, color: 'var(--text-secondary)', marginBottom: 10, display: 'block' }}>
+                    ⚡ Sistem otomatis mengupdate HPP menu menggunakan metode <strong>Moving Average</strong>.
+                  </span>
                 </>
               )}
 

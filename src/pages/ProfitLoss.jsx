@@ -6,7 +6,7 @@ import {
   Layers, FileText, ArrowDownRight, Edit3, Trash, Info,
   Store, CreditCard, PieChart, ShieldAlert, Sparkles, Building2, Flame,
   ArrowUpRight, ArrowDownLeft, AlertTriangle, GitCompare, HelpCircle,
-  BarChart3, Award, Trophy, ArrowUpDown, ChevronUp, ChevronDown, Check, Zap
+  BarChart3, Award, Trophy, ArrowUpDown, ChevronUp, ChevronDown, Check, Zap, Tag
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, num, pct, LoadingState, PageHeader, PeriodPicker } from '../components/ui';
@@ -77,23 +77,52 @@ export default function ProfitLoss() {
   // Detail Drilldown Modal State
   const [detailModal, setDetailModal] = useState({
     open: false,
-    type: null, // 'REVENUE' | 'COGS' | 'WASTE' | 'OPEX' | 'NET_PROFIT'
+    type: null, // 'REVENUE' | 'COGS' | 'WASTE' | 'OPEX' | 'NET_PROFIT' | 'DISCOUNT'
     title: '',
     loading: false,
     items: [],
   });
+  const [modalFilter, setModalFilter] = useState('ALL'); // 'ALL' | 'GENERATE' | 'MANUAL' | 'DISCOUNT'
+  const [modalSearch, setModalSearch] = useState('');
 
-  async function handleCardClick(type) {
+  async function handleCardClick(type, filter = 'ALL') {
     const targetOutlet = activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all'
       ? activeOutletId
       : undefined;
 
-    if (type === 'REVENUE') {
-      setDetailModal({ open: true, type: 'REVENUE', title: 'Rincian Detail Transaksi Omset Penjualan', loading: true, items: [] });
+    setModalSearch('');
+
+    if (type === 'REVENUE' || type === 'DISCOUNT') {
+      const isDiscountOnly = type === 'DISCOUNT' || filter === 'DISCOUNT';
+      const initialFilter = isDiscountOnly ? 'DISCOUNT' : filter;
+      setModalFilter(initialFilter);
+
+      let modalTitle = 'Rincian Detail Transaksi Omset Penjualan';
+      if (isDiscountOnly) {
+        modalTitle = '🏷️ Rincian Pemotongan Diskon & Voucher Promo';
+      } else if (filter === 'GENERATE') {
+        modalTitle = '🖥️ Rincian Transaksi Penjualan Nota Generate (POS Standar)';
+      } else if (filter === 'MANUAL') {
+        modalTitle = '⚡ Rincian Transaksi Penjualan Nota Manual (Nota Urgent)';
+      }
+
+      setDetailModal({
+        open: true,
+        type: isDiscountOnly ? 'DISCOUNT' : 'REVENUE',
+        title: modalTitle,
+        loading: true,
+        items: []
+      });
+
       try {
-        const res = await api.get('/transactions', {
-          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet, status: 'PAID', limit: 200 }
-        });
+        const params = {
+          from: dateFrom,
+          to: dateTo,
+          outlet_id: targetOutlet,
+          status: 'PAID',
+          limit: 500,
+        };
+        const res = await api.get('/transactions', { params });
         setDetailModal(p => ({ ...p, loading: false, items: res.data?.data || res.data || [] }));
       } catch {
         toast.error('Gagal memuat rincian transaksi penjualan');
@@ -129,6 +158,87 @@ export default function ProfitLoss() {
       setDetailModal({ open: true, type: 'NET_PROFIT', title: 'Rincian Formulasi & Sumber Kalkulasi Laba Bersih', loading: false, items: [] });
     }
   }
+
+  // Process raw transactions into grouped orders with item details and discount metadata
+  const groupedOrders = useMemo(() => {
+    if (!detailModal.items || detailModal.items.length === 0) return [];
+    const map = new Map();
+    for (const t of detailModal.items) {
+      const key = t.order_number || `TRX-${t.id}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          id: t.id,
+          order_number: t.order_number || `#${t.id}`,
+          date: t.date,
+          created_at: t.created_at,
+          customer_name: t.customer_name || 'Pelanggan Walk-in',
+          table_number: t.table_number,
+          payment_method: t.payment_method || 'CASH',
+          is_urgent_note: Boolean(t.is_urgent_note),
+          discount_name: t.discount_name || t.discount?.name || null,
+          discount_type: t.discount_type,
+          discount_rate: Number(t.discount_rate || 0),
+          items: [],
+          subtotal: 0,
+          discount_amount: 0,
+          total_price: 0,
+        });
+      }
+      const order = map.get(key);
+      if (t.is_urgent_note) order.is_urgent_note = true;
+      if (!order.discount_name && (t.discount_name || t.discount?.name)) {
+        order.discount_name = t.discount_name || t.discount?.name;
+        order.discount_type = t.discount_type;
+        order.discount_rate = Number(t.discount_rate || 0);
+      }
+      const itemSubtotal = Number(t.subtotal) > 0 ? Number(t.subtotal) : (Number(t.total_price) + Number(t.discount_amount || 0));
+      order.subtotal += itemSubtotal;
+      order.discount_amount += Number(t.discount_amount || 0);
+      order.total_price += Number(t.total_price || 0);
+      order.items.push({
+        id: t.id,
+        name: t.menu?.name || 'Menu',
+        qty: Number(t.qty || 1),
+        subtotal: itemSubtotal,
+        price: Number(t.total_price || 0),
+        discount_amount: Number(t.discount_amount || 0),
+      });
+    }
+    return Array.from(map.values());
+  }, [detailModal.items]);
+
+  const generateOrdersList = useMemo(() => {
+    return groupedOrders.filter(o => !o.is_urgent_note);
+  }, [groupedOrders]);
+
+  const manualOrdersList = useMemo(() => {
+    return groupedOrders.filter(o => o.is_urgent_note);
+  }, [groupedOrders]);
+
+  const discountOrdersList = useMemo(() => {
+    return groupedOrders.filter(o => o.discount_amount > 0);
+  }, [groupedOrders]);
+
+  const displayedOrders = useMemo(() => {
+    let list = groupedOrders;
+    if (modalFilter === 'GENERATE') {
+      list = generateOrdersList;
+    } else if (modalFilter === 'MANUAL') {
+      list = manualOrdersList;
+    } else if (modalFilter === 'DISCOUNT') {
+      list = discountOrdersList;
+    }
+
+    if (!modalSearch.trim()) return list;
+    const q = modalSearch.toLowerCase().trim();
+    return list.filter(o =>
+      o.order_number?.toLowerCase().includes(q) ||
+      o.customer_name?.toLowerCase().includes(q) ||
+      o.discount_name?.toLowerCase().includes(q) ||
+      o.items?.some(it => it.name?.toLowerCase().includes(q))
+    );
+  }, [groupedOrders, modalFilter, modalSearch, generateOrdersList, manualOrdersList, discountOrdersList]);
 
   const initialForm = {
     date: todayStr,
@@ -633,9 +743,26 @@ export default function ProfitLoss() {
           <div style={{ fontSize: 22, fontWeight: 800, color: '#ffffff', letterSpacing: -0.5, marginBottom: 4 }}>
             {rupiah(rev.net_sales)}
           </div>
-          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
             <span>Kotor: {rupiah(rev.gross_sales)}</span>
             <span>{rev.transaction_count} pesanan</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, flexWrap: 'wrap', marginTop: 2 }}>
+            <span style={{ color: '#06b6d4', fontWeight: 600 }}>🖥️ Gen: {rupiah(rev.nota_generate?.net_sales || 0)}</span>
+            <span style={{ color: 'rgba(255,255,255,0.2)' }}>•</span>
+            <span style={{ color: '#f59e0b', fontWeight: 600 }}>⚡ Man: {rupiah(rev.nota_manual?.net_sales || 0)}</span>
+            {Number(rev.total_discount || 0) > 0 && (
+              <>
+                <span style={{ color: 'rgba(255,255,255,0.2)' }}>•</span>
+                <span
+                  onClick={(e) => { e.stopPropagation(); handleCardClick('DISCOUNT'); }}
+                  style={{ color: '#fb7185', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}
+                  title="Klik untuk rincian diskon saja"
+                >
+                  🏷️ Disc: ({rupiah(rev.total_discount)})
+                </span>
+              </>
+            )}
           </div>
           <div style={{ fontSize: 10, color: '#34d399', fontWeight: 700, marginTop: 4 }}>
             🔍 Klik rincian sumber transaksi
@@ -1097,8 +1224,73 @@ export default function ProfitLoss() {
 
               {isComp ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: 8, padding: '6px 0', borderBottom: '1px dashed rgba(255, 255, 255, 0.06)' }}>
-                    <div style={{ color: '#cbd5e1' }}>Penjualan Kotor (Gross Sales)</div>
+                  {/* Nota Generate */}
+                  <div
+                    onClick={(e) => { e.stopPropagation(); handleCardClick('REVENUE', 'GENERATE'); }}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr',
+                      gap: 8,
+                      padding: '6px 6px',
+                      borderBottom: '1px dashed rgba(255, 255, 255, 0.06)',
+                      cursor: 'pointer',
+                      borderRadius: 6,
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(6, 182, 212, 0.08)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    title="Klik untuk melihat rincian transaksi Nota Generate"
+                  >
+                    <div style={{ color: '#cbd5e1', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ padding: '1px 6px', borderRadius: 4, background: 'rgba(6, 182, 212, 0.15)', color: '#06b6d4', fontSize: 10.5, fontWeight: 700 }}>
+                        🖥️ Generate
+                      </span>
+                      <span>Penjualan Nota Generate (POS Standar)</span>
+                    </div>
+                    <div style={{ textAlign: 'right', fontWeight: 600, color: '#38bdf8' }}>{rupiah(rev.nota_generate?.net_sales)}</div>
+                    <div style={{ textAlign: 'right', color: 'var(--text-muted)' }}>{rupiah(prev?.revenue?.nota_generate?.net_sales)}</div>
+                    <div style={{ textAlign: 'right', color: delta?.revenue?.nota_generate_net?.diff_nominal >= 0 ? '#34d399' : '#f87171', fontWeight: 600 }}>
+                      {delta?.revenue?.nota_generate_net?.diff_nominal >= 0 ? '+' : ''}{rupiah(delta?.revenue?.nota_generate_net?.diff_nominal)}
+                    </div>
+                    <div style={{ textAlign: 'right', color: delta?.revenue?.nota_generate_net?.diff_pct >= 0 ? '#34d399' : '#f87171', fontWeight: 700 }}>
+                      {delta?.revenue?.nota_generate_net?.diff_pct >= 0 ? '+' : ''}{delta?.revenue?.nota_generate_net?.diff_pct}%
+                    </div>
+                  </div>
+
+                  {/* Nota Manual */}
+                  <div
+                    onClick={(e) => { e.stopPropagation(); handleCardClick('REVENUE', 'MANUAL'); }}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr',
+                      gap: 8,
+                      padding: '6px 6px',
+                      borderBottom: '1px dashed rgba(255, 255, 255, 0.06)',
+                      cursor: 'pointer',
+                      borderRadius: 6,
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(245, 158, 11, 0.08)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    title="Klik untuk melihat rincian transaksi Nota Manual (Urgent)"
+                  >
+                    <div style={{ color: '#cbd5e1', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ padding: '1px 6px', borderRadius: 4, background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', fontSize: 10.5, fontWeight: 700 }}>
+                        ⚡ Manual
+                      </span>
+                      <span>Penjualan Nota Manual (Nota Urgent)</span>
+                    </div>
+                    <div style={{ textAlign: 'right', fontWeight: 600, color: '#fbbf24' }}>{rupiah(rev.nota_manual?.net_sales)}</div>
+                    <div style={{ textAlign: 'right', color: 'var(--text-muted)' }}>{rupiah(prev?.revenue?.nota_manual?.net_sales)}</div>
+                    <div style={{ textAlign: 'right', color: delta?.revenue?.nota_manual_net?.diff_nominal >= 0 ? '#34d399' : '#f87171', fontWeight: 600 }}>
+                      {delta?.revenue?.nota_manual_net?.diff_nominal >= 0 ? '+' : ''}{rupiah(delta?.revenue?.nota_manual_net?.diff_nominal)}
+                    </div>
+                    <div style={{ textAlign: 'right', color: delta?.revenue?.nota_manual_net?.diff_pct >= 0 ? '#34d399' : '#f87171', fontWeight: 700 }}>
+                      {delta?.revenue?.nota_manual_net?.diff_pct >= 0 ? '+' : ''}{delta?.revenue?.nota_manual_net?.diff_pct}%
+                    </div>
+                  </div>
+
+                  {/* Penjualan Kotor */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: 8, padding: '6px 6px', borderBottom: '1px dashed rgba(255, 255, 255, 0.06)' }}>
+                    <div style={{ color: '#94a3b8', fontSize: 12.5 }}>Total Penjualan Kotor (Gross Sales)</div>
                     <div style={{ textAlign: 'right', fontWeight: 600 }}>{rupiah(rev.gross_sales)}</div>
                     <div style={{ textAlign: 'right', color: 'var(--text-muted)' }}>{rupiah(prev?.revenue?.gross_sales)}</div>
                     <div style={{ textAlign: 'right', color: delta?.revenue?.gross_sales?.diff_nominal >= 0 ? '#34d399' : '#f87171', fontWeight: 600 }}>
@@ -1109,9 +1301,32 @@ export default function ProfitLoss() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: 8, padding: '6px 0', borderBottom: '1px dashed rgba(255, 255, 255, 0.06)' }}>
-                    <div style={{ color: '#f87171' }}>Dikurangi: Total Diskon Kasir & Promo</div>
-                    <div style={{ textAlign: 'right', fontWeight: 600, color: '#f87171' }}>({rupiah(rev.total_discount)})</div>
+                  {/* Diskon Row - CLICKABLE */}
+                  <div
+                    onClick={(e) => { e.stopPropagation(); handleCardClick('DISCOUNT'); }}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr',
+                      gap: 8,
+                      padding: '7px 6px',
+                      borderBottom: '1px dashed rgba(255, 255, 255, 0.08)',
+                      cursor: 'pointer',
+                      borderRadius: 6,
+                      background: 'rgba(244, 63, 94, 0.06)',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(244, 63, 94, 0.14)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(244, 63, 94, 0.06)'}
+                    title="Klik untuk melihat hanya rincian diskon & voucher promo"
+                  >
+                    <div style={{ color: '#f87171', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span style={{ padding: '1px 6px', borderRadius: 4, background: 'rgba(244, 63, 94, 0.2)', fontSize: 10.5, fontWeight: 700 }}>🏷️ Diskon</span>
+                      <span>Dikurangi: Total Diskon Kasir & Promo</span>
+                      <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 10, background: 'rgba(244, 63, 94, 0.25)', color: '#fecdd3', fontWeight: 700 }}>
+                        🔍 Klik rincian diskon
+                      </span>
+                    </div>
+                    <div style={{ textAlign: 'right', fontWeight: 700, color: '#f87171' }}>({rupiah(rev.total_discount)})</div>
                     <div style={{ textAlign: 'right', color: 'var(--text-muted)' }}>({rupiah(prev?.revenue?.total_discount)})</div>
                     <div style={{ textAlign: 'right', color: 'var(--text-muted)' }}>
                       {delta?.revenue?.total_discount?.diff_nominal >= 0 ? '+' : ''}{rupiah(delta?.revenue?.total_discount?.diff_nominal)}
@@ -1121,7 +1336,8 @@ export default function ProfitLoss() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: 8, padding: '8px 0 4px', fontWeight: 800, color: '#34d399', fontSize: 13.5 }}>
+                  {/* Omset Bersih */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: 8, padding: '8px 6px 4px', fontWeight: 800, color: '#34d399', fontSize: 13.5 }}>
                     <div>TOTAL OMSET BERSIH (NET REVENUE)</div>
                     <div style={{ textAlign: 'right' }}>{rupiah(rev.net_sales)}</div>
                     <div style={{ textAlign: 'right', color: '#cbd5e1' }}>{rupiah(prev?.revenue?.net_sales)}</div>
@@ -1136,21 +1352,103 @@ export default function ProfitLoss() {
               ) : (
                 <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
                   <tbody>
-                    <tr style={{ borderBottom: '1px dashed rgba(255, 255, 255, 0.06)' }}>
-                      <td style={{ padding: '6px 0', color: '#cbd5e1' }}>Penjualan Kotor (Gross Sales dari {rev.transaction_count} transaksi)</td>
-                      <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 600, color: '#f8fafc' }}>{rupiah(rev.gross_sales)}</td>
-                    </tr>
-                    <tr style={{ borderBottom: '1px dashed rgba(255, 255, 255, 0.06)' }}>
-                      <td style={{ padding: '6px 0', color: '#f87171' }}>
-                        <em>Dikurangi:</em> Total Diskon Kasir & Voucher Promo
+                    {/* Nota Generate */}
+                    <tr
+                      onClick={(e) => { e.stopPropagation(); handleCardClick('REVENUE', 'GENERATE'); }}
+                      style={{
+                        borderBottom: '1px dashed rgba(255, 255, 255, 0.06)',
+                        cursor: 'pointer',
+                        transition: 'background 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(6, 182, 212, 0.08)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      title="Klik untuk melihat rincian Nota Generate"
+                    >
+                      <td style={{ padding: '7px 6px', color: '#cbd5e1' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ padding: '2px 7px', borderRadius: 4, background: 'rgba(6, 182, 212, 0.15)', color: '#06b6d4', fontSize: 11, fontWeight: 700 }}>
+                            🖥️ Nota Generate
+                          </span>
+                          <span>Penjualan Kasir POS Standar ({rev.nota_generate?.transaction_count || 0} pesanan)</span>
+                        </div>
                       </td>
-                      <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 600, color: '#f87171' }}>
+                      <td style={{ padding: '7px 6px', textAlign: 'right', fontWeight: 600, color: '#38bdf8' }}>
+                        {rupiah(rev.nota_generate?.gross_sales ?? rev.nota_generate?.net_sales ?? 0)}
+                      </td>
+                    </tr>
+
+                    {/* Nota Manual */}
+                    <tr
+                      onClick={(e) => { e.stopPropagation(); handleCardClick('REVENUE', 'MANUAL'); }}
+                      style={{
+                        borderBottom: '1px dashed rgba(255, 255, 255, 0.06)',
+                        cursor: 'pointer',
+                        transition: 'background 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(245, 158, 11, 0.08)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      title="Klik untuk melihat rincian Nota Manual (Urgent)"
+                    >
+                      <td style={{ padding: '7px 6px', color: '#cbd5e1' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ padding: '2px 7px', borderRadius: 4, background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', fontSize: 11, fontWeight: 700 }}>
+                            ⚡ Nota Manual
+                          </span>
+                          <span>Penjualan Nota Urgent / Tergantung ({rev.nota_manual?.transaction_count || 0} pesanan)</span>
+                        </div>
+                      </td>
+                      <td style={{ padding: '7px 6px', textAlign: 'right', fontWeight: 600, color: '#fbbf24' }}>
+                        {rupiah(rev.nota_manual?.gross_sales ?? rev.nota_manual?.net_sales ?? 0)}
+                      </td>
+                    </tr>
+
+                    {/* Total Gross Sales */}
+                    <tr style={{ borderBottom: '1px dashed rgba(255, 255, 255, 0.06)' }}>
+                      <td style={{ padding: '6px 6px', color: '#94a3b8', fontSize: 12.5 }}>
+                        Total Penjualan Kotor (Gross Sales dari {rev.transaction_count} transaksi)
+                      </td>
+                      <td style={{ padding: '6px 6px', textAlign: 'right', fontWeight: 600, color: '#f8fafc' }}>
+                        {rupiah(rev.gross_sales)}
+                      </td>
+                    </tr>
+
+                    {/* Total Diskon Kasir & Promo - CLICKABLE */}
+                    <tr
+                      onClick={(e) => { e.stopPropagation(); handleCardClick('DISCOUNT'); }}
+                      style={{
+                        borderBottom: '1px dashed rgba(255, 255, 255, 0.08)',
+                        cursor: 'pointer',
+                        background: 'rgba(244, 63, 94, 0.06)',
+                        transition: 'background 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(244, 63, 94, 0.14)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(244, 63, 94, 0.06)'}
+                      title="Klik untuk melihat hanya rincian diskon & voucher promo"
+                    >
+                      <td style={{ padding: '7px 6px', color: '#f87171' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ padding: '2px 7px', borderRadius: 4, background: 'rgba(244, 63, 94, 0.2)', color: '#fb7185', fontSize: 11, fontWeight: 700 }}>
+                            🏷️ Diskon
+                          </span>
+                          <span>
+                            <em>Dikurangi:</em> Total Diskon Kasir & Voucher Promo
+                          </span>
+                          <span style={{ fontSize: 10.5, padding: '1px 8px', borderRadius: 10, background: 'rgba(244, 63, 94, 0.25)', color: '#fecdd3', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            🔍 Klik untuk rincian diskon
+                          </span>
+                        </div>
+                      </td>
+                      <td style={{ padding: '7px 6px', textAlign: 'right', fontWeight: 700, color: '#f87171' }}>
                         ({rupiah(rev.total_discount)})
                       </td>
                     </tr>
+
+                    {/* Total Net Revenue */}
                     <tr style={{ fontWeight: 700, color: '#34d399' }}>
-                      <td style={{ padding: '8px 0 4px' }}>OMSET BERSIH (NET REVENUE)</td>
-                      <td style={{ padding: '8px 0 4px', textAlign: 'right' }}>{rupiah(rev.net_sales)}</td>
+                      <td style={{ padding: '10px 6px 4px', fontSize: 13.5 }}>OMSET BERSIH (NET REVENUE)</td>
+                      <td style={{ padding: '10px 6px 4px', textAlign: 'right', fontSize: 15, fontWeight: 800 }}>
+                        {rupiah(rev.net_sales)}
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -2530,7 +2828,23 @@ export default function ProfitLoss() {
                 <td colSpan={isComp ? 5 : 2} style={{ padding: '6px 8px' }}>1. PENDAPATAN OPERASIONAL (REVENUE)</td>
               </tr>
               <tr>
-                <td style={{ padding: '4px 8px 4px 20px' }}>Penjualan Kotor ({rev.transaction_count} pesanan)</td>
+                <td style={{ padding: '4px 8px 4px 20px', color: '#0284c7' }}>• Penjualan Nota Generate ({rev.nota_generate?.transaction_count || 0} pesanan)</td>
+                <td style={{ textAlign: 'right', padding: '4px 8px', color: '#0284c7' }}>{rupiah(rev.nota_generate?.net_sales)}</td>
+                {isComp && <td style={{ textAlign: 'right', padding: '4px 8px' }}>{rupiah(prev?.revenue?.nota_generate?.net_sales)}</td>}
+                {isComp && <td style={{ textAlign: 'right', padding: '4px 8px' }}>{delta?.revenue?.nota_generate_net?.diff_nominal >= 0 ? '+' : ''}{rupiah(delta?.revenue?.nota_generate_net?.diff_nominal)}</td>}
+                {isComp && <td style={{ textAlign: 'right', padding: '4px 8px' }}>{delta?.revenue?.nota_generate_net?.diff_pct >= 0 ? '+' : ''}{delta?.revenue?.nota_generate_net?.diff_pct}%</td>}
+                {!isComp && <td style={{ textAlign: 'right', padding: '4px 8px' }}>{rev.nota_generate?.share_pct || 0}%</td>}
+              </tr>
+              <tr>
+                <td style={{ padding: '4px 8px 4px 20px', color: '#d97706' }}>• Penjualan Nota Manual ({rev.nota_manual?.transaction_count || 0} pesanan)</td>
+                <td style={{ textAlign: 'right', padding: '4px 8px', color: '#d97706' }}>{rupiah(rev.nota_manual?.net_sales)}</td>
+                {isComp && <td style={{ textAlign: 'right', padding: '4px 8px' }}>{rupiah(prev?.revenue?.nota_manual?.net_sales)}</td>}
+                {isComp && <td style={{ textAlign: 'right', padding: '4px 8px' }}>{delta?.revenue?.nota_manual_net?.diff_nominal >= 0 ? '+' : ''}{rupiah(delta?.revenue?.nota_manual_net?.diff_nominal)}</td>}
+                {isComp && <td style={{ textAlign: 'right', padding: '4px 8px' }}>{delta?.revenue?.nota_manual_net?.diff_pct >= 0 ? '+' : ''}{delta?.revenue?.nota_manual_net?.diff_pct}%</td>}
+                {!isComp && <td style={{ textAlign: 'right', padding: '4px 8px' }}>{rev.nota_manual?.share_pct || 0}%</td>}
+              </tr>
+              <tr>
+                <td style={{ padding: '4px 8px 4px 20px' }}>Total Penjualan Kotor ({rev.transaction_count} pesanan)</td>
                 <td style={{ textAlign: 'right', padding: '4px 8px' }}>{rupiah(rev.gross_sales)}</td>
                 {isComp && <td style={{ textAlign: 'right', padding: '4px 8px' }}>{rupiah(prev?.revenue?.gross_sales)}</td>}
                 {isComp && <td style={{ textAlign: 'right', padding: '4px 8px' }}>{delta?.revenue?.gross_sales?.diff_nominal >= 0 ? '+' : ''}{rupiah(delta?.revenue?.gross_sales?.diff_nominal)}</td>}
@@ -2638,6 +2952,7 @@ export default function ProfitLoss() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, borderBottom: '1px solid rgba(165, 180, 252, 0.15)', paddingBottom: 14 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 {detailModal.type === 'REVENUE' && <TrendingUp size={22} style={{ color: '#34d399' }} />}
+                {detailModal.type === 'DISCOUNT' && <Tag size={22} style={{ color: '#f87171' }} />}
                 {detailModal.type === 'COGS' && <Package size={22} style={{ color: '#818cf8' }} />}
                 {detailModal.type === 'WASTE' && <Trash2 size={22} style={{ color: '#f43f5e' }} />}
                 {detailModal.type === 'OPEX' && <Building2 size={22} style={{ color: '#fbbf24' }} />}
@@ -2664,76 +2979,378 @@ export default function ProfitLoss() {
               <LoadingState message="Memuat rincian detail transaksi..." />
             ) : (
               <>
-                {/* 1. REVENUE DETAIL */}
-                {detailModal.type === 'REVENUE' && (
+                {/* 1. REVENUE & DISCOUNT DETAIL VIEW */}
+                {(detailModal.type === 'REVENUE' || detailModal.type === 'DISCOUNT') && (
                   <div>
-                    {/* Summary Chips */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 18 }}>
-                      <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: 10, padding: 12 }}>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Omset Penjualan Bersih</div>
-                        <div style={{ fontSize: 18, fontWeight: 800, color: '#34d399' }}>{rupiah(rev.net_sales)}</div>
+                    {/* Filter Tabs between All, Generate, Manual, and Discount */}
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: 12 }}>
+                      <button
+                        className={`btn btn-sm ${modalFilter === 'ALL' ? 'btn-primary' : 'btn-ghost'}`}
+                        onClick={() => setModalFilter('ALL')}
+                        style={{
+                          borderRadius: 8,
+                          fontWeight: 700,
+                          fontSize: 12,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          padding: '6px 14px',
+                        }}
+                      >
+                        📋 Semua Nota
+                        <span style={{ padding: '1px 6px', borderRadius: 10, fontSize: 10.5, background: 'rgba(255,255,255,0.15)', fontWeight: 800 }}>
+                          {groupedOrders.length}
+                        </span>
+                      </button>
+
+                      <button
+                        className={`btn btn-sm ${modalFilter === 'GENERATE' ? 'btn-primary' : 'btn-ghost'}`}
+                        onClick={() => setModalFilter('GENERATE')}
+                        style={{
+                          borderRadius: 8,
+                          fontWeight: 700,
+                          fontSize: 12,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          padding: '6px 14px',
+                          color: modalFilter === 'GENERATE' ? undefined : '#06b6d4',
+                          border: modalFilter === 'GENERATE' ? undefined : '1px solid rgba(6, 182, 212, 0.25)',
+                        }}
+                      >
+                        🖥️ Nota Generate (POS)
+                        <span style={{ padding: '1px 6px', borderRadius: 10, fontSize: 10.5, background: 'rgba(6, 182, 212, 0.2)', fontWeight: 800 }}>
+                          {generateOrdersList.length}
+                        </span>
+                      </button>
+
+                      <button
+                        className={`btn btn-sm ${modalFilter === 'MANUAL' ? 'btn-primary' : 'btn-ghost'}`}
+                        onClick={() => setModalFilter('MANUAL')}
+                        style={{
+                          borderRadius: 8,
+                          fontWeight: 700,
+                          fontSize: 12,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          padding: '6px 14px',
+                          color: modalFilter === 'MANUAL' ? undefined : '#f59e0b',
+                          border: modalFilter === 'MANUAL' ? undefined : '1px solid rgba(245, 158, 11, 0.25)',
+                        }}
+                      >
+                        ⚡ Nota Manual (Urgent)
+                        <span style={{ padding: '1px 6px', borderRadius: 10, fontSize: 10.5, background: 'rgba(245, 158, 11, 0.2)', fontWeight: 800 }}>
+                          {manualOrdersList.length}
+                        </span>
+                      </button>
+
+                      <button
+                        className={`btn btn-sm`}
+                        onClick={() => setModalFilter('DISCOUNT')}
+                        style={{
+                          borderRadius: 8,
+                          fontWeight: 700,
+                          fontSize: 12,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          padding: '6px 14px',
+                          background: modalFilter === 'DISCOUNT' ? '#e11d48' : 'rgba(244, 63, 94, 0.1)',
+                          color: modalFilter === 'DISCOUNT' ? '#ffffff' : '#f87171',
+                          border: '1px solid rgba(244, 63, 94, 0.35)',
+                        }}
+                      >
+                        <Tag size={13} />
+                        🏷️ Diskon Saja
+                        <span style={{ padding: '1px 6px', borderRadius: 10, fontSize: 10.5, background: 'rgba(255,255,255,0.25)', fontWeight: 800 }}>
+                          {discountOrdersList.length}
+                        </span>
+                      </button>
+                    </div>
+
+                    {/* Dynamic Summary Chips based on active view */}
+                    {modalFilter === 'DISCOUNT' ? (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 18 }}>
+                        <div style={{ background: 'rgba(244, 63, 94, 0.12)', border: '1px solid rgba(244, 63, 94, 0.35)', borderRadius: 10, padding: 12 }}>
+                          <div style={{ fontSize: 11, color: '#fecdd3', fontWeight: 600 }}>Total Potongan Diskon</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: '#f87171' }}>
+                            ({rupiah(discountOrdersList.reduce((s, o) => s + o.discount_amount, 0))})
+                          </div>
+                        </div>
+                        <div style={{ background: 'rgba(255, 255, 255, 0.04)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 10, padding: 12 }}>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Jumlah Pesanan Berdiskon</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: '#ffffff' }}>
+                            {discountOrdersList.length} Pesanan
+                          </div>
+                        </div>
+                        <div style={{ background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.25)', borderRadius: 10, padding: 12 }}>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Rata-rata Diskon per Order</div>
+                          <div style={{ fontSize: 16, fontWeight: 800, color: '#60a5fa' }}>
+                            {rupiah(discountOrdersList.length > 0 ? (discountOrdersList.reduce((s, o) => s + o.discount_amount, 0) / discountOrdersList.length) : 0)}
+                          </div>
+                        </div>
+                        <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: 10, padding: 12 }}>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Omset Bersih Berdiskon</div>
+                          <div style={{ fontSize: 16, fontWeight: 800, color: '#34d399' }}>
+                            {rupiah(discountOrdersList.reduce((s, o) => s + o.total_price, 0))}
+                          </div>
+                        </div>
                       </div>
-                      <div style={{ background: 'rgba(255, 255, 255, 0.04)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 10, padding: 12 }}>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Penjualan Kotor (Gross)</div>
-                        <div style={{ fontSize: 18, fontWeight: 800, color: '#ffffff' }}>{rupiah(rev.gross_sales)}</div>
+                    ) : modalFilter === 'GENERATE' ? (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 18 }}>
+                        <div style={{ background: 'rgba(6, 182, 212, 0.12)', border: '1px solid rgba(6, 182, 212, 0.35)', borderRadius: 10, padding: 12 }}>
+                          <div style={{ fontSize: 11, color: '#a5f3fc', fontWeight: 600 }}>Omset Bersih Nota Generate</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: '#06b6d4' }}>
+                            {rupiah(generateOrdersList.reduce((s, o) => s + o.total_price, 0))}
+                          </div>
+                        </div>
+                        <div style={{ background: 'rgba(255, 255, 255, 0.04)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 10, padding: 12 }}>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Penjualan Kotor (Gross)</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: '#ffffff' }}>
+                            {rupiah(generateOrdersList.reduce((s, o) => s + o.subtotal, 0))}
+                          </div>
+                        </div>
+                        <div style={{ background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.25)', borderRadius: 10, padding: 12 }}>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Diskon Nota Generate</div>
+                          <div style={{ fontSize: 16, fontWeight: 800, color: '#f87171' }}>
+                            ({rupiah(generateOrdersList.reduce((s, o) => s + o.discount_amount, 0))})
+                          </div>
+                        </div>
+                        <div style={{ background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.25)', borderRadius: 10, padding: 12 }}>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Jumlah Pesanan Standar</div>
+                          <div style={{ fontSize: 16, fontWeight: 800, color: '#60a5fa' }}>
+                            {generateOrdersList.length} Pesanan
+                          </div>
+                        </div>
                       </div>
-                      <div style={{ background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.25)', borderRadius: 10, padding: 12 }}>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Diskon & Promo</div>
-                        <div style={{ fontSize: 18, fontWeight: 800, color: '#f87171' }}>({rupiah(rev.total_discount)})</div>
+                    ) : modalFilter === 'MANUAL' ? (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 18 }}>
+                        <div style={{ background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.35)', borderRadius: 10, padding: 12 }}>
+                          <div style={{ fontSize: 11, color: '#fde68a', fontWeight: 600 }}>Omset Bersih Nota Manual</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: '#f59e0b' }}>
+                            {rupiah(manualOrdersList.reduce((s, o) => s + o.total_price, 0))}
+                          </div>
+                        </div>
+                        <div style={{ background: 'rgba(255, 255, 255, 0.04)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 10, padding: 12 }}>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Penjualan Kotor (Gross)</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: '#ffffff' }}>
+                            {rupiah(manualOrdersList.reduce((s, o) => s + o.subtotal, 0))}
+                          </div>
+                        </div>
+                        <div style={{ background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.25)', borderRadius: 10, padding: 12 }}>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Diskon Nota Manual</div>
+                          <div style={{ fontSize: 16, fontWeight: 800, color: '#f87171' }}>
+                            ({rupiah(manualOrdersList.reduce((s, o) => s + o.discount_amount, 0))})
+                          </div>
+                        </div>
+                        <div style={{ background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.25)', borderRadius: 10, padding: 12 }}>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Jumlah Nota Manual</div>
+                          <div style={{ fontSize: 16, fontWeight: 800, color: '#60a5fa' }}>
+                            {manualOrdersList.length} Pesanan
+                          </div>
+                        </div>
                       </div>
-                      <div style={{ background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.25)', borderRadius: 10, padding: 12 }}>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Jumlah Pesanan / Rata-rata</div>
-                        <div style={{ fontSize: 16, fontWeight: 800, color: '#60a5fa' }}>{rev.transaction_count} pesanan (Rata-rata: {rupiah(rev.avg_order_value)})</div>
+                    ) : (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 18 }}>
+                        <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: 10, padding: 12 }}>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Omset Bersih</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: '#34d399' }}>{rupiah(rev.net_sales)}</div>
+                        </div>
+                        <div
+                          onClick={() => setModalFilter('GENERATE')}
+                          style={{ background: 'rgba(6, 182, 212, 0.1)', border: '1px solid rgba(6, 182, 212, 0.25)', borderRadius: 10, padding: 12, cursor: 'pointer' }}
+                          title="Klik untuk filter Nota Generate"
+                        >
+                          <div style={{ fontSize: 11, color: '#38bdf8' }}>🖥️ Nota Generate</div>
+                          <div style={{ fontSize: 16, fontWeight: 800, color: '#06b6d4' }}>
+                            {rupiah(generateOrdersList.reduce((s, o) => s + o.total_price, 0))}
+                          </div>
+                          <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>{generateOrdersList.length} pesanan 🔍</div>
+                        </div>
+                        <div
+                          onClick={() => setModalFilter('MANUAL')}
+                          style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: 10, padding: 12, cursor: 'pointer' }}
+                          title="Klik untuk filter Nota Manual"
+                        >
+                          <div style={{ fontSize: 11, color: '#fbbf24' }}>⚡ Nota Manual</div>
+                          <div style={{ fontSize: 16, fontWeight: 800, color: '#f59e0b' }}>
+                            {rupiah(manualOrdersList.reduce((s, o) => s + o.total_price, 0))}
+                          </div>
+                          <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>{manualOrdersList.length} pesanan 🔍</div>
+                        </div>
+                        <div
+                          onClick={() => setModalFilter('DISCOUNT')}
+                          style={{ background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.25)', borderRadius: 10, padding: 12, cursor: 'pointer' }}
+                          title="Klik untuk melihat hanya diskon"
+                        >
+                          <div style={{ fontSize: 11, color: '#f87171' }}>🏷️ Total Diskon & Promo</div>
+                          <div style={{ fontSize: 16, fontWeight: 800, color: '#f87171' }}>({rupiah(rev.total_discount)})</div>
+                          <div style={{ fontSize: 10.5, color: '#fca5a5', fontWeight: 700 }}>{discountOrdersList.length} pesanan berdiskon 🔍</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Quick Search inside modal */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 10, flexWrap: 'wrap' }}>
+                      <div style={{ position: 'relative', flex: 1, minWidth: 260, maxWidth: 380 }}>
+                        <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder={modalFilter === 'DISCOUNT' ? 'Cari no. order, voucher/promo, menu...' : 'Cari no. order, pelanggan, menu...'}
+                          value={modalSearch}
+                          onChange={(e) => setModalSearch(e.target.value)}
+                          style={{ paddingLeft: 32, fontSize: 12, height: 32 }}
+                        />
+                      </div>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                        Menampilkan <strong>{displayedOrders.length}</strong> pesanan
                       </div>
                     </div>
 
-                    {/* Table of Transactions */}
-                    <div style={{ overflowX: 'auto', border: '1px solid rgba(165, 180, 252, 0.12)', borderRadius: 10 }}>
-                      <table style={{ width: '100%', fontSize: 12.5, borderCollapse: 'collapse' }}>
-                        <thead>
-                          <tr style={{ background: 'rgba(255, 255, 255, 0.04)', textAlign: 'left', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                            <th style={{ padding: '10px 14px' }}>No. Order / Tanggal</th>
-                            <th style={{ padding: '10px 14px' }}>Pelanggan / Meja</th>
-                            <th style={{ padding: '10px 14px' }}>Metode Bayar</th>
-                            <th style={{ padding: '10px 14px' }}>Detail Menu Item</th>
-                            <th style={{ padding: '10px 14px', textAlign: 'right' }}>Total (Rp)</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {detailModal.items.length > 0 ? (
-                            detailModal.items.map(t => (
-                              <tr key={t.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
-                                <td style={{ padding: '10px 14px' }}>
-                                  <strong style={{ color: 'var(--accent-bright)' }}>{t.order_number || `#${t.id}`}</strong>
-                                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t.created_at ? t.created_at.slice(0, 16).replace('T', ' ') : t.date}</div>
-                                </td>
-                                <td style={{ padding: '10px 14px', color: '#e2e8f0' }}>
-                                  {t.customer_name || 'Pelanggan Walk-in'}
-                                  {t.table_number && <span style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block' }}>Meja: {t.table_number}</span>}
-                                </td>
-                                <td style={{ padding: '10px 14px' }}>
-                                  <span style={{ padding: '2px 7px', borderRadius: 6, fontSize: 11, background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', fontWeight: 700 }}>
-                                    {t.payment_method || 'CASH'}
-                                  </span>
-                                </td>
-                                <td style={{ padding: '10px 14px', color: '#cbd5e1', maxWidth: 260 }}>
-                                  {t.details?.map(d => `${d.qty}x ${d.menu_name || d.menu?.name}`).join(', ') || '-'}
-                                </td>
-                                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 800, color: '#34d399', fontSize: 13 }}>
-                                  {rupiah(t.total_price)}
+                    {/* Table View */}
+                    {modalFilter === 'DISCOUNT' ? (
+                      /* DEDICATED DISCOUNT TABLE (HANYA DISKON SAJA) */
+                      <div style={{ overflowX: 'auto', border: '1px solid rgba(244, 63, 94, 0.25)', borderRadius: 10 }}>
+                        <table style={{ width: '100%', fontSize: 12.5, borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ background: 'rgba(244, 63, 94, 0.08)', textAlign: 'left', borderBottom: '1px solid rgba(244, 63, 94, 0.2)' }}>
+                              <th style={{ padding: '10px 14px' }}>No. Order / Waktu</th>
+                              <th style={{ padding: '10px 14px' }}>Pelanggan / Meja</th>
+                              <th style={{ padding: '10px 14px' }}>Tipe Nota</th>
+                              <th style={{ padding: '10px 14px' }}>Menu yang Dipesan</th>
+                              <th style={{ padding: '10px 14px', textAlign: 'right' }}>Harga Normal</th>
+                              <th style={{ padding: '10px 14px' }}>Nama / Jenis Diskon</th>
+                              <th style={{ padding: '10px 14px', textAlign: 'right', color: '#f87171' }}>POTONGAN DISKON</th>
+                              <th style={{ padding: '10px 14px', textAlign: 'right', color: '#34d399' }}>Total Bersih</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {displayedOrders.length > 0 ? (
+                              displayedOrders.map(o => (
+                                <tr key={o.key} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
+                                  <td style={{ padding: '10px 14px' }}>
+                                    <strong style={{ color: 'var(--accent-bright)' }}>{o.order_number}</strong>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                      {o.created_at ? o.created_at.slice(0, 16).replace('T', ' ') : o.date}
+                                    </div>
+                                  </td>
+                                  <td style={{ padding: '10px 14px', color: '#e2e8f0' }}>
+                                    {o.customer_name}
+                                    {o.table_number && <span style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block' }}>Meja: {o.table_number}</span>}
+                                  </td>
+                                  <td style={{ padding: '10px 14px' }}>
+                                    {o.is_urgent_note ? (
+                                      <span style={{ padding: '2px 7px', borderRadius: 6, fontSize: 11, background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', fontWeight: 700 }}>
+                                        ⚡ Manual
+                                      </span>
+                                    ) : (
+                                      <span style={{ padding: '2px 7px', borderRadius: 6, fontSize: 11, background: 'rgba(6, 182, 212, 0.15)', color: '#06b6d4', fontWeight: 700 }}>
+                                        🖥️ Generate
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td style={{ padding: '10px 14px', color: '#cbd5e1', maxWidth: 220 }}>
+                                    {o.items.map(it => `${it.qty}x ${it.name}`).join(', ') || '-'}
+                                  </td>
+                                  <td style={{ padding: '10px 14px', textAlign: 'right', color: '#94a3b8', fontWeight: 600 }}>
+                                    {rupiah(o.subtotal)}
+                                  </td>
+                                  <td style={{ padding: '10px 14px' }}>
+                                    <span style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, background: 'rgba(244, 63, 94, 0.15)', color: '#fb7185', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                      <Tag size={11} /> {o.discount_name || (o.discount_rate ? `Diskon ${o.discount_rate}%` : 'Diskon Kasir')}
+                                    </span>
+                                  </td>
+                                  <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 800, color: '#f87171', fontSize: 13 }}>
+                                    -{rupiah(o.discount_amount)}
+                                  </td>
+                                  <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 800, color: '#34d399', fontSize: 13 }}>
+                                    {rupiah(o.total_price)}
+                                  </td>
+                                </tr>
+                              ))
+                            ) : (
+                              <tr>
+                                <td colSpan={8} style={{ padding: 36, textAlign: 'center', color: 'var(--text-muted)' }}>
+                                  Tidak ada transaksi yang mendapatkan potongan diskon pada periode ini.
                                 </td>
                               </tr>
-                            ))
-                          ) : (
-                            <tr>
-                              <td colSpan={5} style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)' }}>
-                                Tidak ada rincian transaksi penjualan pada periode ini.
-                              </td>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      /* STANDARD TRANSACTIONS TABLE (WITH GENERATE / MANUAL BADGES) */
+                      <div style={{ overflowX: 'auto', border: '1px solid rgba(165, 180, 252, 0.12)', borderRadius: 10 }}>
+                        <table style={{ width: '100%', fontSize: 12.5, borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ background: 'rgba(255, 255, 255, 0.04)', textAlign: 'left', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                              <th style={{ padding: '10px 14px' }}>No. Order / Waktu</th>
+                              <th style={{ padding: '10px 14px' }}>Pelanggan / Meja</th>
+                              <th style={{ padding: '10px 14px' }}>Tipe Nota</th>
+                              <th style={{ padding: '10px 14px' }}>Metode Bayar</th>
+                              <th style={{ padding: '10px 14px' }}>Detail Menu Item</th>
+                              <th style={{ padding: '10px 14px', textAlign: 'right' }}>Kotor</th>
+                              <th style={{ padding: '10px 14px', textAlign: 'right' }}>Diskon</th>
+                              <th style={{ padding: '10px 14px', textAlign: 'right' }}>Total Bersih (Rp)</th>
                             </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
+                          </thead>
+                          <tbody>
+                            {displayedOrders.length > 0 ? (
+                              displayedOrders.map(o => (
+                                <tr key={o.key} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
+                                  <td style={{ padding: '10px 14px' }}>
+                                    <strong style={{ color: 'var(--accent-bright)' }}>{o.order_number}</strong>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                      {o.created_at ? o.created_at.slice(0, 16).replace('T', ' ') : o.date}
+                                    </div>
+                                  </td>
+                                  <td style={{ padding: '10px 14px', color: '#e2e8f0' }}>
+                                    {o.customer_name}
+                                    {o.table_number && <span style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block' }}>Meja: {o.table_number}</span>}
+                                  </td>
+                                  <td style={{ padding: '10px 14px' }}>
+                                    {o.is_urgent_note ? (
+                                      <span style={{ padding: '2px 7px', borderRadius: 6, fontSize: 11, background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', fontWeight: 700 }}>
+                                        ⚡ Nota Manual
+                                      </span>
+                                    ) : (
+                                      <span style={{ padding: '2px 7px', borderRadius: 6, fontSize: 11, background: 'rgba(6, 182, 212, 0.15)', color: '#06b6d4', fontWeight: 700 }}>
+                                        🖥️ Nota Generate
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td style={{ padding: '10px 14px' }}>
+                                    <span style={{ padding: '2px 7px', borderRadius: 6, fontSize: 11, background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', fontWeight: 700 }}>
+                                      {o.payment_method}
+                                    </span>
+                                  </td>
+                                  <td style={{ padding: '10px 14px', color: '#cbd5e1', maxWidth: 220 }}>
+                                    {o.items.map(it => `${it.qty}x ${it.name}`).join(', ') || '-'}
+                                  </td>
+                                  <td style={{ padding: '10px 14px', textAlign: 'right', color: '#94a3b8' }}>
+                                    {rupiah(o.subtotal)}
+                                  </td>
+                                  <td style={{ padding: '10px 14px', textAlign: 'right', color: o.discount_amount > 0 ? '#f87171' : 'var(--text-muted)', fontWeight: o.discount_amount > 0 ? 700 : 400 }}>
+                                    {o.discount_amount > 0 ? `-${rupiah(o.discount_amount)}` : '—'}
+                                  </td>
+                                  <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 800, color: '#34d399', fontSize: 13 }}>
+                                    {rupiah(o.total_price)}
+                                  </td>
+                                </tr>
+                              ))
+                            ) : (
+                              <tr>
+                                <td colSpan={8} style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)' }}>
+                                  Tidak ada rincian transaksi penjualan pada kategori ini.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 )}
 
