@@ -283,11 +283,19 @@ export default function MasterBahan() {
           <div style={{ display: 'flex', gap: 8 }}>
             <button
               className="btn btn-secondary"
+              onClick={() => navigate('/perlengkapan')}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, borderColor: 'rgba(99, 102, 241, 0.4)', color: 'var(--accent-bright)' }}
+            >
+              <Store size={14} />
+              Master Perlengkapan
+            </button>
+            <button
+              className="btn btn-secondary"
               onClick={() => navigate('/kategori-stok')}
               style={{ display: 'flex', alignItems: 'center', gap: 6, borderColor: 'rgba(0, 177, 79, 0.4)', color: '#10d97a' }}
             >
               <Layers size={14} />
-              Kategori Stok & Perlengkapan
+              Kategori Stok
             </button>
             <button
               className="btn btn-secondary"

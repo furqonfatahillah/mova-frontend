@@ -62,13 +62,35 @@ export default function MasterMenu() {
     ]
   });
 
+  const perlengkapanIngredients = useMemo(() => {
+    return (ingredients || []).filter(i => {
+      const cat = (i.category || '').toLowerCase();
+      const name = (i.name || '').toLowerCase();
+      return (
+        cat.includes('perlengkapan') ||
+        cat.includes('packaging') ||
+        cat.includes('kemasan') ||
+        cat.includes('cup') ||
+        cat.includes('pipet') ||
+        cat.includes('sedotan') ||
+        cat.includes('tissue') ||
+        name.includes('cup') ||
+        name.includes('pipet') ||
+        name.includes('sedotan') ||
+        name.includes('tissue') ||
+        name.includes('sealer')
+      );
+    });
+  }, [ingredients]);
+
   const semiFinishedIngredients = useMemo(() => {
     return (ingredients || []).filter(i => i.type === 'SEMI_FINISHED');
   }, [ingredients]);
 
   const rawIngredients = useMemo(() => {
-    return (ingredients || []).filter(i => i.type !== 'SEMI_FINISHED');
-  }, [ingredients]);
+    const perlengkapanIds = new Set(perlengkapanIngredients.map(p => p.id));
+    return (ingredients || []).filter(i => i.type !== 'SEMI_FINISHED' && !perlengkapanIds.has(i.id));
+  }, [ingredients, perlengkapanIngredients]);
 
   useEffect(() => { fetchAll(); }, []);
 
@@ -1604,15 +1626,31 @@ export default function MasterMenu() {
                                     if (ing) updateDraft(idx, 'unit', ing.unit_pakai);
                                   }}
                                 >
-                                  {ingredients.map(i => {
-                                    const isPerlengkapan = (i.category || '').toLowerCase().includes('perlengkapan');
-                                    const tag = i.type === 'SEMI_FINISHED' ? '[Olahan] ' : isPerlengkapan ? '[Perlengkapan] ' : '';
-                                    return (
+                                  {perlengkapanIngredients.length > 0 && (
+                                    <optgroup label="Perlengkapan & Kemasan (Cup, Sedotan, Tissue, Tutup)">
+                                      {perlengkapanIngredients.map(i => (
+                                        <option key={i.id} value={i.id}>
+                                          [Perlengkapan] {i.name} ({i.category || 'Perlengkapan'}) — {rupiah(i.harga / (i.konversi || 1))}/{i.unit_pakai}
+                                        </option>
+                                      ))}
+                                    </optgroup>
+                                  )}
+                                  {semiFinishedIngredients.length > 0 && (
+                                    <optgroup label="Bahan Olahan (Prep / Semi-Finished)">
+                                      {semiFinishedIngredients.map(i => (
+                                        <option key={i.id} value={i.id}>
+                                          [Olahan] {i.name} ({i.category || 'Bahan'}) — {rupiah(i.harga / (i.konversi || 1))}/{i.unit_pakai}
+                                        </option>
+                                      ))}
+                                    </optgroup>
+                                  )}
+                                  <optgroup label="Bahan Baku Mentah (Raw Material)">
+                                    {rawIngredients.map(i => (
                                       <option key={i.id} value={i.id}>
-                                        {tag}{i.name} ({i.category || 'Bahan'}) — {rupiah(i.harga / (i.konversi || 1))}/{i.unit_pakai}
+                                        {i.name} ({i.category || 'Bahan'}) — {rupiah(i.harga / (i.konversi || 1))}/{i.unit_pakai}
                                       </option>
-                                    );
-                                  })}
+                                    ))}
+                                  </optgroup>
                                 </select>
                               </td>
                               <td>
