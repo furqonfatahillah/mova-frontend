@@ -7,7 +7,7 @@ import {
   ShoppingBag
 } from 'lucide-react';
 import api from '../api/client';
-import { rupiah, num, LoadingState, PageHeader, AuditInfo, PeriodPicker } from '../components/ui';
+import { rupiah, num, LoadingState, PageHeader, AuditInfo, PeriodPicker, SearchableSelect } from '../components/ui';
 import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
@@ -525,6 +525,51 @@ export default function KartuStok() {
     }
     return activeModalIng.current_harga ?? activeModalIng.harga ?? 0;
   }, [activeModalIng, mutationForm.outlet_id, selectedOutletId]);
+
+  // Kelompok bahan/perlengkapan untuk SearchableSelect di modal mutasi
+  const mutationIngredientGroups = useMemo(() => {
+    if (!ingredients || !ingredients.length) return [];
+
+    const perlengkapan = [];
+    const olahan = [];
+    const mentah = [];
+
+    for (const i of ingredients) {
+      const cat = (i.category || '').toLowerCase();
+      const isPerlengkapan =
+        cat.includes('perlengkapan') ||
+        cat.includes('packaging') ||
+        cat.includes('kemasan') ||
+        cat.includes('cup') ||
+        cat.includes('pipet') ||
+        cat.includes('sedotan') ||
+        cat.includes('tissue');
+
+      const item = {
+        value: i.id,
+        label: i.name,
+        code: i.code,
+        category: i.category,
+        badge: isPerlengkapan ? 'Perlengkapan' : (i.type === 'SEMI_FINISHED' ? 'Olahan' : 'Mentah'),
+        sublabel: `${i.unit_pakai} • Stok: ${num(i.current_stock ?? 0)}`,
+        raw: i,
+      };
+
+      if (isPerlengkapan) {
+        perlengkapan.push(item);
+      } else if (i.type === 'SEMI_FINISHED') {
+        olahan.push(item);
+      } else {
+        mentah.push(item);
+      }
+    }
+
+    const groups = [];
+    if (perlengkapan.length > 0) groups.push({ group: 'Perlengkapan & Kemasan (Cup, Pipet, Tissue)', items: perlengkapan });
+    if (olahan.length > 0) groups.push({ group: 'Bahan Olahan (Prep)', items: olahan });
+    if (mentah.length > 0) groups.push({ group: 'Bahan Baku Mentah', items: mentah });
+    return groups;
+  }, [ingredients]);
 
   // Available categories in current summary
   const availableCategories = useMemo(() => {
@@ -2216,26 +2261,22 @@ export default function KartuStok() {
             <form onSubmit={handleAddMutation}>
               <div className="modal-body">
                 <div className="form-group">
-                  <label className="form-label">Bahan Baku</label>
-                  <select
-                    className="form-control"
+                  <label className="form-label">Bahan Baku / Perlengkapan</label>
+                  <SearchableSelect
                     value={mutationForm.ingredient_id}
-                    onChange={e => {
-                      const newId = Number(e.target.value);
-                      const ing = ingredients.find(i => i.id === newId);
+                    onChange={(newId, selectedObj) => {
+                      const idNum = Number(newId);
+                      const ing = selectedObj?.raw || ingredients.find(i => i.id === idNum);
                       setMutationForm(f => ({
                         ...f,
-                        ingredient_id: newId,
+                        ingredient_id: idNum,
                         unit_price: f.type === 'PURCHASE' ? (ing?.harga || '') : f.unit_price
                       }));
                     }}
-                  >
-                    {ingredients.map(i => (
-                      <option key={i.id} value={i.id} style={{ background: '#11162d', color: '#ffffff' }}>
-                        {i.code} - {i.name} ({i.unit_pakai})
-                      </option>
-                    ))}
-                  </select>
+                    options={mutationIngredientGroups}
+                    placeholder="-- Cari Bahan Baku / Perlengkapan --"
+                    searchPlaceholder="Ketik kode atau nama bahan/cup/sedotan..."
+                  />
                 </div>
 
                 <div className="form-group">

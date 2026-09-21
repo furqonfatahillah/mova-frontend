@@ -6,7 +6,7 @@ import {
   X, RefreshCw, AlertCircle, ArrowDownRight, Layers, FileText
 } from 'lucide-react';
 import api from '../api/client';
-import { num, rupiah, LoadingState, PageHeader, AuditInfo, PeriodPicker } from '../components/ui';
+import { num, rupiah, LoadingState, PageHeader, AuditInfo, PeriodPicker, SearchableSelect } from '../components/ui';
 import { getTodayStr, getMonthStartStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
@@ -62,6 +62,28 @@ export default function WasteTracking() {
   // Modal Form State
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Opsi SearchableSelect untuk bahan dan menu di modal waste
+  const wasteIngredientOptions = useMemo(() => {
+    return (ingredients || []).map(ing => ({
+      value: String(ing.id),
+      label: ing.name,
+      code: ing.code,
+      badge: ing.type === 'SEMI_FINISHED' ? 'Olahan' : 'Mentah',
+      sublabel: `Stok: ${num(ing.current_stock ?? 0)} ${ing.unit_pakai}`,
+    }));
+  }, [ingredients]);
+
+  const wasteMenuOptions = useMemo(() => {
+    return (menus || []).map(m => ({
+      value: String(m.id),
+      label: m.name,
+      code: m.code,
+      category: m.category || 'Menu',
+      sublabel: rupiah(m.cost_price || m.price),
+    }));
+  }, [menus]);
+
   const [form, setForm] = useState({
     date: getTodayStr(),
     outlet_id: '',
@@ -840,20 +862,13 @@ export default function WasteTracking() {
               {form.item_type === 'INGREDIENT' ? (
                 <div className="form-group">
                   <label className="form-label">Pilih Bahan Baku / Olahan</label>
-                  <select
-                    className="form-control"
+                  <SearchableSelect
                     value={form.ingredient_id}
-                    onChange={e => setForm(p => ({ ...p, ingredient_id: e.target.value }))}
-                    required
-                    style={{ fontSize: 13 }}
-                  >
-                    <option value="">-- Pilih Bahan --</option>
-                    {ingredients.map(ing => (
-                      <option key={ing.id} value={ing.id}>
-                        {ing.name} ({ing.type === 'SEMI_FINISHED' ? 'Bahan Olahan' : 'Bahan Mentah'}) — Stok: {num(ing.current_stock ?? 0)} {ing.unit_pakai}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={val => setForm(p => ({ ...p, ingredient_id: String(val) }))}
+                    options={wasteIngredientOptions}
+                    placeholder="-- Cari Bahan Baku / Olahan --"
+                    searchPlaceholder="Ketik nama atau kode bahan..."
+                  />
 
                   {selectedModalIng && (
                     <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4, display: 'flex', justifyContent: 'space-between' }}>
@@ -869,20 +884,13 @@ export default function WasteTracking() {
               ) : (
                 <div className="form-group">
                   <label className="form-label">Pilih Menu / Produk Olahan Jadi</label>
-                  <select
-                    className="form-control"
+                  <SearchableSelect
                     value={form.menu_id}
-                    onChange={e => setForm(p => ({ ...p, menu_id: e.target.value }))}
-                    required
-                    style={{ fontSize: 13 }}
-                  >
-                    <option value="">-- Pilih Menu --</option>
-                    {menus.map(m => (
-                      <option key={m.id} value={m.id}>
-                        {m.name} ({m.category || 'Menu'}) — Price/HPP: {rupiah(m.cost_price || m.price)}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={val => setForm(p => ({ ...p, menu_id: String(val) }))}
+                    options={wasteMenuOptions}
+                    placeholder="-- Cari Menu / Produk --"
+                    searchPlaceholder="Ketik nama menu..."
+                  />
 
                   {selectedModalMenu && (
                     <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4, display: 'flex', justifyContent: 'space-between' }}>

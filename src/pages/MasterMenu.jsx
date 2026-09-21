@@ -7,7 +7,7 @@ import {
 import api from '../api/client';
 import {
   rupiah, num, LoadingState, PageHeader, AuditInfo, formatDateTime,
-  SATUAN_PAKAI_OPTIONS, UnitSelect
+  SATUAN_PAKAI_OPTIONS, UnitSelect, SearchableSelect
 } from '../components/ui';
 import { getTodayStr } from '../utils/date';
 import toast from 'react-hot-toast';
@@ -91,6 +91,70 @@ export default function MasterMenu() {
     const perlengkapanIds = new Set(perlengkapanIngredients.map(p => p.id));
     return (ingredients || []).filter(i => i.type !== 'SEMI_FINISHED' && !perlengkapanIds.has(i.id));
   }, [ingredients, perlengkapanIngredients]);
+
+  // Kelompok item untuk SearchableSelect ala Select2
+  const searchableIngredientGroups = useMemo(() => {
+    const groups = [];
+
+    if (perlengkapanIngredients.length > 0) {
+      groups.push({
+        group: 'Perlengkapan & Kemasan (Cup, Sedotan, Tissue, Tutup)',
+        items: perlengkapanIngredients.map(i => ({
+          value: i.id,
+          label: i.name,
+          code: i.code,
+          category: i.category || 'Perlengkapan',
+          badge: 'Perlengkapan',
+          sublabel: `${rupiah((i.harga || 0) / Math.max(i.konversi || 1, 1))}/${i.unit_pakai}`,
+          raw: i,
+        })),
+      });
+    }
+
+    if (semiFinishedIngredients.length > 0) {
+      groups.push({
+        group: 'Bahan Olahan (Prep / Semi-Finished)',
+        items: semiFinishedIngredients.map(i => ({
+          value: i.id,
+          label: i.name,
+          code: i.code,
+          category: i.category || 'Bahan Olahan',
+          badge: 'Olahan',
+          sublabel: `${rupiah((i.harga || 0) / Math.max(i.konversi || 1, 1))}/${i.unit_pakai}`,
+          raw: i,
+        })),
+      });
+    }
+
+    if (rawIngredients.length > 0) {
+      groups.push({
+        group: 'Bahan Baku Mentah (Raw Material)',
+        items: rawIngredients.map(i => ({
+          value: i.id,
+          label: i.name,
+          code: i.code,
+          category: i.category || 'Bahan Mentah',
+          badge: 'Mentah',
+          sublabel: `${rupiah((i.harga || 0) / Math.max(i.konversi || 1, 1))}/${i.unit_pakai}`,
+          raw: i,
+        })),
+      });
+    }
+
+    return groups;
+  }, [perlengkapanIngredients, semiFinishedIngredients, rawIngredients]);
+
+  const searchableModifierIngredientGroups = useMemo(() => {
+    return [
+      {
+        group: '',
+        items: [
+          { value: '', label: '-- Tanpa Potong Bahan (Catatan / Rasa Saja) --', sublabel: null, badge: null }
+        ]
+      },
+      ...searchableIngredientGroups
+    ];
+  }, [searchableIngredientGroups]);
 
   useEffect(() => { fetchAll(); }, []);
 
@@ -1614,44 +1678,20 @@ export default function MasterMenu() {
                         <tbody>
                           {draft.map((it, idx) => (
                             <tr key={idx}>
-                              <td>
-                                <select
-                                  className="form-control"
-                                  style={{ padding: '6px 10px', fontSize: 12.5 }}
+                              <td style={{ minWidth: 260 }}>
+                                <SearchableSelect
                                   value={it.ingredient_id}
-                                  onChange={e => {
-                                    const selectedId = Number(e.target.value);
-                                    const ing = ingredients.find(i => i.id === selectedId);
-                                    updateDraft(idx, 'ingredient_id', selectedId);
+                                  onChange={(selectedId, selectedObj) => {
+                                    const val = Number(selectedId);
+                                    const ing = selectedObj?.raw || ingredients.find(i => i.id === val);
+                                    updateDraft(idx, 'ingredient_id', val);
                                     if (ing) updateDraft(idx, 'unit', ing.unit_pakai);
                                   }}
-                                >
-                                  {perlengkapanIngredients.length > 0 && (
-                                    <optgroup label="Perlengkapan & Kemasan (Cup, Sedotan, Tissue, Tutup)">
-                                      {perlengkapanIngredients.map(i => (
-                                        <option key={i.id} value={i.id}>
-                                          [Perlengkapan] {i.name} ({i.category || 'Perlengkapan'}) — {rupiah(i.harga / (i.konversi || 1))}/{i.unit_pakai}
-                                        </option>
-                                      ))}
-                                    </optgroup>
-                                  )}
-                                  {semiFinishedIngredients.length > 0 && (
-                                    <optgroup label="Bahan Olahan (Prep / Semi-Finished)">
-                                      {semiFinishedIngredients.map(i => (
-                                        <option key={i.id} value={i.id}>
-                                          [Olahan] {i.name} ({i.category || 'Bahan'}) — {rupiah(i.harga / (i.konversi || 1))}/{i.unit_pakai}
-                                        </option>
-                                      ))}
-                                    </optgroup>
-                                  )}
-                                  <optgroup label="Bahan Baku Mentah (Raw Material)">
-                                    {rawIngredients.map(i => (
-                                      <option key={i.id} value={i.id}>
-                                        {i.name} ({i.category || 'Bahan'}) — {rupiah(i.harga / (i.konversi || 1))}/{i.unit_pakai}
-                                      </option>
-                                    ))}
-                                  </optgroup>
-                                </select>
+                                  options={searchableIngredientGroups}
+                                  placeholder="-- Cari Bahan Baku / Perlengkapan --"
+                                  searchPlaceholder="Cari cup, pipet, susu, kopi..."
+                                  size="sm"
+                                />
                               </td>
                               <td>
                                 <input
@@ -2638,45 +2678,19 @@ export default function MasterMenu() {
                                 placeholder="0"
                               />
                             </td>
-                            <td>
-                              <select
-                                className="form-control"
-                                style={{ padding: '6px 8px', fontSize: 12 }}
+                            <td style={{ minWidth: 260 }}>
+                              <SearchableSelect
                                 value={opt.ingredient_id}
-                                onChange={e => {
-                                  const ingId = e.target.value;
-                                  const ing = ingredients.find(i => i.id === Number(ingId));
+                                onChange={(ingId, selectedObj) => {
+                                  const ing = selectedObj?.raw || ingredients.find(i => i.id === Number(ingId));
                                   updateGroupOption(idx, 'ingredient_id', ingId);
                                   if (ing) updateGroupOption(idx, 'unit', ing.unit_pakai);
                                 }}
-                              >
-                                <option value="">-- Tanpa Potong Bahan (Catatan/Rasa) --</option>
-                                {semiFinishedIngredients.length > 0 && (
-                                  <optgroup label="Bahan Olahan / Racikan">
-                                    {semiFinishedIngredients.map(i => (
-                                      <option key={i.id} value={i.id}>
-                                        [Olahan] {i.name} ({i.unit_pakai})
-                                      </option>
-                                    ))}
-                                  </optgroup>
-                                )}
-                                <optgroup label="Bahan Baku Mentah">
-                                  {rawIngredients.filter(i => !(i.category || '').toLowerCase().includes('perlengkapan')).map(i => (
-                                    <option key={i.id} value={i.id}>
-                                      [Mentah] {i.name} ({i.unit_pakai})
-                                    </option>
-                                  ))}
-                                </optgroup>
-                                {ingredients.filter(i => (i.category || '').toLowerCase().includes('perlengkapan')).length > 0 && (
-                                  <optgroup label="Perlengkapan & Kemasan (Cup, Pipet, Tissue)">
-                                    {ingredients.filter(i => (i.category || '').toLowerCase().includes('perlengkapan')).map(i => (
-                                      <option key={i.id} value={i.id}>
-                                        [Perlengkapan] {i.name} ({i.unit_pakai})
-                                      </option>
-                                    ))}
-                                  </optgroup>
-                                )}
-                              </select>
+                                options={searchableModifierIngredientGroups}
+                                placeholder="-- Tanpa Potong Bahan --"
+                                searchPlaceholder="Cari topping, cup, susu..."
+                                size="sm"
+                              />
                               {opt.ingredient_id && (
                                 <div style={{ fontSize: 9.5, marginTop: 3 }}>
                                   {ingredients.find(i => i.id === Number(opt.ingredient_id))?.type === 'SEMI_FINISHED' ? (

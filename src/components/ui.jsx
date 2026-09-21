@@ -246,3 +246,5 @@ export function UnitSelect({ value, onChange, options = SATUAN_PAKAI_OPTIONS, st
     </select>
   );
 }
+
+export { default as SearchableSelect } from './SearchableSelect';
