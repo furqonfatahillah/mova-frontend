@@ -6562,6 +6562,99 @@ export default function POS() {
           </div>
         );
       })()}
+
+      {/* Modal Daftar Member Baru Cepat (Quick Add Member di POS) */}
+      {quickMemberModal.open && (
+        <div className="modal-backdrop" onClick={() => setQuickMemberModal(p => ({ ...p, open: false }))}>
+          <div
+            className="modal-card"
+            onClick={e => e.stopPropagation()}
+            style={{ maxWidth: 440, width: '92%' }}
+          >
+            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ padding: 6, borderRadius: 8, background: 'rgba(16, 185, 129, 0.15)', color: '#34d399' }}>
+                  <UserPlus size={18} />
+                </div>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#f8fafc' }}>
+                  Daftar Member Baru
+                </h3>
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-icon"
+                onClick={() => setQuickMemberModal(p => ({ ...p, open: false }))}
+                style={{ padding: 4 }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleQuickRegisterMember}>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '16px 0' }}>
+                <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', fontSize: 12, color: '#a7f3d0' }}>
+                  Member baru akan otomatis mendapatkan <strong>+1 Poin Loyalitas</strong> setiap kali transaksi lunas.
+                </div>
+
+                <div className="form-group mb-0">
+                  <label className="form-label" style={{ fontSize: 12, fontWeight: 600 }}>
+                    Nama Lengkap Pelanggan <span style={{ color: '#f87171' }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Contoh: Budi Santoso"
+                    value={quickMemberModal.name}
+                    onChange={e => setQuickMemberModal(p => ({ ...p, name: e.target.value }))}
+                    autoFocus
+                    required
+                    style={{ fontSize: 13 }}
+                  />
+                </div>
+
+                <div className="form-group mb-0">
+                  <label className="form-label" style={{ fontSize: 12, fontWeight: 600 }}>
+                    Nomor WhatsApp / HP <span style={{ color: '#f87171' }}>*</span>
+                  </label>
+                  <input
+                    type="tel"
+                    className="form-control"
+                    placeholder="Contoh: 081234567890"
+                    value={quickMemberModal.phone}
+                    onChange={e => setQuickMemberModal(p => ({ ...p, phone: e.target.value }))}
+                    required
+                    style={{ fontSize: 13 }}
+                  />
+                </div>
+              </div>
+
+              <div className="modal-footer" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setQuickMemberModal(p => ({ ...p, open: false }))}
+                  disabled={quickMemberModal.saving}
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={quickMemberModal.saving}
+                  style={{
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    borderColor: '#10b981',
+                    fontWeight: 700,
+                    minWidth: 140
+                  }}
+                >
+                  {quickMemberModal.saving ? 'Mendaftarkan...' : 'Simpan & Pilih Member'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
