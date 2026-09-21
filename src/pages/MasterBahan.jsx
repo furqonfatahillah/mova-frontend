@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Edit2, Check, X, Store, Layers, Sparkles, Info, Calculator, ChefHat, Flame, Trash2 } from 'lucide-react';
+import { Plus, Edit2, Check, X, Store, Sparkles, Info, Calculator, ChefHat, Flame, Trash2 } from 'lucide-react';
 import api from '../api/client';
 import {
   rupiah, num, fmtQtyVal, LoadingState, PageHeader, AuditInfo,
@@ -288,14 +288,6 @@ export default function MasterBahan() {
             >
               <Store size={14} />
               Master Perlengkapan
-            </button>
-            <button
-              className="btn btn-secondary"
-              onClick={() => navigate('/kategori-stok')}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, borderColor: 'rgba(0, 177, 79, 0.4)', color: '#10d97a' }}
-            >
-              <Layers size={14} />
-              Kategori Stok
             </button>
             <button
               className="btn btn-secondary"

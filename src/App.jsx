@@ -13,7 +13,6 @@ const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const MasterBahan = lazy(() => import('./pages/MasterBahan'));
 const MasterPerlengkapan = lazy(() => import('./pages/MasterPerlengkapan'));
-const KategoriStok = lazy(() => import('./pages/KategoriStok'));
 const MasterMenu = lazy(() => import('./pages/MasterMenu'));
 const POS = lazy(() => import('./pages/POS'));
 const StockMovement = lazy(() => import('./pages/StockMovement'));
@@ -101,7 +100,6 @@ export default function App() {
               <Route index             element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><Dashboard /></RoleRoute>} />
               <Route path="bahan"      element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><MasterBahan /></RoleRoute>} />
               <Route path="perlengkapan" element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><MasterPerlengkapan /></RoleRoute>} />
-              <Route path="kategori-stok" element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><KategoriStok /></RoleRoute>} />
               <Route path="menu"       element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><MasterMenu /></RoleRoute>} />
               <Route path="outlet"     element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><OutletManagement /></RoleRoute>} />
               <Route path="users"      element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><UserManagement /></RoleRoute>} />
