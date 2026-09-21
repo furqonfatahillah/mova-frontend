@@ -103,7 +103,7 @@ export default function App() {
               <Route path="perlengkapan" element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><MasterPerlengkapan /></RoleRoute>} />
               <Route path="menu"       element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><MasterMenu /></RoleRoute>} />
               <Route path="outlet"     element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><OutletManagement /></RoleRoute>} />
-              <Route path="member"     element={<RoleRoute roles={['pegawai']}><MasterCustomer /></RoleRoute>} />
+              <Route path="member"     element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'pegawai', 'platform_admin', 'owner_website', 'superadmin']}><MasterCustomer /></RoleRoute>} />
               <Route path="users"      element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><UserManagement /></RoleRoute>} />
 
               {/* SaaS Platform (Superadmin / Website Owner ONLY & Tenant Coin Billing) */}

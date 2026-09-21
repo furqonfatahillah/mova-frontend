@@ -102,6 +102,7 @@ export default function Layout() {
               { to: '/bahan', label: 'Master Bahan & Resep', icon: Package },
               { to: '/perlengkapan', label: 'Master Perlengkapan', icon: Boxes },
               { to: '/menu', label: 'Master Menu & Harga', icon: UtensilsCrossed },
+              { to: '/member', label: 'Master Member & Poin', icon: UserCheck },
               { to: '/outlet', label: 'Cabang Outlet', icon: Store },
               { to: '/pos', label: 'POS / Transaksi', icon: ShoppingCart },
               { to: '/urgent-notes', label: 'Nota Urgent / Manual', icon: AlertOctagon },
