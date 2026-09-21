@@ -2355,6 +2355,7 @@ export default function POS() {
                   <option value="QRIS">📱 QRIS</option>
                   <option value="TRANSFER">🏦 TRANSFER</option>
                   <option value="DEBIT">💳 DEBIT / EDC</option>
+                  <option value="GRAB">🛵 GRAB / GrabFood</option>
                 </select>
               </div>
             </div>
@@ -2431,8 +2432,15 @@ export default function POS() {
                             <span className="mono" style={{ fontSize: 14.5, fontWeight: 800, color: 'var(--accent-bright)' }}>
                               #{order.order_number}
                             </span>
-                            <span className="badge badge-neutral" style={{ fontSize: 11, fontWeight: 700 }}>
-                              {order.payment_method || 'CASH'}
+                            <span
+                              className={`badge ${order.payment_method === 'GRAB' ? 'badge-success' : 'badge-neutral'}`}
+                              style={{
+                                fontSize: 11,
+                                fontWeight: 700,
+                                ...(order.payment_method === 'GRAB' ? { background: '#00B14F', color: '#ffffff', borderColor: '#00B14F' } : {})
+                              }}
+                            >
+                              {order.payment_method === 'GRAB' ? '🛵 GRAB' : (order.payment_method || 'CASH')}
                             </span>
                             <span className={`badge ${order.status === 'PAID' ? 'badge-success' : 'badge-warning'}`} style={{ fontSize: 10.5 }}>
                               {order.status === 'PAID' ? '✓ LUNAS' : '⏳ HOLD'}
@@ -2603,8 +2611,14 @@ export default function POS() {
                       <td className="mono right">{t.qty}</td>
                       <td className="mono right" style={{ color: 'var(--ok)', fontWeight: 600 }}>{rupiah(t.total_price)}</td>
                       <td>
-                        <span className="badge badge-neutral" style={{ fontSize: 11 }}>
-                          {t.payment_method || 'CASH'}
+                        <span
+                          className={`badge ${t.payment_method === 'GRAB' ? 'badge-success' : 'badge-neutral'}`}
+                          style={{
+                            fontSize: 11,
+                            ...(t.payment_method === 'GRAB' ? { background: '#00B14F', color: '#ffffff', borderColor: '#00B14F' } : {})
+                          }}
+                        >
+                          {t.payment_method === 'GRAB' ? '🛵 GRAB' : (t.payment_method || 'CASH')}
                         </span>
                       </td>
                       <td>
@@ -4073,11 +4087,12 @@ export default function POS() {
             {/* Payment Method Pills */}
             <div className="form-group mb-3">
               <label className="form-label">Metode Pembayaran</label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
                 {[
                   { key: 'CASH', label: 'Tunai', icon: Banknote },
                   { key: 'QRIS', label: 'QRIS', icon: QrCode },
                   { key: 'TRANSFER', label: 'Transfer / EDC', icon: CreditCard },
+                  { key: 'GRAB', label: 'GrabFood', icon: ShoppingBag },
                 ].map(m => {
                   const Icon = m.icon;
                   const active = paymentMethod === m.key;
@@ -4098,8 +4113,8 @@ export default function POS() {
                         alignItems: 'center',
                         gap: 6,
                         border: '1px solid',
-                        borderColor: active ? 'var(--accent-bright)' : 'var(--border)',
-                        background: active ? 'var(--accent-gradient)' : 'rgba(255,255,255,0.04)',
+                        borderColor: active ? (m.key === 'GRAB' ? '#00B14F' : 'var(--accent-bright)') : 'var(--border)',
+                        background: active ? (m.key === 'GRAB' ? 'linear-gradient(135deg, #00B14F 0%, #00873c 100%)' : 'var(--accent-gradient)') : 'rgba(255,255,255,0.04)',
                         color: '#ffffff',
                         fontWeight: active ? 700 : 500,
                         fontSize: 12,
@@ -4212,6 +4227,49 @@ export default function POS() {
                   type="text"
                   className="form-control"
                   placeholder="Contoh: EDC Mandiri / Trf BCA Ref #12345"
+                  value={orderNotes}
+                  onChange={e => setOrderNotes(e.target.value)}
+                />
+              </div>
+            )}
+
+            {/* Grab / GrabFood */}
+            {paymentMethod === 'GRAB' && (
+              <div className="form-group mb-3">
+                <div style={{
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  background: 'rgba(0, 177, 79, 0.1)',
+                  border: '1px solid rgba(0, 177, 79, 0.3)',
+                  marginBottom: 10,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10
+                }}>
+                  <div style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 8,
+                    background: '#00B14F',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#fff',
+                    fontWeight: 900,
+                    fontSize: 16
+                  }}>
+                    G
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#10d97a' }}>Metode Grab / GrabFood</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Pembayaran non-tunai langsung tercatat via pesanan Grab.</div>
+                  </div>
+                </div>
+                <label className="form-label">No. Pesanan Grab / PIN Driver (Opsional)</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Contoh: GF-8291 / GF-A12B"
                   value={orderNotes}
                   onChange={e => setOrderNotes(e.target.value)}
                 />
@@ -4388,7 +4446,9 @@ export default function POS() {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5 }}>
                   <span>Metode:</span>
-                  <span>{completedOrder.payment_method}</span>
+                  <span style={{ fontWeight: 700, color: completedOrder.payment_method === 'GRAB' ? '#00B14F' : 'inherit' }}>
+                    {completedOrder.payment_method === 'GRAB' ? 'GRAB / GrabFood' : completedOrder.payment_method}
+                  </span>
                 </div>
                 {completedOrder.payment_method === 'CASH' && (
                   <>
@@ -5976,12 +6036,13 @@ export default function POS() {
                   {/* Payment Method Pills */}
                   <div>
                     <label className="form-label" style={{ fontSize: 11, marginBottom: 4 }}>Metode Pembayaran</label>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
                       {[
                         { id: 'CASH', label: 'Tunai', icon: Banknote },
                         { id: 'QRIS', label: 'QRIS', icon: QrCode },
                         { id: 'TRANSFER', label: 'Transfer', icon: ArrowRight },
                         { id: 'DEBIT', label: 'Debit/EDC', icon: CreditCard },
+                        { id: 'GRAB', label: 'Grab', icon: ShoppingBag },
                       ].map(m => {
                         const Icon = m.icon;
                         const isCur = splitBillModal.paymentMethod === m.id;
@@ -6090,6 +6151,39 @@ export default function POS() {
                       </div>
                       <div style={{ fontSize: 10, color: 'var(--text-secondary)' }}>
                         Konfirmasi pelunasan setelah saldo masuk ke rekening outlet.
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Grab Visual Hint */}
+                  {splitBillModal.paymentMethod === 'GRAB' && (
+                    <div style={{
+                      textAlign: 'center',
+                      padding: 10,
+                      background: 'rgba(0, 177, 79, 0.08)',
+                      borderRadius: 8,
+                      border: '1px solid rgba(0, 177, 79, 0.3)'
+                    }}>
+                      <div style={{
+                        width: 30,
+                        height: 30,
+                        borderRadius: 8,
+                        background: '#00B14F',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#fff',
+                        fontWeight: 900,
+                        fontSize: 15,
+                        marginBottom: 4
+                      }}>
+                        G
+                      </div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#10d97a' }}>
+                        Metode Grab / GrabFood untuk nominal <span className="mono" style={{ color: '#fff' }}>{rupiah(targetAmount)}</span>
+                      </div>
+                      <div style={{ fontSize: 10, color: 'var(--text-secondary)' }}>
+                        Pembayaran non-tunai langsung via transaksi GrabFood.
                       </div>
                     </div>
                   )}
