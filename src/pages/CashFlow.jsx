@@ -476,11 +476,8 @@ export default function CashFlow() {
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#34d399', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Arus Kas Operasi (OCF) 🔍
+              Arus Kas Operasi (OCF)
             </span>
-            <div style={{ padding: 6, borderRadius: 8, background: 'rgba(16, 185, 129, 0.15)', color: '#10b981' }}>
-              <TrendingUp size={16} />
-            </div>
           </div>
           <div style={{ fontSize: 22, fontWeight: 800, color: sum.net_operating_cash_flow >= 0 ? '#ffffff' : '#f43f5e', letterSpacing: -0.5, marginBottom: 4 }}>
             {rupiah(sum.net_operating_cash_flow)}
@@ -489,8 +486,8 @@ export default function CashFlow() {
             <span>Masuk: {rupiah(op.inflows?.total_inflows)}</span>
             <span>Keluar: {rupiah(op.outflows?.total_outflows)}</span>
           </div>
-          <div style={{ fontSize: 10, color: '#34d399', fontWeight: 700, marginTop: 4 }}>
-            🔍 Klik rincian aliran kas operasi
+          <div style={{ fontSize: 10, color: '#34d399', fontWeight: 600, marginTop: 4 }}>
+            Lihat rincian aliran kas operasi →
           </div>
         </div>
 
@@ -509,11 +506,8 @@ export default function CashFlow() {
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Belanja Modal (CapEx) 🔍
+              Belanja Modal (CapEx)
             </span>
-            <div style={{ padding: 6, borderRadius: 8, background: 'rgba(139, 92, 246, 0.15)', color: '#a78bfa' }}>
-              <Building2 size={16} />
-            </div>
           </div>
           <div style={{ fontSize: 22, fontWeight: 800, color: '#ffffff', letterSpacing: -0.5, marginBottom: 4 }}>
             {rupiah(sum.net_investing_cash_flow)}
@@ -522,8 +516,8 @@ export default function CashFlow() {
             <span>Mesin, Kulkas & Renovasi</span>
             <span>{inv.breakdown?.length || 0} pos aset</span>
           </div>
-          <div style={{ fontSize: 10, color: '#a78bfa', fontWeight: 700, marginTop: 4 }}>
-            🔍 Klik rincian belanja modal
+          <div style={{ fontSize: 10, color: '#a78bfa', fontWeight: 600, marginTop: 4 }}>
+            Lihat rincian belanja modal →
           </div>
         </div>
 
@@ -542,11 +536,8 @@ export default function CashFlow() {
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#f472b6', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Arus Kas Pendanaan (FCF) 🔍
+              Arus Kas Pendanaan (FCF)
             </span>
-            <div style={{ padding: 6, borderRadius: 8, background: 'rgba(236, 72, 153, 0.15)', color: '#f472b6' }}>
-              <Landmark size={16} />
-            </div>
           </div>
           <div style={{ fontSize: 22, fontWeight: 800, color: '#ffffff', letterSpacing: -0.5, marginBottom: 4 }}>
             {rupiah(sum.net_financing_cash_flow)}
@@ -555,8 +546,8 @@ export default function CashFlow() {
             <span>Prive vs Modal Baru</span>
             <span>{fin.breakdown?.length || 0} transaksi</span>
           </div>
-          <div style={{ fontSize: 10, color: '#f472b6', fontWeight: 700, marginTop: 4 }}>
-            🔍 Klik rincian pendanaan & prive
+          <div style={{ fontSize: 10, color: '#f472b6', fontWeight: 600, marginTop: 4 }}>
+            Lihat rincian pendanaan & prive →
           </div>
         </div>
 
@@ -576,7 +567,7 @@ export default function CashFlow() {
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 800, color: sum.liquidity_color, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Perubahan Kas Bersih 🔍
+              Perubahan Kas Bersih
             </span>
             <div
               style={{
@@ -601,8 +592,8 @@ export default function CashFlow() {
             </span>
             <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Saldo Riil Bertambah/Berkurang</span>
           </div>
-          <div style={{ fontSize: 10, color: sum.liquidity_color, fontWeight: 700, marginTop: 4 }}>
-            🔍 Klik rincian formula kas riil
+          <div style={{ fontSize: 10, color: sum.liquidity_color, fontWeight: 600, marginTop: 4 }}>
+            Lihat rincian formula kas riil →
           </div>
         </div>
       </div>

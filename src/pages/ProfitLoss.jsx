@@ -100,11 +100,11 @@ export default function ProfitLoss() {
 
       let modalTitle = 'Rincian Detail Transaksi Omset Penjualan';
       if (isDiscountOnly) {
-        modalTitle = '🏷️ Rincian Pemotongan Diskon & Voucher Promo';
+        modalTitle = 'Rincian Pemotongan Diskon & Voucher Promo';
       } else if (filter === 'GENERATE') {
-        modalTitle = '🖥️ Rincian Transaksi Penjualan Nota Generate (POS Standar)';
+        modalTitle = 'Rincian Transaksi Penjualan Nota Generate (POS Standar)';
       } else if (filter === 'MANUAL') {
-        modalTitle = '⚡ Rincian Transaksi Penjualan Nota Manual (Nota Urgent)';
+        modalTitle = 'Rincian Transaksi Penjualan Nota Manual (Nota Urgent)';
       }
 
       setDetailModal({
@@ -691,7 +691,7 @@ export default function ProfitLoss() {
                 }}
                 title="Tampilkan semua transaksi gabungan (Nota Generate + Manual)"
               >
-                🌐 Semua Nota (Gabung)
+                Semua Nota (Gabungan)
                 {combinedRev?.transaction_count !== undefined && (
                   <span
                     style={{
@@ -724,7 +724,7 @@ export default function ProfitLoss() {
                 }}
                 title="Hanya tampilkan transaksi dari kasir POS standar (Nota Generate)"
               >
-                🖥️ Nota Generate
+                Nota Generate
                 {notaGen?.transaction_count !== undefined && (
                   <span
                     style={{
@@ -758,7 +758,7 @@ export default function ProfitLoss() {
                 }}
                 title="Hanya tampilkan transaksi dari nota manual (Nota Urgent)"
               >
-                ⚡ Nota Manual
+                Nota Manual
                 {notaMan?.transaction_count !== undefined && (
                   <span
                     style={{
@@ -877,7 +877,7 @@ export default function ProfitLoss() {
         </div>
       )}
 
-      {/* 2. Top 5 KPI Cards (Omset Bersih, HPP Riil, Waste, OPEX, Laba Bersih) with Delta Badges */}
+      {/* 2. Top 5 KPI Cards (Omset Bersih, HPP Riil, Waste, OPEX, Laba Bersih) */}
       <div
         style={{
           display: 'grid',
@@ -898,15 +898,12 @@ export default function ProfitLoss() {
             cursor: 'pointer',
             transition: 'transform 0.2s, boxShadow 0.2s',
           }}
-          title="Klik untuk melihat rincian detail transaksi omset penjualan"
+          title="Klik untuk melihat rincian transaksi omset"
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#34d399', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Omset Bersih (Net) 🔍
+              Omset Bersih (Net)
             </span>
-            <div style={{ padding: 6, borderRadius: 8, background: 'rgba(16, 185, 129, 0.15)', color: '#10b981' }}>
-              <TrendingUp size={16} />
-            </div>
           </div>
           <div style={{ fontSize: 22, fontWeight: 800, color: '#ffffff', letterSpacing: -0.5, marginBottom: 4 }}>
             {rupiah(rev.net_sales)}
@@ -919,17 +916,17 @@ export default function ProfitLoss() {
             <span
               onClick={(e) => { e.stopPropagation(); handleCardClick('REVENUE', 'GENERATE'); }}
               style={{ color: '#06b6d4', fontWeight: 700, cursor: 'pointer', padding: '1px 6px', borderRadius: 4, background: 'rgba(6,182,212,0.12)' }}
-              title="Klik untuk melihat rincian Nota Generate"
+              title="Klik rincian Nota Generate"
             >
-              🖥️ Gen: {rupiah(genBd.net_sales)} ({genBd.share_pct}%)
+              Gen: {rupiah(genBd.net_sales)} ({genBd.share_pct}%)
             </span>
             <span style={{ color: 'rgba(255,255,255,0.2)' }}>•</span>
             <span
               onClick={(e) => { e.stopPropagation(); handleCardClick('REVENUE', 'MANUAL'); }}
               style={{ color: '#f59e0b', fontWeight: 700, cursor: 'pointer', padding: '1px 6px', borderRadius: 4, background: 'rgba(245,158,11,0.12)' }}
-              title="Klik untuk melihat rincian Nota Manual"
+              title="Klik rincian Nota Manual"
             >
-              ⚡ Man: {rupiah(manBd.net_sales)} ({manBd.share_pct}%)
+              Manual: {rupiah(manBd.net_sales)} ({manBd.share_pct}%)
             </span>
             {Number(rev.total_discount || 0) > 0 && (
               <>
@@ -937,15 +934,15 @@ export default function ProfitLoss() {
                 <span
                   onClick={(e) => { e.stopPropagation(); handleCardClick('DISCOUNT'); }}
                   style={{ color: '#fb7185', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}
-                  title="Klik untuk rincian diskon saja"
+                  title="Klik rincian diskon"
                 >
-                  🏷️ Disc: ({rupiah(rev.total_discount)})
+                  Diskon: ({rupiah(rev.total_discount)})
                 </span>
               </>
             )}
           </div>
-          <div style={{ fontSize: 10, color: '#34d399', fontWeight: 700, marginTop: 4 }}>
-            🔍 Klik rincian sumber transaksi
+          <div style={{ fontSize: 10, color: '#34d399', fontWeight: 600, marginTop: 4 }}>
+            Lihat rincian transaksi →
           </div>
           {renderDeltaBadge(delta?.revenue?.net_sales)}
         </div>
@@ -966,11 +963,8 @@ export default function ProfitLoss() {
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#818cf8', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              HPP Riil (COGS) 🔍
+              HPP Riil (COGS)
             </span>
-            <div style={{ padding: 6, borderRadius: 8, background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8' }}>
-              <Package size={16} />
-            </div>
           </div>
           <div style={{ fontSize: 22, fontWeight: 800, color: '#ffffff', letterSpacing: -0.5, marginBottom: 4 }}>
             {rupiah(cogs.total_cogs)}
@@ -987,7 +981,7 @@ export default function ProfitLoss() {
               style={{ color: '#06b6d4', fontWeight: 700, cursor: 'pointer', padding: '1px 6px', borderRadius: 4, background: 'rgba(6,182,212,0.12)' }}
               title="HPP dari transaksi Generate"
             >
-              🖥️ Gen: {rupiah(genBd.cogs)} ({genBd.cogs_ratio_pct}%)
+              Gen: {rupiah(genBd.cogs)} ({genBd.cogs_ratio_pct}%)
             </span>
             <span style={{ color: 'rgba(255,255,255,0.2)' }}>•</span>
             <span
@@ -995,11 +989,11 @@ export default function ProfitLoss() {
               style={{ color: '#f59e0b', fontWeight: 700, cursor: 'pointer', padding: '1px 6px', borderRadius: 4, background: 'rgba(245,158,11,0.12)' }}
               title="HPP dari transaksi Manual"
             >
-              ⚡ Man: {rupiah(manBd.cogs)} ({manBd.cogs_ratio_pct}%)
+              Manual: {rupiah(manBd.cogs)} ({manBd.cogs_ratio_pct}%)
             </span>
           </div>
-          <div style={{ fontSize: 10, color: '#818cf8', fontWeight: 700, marginTop: 4 }}>
-            🔍 Klik rincian bahan terpakai
+          <div style={{ fontSize: 10, color: '#818cf8', fontWeight: 600, marginTop: 4 }}>
+            Lihat rincian bahan terpakai →
           </div>
           {renderDeltaBadge(delta?.cogs?.total_cogs)}
         </div>
@@ -1016,15 +1010,12 @@ export default function ProfitLoss() {
             cursor: 'pointer',
             transition: 'transform 0.2s, boxShadow 0.2s',
           }}
-          title="Klik untuk melihat rincian log bahan/menu terbuang"
+          title="Klik untuk melihat rincian log waste"
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#fb7185', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Kerugian Waste 🔍
+              Kerugian Waste
             </span>
-            <div style={{ padding: 6, borderRadius: 8, background: 'rgba(244, 63, 94, 0.15)', color: '#f43f5e' }}>
-              <Trash2 size={16} />
-            </div>
           </div>
           <div style={{ fontSize: 22, fontWeight: 800, color: '#ffffff', letterSpacing: -0.5, marginBottom: 4 }}>
             {rupiah(wst.total_waste_loss)}
@@ -1041,7 +1032,7 @@ export default function ProfitLoss() {
               style={{ color: '#06b6d4', fontWeight: 700, cursor: 'pointer', padding: '1px 6px', borderRadius: 4, background: 'rgba(6,182,212,0.12)' }}
               title="Alokasi Waste Nota Generate"
             >
-              🖥️ Gen: {rupiah(genBd.waste)}
+              Gen: {rupiah(genBd.waste)}
             </span>
             <span style={{ color: 'rgba(255,255,255,0.2)' }}>•</span>
             <span
@@ -1049,11 +1040,11 @@ export default function ProfitLoss() {
               style={{ color: '#f59e0b', fontWeight: 700, cursor: 'pointer', padding: '1px 6px', borderRadius: 4, background: 'rgba(245,158,11,0.12)' }}
               title="Alokasi Waste Nota Manual"
             >
-              ⚡ Man: {rupiah(manBd.waste)}
+              Manual: {rupiah(manBd.waste)}
             </span>
           </div>
-          <div style={{ fontSize: 10, color: '#fb7185', fontWeight: 700, marginTop: 4 }}>
-            🔍 Klik rincian log waste
+          <div style={{ fontSize: 10, color: '#fb7185', fontWeight: 600, marginTop: 4 }}>
+            Lihat rincian log waste →
           </div>
           {renderDeltaBadge(delta?.waste?.total_waste_loss)}
         </div>
@@ -1070,15 +1061,12 @@ export default function ProfitLoss() {
             cursor: 'pointer',
             transition: 'transform 0.2s, boxShadow 0.2s',
           }}
-          title="Klik untuk melihat rincian rincian beban operasional toko (OPEX)"
+          title="Klik untuk melihat rincian OPEX"
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Beban Toko (OPEX) 🔍
+              Beban Toko (OPEX)
             </span>
-            <div style={{ padding: 6, borderRadius: 8, background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24' }}>
-              <Building2 size={16} />
-            </div>
           </div>
           <div style={{ fontSize: 22, fontWeight: 800, color: '#ffffff', letterSpacing: -0.5, marginBottom: 4 }}>
             {rupiah(opx.total_opex)}
@@ -1095,7 +1083,7 @@ export default function ProfitLoss() {
               style={{ color: '#06b6d4', fontWeight: 700, cursor: 'pointer', padding: '1px 6px', borderRadius: 4, background: 'rgba(6,182,212,0.12)' }}
               title="Alokasi Beban OPEX Nota Generate"
             >
-              🖥️ Gen: {rupiah(genBd.opex)}
+              Gen: {rupiah(genBd.opex)}
             </span>
             <span style={{ color: 'rgba(255,255,255,0.2)' }}>•</span>
             <span
@@ -1103,11 +1091,11 @@ export default function ProfitLoss() {
               style={{ color: '#f59e0b', fontWeight: 700, cursor: 'pointer', padding: '1px 6px', borderRadius: 4, background: 'rgba(245,158,11,0.12)' }}
               title="Alokasi Beban OPEX Nota Manual"
             >
-              ⚡ Man: {rupiah(manBd.opex)}
+              Manual: {rupiah(manBd.opex)}
             </span>
           </div>
-          <div style={{ fontSize: 10, color: '#fbbf24', fontWeight: 700, marginTop: 4 }}>
-            🔍 Klik rincian pos biaya OPEX
+          <div style={{ fontSize: 10, color: '#fbbf24', fontWeight: 600, marginTop: 4 }}>
+            Lihat rincian pos biaya OPEX →
           </div>
           {renderDeltaBadge(delta?.opex?.total_opex)}
         </div>
@@ -1125,11 +1113,11 @@ export default function ProfitLoss() {
             cursor: 'pointer',
             transition: 'transform 0.2s, boxShadow 0.2s',
           }}
-          title="Klik untuk melihat formula kalkulasi laba bersih"
+          title="Klik untuk melihat formula laba bersih"
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 800, color: bot.health_color, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Laba Bersih Usaha 🔍
+              Laba Bersih Usaha
             </span>
             <div
               style={{
@@ -1160,7 +1148,7 @@ export default function ProfitLoss() {
               style={{ color: genBd.net_profit >= 0 ? '#06b6d4' : '#f87171', fontWeight: 700, cursor: 'pointer', padding: '1px 6px', borderRadius: 4, background: 'rgba(6,182,212,0.12)' }}
               title="Laba Bersih dari Nota Generate"
             >
-              🖥️ Gen: {rupiah(genBd.net_profit)} ({genBd.net_margin_pct}%)
+              Gen: {rupiah(genBd.net_profit)} ({genBd.net_margin_pct}%)
             </span>
             <span style={{ color: 'rgba(255,255,255,0.2)' }}>•</span>
             <span
@@ -1168,11 +1156,11 @@ export default function ProfitLoss() {
               style={{ color: manBd.net_profit >= 0 ? '#fbbf24' : '#f87171', fontWeight: 700, cursor: 'pointer', padding: '1px 6px', borderRadius: 4, background: 'rgba(245,158,11,0.12)' }}
               title="Laba Bersih dari Nota Manual"
             >
-              ⚡ Man: {rupiah(manBd.net_profit)} ({manBd.net_margin_pct}%)
+              Manual: {rupiah(manBd.net_profit)} ({manBd.net_margin_pct}%)
             </span>
           </div>
-          <div style={{ fontSize: 10, color: bot.health_color, fontWeight: 700, marginTop: 4 }}>
-            🔍 Klik rincian formula laba bersih
+          <div style={{ fontSize: 10, color: bot.health_color, fontWeight: 600, marginTop: 4 }}>
+            Lihat rincian formula laba bersih →
           </div>
           {renderDeltaBadge(delta?.bottom_line?.net_profit)}
         </div>
@@ -1420,7 +1408,7 @@ export default function ProfitLoss() {
                   <span>
                     Sedang menampilkan laporan P&L terfokus khusus untuk{' '}
                     <strong style={{ color: notaTypeFilter === 'GENERATE' ? '#38bdf8' : '#fbbf24' }}>
-                      {notaTypeFilter === 'GENERATE' ? '🖥️ Nota Generate (Kasir POS Standar)' : '⚡ Nota Manual (Nota Urgent / Tergantung)'}
+                      {notaTypeFilter === 'GENERATE' ? 'Nota Generate (Kasir POS Standar)' : 'Nota Manual (Nota Urgent / Tergantung)'}
                     </strong>.
                   </span>
                 </div>
@@ -1430,7 +1418,7 @@ export default function ProfitLoss() {
                   onClick={() => setNotaTypeFilter('ALL')}
                   style={{ fontSize: 11.5, padding: '3px 10px', borderRadius: 6, fontWeight: 700 }}
                 >
-                  🌐 Tampilkan Semua Nota (Gabungan)
+                  Tampilkan Semua Nota (Gabungan)
                 </button>
               </div>
             )}
@@ -1480,7 +1468,7 @@ export default function ProfitLoss() {
                       border: '1px solid currentColor',
                     }}
                   >
-                    Filter Aktif: {notaTypeFilter === 'ALL' ? '🌐 Semua Nota (Gabung)' : notaTypeFilter === 'GENERATE' ? '🖥️ Nota Generate' : '⚡ Nota Manual'}
+                    Filter Aktif: {notaTypeFilter === 'ALL' ? 'Semua Nota (Gabungan)' : notaTypeFilter === 'GENERATE' ? 'Nota Generate' : 'Nota Manual'}
                   </span>
                 </div>
               </div>
@@ -1500,7 +1488,7 @@ export default function ProfitLoss() {
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                     <span style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 800, background: 'rgba(6, 182, 212, 0.2)', color: '#06b6d4' }}>
-                      🖥️ Nota Generate
+                      Nota Generate
                     </span>
                     <span style={{ fontSize: 12, fontWeight: 800, color: '#38bdf8' }}>
                       {genBd.share_pct}% Omset
@@ -1542,7 +1530,7 @@ export default function ProfitLoss() {
                       onClick={() => handleCardClick('REVENUE', 'GENERATE')}
                       style={{ flex: 1, fontSize: 11, padding: '4px 8px', borderRadius: 6, color: '#06b6d4', background: 'rgba(6, 182, 212, 0.1)', border: '1px solid rgba(6, 182, 212, 0.25)' }}
                     >
-                      🔍 Rincian
+                      Rincian
                     </button>
                     <button
                       type="button"
@@ -1568,7 +1556,7 @@ export default function ProfitLoss() {
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                     <span style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 800, background: 'rgba(245, 158, 11, 0.2)', color: '#f59e0b' }}>
-                      ⚡ Nota Manual
+                      Nota Manual
                     </span>
                     <span style={{ fontSize: 12, fontWeight: 800, color: '#fbbf24' }}>
                       {manBd.share_pct}% Omset
@@ -1610,7 +1598,7 @@ export default function ProfitLoss() {
                       onClick={() => handleCardClick('REVENUE', 'MANUAL')}
                       style={{ flex: 1, fontSize: 11, padding: '4px 8px', borderRadius: 6, color: '#f59e0b', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.25)' }}
                     >
-                      🔍 Rincian
+                      Rincian
                     </button>
                     <button
                       type="button"
@@ -1636,7 +1624,7 @@ export default function ProfitLoss() {
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                     <span style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 800, background: 'rgba(16, 185, 129, 0.2)', color: '#10b981' }}>
-                      🌐 Total Gabungan
+                      Total Gabungan
                     </span>
                     <span style={{ fontSize: 12, fontWeight: 800, color: '#34d399' }}>
                       100% Seluruh Usaha
@@ -1678,7 +1666,7 @@ export default function ProfitLoss() {
                       onClick={() => handleCardClick('REVENUE')}
                       style={{ flex: 1, fontSize: 11, padding: '4px 8px', borderRadius: 6, color: '#34d399', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.25)' }}
                     >
-                      🔍 Rincian
+                      Rincian
                     </button>
                     <button
                       type="button"
@@ -1698,9 +1686,9 @@ export default function ProfitLoss() {
                   <thead>
                     <tr style={{ borderBottom: '1.5px solid rgba(255,255,255,0.12)', color: 'var(--text-muted)' }}>
                       <th style={{ padding: '8px 12px' }}>Komponen Finansial</th>
-                      <th style={{ padding: '8px 12px', textAlign: 'right', color: '#38bdf8' }}>🖥️ Nota Generate</th>
-                      <th style={{ padding: '8px 12px', textAlign: 'right', color: '#fbbf24' }}>⚡ Nota Manual</th>
-                      <th style={{ padding: '8px 12px', textAlign: 'right', color: '#34d399', fontWeight: 800 }}>🌐 Total Gabungan</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'right', color: '#38bdf8' }}>Nota Generate</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'right', color: '#fbbf24' }}>Nota Manual</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'right', color: '#34d399', fontWeight: 800 }}>Total Gabungan</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1860,7 +1848,7 @@ export default function ProfitLoss() {
                   >
                     <div style={{ color: '#cbd5e1', display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ padding: '1px 6px', borderRadius: 4, background: 'rgba(6, 182, 212, 0.15)', color: '#06b6d4', fontSize: 10.5, fontWeight: 700 }}>
-                        🖥️ Generate
+                        Generate
                       </span>
                       <span>Penjualan Nota Generate (POS Standar)</span>
                     </div>
@@ -1892,7 +1880,7 @@ export default function ProfitLoss() {
                   >
                     <div style={{ color: '#cbd5e1', display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ padding: '1px 6px', borderRadius: 4, background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', fontSize: 10.5, fontWeight: 700 }}>
-                        ⚡ Manual
+                        Manual
                       </span>
                       <span>Penjualan Nota Manual (Nota Urgent)</span>
                     </div>
@@ -1938,10 +1926,10 @@ export default function ProfitLoss() {
                     title="Klik untuk melihat hanya rincian diskon & voucher promo"
                   >
                     <div style={{ color: '#f87171', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                      <span style={{ padding: '1px 6px', borderRadius: 4, background: 'rgba(244, 63, 94, 0.2)', fontSize: 10.5, fontWeight: 700 }}>🏷️ Diskon</span>
+                      <span style={{ padding: '1px 6px', borderRadius: 4, background: 'rgba(244, 63, 94, 0.2)', fontSize: 10.5, fontWeight: 700 }}>Diskon</span>
                       <span>Dikurangi: Total Diskon Kasir & Promo</span>
                       <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 10, background: 'rgba(244, 63, 94, 0.25)', color: '#fecdd3', fontWeight: 700 }}>
-                        🔍 Klik rincian diskon
+                        Lihat rincian →
                       </span>
                     </div>
                     <div style={{ textAlign: 'right', fontWeight: 700, color: '#f87171' }}>({rupiah(rev.total_discount)})</div>
@@ -1985,7 +1973,7 @@ export default function ProfitLoss() {
                       <td style={{ padding: '7px 6px', color: '#cbd5e1' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                           <span style={{ padding: '2px 7px', borderRadius: 4, background: 'rgba(6, 182, 212, 0.15)', color: '#06b6d4', fontSize: 11, fontWeight: 700 }}>
-                            🖥️ Nota Generate
+                            Nota Generate
                           </span>
                           <span>Penjualan Kasir POS Standar ({notaGen.transaction_count} pesanan)</span>
                           <span style={{ fontSize: 10.5, padding: '1px 6px', borderRadius: 4, background: 'rgba(6, 182, 212, 0.2)', color: '#38bdf8', fontWeight: 700 }}>
@@ -2018,7 +2006,7 @@ export default function ProfitLoss() {
                       <td style={{ padding: '7px 6px', color: '#cbd5e1' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                           <span style={{ padding: '2px 7px', borderRadius: 4, background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', fontSize: 11, fontWeight: 700 }}>
-                            ⚡ Nota Manual
+                            Nota Manual
                           </span>
                           <span>Penjualan Nota Urgent / Tergantung ({notaMan.transaction_count} pesanan)</span>
                           <span style={{ fontSize: 10.5, padding: '1px 6px', borderRadius: 4, background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', fontWeight: 700 }}>
@@ -2062,13 +2050,13 @@ export default function ProfitLoss() {
                       <td style={{ padding: '7px 6px', color: '#f87171' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                           <span style={{ padding: '2px 7px', borderRadius: 4, background: 'rgba(244, 63, 94, 0.2)', color: '#fb7185', fontSize: 11, fontWeight: 700 }}>
-                            🏷️ Diskon
+                            Diskon
                           </span>
                           <span>
                             <em>Dikurangi:</em> Total Diskon Kasir & Voucher Promo
                           </span>
                           <span style={{ fontSize: 10.5, padding: '1px 8px', borderRadius: 10, background: 'rgba(244, 63, 94, 0.25)', color: '#fecdd3', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                            🔍 Klik untuk rincian diskon
+                            Lihat rincian →
                           </span>
                         </div>
                       </td>
@@ -2222,7 +2210,7 @@ export default function ProfitLoss() {
                   ({cogs.gross_margin_pct}%)
                 </span>
                 <span style={{ fontSize: 11, color: '#34d399', background: 'rgba(52, 211, 153, 0.15)', padding: '2px 6px', borderRadius: 4, marginLeft: 4 }}>
-                  🔍 Rincian
+                  Rincian
                 </span>
               </div>
               {isComp ? (
@@ -2467,7 +2455,7 @@ export default function ProfitLoss() {
                     LABA BERSIH USAHA (NET PROFIT)
                   </span>
                   <span style={{ fontSize: 11, color: bot.health_color, background: `${bot.health_color}25`, padding: '2px 6px', borderRadius: 4, marginLeft: 4 }}>
-                    🔍 Formula
+                    Formula
                   </span>
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
@@ -3652,7 +3640,7 @@ export default function ProfitLoss() {
                           border: modalFilter === 'GENERATE' ? undefined : '1px solid rgba(6, 182, 212, 0.25)',
                         }}
                       >
-                        🖥️ Nota Generate (POS)
+                        Nota Generate (POS)
                         <span style={{ padding: '1px 6px', borderRadius: 10, fontSize: 10.5, background: 'rgba(6, 182, 212, 0.2)', fontWeight: 800 }}>
                           {generateOrdersList.length}
                         </span>
@@ -3673,7 +3661,7 @@ export default function ProfitLoss() {
                           border: modalFilter === 'MANUAL' ? undefined : '1px solid rgba(245, 158, 11, 0.25)',
                         }}
                       >
-                        ⚡ Nota Manual (Urgent)
+                        Nota Manual (Urgent)
                         <span style={{ padding: '1px 6px', borderRadius: 10, fontSize: 10.5, background: 'rgba(245, 158, 11, 0.2)', fontWeight: 800 }}>
                           {manualOrdersList.length}
                         </span>
@@ -3696,7 +3684,7 @@ export default function ProfitLoss() {
                         }}
                       >
                         <Tag size={13} />
-                        🏷️ Diskon Saja
+                        Diskon Saja
                         <span style={{ padding: '1px 6px', borderRadius: 10, fontSize: 10.5, background: 'rgba(255,255,255,0.25)', fontWeight: 800 }}>
                           {discountOrdersList.length}
                         </span>
@@ -3796,31 +3784,31 @@ export default function ProfitLoss() {
                           style={{ background: 'rgba(6, 182, 212, 0.1)', border: '1px solid rgba(6, 182, 212, 0.25)', borderRadius: 10, padding: 12, cursor: 'pointer' }}
                           title="Klik untuk filter Nota Generate"
                         >
-                          <div style={{ fontSize: 11, color: '#38bdf8' }}>🖥️ Nota Generate</div>
+                          <div style={{ fontSize: 11, color: '#38bdf8' }}>Nota Generate</div>
                           <div style={{ fontSize: 16, fontWeight: 800, color: '#06b6d4' }}>
                             {rupiah(generateOrdersList.reduce((s, o) => s + o.total_price, 0))}
                           </div>
-                          <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>{generateOrdersList.length} pesanan 🔍</div>
+                          <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>{generateOrdersList.length} pesanan</div>
                         </div>
                         <div
                           onClick={() => setModalFilter('MANUAL')}
                           style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: 10, padding: 12, cursor: 'pointer' }}
                           title="Klik untuk filter Nota Manual"
                         >
-                          <div style={{ fontSize: 11, color: '#fbbf24' }}>⚡ Nota Manual</div>
+                          <div style={{ fontSize: 11, color: '#fbbf24' }}>Nota Manual</div>
                           <div style={{ fontSize: 16, fontWeight: 800, color: '#f59e0b' }}>
                             {rupiah(manualOrdersList.reduce((s, o) => s + o.total_price, 0))}
                           </div>
-                          <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>{manualOrdersList.length} pesanan 🔍</div>
+                          <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>{manualOrdersList.length} pesanan</div>
                         </div>
                         <div
                           onClick={() => setModalFilter('DISCOUNT')}
                           style={{ background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.25)', borderRadius: 10, padding: 12, cursor: 'pointer' }}
                           title="Klik untuk melihat hanya diskon"
                         >
-                          <div style={{ fontSize: 11, color: '#f87171' }}>🏷️ Total Diskon & Promo</div>
+                          <div style={{ fontSize: 11, color: '#f87171' }}>Total Diskon & Promo</div>
                           <div style={{ fontSize: 16, fontWeight: 800, color: '#f87171' }}>({rupiah(rev.total_discount)})</div>
-                          <div style={{ fontSize: 10.5, color: '#fca5a5', fontWeight: 700 }}>{discountOrdersList.length} pesanan berdiskon 🔍</div>
+                          <div style={{ fontSize: 10.5, color: '#fca5a5', fontWeight: 700 }}>{discountOrdersList.length} pesanan berdiskon</div>
                         </div>
                       </div>
                     )}
@@ -3877,11 +3865,11 @@ export default function ProfitLoss() {
                                   <td style={{ padding: '10px 14px' }}>
                                     {o.is_urgent_note ? (
                                       <span style={{ padding: '2px 7px', borderRadius: 6, fontSize: 11, background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', fontWeight: 700 }}>
-                                        ⚡ Manual
+                                        Manual
                                       </span>
                                     ) : (
                                       <span style={{ padding: '2px 7px', borderRadius: 6, fontSize: 11, background: 'rgba(6, 182, 212, 0.15)', color: '#06b6d4', fontWeight: 700 }}>
-                                        🖥️ Generate
+                                        Generate
                                       </span>
                                     )}
                                   </td>
@@ -3947,11 +3935,11 @@ export default function ProfitLoss() {
                                   <td style={{ padding: '10px 14px' }}>
                                     {o.is_urgent_note ? (
                                       <span style={{ padding: '2px 7px', borderRadius: 6, fontSize: 11, background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', fontWeight: 700 }}>
-                                        ⚡ Nota Manual
+                                        Nota Manual
                                       </span>
                                     ) : (
                                       <span style={{ padding: '2px 7px', borderRadius: 6, fontSize: 11, background: 'rgba(6, 182, 212, 0.15)', color: '#06b6d4', fontWeight: 700 }}>
-                                        🖥️ Nota Generate
+                                        Nota Generate
                                       </span>
                                     )}
                                   </td>
