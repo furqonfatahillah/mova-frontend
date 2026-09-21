@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   Percent, Tag, Plus, Search, Filter, Calendar, Store, Edit2, Trash2,
   CheckCircle2, AlertCircle, X, Sparkles, TrendingUp, Users, Copy,
-  Check, RefreshCw, Power, ShieldAlert, Award, ArrowUpRight, Clock
+  Check, RefreshCw, Power, ShieldAlert, Award, ArrowUpRight, Clock, Coins, Gift, Star, UserCheck
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, num, LoadingState, PageHeader, AuditInfo } from '../components/ui';
@@ -23,12 +23,17 @@ const emptyForm = {
   is_auto_apply: false,
   active: true,
   notes: '',
+  is_point_promo: false,
+  requires_points: '',
+  reward_type: 'DISCOUNT', // 'DISCOUNT' or 'FREE_MENU'
+  reward_menu_id: '',
 };
 
 export default function DiscountManagement() {
   const { activeOutletId, activeOutlet, isOwnerWebsite, outlets } = useOutlet();
 
   const [discounts, setDiscounts] = useState([]);
+  const [menus, setMenus] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterActive, setFilterActive] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'INACTIVE'
@@ -43,7 +48,15 @@ export default function DiscountManagement() {
 
   useEffect(() => {
     fetchDiscounts();
+    fetchMenus();
   }, [activeOutletId]);
+
+  async function fetchMenus() {
+    try {
+      const res = await api.get('/menus');
+      setMenus(res.data || []);
+    } catch (e) {}
+  }
 
   async function fetchDiscounts() {
     setLoading(true);
@@ -120,6 +133,10 @@ export default function DiscountManagement() {
       is_auto_apply: Boolean(item.is_auto_apply),
       active: Boolean(item.active),
       notes: item.notes || '',
+      is_point_promo: Boolean(item.requires_points && item.requires_points > 0),
+      requires_points: item.requires_points || '',
+      reward_type: item.reward_type || 'DISCOUNT',
+      reward_menu_id: item.reward_menu_id ? item.reward_menu_id.toString() : '',
     });
     setModalOpen(true);
   }
@@ -169,7 +186,15 @@ export default function DiscountManagement() {
       toast.error('Nama promo wajib diisi.');
       return;
     }
-    if (Number(form.value) <= 0) {
+    if (form.is_point_promo && (!form.requires_points || Number(form.requires_points) < 1)) {
+      toast.error('Masukkan jumlah poin yang diperlukan untuk menukar promo.');
+      return;
+    }
+    if (form.is_point_promo && form.reward_type === 'FREE_MENU' && !form.reward_menu_id) {
+      toast.error('Pilih menu yang akan diberikan gratis sebagai reward.');
+      return;
+    }
+    if (form.reward_type !== 'FREE_MENU' && Number(form.value) <= 0) {
       toast.error('Nilai diskon harus lebih besar dari 0.');
       return;
     }
@@ -183,8 +208,11 @@ export default function DiscountManagement() {
       const payload = {
         name: form.name.trim(),
         code: form.code.trim() ? form.code.trim().toUpperCase() : null,
-        type: form.type,
-        value: Number(form.value),
+        type: form.reward_type === 'FREE_MENU' ? 'FIXED' : form.type,
+        value: form.reward_type === 'FREE_MENU' ? 0 : Number(form.value),
+        requires_points: form.is_point_promo ? Number(form.requires_points) : null,
+        reward_type: form.is_point_promo ? form.reward_type : 'DISCOUNT',
+        reward_menu_id: (form.is_point_promo && form.reward_type === 'FREE_MENU' && form.reward_menu_id) ? Number(form.reward_menu_id) : null,
         min_order_amount: Number(form.min_order_amount) || 0,
         max_discount_amount: form.max_discount_amount !== '' ? Number(form.max_discount_amount) : null,
         start_date: form.start_date || null,
@@ -444,8 +472,26 @@ export default function DiscountManagement() {
                           {d.type === 'PERCENTAGE' ? <Percent size={18} /> : <Tag size={18} />}
                         </div>
                         <div>
-                          <div style={{ fontWeight: 700, color: '#ffffff', fontSize: 13.5 }}>
-                            {d.name}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <strong style={{ color: '#ffffff', fontSize: 13.5 }}>
+                              {d.name}
+                            </strong>
+                            {d.requires_points > 0 && (
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                background: 'rgba(245, 158, 11, 0.15)',
+                                color: '#fbbf24',
+                                border: '1px solid rgba(245, 158, 11, 0.35)',
+                                padding: '1px 6px',
+                                borderRadius: 4,
+                                fontSize: 10,
+                                fontWeight: 800
+                              }}>
+                                <Coins size={11} /> Tukar {d.requires_points} Poin
+                              </span>
+                            )}
                           </div>
                           {d.code ? (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
@@ -490,17 +536,25 @@ export default function DiscountManagement() {
 
                     {/* Type & Value */}
                     <td>
-                      <div style={{
-                        fontSize: 14,
-                        fontWeight: 800,
-                        color: d.type === 'PERCENTAGE' ? '#10b981' : '#38bdf8'
-                      }}>
-                        {d.type === 'PERCENTAGE' ? `${d.value}%` : rupiah(d.value)}
-                      </div>
-                      {d.type === 'PERCENTAGE' && d.max_discount_amount && (
-                        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>
-                          Maks. {rupiah(d.max_discount_amount)}
+                      {d.reward_type === 'FREE_MENU' ? (
+                        <div style={{ fontSize: 13, fontWeight: 800, color: '#f472b6', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <Gift size={14} /> Free: {d.reward_menu?.name || 'Menu Gratis'}
                         </div>
+                      ) : (
+                        <>
+                          <div style={{
+                            fontSize: 14,
+                            fontWeight: 800,
+                            color: d.type === 'PERCENTAGE' ? '#10b981' : '#38bdf8'
+                          }}>
+                            {d.type === 'PERCENTAGE' ? `${d.value}%` : rupiah(d.value)}
+                          </div>
+                          {d.type === 'PERCENTAGE' && d.max_discount_amount && (
+                            <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                              Maks. {rupiah(d.max_discount_amount)}
+                            </div>
+                          )}
+                        </>
                       )}
                     </td>
 
@@ -702,74 +756,163 @@ export default function DiscountManagement() {
                   <input
                     type="text"
                     className="form-control"
-                    placeholder="Contoh: Diskon Pelajar 15%, Promo Grand Opening, dll"
+                    placeholder="Contoh: Diskon Pelajar 15%, Promo Grand Opening, Tukar 10 Poin Free Es Kopi, dll"
                     value={form.name}
                     onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
                     required
                   />
                 </div>
 
-                {/* Voucher Code & Auto Apply */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 10 }}>
-                  <div>
-                    <label className="form-label">
-                      Kode Voucher (Opsional)
-                      <span style={{ fontSize: 10.5, color: 'var(--text-muted)', marginLeft: 6 }}>Kosongkan jika bukan kupon</span>
+                {/* Point-based Promo Toggle & Config */}
+                <div style={{
+                  background: form.is_point_promo ? 'rgba(245, 158, 11, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                  border: form.is_point_promo ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid var(--border)',
+                  borderRadius: 10,
+                  padding: '12px 14px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: form.is_point_promo ? 12 : 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Coins size={16} style={{ color: form.is_point_promo ? '#fbbf24' : 'var(--text-muted)' }} />
+                      <div>
+                        <span style={{ fontWeight: 700, fontSize: 13, color: form.is_point_promo ? '#fbbf24' : '#ffffff' }}>
+                          Promo Loyalitas Berbasis Poin Member
+                        </span>
+                        <span style={{ display: 'block', fontSize: 11, color: 'var(--text-secondary)' }}>
+                          Hanya member dengan saldo poin cukup yang dapat menukar promo ini
+                        </span>
+                      </div>
+                    </div>
+                    <label className="switch">
+                      <input
+                        type="checkbox"
+                        checked={form.is_point_promo}
+                        onChange={e => setForm(p => ({ ...p, is_point_promo: e.target.checked, requires_points: e.target.checked ? (p.requires_points || 10) : '' }))}
+                      />
+                      <span className="slider round"></span>
                     </label>
-                    <input
-                      type="text"
-                      className="form-control mono"
-                      placeholder="Contoh: PROMO15, JUMATHEBAT"
-                      value={form.code}
-                      onChange={e => setForm(p => ({ ...p, code: e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '') }))}
-                    />
                   </div>
-                  <div>
-                    <label className="form-label">Tipe Potongan</label>
-                    <select
-                      className="form-control"
-                      value={form.type}
-                      onChange={e => setForm(p => ({ ...p, type: e.target.value }))}
-                    >
-                      <option value="PERCENTAGE">Persentase (%)</option>
-                      <option value="FIXED">Nominal Tetap (Rp)</option>
-                    </select>
-                  </div>
+
+                  {form.is_point_promo && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid rgba(245, 158, 11, 0.2)', paddingTop: 10 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: 10 }}>
+                        <div>
+                          <label className="form-label required" style={{ fontSize: 11.5, color: '#fbbf24' }}>
+                            Jumlah Poin Diperlukan
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            className="form-control mono"
+                            placeholder="Contoh: 10"
+                            value={form.requires_points}
+                            onChange={e => setForm(p => ({ ...p, requires_points: e.target.value }))}
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="form-label" style={{ fontSize: 11.5 }}>
+                            Bentuk Hadiah (Reward)
+                          </label>
+                          <select
+                            className="form-control"
+                            value={form.reward_type}
+                            onChange={e => setForm(p => ({ ...p, reward_type: e.target.value }))}
+                          >
+                            <option value="DISCOUNT">🏷️ Potongan Harga (Diskon)</option>
+                            <option value="FREE_MENU">🎁 Gratis 1 Menu (Free Item)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {form.reward_type === 'FREE_MENU' && (
+                        <div>
+                          <label className="form-label required" style={{ fontSize: 11.5, color: '#f472b6' }}>
+                            Pilih Menu Yang Diberikan Gratis
+                          </label>
+                          <select
+                            className="form-control"
+                            value={form.reward_menu_id}
+                            onChange={e => setForm(p => ({ ...p, reward_menu_id: e.target.value }))}
+                            required
+                          >
+                            <option value="">-- Pilih Menu Hadiah --</option>
+                            {menus.map(m => (
+                              <option key={m.id} value={m.id.toString()}>
+                                {m.name} ({rupiah(m.price)})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
-                {/* Value & Max Cap */}
-                <div style={{ display: 'grid', gridTemplateColumns: form.type === 'PERCENTAGE' ? '1fr 1fr' : '1fr', gap: 10 }}>
-                  <div>
-                    <label className="form-label required">
-                      {form.type === 'PERCENTAGE' ? 'Persentase Diskon (%)' : 'Nominal Potongan (Rp)'}
-                    </label>
-                    <input
-                      type="number"
-                      step="any"
-                      className="form-control mono"
-                      placeholder={form.type === 'PERCENTAGE' ? 'Contoh: 15' : 'Contoh: 10000'}
-                      value={form.value}
-                      onChange={e => setForm(p => ({ ...p, value: e.target.value }))}
-                      required
-                    />
-                  </div>
-                  {form.type === 'PERCENTAGE' && (
+                {/* Voucher Code & Auto Apply */}
+                {form.reward_type !== 'FREE_MENU' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 10 }}>
                     <div>
                       <label className="form-label">
-                        Maksimal Diskon (Rp)
-                        <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 4 }}>Plafon</span>
+                        Kode Voucher (Opsional)
+                        <span style={{ fontSize: 10.5, color: 'var(--text-muted)', marginLeft: 6 }}>Kosongkan jika bukan kupon</span>
+                      </label>
+                      <input
+                        type="text"
+                        className="form-control mono"
+                        placeholder="Contoh: PROMO15, JUMATHEBAT"
+                        value={form.code}
+                        onChange={e => setForm(p => ({ ...p, code: e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '') }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="form-label">Tipe Potongan</label>
+                      <select
+                        className="form-control"
+                        value={form.type}
+                        onChange={e => setForm(p => ({ ...p, type: e.target.value }))}
+                      >
+                        <option value="PERCENTAGE">Persentase (%)</option>
+                        <option value="FIXED">Nominal Tetap (Rp)</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                {/* Value & Max Cap (Only if NOT FREE_MENU) */}
+                {form.reward_type !== 'FREE_MENU' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: form.type === 'PERCENTAGE' ? '1fr 1fr' : '1fr', gap: 10 }}>
+                    <div>
+                      <label className="form-label required">
+                        {form.type === 'PERCENTAGE' ? 'Persentase Diskon (%)' : 'Nominal Potongan (Rp)'}
                       </label>
                       <input
                         type="number"
                         step="any"
                         className="form-control mono"
-                        placeholder="Kosongkan jika tanpa batas"
-                        value={form.max_discount_amount}
-                        onChange={e => setForm(p => ({ ...p, max_discount_amount: e.target.value }))}
+                        placeholder={form.type === 'PERCENTAGE' ? 'Contoh: 15' : 'Contoh: 10000'}
+                        value={form.value}
+                        onChange={e => setForm(p => ({ ...p, value: e.target.value }))}
+                        required
                       />
                     </div>
-                  )}
-                </div>
+                    {form.type === 'PERCENTAGE' && (
+                      <div>
+                        <label className="form-label">
+                          Maksimal Diskon (Rp)
+                          <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 4 }}>Plafon</span>
+                        </label>
+                        <input
+                          type="number"
+                          step="any"
+                          className="form-control mono"
+                          placeholder="Kosongkan jika tanpa batas"
+                          value={form.max_discount_amount}
+                          onChange={e => setForm(p => ({ ...p, max_discount_amount: e.target.value }))}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Min Order & Usage Quota */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>

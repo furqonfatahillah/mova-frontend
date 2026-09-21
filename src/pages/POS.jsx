@@ -10,7 +10,7 @@ import {
   Percent, Tag, Gift, Scissors, Split, Divide,
   ShoppingBag, Briefcase, Barcode, Utensils, Coins,
   Zap, AlertOctagon, Calculator,
-  ChevronDown, Filter, Layers
+  ChevronDown, Filter, Layers, UserCheck, UserPlus, Star, Award
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, num, LoadingState, PageHeader, PeriodPicker } from '../components/ui';
@@ -37,6 +37,16 @@ export default function POS() {
   const [cart, setCart] = useState([]);
 
   const [customerName, setCustomerName] = useState('');
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [memberSearchOpen, setMemberSearchOpen] = useState(false);
+  const [memberSearchResults, setMemberSearchResults] = useState([]);
+  const [searchingMembers, setSearchingMembers] = useState(false);
+  const [quickMemberModal, setQuickMemberModal] = useState({
+    open: false,
+    name: '',
+    phone: '',
+    saving: false,
+  });
   const [orderDate, setOrderDate] = useState(getTodayStr());
 
   // Payment Modal State
@@ -689,6 +699,58 @@ export default function POS() {
       }));
   }, [menus, selectedCategory, selectedType, searchQuery, ingredients]);
 
+  // Member autocomplete search
+  async function searchMembers(query = '') {
+    setSearchingMembers(true);
+    try {
+      const res = await api.get('/customers/search-pos', { params: { q: query } });
+      setMemberSearchResults(res.data || []);
+    } catch (e) {
+      setMemberSearchResults([]);
+    } finally {
+      setSearchingMembers(false);
+    }
+  }
+
+  function handleSelectCustomer(cust) {
+    setSelectedCustomer(cust);
+    setCustomerName(cust.name);
+    setMemberSearchOpen(false);
+    toast.success(`Member "${cust.name}" dipilih (${num(cust.total_points || 0)} poin)!`);
+  }
+
+  function handleClearCustomer() {
+    setSelectedCustomer(null);
+    setCustomerName('');
+    if (appliedDiscount && appliedDiscount.requires_points > 0) {
+      setAppliedDiscount(null);
+      toast.info(`Diskon "${appliedDiscount.name}" dilepas karena member dibatalkan.`);
+    }
+  }
+
+  async function handleQuickRegisterMember(e) {
+    e.preventDefault();
+    if (!quickMemberModal.name.trim() || !quickMemberModal.phone.trim()) {
+      toast.error('Nama dan Nomor HP wajib diisi.');
+      return;
+    }
+    setQuickMemberModal(p => ({ ...p, saving: true }));
+    try {
+      const res = await api.post('/customers', {
+        name: quickMemberModal.name.trim(),
+        phone: quickMemberModal.phone.trim(),
+      });
+      const newMember = res.data.customer;
+      toast.success(res.data.message || `Member ${newMember.name} berhasil didaftarkan!`);
+      setSelectedCustomer(newMember);
+      setCustomerName(newMember.name);
+      setQuickMemberModal({ open: false, name: '', phone: '', saving: false });
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal mendaftarkan member.');
+      setQuickMemberModal(p => ({ ...p, saving: false }));
+    }
+  }
+
   // Cart calculations (supporting modifier addon prices & discounts)
   const cartGrossSubtotal = useMemo(() => {
     return cart.reduce((sum, item) => sum + ((item.unitPrice ?? item.menu.price) * item.qty), 0);
@@ -696,6 +758,10 @@ export default function POS() {
 
   const cartDiscountAmount = useMemo(() => {
     if (!appliedDiscount || cartGrossSubtotal <= 0) return 0;
+    if (appliedDiscount.reward_type === 'FREE_MENU') {
+      const freeMenuPrice = appliedDiscount.reward_menu ? Number(appliedDiscount.reward_menu.price) : 0;
+      return Math.min(freeMenuPrice > 0 ? freeMenuPrice : Number(appliedDiscount.value || 0), cartGrossSubtotal);
+    }
     const rate = Number(appliedDiscount.value ?? appliedDiscount.rate ?? 0);
     const maxCap = appliedDiscount.max_discount_amount ?? appliedDiscount.max_discount;
     if (appliedDiscount.type === 'PERCENTAGE') {
@@ -747,6 +813,8 @@ export default function POS() {
         code,
         subtotal: cartGrossSubtotal,
         outlet_id: currentTargetOutlet,
+        date: orderDate,
+        customer_id: selectedCustomer?.id || undefined,
       });
       setAppliedDiscount(data.discount);
       setPromoCodeInput('');
@@ -763,6 +831,16 @@ export default function POS() {
     if (promo.min_order_amount && cartGrossSubtotal < Number(promo.min_order_amount)) {
       toast.error(`Minimal belanja ${rupiah(promo.min_order_amount)} untuk promo ini.`);
       return;
+    }
+    if (promo.requires_points && promo.requires_points > 0) {
+      if (!selectedCustomer) {
+        toast.error(`Promo "${promo.name}" memerlukan penukaran ${promo.requires_points} poin. Silakan pilih member terlebih dahulu.`);
+        return;
+      }
+      if ((selectedCustomer.total_points || 0) < promo.requires_points) {
+        toast.error(`Poin member ${selectedCustomer.name} tidak cukup (${selectedCustomer.total_points || 0}/${promo.requires_points} poin).`);
+        return;
+      }
     }
     setAppliedDiscount(promo);
     setPromoModalOpen(false);
@@ -1539,7 +1617,8 @@ export default function POS() {
     try {
       const payload = {
         date: orderDate,
-        customer_name: customerName || undefined,
+        customer_name: selectedCustomer ? selectedCustomer.name : (customerName || undefined),
+        customer_id: selectedCustomer ? selectedCustomer.id : undefined,
         status: 'HOLD',
         notes: orderNotes || undefined,
         shift_id: activeShift?.shift?.id || undefined,
@@ -1581,6 +1660,7 @@ export default function POS() {
       // Clear cart
       setCart([]);
       setCustomerName('');
+      setSelectedCustomer(null);
       setOrderNotes('');
       setAppliedDiscount(null);
       setPromoCodeInput('');
@@ -1749,7 +1829,8 @@ export default function POS() {
         // Direct cart checkout
         const payload = {
           date: orderDate,
-          customer_name: customerName || undefined,
+          customer_name: selectedCustomer ? selectedCustomer.name : (customerName || undefined),
+          customer_id: selectedCustomer ? selectedCustomer.id : undefined,
           payment_method: paymentMethod,
           amount_paid: paymentMethod === 'CASH' ? parsedCash : cartTotal,
           change_amount: paymentMethod === 'CASH' ? changeAmount : 0,
@@ -1778,6 +1859,8 @@ export default function POS() {
           order_number: data.order_number,
           date: data.date,
           customer_name: data.customer_name || 'Pelanggan Umum',
+          customer: data.customer || selectedCustomer || null,
+          earned_points: (data.customer || selectedCustomer) ? 1 : 0,
           payment_method: data.payment_method,
           amount_paid: data.amount_paid,
           change_amount: data.change_amount,
@@ -1799,6 +1882,7 @@ export default function POS() {
         // Reset cart and modals
         setCart([]);
         setCustomerName('');
+        setSelectedCustomer(null);
         setOrderNotes('');
         setAppliedDiscount(null);
         setPromoCodeInput('');
@@ -3090,15 +3174,200 @@ export default function POS() {
                   </div>
                 )}
 
-                {/* Customer Name */}
-                <input
-                  type="text"
-                  className="form-control"
-                  placeholder="Nama Pelanggan (opsional)"
-                  value={customerName}
-                  onChange={e => setCustomerName(e.target.value)}
-                  style={{ fontSize: 12, padding: '7px 10px', borderRadius: 8 }}
-                />
+                {/* Member / Customer Selection Bar */}
+                <div style={{ position: 'relative', marginBottom: 6 }}>
+                  {selectedCustomer ? (
+                    <div style={{
+                      background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.16) 0%, rgba(168, 85, 247, 0.12) 100%)',
+                      border: '1px solid rgba(99, 102, 241, 0.35)',
+                      borderRadius: 8,
+                      padding: '7px 10px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 8
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
+                        <div style={{
+                          width: 28, height: 28, borderRadius: '50%',
+                          background: 'rgba(99, 102, 241, 0.25)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          color: '#c084fc', flexShrink: 0
+                        }}>
+                          <UserCheck size={15} />
+                        </div>
+                        <div style={{ overflow: 'hidden' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <strong style={{ fontSize: 12, color: '#ffffff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {selectedCustomer.name}
+                            </strong>
+                            <span className="mono" style={{ fontSize: 9.5, background: 'rgba(99,102,241,0.2)', color: '#a5b4fc', padding: '0 4px', borderRadius: 3 }}>
+                              {selectedCustomer.code}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5 }}>
+                            <span style={{ color: '#fbbf24', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                              <Coins size={11} /> {num(selectedCustomer.total_points || 0)} Poin
+                            </span>
+                            <span style={{ color: '#34d399', fontSize: 10 }}>
+                              (+1 Poin nota)
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-icon"
+                        onClick={handleClearCustomer}
+                        title="Batal pilih member"
+                        style={{ padding: 3, color: 'var(--text-muted)' }}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <div style={{ position: 'relative', flex: 1 }}>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="Pelanggan / Cari No HP Member..."
+                          value={customerName}
+                          onFocus={() => {
+                            setMemberSearchOpen(true);
+                            searchMembers(customerName);
+                          }}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setCustomerName(val);
+                            setMemberSearchOpen(true);
+                            searchMembers(val);
+                          }}
+                          style={{ fontSize: 12, padding: '7px 10px', borderRadius: 8 }}
+                        />
+                        {customerName && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-icon"
+                            onClick={() => {
+                              setCustomerName('');
+                              setMemberSearchOpen(false);
+                            }}
+                            style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', padding: 2 }}
+                          >
+                            <X size={13} />
+                          </button>
+                        )}
+
+                        {/* Member Autocomplete Dropdown */}
+                        {memberSearchOpen && (
+                          <div style={{
+                            position: 'absolute',
+                            top: '100%',
+                            left: 0,
+                            right: 0,
+                            zIndex: 100,
+                            marginTop: 4,
+                            background: '#161c38',
+                            border: '1px solid rgba(99, 102, 241, 0.3)',
+                            borderRadius: 8,
+                            boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+                            maxHeight: 220,
+                            overflowY: 'auto'
+                          }}>
+                            <div style={{ padding: '6px 10px', fontSize: 10.5, color: 'var(--text-muted)', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between' }}>
+                              <span>PILIH MEMBER TERDAFTAR</span>
+                              <button
+                                type="button"
+                                onClick={() => setMemberSearchOpen(false)}
+                                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 10 }}
+                              >
+                                Tutup
+                              </button>
+                            </div>
+                            {searchingMembers ? (
+                              <div style={{ padding: '12px', textAlign: 'center', fontSize: 11.5, color: 'var(--text-muted)' }}>
+                                Mencari member...
+                              </div>
+                            ) : memberSearchResults.length === 0 ? (
+                              <div style={{ padding: '12px 10px', textAlign: 'center', fontSize: 11.5, color: 'var(--text-muted)' }}>
+                                Tidak ada member ditemukan.
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setMemberSearchOpen(false);
+                                    setQuickMemberModal({ open: true, name: customerName, phone: '', saving: false });
+                                  }}
+                                  className="btn btn-ghost btn-sm"
+                                  style={{ color: '#34d399', fontSize: 11, display: 'block', margin: '4px auto 0' }}
+                                >
+                                  + Daftarkan "{customerName || 'Pelanggan'}" Jadi Member
+                                </button>
+                              </div>
+                            ) : (
+                              memberSearchResults.map(m => (
+                                <div
+                                  key={m.id}
+                                  onClick={() => handleSelectCustomer(m)}
+                                  style={{
+                                    padding: '8px 10px',
+                                    borderBottom: '1px solid rgba(255,255,255,0.04)',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    transition: 'background 0.15s'
+                                  }}
+                                  className="table-row-hover"
+                                >
+                                  <div>
+                                    <div style={{ fontWeight: 700, color: '#ffffff', fontSize: 12 }}>
+                                      {m.name} <span className="mono" style={{ fontSize: 9.5, color: '#a5b4fc', marginLeft: 4 }}>({m.code})</span>
+                                    </div>
+                                    <div style={{ fontSize: 10.5, color: 'var(--text-secondary)' }}>
+                                      {m.phone}
+                                    </div>
+                                  </div>
+                                  <span style={{
+                                    fontSize: 10.5,
+                                    fontWeight: 800,
+                                    color: '#fbbf24',
+                                    background: 'rgba(245, 158, 11, 0.12)',
+                                    padding: '2px 6px',
+                                    borderRadius: 4
+                                  }}>
+                                    {num(m.total_points || 0)} Poin
+                                  </span>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => setQuickMemberModal({ open: true, name: customerName, phone: '', saving: false })}
+                        title="Daftar Member Baru (+1 Poin Transaksi)"
+                        style={{
+                          fontSize: 11,
+                          padding: '0 8px',
+                          borderRadius: 8,
+                          color: '#34d399',
+                          borderColor: 'rgba(16, 185, 129, 0.3)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          flexShrink: 0
+                        }}
+                      >
+                        <UserPlus size={13} />
+                        + Member
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
 
 
@@ -4393,6 +4662,18 @@ export default function POS() {
                     <span>{completedOrder.customer_name}</span>
                   </div>
                 )}
+                {completedOrder.customer && (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000', fontWeight: 800 }}>
+                      <span>Status Keanggotaan:</span>
+                      <span>MEMBER ({completedOrder.customer.code})</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000', fontWeight: 800 }}>
+                      <span>Poin Transaksi Ini:</span>
+                      <span>+1 Poin</span>
+                    </div>
+                  </>
+                )}
 
               </div>
 
@@ -5348,12 +5629,16 @@ export default function POS() {
                 availableDiscounts.map(disc => {
                   const meetsMin = !disc.min_order_amount || cartGrossSubtotal >= Number(disc.min_order_amount);
                   const isSelected = appliedDiscount?.id === disc.id;
+                  const isPointPromo = disc.requires_points > 0;
+                  const memberHasEnoughPoints = isPointPromo ? (selectedCustomer && (selectedCustomer.total_points || 0) >= disc.requires_points) : true;
+                  const canUse = meetsMin && (!isPointPromo || memberHasEnoughPoints);
+
                   return (
                     <div
                       key={disc.id}
                       style={{
-                        background: isSelected ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 255, 255, 0.03)',
-                        border: isSelected ? '1px solid var(--ok)' : '1px solid var(--border)',
+                        background: isSelected ? 'rgba(16, 185, 129, 0.12)' : (isPointPromo ? 'rgba(245, 158, 11, 0.05)' : 'rgba(255, 255, 255, 0.03)'),
+                        border: isSelected ? '1px solid var(--ok)' : (isPointPromo ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid var(--border)'),
                         borderRadius: 10,
                         padding: '12px 14px',
                         display: 'flex',
@@ -5363,18 +5648,53 @@ export default function POS() {
                       }}
                     >
                       <div style={{ flex: 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                          <span style={{
-                            background: disc.type === 'PERCENTAGE' ? 'rgba(236, 72, 153, 0.18)' : 'rgba(59, 130, 246, 0.18)',
-                            color: disc.type === 'PERCENTAGE' ? '#f472b6' : '#60a5fa',
-                            border: `1px solid ${disc.type === 'PERCENTAGE' ? 'rgba(236, 72, 153, 0.35)' : 'rgba(59, 130, 246, 0.35)'}`,
-                            fontSize: 10.5,
-                            fontWeight: 800,
-                            padding: '1px 6px',
-                            borderRadius: 4
-                          }}>
-                            {disc.type === 'PERCENTAGE' ? `${disc.value ?? disc.rate}% OFF` : `POTONGAN ${rupiah(disc.value ?? disc.rate)}`}
-                          </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                          {disc.reward_type === 'FREE_MENU' ? (
+                            <span style={{
+                              background: 'rgba(236, 72, 153, 0.18)',
+                              color: '#f472b6',
+                              border: '1px solid rgba(236, 72, 153, 0.35)',
+                              fontSize: 10.5,
+                              fontWeight: 800,
+                              padding: '1px 6px',
+                              borderRadius: 4,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4
+                            }}>
+                              <Gift size={11} /> FREE MENU: {disc.reward_menu?.name || 'Menu'}
+                            </span>
+                          ) : (
+                            <span style={{
+                              background: disc.type === 'PERCENTAGE' ? 'rgba(236, 72, 153, 0.18)' : 'rgba(59, 130, 246, 0.18)',
+                              color: disc.type === 'PERCENTAGE' ? '#f472b6' : '#60a5fa',
+                              border: `1px solid ${disc.type === 'PERCENTAGE' ? 'rgba(236, 72, 153, 0.35)' : 'rgba(59, 130, 246, 0.35)'}`,
+                              fontSize: 10.5,
+                              fontWeight: 800,
+                              padding: '1px 6px',
+                              borderRadius: 4
+                            }}>
+                              {disc.type === 'PERCENTAGE' ? `${disc.value ?? disc.rate}% OFF` : `POTONGAN ${rupiah(disc.value ?? disc.rate)}`}
+                            </span>
+                          )}
+
+                          {isPointPromo && (
+                            <span style={{
+                              background: 'rgba(245, 158, 11, 0.15)',
+                              color: '#fbbf24',
+                              border: '1px solid rgba(245, 158, 11, 0.35)',
+                              fontSize: 10,
+                              fontWeight: 800,
+                              padding: '1px 6px',
+                              borderRadius: 4,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 3
+                            }}>
+                              <Coins size={10} /> Butuh {disc.requires_points} Poin
+                            </span>
+                          )}
+
                           {disc.code && (
                             <span className="mono" style={{ fontSize: 11, background: 'rgba(255,255,255,0.06)', padding: '1px 6px', borderRadius: 4, color: '#fcd34d' }}>
                               {disc.code}
@@ -5413,11 +5733,19 @@ export default function POS() {
                           <button
                             type="button"
                             className="btn btn-primary btn-sm"
-                            disabled={!meetsMin}
+                            disabled={!canUse}
                             onClick={() => handleSelectPromo(disc)}
-                            style={{ fontSize: 11 }}
+                            style={{
+                              fontSize: 11,
+                              background: isPointPromo ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' : undefined,
+                              borderColor: isPointPromo ? '#f59e0b' : undefined,
+                            }}
                           >
-                            {meetsMin ? 'Gunakan' : 'Min Belum Cukup'}
+                            {!meetsMin
+                              ? 'Min Belum Cukup'
+                              : isPointPromo
+                                ? (!selectedCustomer ? 'Pilih Member Dulu' : (!memberHasEnoughPoints ? `Poin Kurang (${selectedCustomer.total_points}/${disc.requires_points})` : `Tukar ${disc.requires_points} Poin`))
+                                : 'Gunakan'}
                           </button>
                         )}
                       </div>

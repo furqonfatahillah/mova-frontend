@@ -36,6 +36,7 @@ const CoinManagement = lazy(() => import('./pages/CoinManagement'));
 const OpexManagement = lazy(() => import('./pages/OpexManagement'));
 const UrgentNotes = lazy(() => import('./pages/UrgentNotes'));
 const Receivables = lazy(() => import('./pages/Receivables'));
+const MasterCustomer = lazy(() => import('./pages/MasterCustomer'));
 
 function PrivateRoute({ children }) {
   const token = localStorage.getItem('pos_token');
@@ -102,6 +103,7 @@ export default function App() {
               <Route path="perlengkapan" element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><MasterPerlengkapan /></RoleRoute>} />
               <Route path="menu"       element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><MasterMenu /></RoleRoute>} />
               <Route path="outlet"     element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><OutletManagement /></RoleRoute>} />
+              <Route path="member"     element={<RoleRoute roles={['pegawai']}><MasterCustomer /></RoleRoute>} />
               <Route path="users"      element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><UserManagement /></RoleRoute>} />
 
               {/* SaaS Platform (Superadmin / Website Owner ONLY & Tenant Coin Billing) */}

@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Package, UtensilsCrossed, ShoppingCart,
   ArrowUpDown, ClipboardList, BarChart2, TrendingUp, DollarSign,
   AlertTriangle, LogOut, ScrollText, Menu, X, Clock,
-  Store, Send, Users, Building2, ChefHat, Trash2, Percent, Landmark, Wallet, Coins, Gift, Copy, Check, Receipt, Headset,
+  Store, Send, Users, UserCheck, Building2, ChefHat, Trash2, Percent, Landmark, Wallet, Coins, Gift, Copy, Check, Receipt, Headset,
   AlertOctagon, CreditCard, Boxes
 } from 'lucide-react';
 import api from '../api/client';
@@ -175,6 +175,7 @@ export default function Layout() {
             { to: '/bahan', label: 'Master Resep & HPP Bahan', icon: Package },
             { to: '/perlengkapan', label: 'Master Perlengkapan', icon: Boxes },
             { to: '/menu', label: 'Master Menu & Modifier', icon: UtensilsCrossed },
+            { to: '/member', label: 'Master Member & Poin', icon: UserCheck },
             { to: '/outlet', label: 'Tambah Cabang Outlet', icon: Store },
             { to: '/users', label: 'Kelola Manager & Pegawai', icon: Users, isUserMgmt: true },
           ],
@@ -231,8 +232,9 @@ export default function Layout() {
           ],
         },
         {
-          label: 'Kepegawaian Cabang',
+          label: 'Kepegawaian & Pelanggan',
           items: [
+            { to: '/member', label: 'Master Member & Poin', icon: UserCheck },
             { to: '/users', label: 'Kelola Pegawai Cabang', icon: Users, isUserMgmt: true },
           ],
         },
@@ -285,6 +287,7 @@ export default function Layout() {
         label: 'Operasional Kasir & Dapur',
         items: [
           { to: '/pos', label: 'POS / Transaksi', icon: ShoppingCart },
+          { to: '/member', label: 'Daftar Member / Poin', icon: UserCheck },
           { to: '/urgent-notes', label: 'Nota Urgent / Manual', icon: AlertOctagon },
           { to: '/shift', label: 'Shift Kasir', icon: Clock },
           { to: '/batch-prep', label: 'Produksi Batch (Dapur)', icon: ChefHat },
