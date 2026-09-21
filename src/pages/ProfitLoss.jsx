@@ -48,6 +48,7 @@ export default function ProfitLoss() {
   const [dateFrom, setDateFrom] = useState(() => getMonthStartStr());
   const [dateTo, setDateTo] = useState(todayStr);
   const [activeTab, setActiveTab] = useState('statement'); // 'statement' | 'expenses'
+  const [notaTypeFilter, setNotaTypeFilter] = useState('ALL'); // 'ALL' | 'GENERATE' | 'MANUAL'
 
   // Comparison State
   const [compareEnabled, setCompareEnabled] = useState(false);
@@ -281,13 +282,13 @@ export default function ProfitLoss() {
     if (activeTab === 'benchmark') {
       fetchBenchmark();
     }
-  }, [dateFrom, dateTo, activeOutletId, compareEnabled, compareWith, compareCustomFrom, compareCustomTo, activeTab]);
+  }, [dateFrom, dateTo, activeOutletId, compareEnabled, compareWith, compareCustomFrom, compareCustomTo, activeTab, notaTypeFilter]);
 
   async function fetchBenchmark() {
     setBenchmarkLoading(true);
     try {
       const res = await api.get('/reports/outlet-benchmark', {
-        params: { from: dateFrom, to: dateTo }
+        params: { from: dateFrom, to: dateTo, nota_type: notaTypeFilter }
       });
       setBenchmarkData(res.data);
     } catch (err) {
@@ -309,6 +310,7 @@ export default function ProfitLoss() {
         from: dateFrom,
         to: dateTo,
         outlet_id: targetOutlet,
+        nota_type: notaTypeFilter,
       };
 
       if (compareEnabled) {
@@ -498,6 +500,9 @@ export default function ProfitLoss() {
   if (loading && !plData) return <LoadingState />;
 
   const rev = plData?.revenue || { gross_sales: 0, total_discount: 0, net_sales: 0, transaction_count: 0, avg_order_value: 0, payment_breakdown: [] };
+  const notaGen = plData?.revenue?.nota_generate || { gross_sales: 0, discount: 0, net_sales: 0, transaction_count: 0, share_pct: 0, avg_order_value: 0 };
+  const notaMan = plData?.revenue?.nota_manual || { gross_sales: 0, discount: 0, net_sales: 0, transaction_count: 0, share_pct: 0, avg_order_value: 0 };
+  const combinedRev = plData?.revenue?.combined || rev;
   const cogs = plData?.cogs || { cogs_recipes: 0, cogs_variance: 0, total_cogs: 0, cogs_ratio_pct: 0, gross_profit: 0, gross_margin_pct: 0, top_ingredients_usage: [] };
   const wst = plData?.waste || { total_waste_loss: 0, waste_ratio_pct: 0, operating_profit_after_waste: 0, breakdown: [] };
   const opx = plData?.opex || { total_opex: 0, opex_ratio_pct: 0, breakdown: [], total_records: 0 };
@@ -596,7 +601,7 @@ export default function ProfitLoss() {
           border: '1px solid rgba(165, 180, 252, 0.15)',
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 14 }}>
           {/* Primary Period */}
           <PeriodPicker
             from={dateFrom}
@@ -608,6 +613,122 @@ export default function ProfitLoss() {
             label="Periode Utama"
             align="left"
           />
+
+          {/* Nota Type Scope Control (Semua Gabungan, Nota Generate, Nota Manual) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)' }}>
+              Cakupan Nota:
+            </span>
+            <div
+              style={{
+                display: 'inline-flex',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: 10,
+                padding: 3,
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                gap: 2,
+              }}
+            >
+              <button
+                type="button"
+                className={`btn btn-sm ${notaTypeFilter === 'ALL' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setNotaTypeFilter('ALL')}
+                style={{
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  padding: '5px 12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+                title="Tampilkan semua transaksi gabungan (Nota Generate + Manual)"
+              >
+                🌐 Semua Nota (Gabung)
+                {combinedRev?.transaction_count !== undefined && (
+                  <span
+                    style={{
+                      padding: '1px 6px',
+                      borderRadius: 10,
+                      fontSize: 10.5,
+                      background: notaTypeFilter === 'ALL' ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)',
+                      fontWeight: 800,
+                    }}
+                  >
+                    {combinedRev.transaction_count}
+                  </span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                className={`btn btn-sm ${notaTypeFilter === 'GENERATE' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setNotaTypeFilter('GENERATE')}
+                style={{
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  padding: '5px 12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  color: notaTypeFilter === 'GENERATE' ? '#ffffff' : '#06b6d4',
+                  borderColor: notaTypeFilter === 'GENERATE' ? undefined : 'rgba(6, 182, 212, 0.25)',
+                }}
+                title="Hanya tampilkan transaksi dari kasir POS standar (Nota Generate)"
+              >
+                🖥️ Nota Generate
+                {notaGen?.transaction_count !== undefined && (
+                  <span
+                    style={{
+                      padding: '1px 6px',
+                      borderRadius: 10,
+                      fontSize: 10.5,
+                      background: notaTypeFilter === 'GENERATE' ? 'rgba(255,255,255,0.25)' : 'rgba(6, 182, 212, 0.2)',
+                      fontWeight: 800,
+                      color: notaTypeFilter === 'GENERATE' ? '#ffffff' : '#22d3ee',
+                    }}
+                  >
+                    {notaGen.transaction_count}
+                  </span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                className={`btn btn-sm ${notaTypeFilter === 'MANUAL' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setNotaTypeFilter('MANUAL')}
+                style={{
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  padding: '5px 12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  color: notaTypeFilter === 'MANUAL' ? '#ffffff' : '#f59e0b',
+                  borderColor: notaTypeFilter === 'MANUAL' ? undefined : 'rgba(245, 158, 11, 0.25)',
+                }}
+                title="Hanya tampilkan transaksi dari nota manual (Nota Urgent)"
+              >
+                ⚡ Nota Manual
+                {notaMan?.transaction_count !== undefined && (
+                  <span
+                    style={{
+                      padding: '1px 6px',
+                      borderRadius: 10,
+                      fontSize: 10.5,
+                      background: notaTypeFilter === 'MANUAL' ? 'rgba(255,255,255,0.25)' : 'rgba(245, 158, 11, 0.2)',
+                      fontWeight: 800,
+                      color: notaTypeFilter === 'MANUAL' ? '#ffffff' : '#fbbf24',
+                    }}
+                  >
+                    {notaMan.transaction_count}
+                  </span>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Comparison Mode Sub-Bar */}
@@ -747,10 +868,22 @@ export default function ProfitLoss() {
             <span>Kotor: {rupiah(rev.gross_sales)}</span>
             <span>{rev.transaction_count} pesanan</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, flexWrap: 'wrap', marginTop: 2 }}>
-            <span style={{ color: '#06b6d4', fontWeight: 600 }}>🖥️ Gen: {rupiah(rev.nota_generate?.net_sales || 0)}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, flexWrap: 'wrap', marginTop: 4 }}>
+            <span
+              onClick={(e) => { e.stopPropagation(); handleCardClick('REVENUE', 'GENERATE'); }}
+              style={{ color: '#06b6d4', fontWeight: 700, cursor: 'pointer', padding: '1px 6px', borderRadius: 4, background: 'rgba(6,182,212,0.12)' }}
+              title="Klik untuk melihat rincian Nota Generate"
+            >
+              🖥️ Gen: {rupiah(notaGen.net_sales)} ({notaGen.share_pct}%)
+            </span>
             <span style={{ color: 'rgba(255,255,255,0.2)' }}>•</span>
-            <span style={{ color: '#f59e0b', fontWeight: 600 }}>⚡ Man: {rupiah(rev.nota_manual?.net_sales || 0)}</span>
+            <span
+              onClick={(e) => { e.stopPropagation(); handleCardClick('REVENUE', 'MANUAL'); }}
+              style={{ color: '#f59e0b', fontWeight: 700, cursor: 'pointer', padding: '1px 6px', borderRadius: 4, background: 'rgba(245,158,11,0.12)' }}
+              title="Klik untuk melihat rincian Nota Manual"
+            >
+              ⚡ Man: {rupiah(notaMan.net_sales)} ({notaMan.share_pct}%)
+            </span>
             {Number(rev.total_discount || 0) > 0 && (
               <>
                 <span style={{ color: 'rgba(255,255,255,0.2)' }}>•</span>
@@ -1151,6 +1284,283 @@ export default function ProfitLoss() {
 
           {/* Statement Table Structure */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            {/* Filter Scope Notice Banner if filtered */}
+            {notaTypeFilter !== 'ALL' && (
+              <div
+                style={{
+                  padding: '10px 16px',
+                  borderRadius: 10,
+                  background: notaTypeFilter === 'GENERATE' ? 'rgba(6, 182, 212, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                  border: notaTypeFilter === 'GENERATE' ? '1px solid rgba(6, 182, 212, 0.35)' : '1px solid rgba(245, 158, 11, 0.35)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: 10,
+                  fontSize: 12.5,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Info size={16} color={notaTypeFilter === 'GENERATE' ? '#06b6d4' : '#f59e0b'} />
+                  <span>
+                    Sedang menampilkan laporan P&L terfokus khusus untuk{' '}
+                    <strong style={{ color: notaTypeFilter === 'GENERATE' ? '#38bdf8' : '#fbbf24' }}>
+                      {notaTypeFilter === 'GENERATE' ? '🖥️ Nota Generate (Kasir POS Standar)' : '⚡ Nota Manual (Nota Urgent / Tergantung)'}
+                    </strong>.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setNotaTypeFilter('ALL')}
+                  style={{ fontSize: 11.5, padding: '3px 10px', borderRadius: 6, fontWeight: 700 }}
+                >
+                  🌐 Tampilkan Semua Nota (Gabungan)
+                </button>
+              </div>
+            )}
+
+            {/* Split Comparison Widget: Nota Generate vs Nota Manual */}
+            <div
+              className="card"
+              style={{
+                padding: '16px 20px',
+                background: 'rgba(15, 23, 42, 0.65)',
+                border: '1px solid rgba(165, 180, 252, 0.18)',
+                borderRadius: 12,
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Layers size={17} color="#38bdf8" />
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: '#f8fafc' }}>
+                      Pemisahan Omset Penjualan: Nota Generate vs Nota Manual
+                    </h4>
+                    <p style={{ margin: '2px 0 0', fontSize: 11.5, color: 'var(--text-muted)' }}>
+                      Perbandingan proporsi penjualan kasir POS otomatis vs nota manual urgent dalam satu layar.
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      padding: '3px 10px',
+                      borderRadius: 12,
+                      background: notaTypeFilter === 'ALL'
+                        ? 'rgba(16, 185, 129, 0.15)'
+                        : notaTypeFilter === 'GENERATE'
+                        ? 'rgba(6, 182, 212, 0.15)'
+                        : 'rgba(245, 158, 11, 0.15)',
+                      color: notaTypeFilter === 'ALL'
+                        ? '#34d399'
+                        : notaTypeFilter === 'GENERATE'
+                        ? '#38bdf8'
+                        : '#fbbf24',
+                      border: '1px solid currentColor',
+                    }}
+                  >
+                    Mode Tampilan: {notaTypeFilter === 'ALL' ? 'Gabungan (Semua)' : notaTypeFilter === 'GENERATE' ? 'Nota Generate' : 'Nota Manual'}
+                  </span>
+                </div>
+              </div>
+
+              {/* 2 Comparison Cards */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14, marginBottom: 14 }}>
+                {/* Card A: Nota Generate */}
+                <div
+                  style={{
+                    padding: 14,
+                    borderRadius: 10,
+                    background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.08) 0%, rgba(15, 23, 42, 0.8) 100%)',
+                    border: notaTypeFilter === 'GENERATE' ? '2px solid #06b6d4' : '1px solid rgba(6, 182, 212, 0.28)',
+                    boxShadow: notaTypeFilter === 'GENERATE' ? '0 0 16px rgba(6, 182, 212, 0.25)' : undefined,
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 800, background: 'rgba(6, 182, 212, 0.2)', color: '#06b6d4' }}>
+                        🖥️ Nota Generate
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Kasir POS Standar</span>
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: '#38bdf8' }}>
+                      {notaGen.share_pct}% Share
+                    </span>
+                  </div>
+
+                  <div style={{ fontSize: 20, fontWeight: 900, color: '#ffffff', marginBottom: 6 }}>
+                    {rupiah(notaGen.net_sales)}
+                    <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', marginLeft: 6 }}>Net Sales</span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 11.5, marginBottom: 12, padding: 8, borderRadius: 6, background: 'rgba(0,0,0,0.2)' }}>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', display: 'block' }}>Kotor (Gross):</span>
+                      <strong style={{ color: '#e2e8f0' }}>{rupiah(notaGen.gross_sales)}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', display: 'block' }}>Potongan Diskon:</span>
+                      <strong style={{ color: notaGen.discount > 0 ? '#f87171' : 'var(--text-muted)' }}>
+                        {notaGen.discount > 0 ? `-${rupiah(notaGen.discount)}` : 'Rp 0'}
+                      </strong>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', display: 'block' }}>Jumlah Pesanan:</span>
+                      <strong style={{ color: '#38bdf8' }}>{notaGen.transaction_count} pesanan</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', display: 'block' }}>Rata-rata Order:</span>
+                      <strong style={{ color: '#e2e8f0' }}>{rupiah(notaGen.avg_order_value)}</strong>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => handleCardClick('REVENUE', 'GENERATE')}
+                      style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, color: '#06b6d4', background: 'rgba(6, 182, 212, 0.1)', border: '1px solid rgba(6, 182, 212, 0.25)' }}
+                      title="Lihat rincian transaksi nota generate"
+                    >
+                      🔍 Rincian Pesanan
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${notaTypeFilter === 'GENERATE' ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => setNotaTypeFilter(notaTypeFilter === 'GENERATE' ? 'ALL' : 'GENERATE')}
+                      style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, fontWeight: 700 }}
+                    >
+                      {notaTypeFilter === 'GENERATE' ? '✓ Tampilan Aktif' : 'Filter P&L ke Nota Ini'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Card B: Nota Manual */}
+                <div
+                  style={{
+                    padding: 14,
+                    borderRadius: 10,
+                    background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(15, 23, 42, 0.8) 100%)',
+                    border: notaTypeFilter === 'MANUAL' ? '2px solid #f59e0b' : '1px solid rgba(245, 158, 11, 0.28)',
+                    boxShadow: notaTypeFilter === 'MANUAL' ? '0 0 16px rgba(245, 158, 11, 0.25)' : undefined,
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 800, background: 'rgba(245, 158, 11, 0.2)', color: '#f59e0b' }}>
+                        ⚡ Nota Manual
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Urgent / Bahan Tergantung</span>
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: '#fbbf24' }}>
+                      {notaMan.share_pct}% Share
+                    </span>
+                  </div>
+
+                  <div style={{ fontSize: 20, fontWeight: 900, color: '#ffffff', marginBottom: 6 }}>
+                    {rupiah(notaMan.net_sales)}
+                    <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', marginLeft: 6 }}>Net Sales</span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 11.5, marginBottom: 12, padding: 8, borderRadius: 6, background: 'rgba(0,0,0,0.2)' }}>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', display: 'block' }}>Kotor (Gross):</span>
+                      <strong style={{ color: '#e2e8f0' }}>{rupiah(notaMan.gross_sales)}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', display: 'block' }}>Potongan Diskon:</span>
+                      <strong style={{ color: notaMan.discount > 0 ? '#f87171' : 'var(--text-muted)' }}>
+                        {notaMan.discount > 0 ? `-${rupiah(notaMan.discount)}` : 'Rp 0'}
+                      </strong>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', display: 'block' }}>Jumlah Pesanan:</span>
+                      <strong style={{ color: '#fbbf24' }}>{notaMan.transaction_count} pesanan</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', display: 'block' }}>Rata-rata Order:</span>
+                      <strong style={{ color: '#e2e8f0' }}>{rupiah(notaMan.avg_order_value)}</strong>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => handleCardClick('REVENUE', 'MANUAL')}
+                      style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, color: '#f59e0b', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.25)' }}
+                      title="Lihat rincian transaksi nota manual"
+                    >
+                      🔍 Rincian Pesanan
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${notaTypeFilter === 'MANUAL' ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => setNotaTypeFilter(notaTypeFilter === 'MANUAL' ? 'ALL' : 'MANUAL')}
+                      style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, fontWeight: 700 }}
+                    >
+                      {notaTypeFilter === 'MANUAL' ? '✓ Tampilan Aktif' : 'Filter P&L ke Nota Ini'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Proportional Distribution Bar */}
+              <div>
+                <div
+                  style={{
+                    height: 12,
+                    borderRadius: 6,
+                    background: 'rgba(255, 255, 255, 0.08)',
+                    display: 'flex',
+                    overflow: 'hidden',
+                    marginBottom: 8,
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${notaGen.share_pct || (combinedRev.net_sales > 0 ? 0 : 50)}%`,
+                      background: 'linear-gradient(90deg, #06b6d4, #38bdf8)',
+                      transition: 'width 0.4s ease',
+                    }}
+                    title={`Nota Generate: ${notaGen.share_pct}% (${rupiah(notaGen.net_sales)})`}
+                  />
+                  <div
+                    style={{
+                      width: `${notaMan.share_pct || 0}%`,
+                      background: 'linear-gradient(90deg, #f59e0b, #fbbf24)',
+                      transition: 'width 0.4s ease',
+                    }}
+                    title={`Nota Manual: ${notaMan.share_pct}% (${rupiah(notaMan.net_sales)})`}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5, flexWrap: 'wrap', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <span style={{ width: 9, height: 9, borderRadius: 2, background: '#06b6d4', display: 'inline-block' }} />
+                      <span style={{ color: '#a5f3fc' }}>Generate: <strong>{rupiah(notaGen.net_sales)}</strong> ({notaGen.share_pct}%)</span>
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <span style={{ width: 9, height: 9, borderRadius: 2, background: '#f59e0b', display: 'inline-block' }} />
+                      <span style={{ color: '#fde68a' }}>Manual: <strong>{rupiah(notaMan.net_sales)}</strong> ({notaMan.share_pct}%)</span>
+                    </span>
+                  </div>
+
+                  <div style={{ color: 'var(--text-muted)' }}>
+                    Total Gabungan: <strong style={{ color: '#34d399' }}>{rupiah(combinedRev.net_sales || rev.net_sales)}</strong> ({combinedRev.transaction_count || rev.transaction_count} pesanan)
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Table Header row when Comparison is active */}
             {isComp && (
               <div
@@ -1365,15 +1775,23 @@ export default function ProfitLoss() {
                       title="Klik untuk melihat rincian Nota Generate"
                     >
                       <td style={{ padding: '7px 6px', color: '#cbd5e1' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                           <span style={{ padding: '2px 7px', borderRadius: 4, background: 'rgba(6, 182, 212, 0.15)', color: '#06b6d4', fontSize: 11, fontWeight: 700 }}>
                             🖥️ Nota Generate
                           </span>
-                          <span>Penjualan Kasir POS Standar ({rev.nota_generate?.transaction_count || 0} pesanan)</span>
+                          <span>Penjualan Kasir POS Standar ({notaGen.transaction_count} pesanan)</span>
+                          <span style={{ fontSize: 10.5, padding: '1px 6px', borderRadius: 4, background: 'rgba(6, 182, 212, 0.2)', color: '#38bdf8', fontWeight: 700 }}>
+                            {notaGen.share_pct}% omset
+                          </span>
+                          {notaTypeFilter === 'GENERATE' && (
+                            <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: '#0284c7', color: '#ffffff', fontWeight: 800 }}>
+                              ✓ AKTIF
+                            </span>
+                          )}
                         </div>
                       </td>
-                      <td style={{ padding: '7px 6px', textAlign: 'right', fontWeight: 600, color: '#38bdf8' }}>
-                        {rupiah(rev.nota_generate?.gross_sales ?? rev.nota_generate?.net_sales ?? 0)}
+                      <td style={{ padding: '7px 6px', textAlign: 'right', fontWeight: 700, color: '#38bdf8' }}>
+                        {rupiah(notaGen.net_sales)}
                       </td>
                     </tr>
 
@@ -1390,15 +1808,23 @@ export default function ProfitLoss() {
                       title="Klik untuk melihat rincian Nota Manual (Urgent)"
                     >
                       <td style={{ padding: '7px 6px', color: '#cbd5e1' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                           <span style={{ padding: '2px 7px', borderRadius: 4, background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', fontSize: 11, fontWeight: 700 }}>
                             ⚡ Nota Manual
                           </span>
-                          <span>Penjualan Nota Urgent / Tergantung ({rev.nota_manual?.transaction_count || 0} pesanan)</span>
+                          <span>Penjualan Nota Urgent / Tergantung ({notaMan.transaction_count} pesanan)</span>
+                          <span style={{ fontSize: 10.5, padding: '1px 6px', borderRadius: 4, background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', fontWeight: 700 }}>
+                            {notaMan.share_pct}% omset
+                          </span>
+                          {notaTypeFilter === 'MANUAL' && (
+                            <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: '#d97706', color: '#ffffff', fontWeight: 800 }}>
+                              ✓ AKTIF
+                            </span>
+                          )}
                         </div>
                       </td>
-                      <td style={{ padding: '7px 6px', textAlign: 'right', fontWeight: 600, color: '#fbbf24' }}>
-                        {rupiah(rev.nota_manual?.gross_sales ?? rev.nota_manual?.net_sales ?? 0)}
+                      <td style={{ padding: '7px 6px', textAlign: 'right', fontWeight: 700, color: '#fbbf24' }}>
+                        {rupiah(notaMan.net_sales)}
                       </td>
                     </tr>
 
