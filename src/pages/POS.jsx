@@ -4672,6 +4672,10 @@ export default function POS() {
                       <span>Poin Transaksi Ini:</span>
                       <span>+1 Poin</span>
                     </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000', fontWeight: 800 }}>
+                      <span>Saldo Poin Member:</span>
+                      <span>{Number(completedOrder.customer.total_points ?? 0)} Poin</span>
+                    </div>
                   </>
                 )}
 
