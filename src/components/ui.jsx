@@ -154,10 +154,12 @@ export const SATUAN_BELI_OPTIONS = [
   'Pack',
   'Slop',
   'Dus',
-  'Botol',
-  'Kaleng',
+  'Box',
   'Roll',
   'Bungkus',
+  'Rim',
+  'Botol',
+  'Kaleng',
   'Ikat',
   'Porsi',
   'Butir',
@@ -166,16 +168,15 @@ export const SATUAN_BELI_OPTIONS = [
 ];
 
 export const SATUAN_PAKAI_OPTIONS = [
-  'pcs',
-  'lembar',
   'gram',
   'ml',
-  'Pcs',
+  'pcs',
+  'lembar',
+  'buah',
   'sdm',
   'sdt',
   'porsi',
   'butir',
-  'buah',
   'roll',
   'Kg',
   'Liter',
@@ -209,7 +210,18 @@ export function getSuggestedConversion(unitBeli, unitPakai) {
 }
 
 export function UnitSelect({ value, onChange, options = SATUAN_PAKAI_OPTIONS, style = {}, className = 'form-control' }) {
-  const opts = options.includes(value) || !value ? options : [value, ...options];
+  const rawList = options.includes(value) || !value ? options : [value, ...options];
+  const seen = new Set();
+  const opts = [];
+  for (const opt of rawList) {
+    if (!opt) continue;
+    const key = String(opt).trim().toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      opts.push(opt);
+    }
+  }
+
   return (
     <select
       className={className}

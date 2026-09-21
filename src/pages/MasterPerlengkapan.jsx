@@ -96,6 +96,19 @@ const emptyForm = {
 
 function FormCell({ data, setData, field, type = 'text', style = {}, availableCategories = KATEGORI_PERLENGKAPAN_OPTIONS }) {
   if (field === 'category') {
+    const rawList = availableCategories.includes(data.category) || !data.category
+      ? availableCategories
+      : [data.category, ...availableCategories];
+    const seenCat = new Set();
+    const categories = [];
+    for (const c of rawList) {
+      if (!c) continue;
+      const key = String(c).trim().toLowerCase();
+      if (!seenCat.has(key)) {
+        seenCat.add(key);
+        categories.push(c);
+      }
+    }
     return (
       <select
         className="form-control"
@@ -112,7 +125,7 @@ function FormCell({ data, setData, field, type = 'text', style = {}, availableCa
         value={data.category ?? 'Perlengkapan'}
         onChange={e => setData(p => ({ ...p, category: e.target.value }))}
       >
-        {availableCategories.map(cat => (
+        {categories.map(cat => (
           <option key={cat} value={cat} style={{ background: '#11162d', color: '#ffffff' }}>
             {cat}
           </option>
@@ -121,10 +134,11 @@ function FormCell({ data, setData, field, type = 'text', style = {}, availableCa
     );
   }
   if (field === 'unit_beli') {
+    const perlengkapanBeliOptions = ['Slop', 'Dus', 'Pack', 'Roll', 'Bungkus', 'Rim', 'Box', 'Pcs', 'Ikat'];
     return (
       <UnitSelect
         value={data.unit_beli}
-        options={['Slop', 'Dus', 'Pack', 'Roll', 'Bungkus', 'Rim', 'Box', ...SATUAN_BELI_OPTIONS]}
+        options={perlengkapanBeliOptions}
         style={{ minWidth: 85, ...style }}
         onChange={val => {
           const sug = getSuggestedConversion(val, data.unit_pakai);
@@ -138,10 +152,11 @@ function FormCell({ data, setData, field, type = 'text', style = {}, availableCa
     );
   }
   if (field === 'unit_pakai') {
+    const perlengkapanPakaiOptions = ['pcs', 'lembar', 'buah', 'roll', 'set'];
     return (
       <UnitSelect
         value={data.unit_pakai}
-        options={['pcs', 'lembar', 'buah', 'roll', ...SATUAN_PAKAI_OPTIONS]}
+        options={perlengkapanPakaiOptions}
         style={{ minWidth: 85, ...style }}
         onChange={val => {
           const sug = getSuggestedConversion(data.unit_beli, val);
