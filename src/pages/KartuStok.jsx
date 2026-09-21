@@ -73,6 +73,7 @@ export default function KartuStok() {
   const [inTransitList, setInTransitList] = useState([]);
   const [inTransitLoading, setInTransitLoading] = useState(false);
   const [inTransitSearch, setInTransitSearch] = useState('');
+  const [detailTransitTransfer, setDetailTransitTransfer] = useState(null);
 
   // Approval Receive Modal state
   const [receiveModalOpen, setReceiveModalOpen] = useState(false);
@@ -1509,244 +1510,334 @@ export default function KartuStok() {
               </button>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {filteredInTransitList.map(trf => {
-                const totalItemCount = trf.items?.length || 0;
-                const isOnlinePurchase = trf.source_type === 'EXTERNAL' || trf.transfer_type === 'INBOUND';
-                const sourceName = trf.source_display_name || trf.source_outlet?.name || trf.source_name || (isOnlinePurchase ? 'Shopee' : 'Cabang Asal');
-                const destName = trf.destination_display_name || trf.destination_outlet?.name || trf.destination_name || currentOutlet?.name || 'Cabang Tujuan';
+            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              <div className="table-wrap" style={{ margin: 0 }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th style={{ width: 145 }}>No. Dokumen</th>
+                      <th style={{ width: 100 }}>Tanggal</th>
+                      <th style={{ minWidth: 150 }}>Sumber / Pengirim</th>
+                      <th style={{ minWidth: 160 }}>Cabang Penerima</th>
+                      <th style={{ minWidth: 200 }}>Rincian Barang</th>
+                      <th style={{ minWidth: 140 }}>Kurir / No. Resi</th>
+                      <th style={{ width: 170 }} className="center">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredInTransitList.map(trf => {
+                      const totalItemCount = trf.items?.length || 0;
+                      const isOnlinePurchase = trf.source_type === 'EXTERNAL' || trf.transfer_type === 'INBOUND';
+                      const sourceName = trf.source_display_name || trf.source_outlet?.name || trf.source_name || (isOnlinePurchase ? 'Shopee' : 'Cabang Asal');
+                      const destName = trf.destination_display_name || trf.destination_outlet?.name || trf.destination_name || currentOutlet?.name || 'Cabang Tujuan';
+                      const summaryItems = (trf.items || []).map(it => {
+                        const isProd = it.item_type === 'PRODUCT';
+                        const name = isProd ? (it.menu?.name || it.item_name || 'Produk Retail') : (it.ingredient?.name || it.item_name || 'Bahan Baku');
+                        return `${name} (${num(it.input_qty || it.qty)} ${it.input_unit || it.unit || 'satuan'})`;
+                      }).join(', ');
 
-                return (
-                  <div
-                    key={trf.id}
-                    className="card"
-                    style={{
-                      border: isOnlinePurchase ? '1px solid rgba(238, 77, 45, 0.4)' : '1px solid rgba(245, 166, 35, 0.35)',
-                      background: 'linear-gradient(135deg, rgba(26, 22, 48, 0.6) 0%, rgba(15, 23, 42, 0.8) 100%)',
-                      padding: 0,
-                      overflow: 'hidden'
-                    }}
-                  >
-                    {/* Card Header Bar */}
-                    <div style={{
-                      padding: '14px 20px',
-                      background: isOnlinePurchase ? 'rgba(238, 77, 45, 0.08)' : 'rgba(245, 166, 35, 0.08)',
-                      borderBottom: isOnlinePurchase ? '1px solid rgba(238, 77, 45, 0.25)' : '1px solid rgba(245, 166, 35, 0.2)',
-                      display: 'flex',
-                      flexWrap: 'wrap',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: 12
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                        <span className="mono" style={{ fontSize: 15, fontWeight: 800, color: '#fbbf24', letterSpacing: '0.02em' }}>
-                          {trf.transfer_no}
-                        </span>
-                        {isOnlinePurchase ? (
-                          <span style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 5,
-                            padding: '3px 10px',
-                            borderRadius: 20,
-                            fontSize: 11,
-                            fontWeight: 700,
-                            background: 'rgba(238, 77, 45, 0.18)',
-                            color: '#ff6b4a',
-                            border: '1px solid rgba(238, 77, 45, 0.4)'
-                          }}>
-                            <ShoppingBag size={13} /> BELANJA ONLINE: {sourceName}
-                          </span>
-                        ) : (
-                          <span style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 5,
-                            padding: '3px 10px',
-                            borderRadius: 20,
-                            fontSize: 11,
-                            fontWeight: 700,
-                            background: 'rgba(245, 158, 11, 0.18)',
-                            color: '#f59e0b',
-                            border: '1px solid rgba(245, 158, 11, 0.4)'
-                          }}>
-                            <Truck size={13} /> DALAM PERJALANAN
-                          </span>
-                        )}
-                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                          📅 Tanggal Pesan/Kirim: <strong style={{ color: '#ffffff' }}>{trf.date}</strong>
-                        </span>
-                      </div>
-
-                      {/* Prominent Approval Receive Button */}
-                      <button
-                        className="btn"
-                        onClick={() => openReceiveModal(trf)}
-                        style={{
-                          background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                          color: '#ffffff',
-                          fontWeight: 800,
-                          padding: '8px 18px',
-                          fontSize: 13,
-                          borderRadius: 8,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 7,
-                          boxShadow: '0 3px 12px rgba(16, 185, 129, 0.35)',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <PackageCheck size={16} />
-                        <span>Approval Receive (Terima & Masuk Stok)</span>
-                      </button>
-                    </div>
-
-                    {/* Logistics Route Strip */}
-                    <div style={{
-                      padding: '12px 20px',
-                      background: 'rgba(0,0,0,0.15)',
-                      borderBottom: '1px solid var(--border-soft)',
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                      gap: 12,
-                      fontSize: 12
-                    }}>
-                      <div>
-                        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>
-                          {isOnlinePurchase ? '🛒 Sumber / Marketplace' : 'Cabang Pengirim (Asal)'}
-                        </div>
-                        <div style={{ fontWeight: 700, color: isOnlinePurchase ? '#fbbf24' : '#93c5fd', marginTop: 2 }}>
-                          {isOnlinePurchase ? `🛒 ${sourceName}` : `🏢 ${sourceName}`}
-                        </div>
-                      </div>
-
-                      <div>
-                        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Cabang Penerima (Tujuan)</div>
-                        <div style={{ fontWeight: 700, color: '#c084fc', marginTop: 2 }}>
-                          📍 {destName}
-                        </div>
-                      </div>
-
-                      <div>
-                        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>
-                          {isOnlinePurchase ? '🚚 Kurir & No. Resi' : 'Kurir / Supir'}
-                        </div>
-                        <div style={{ fontWeight: 600, color: '#ffffff', marginTop: 2 }}>
-                          {trf.driver_name || (isOnlinePurchase ? 'Ekspedisi Online' : 'Kurir Internal')}
-                          {trf.vehicle_no && (
-                            <span className="mono" style={{ color: '#fbbf24', marginLeft: 6 }}>
-                              [{trf.vehicle_no}]
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div>
-                        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Dibuat Oleh</div>
-                        <div style={{ fontWeight: 600, color: 'var(--text-secondary)', marginTop: 2 }}>
-                          {trf.creator?.name || 'Staf Cabang'}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Items Table */}
-                    <div className="table-wrap">
-                      <table style={{ margin: 0 }}>
-                        <thead>
-                          <tr>
-                            <th style={{ width: 45, textAlign: 'center' }}>No</th>
-                            <th style={{ width: 80 }}>Tipe</th>
-                            <th style={{ width: 90 }}>Kode</th>
-                            <th>Nama Barang / Bahan</th>
-                            <th className="right" style={{ width: 120 }}>Qty Dikirim</th>
-                            <th style={{ width: 80 }}>Satuan</th>
-                            <th className="right" style={{ width: 150 }}>Konversi Stok Masuk</th>
-                            <th>Catatan Item</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(trf.items || []).map((it, idx) => {
-                            const isProd = it.item_type === 'PRODUCT';
-                            const name = isProd ? (it.menu?.name || it.item_name || 'Produk Retail') : (it.ingredient?.name || it.item_name || 'Bahan Baku');
-                            const code = isProd ? (it.menu?.code || 'PRD') : (it.ingredient?.code || 'BB');
-                            const hasConv = !isProd && it.input_unit && it.unit && it.input_unit.toLowerCase() !== it.unit.toLowerCase();
-
-                            return (
-                              <tr key={it.id || idx}>
-                                <td style={{ textAlign: 'center', color: 'var(--text-muted)' }}>{idx + 1}</td>
-                                <td>
-                                  <span style={{
-                                    fontSize: 10.5,
-                                    fontWeight: 700,
-                                    padding: '2px 7px',
-                                    borderRadius: 4,
-                                    background: isProd ? 'rgba(56, 189, 248, 0.15)' : 'rgba(99, 102, 241, 0.15)',
-                                    color: isProd ? '#38bdf8' : 'var(--accent-bright)'
-                                  }}>
-                                    {isProd ? 'Retail' : 'Bahan'}
-                                  </span>
-                                </td>
-                                <td className="mono" style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{code}</td>
-                                <td style={{ fontWeight: 700, color: '#ffffff' }}>{name}</td>
-                                <td className="mono right" style={{ fontWeight: 700, color: '#38bdf8', fontSize: 13.5 }}>
-                                  {num(it.input_qty || it.qty)}
-                                </td>
-                                <td style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>
-                                  {it.input_unit || it.unit || 'satuan'}
-                                </td>
-                                <td className="mono right" style={{ color: hasConv ? 'var(--accent-bright)' : 'var(--text-muted)', fontSize: 12 }}>
-                                  {hasConv ? `${num(it.qty)} ${it.unit}` : '— (Tetap)'}
-                                </td>
-                                <td style={{ color: 'var(--text-muted)', fontSize: 11.5 }}>
-                                  {it.total_price ? (
-                                    <span>
-                                      <strong style={{ color: '#34d399' }}>{rupiah(it.total_price)}</strong>
-                                      {it.unit_price ? <span style={{ color: '#94a3b8', marginLeft: 4 }}>({rupiah(it.unit_price)}/{it.input_unit || it.unit})</span> : ''}
-                                      {it.notes ? <span style={{ marginLeft: 6 }}>• {it.notes}</span> : ''}
-                                    </span>
-                                  ) : (
-                                    it.notes || '—'
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {/* Sender Notes & Bottom Notice */}
-                    <div style={{
-                      padding: '12px 20px',
-                      background: 'rgba(255,255,255,0.02)',
-                      borderTop: '1px solid var(--border-soft)',
-                      display: 'flex',
-                      flexWrap: 'wrap',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: 12,
-                      fontSize: 12
-                    }}>
-                      <div style={{ color: 'var(--text-secondary)' }}>
-                        {trf.notes ? (
-                          <span>📝 <strong>Catatan Pengirim:</strong> {trf.notes}</span>
-                        ) : (
-                          <span style={{ color: 'var(--text-muted)' }}>Tidak ada catatan khusus pengiriman.</span>
-                        )}
-                      </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#fbbf24', fontSize: 11.5, fontWeight: 600 }}>
-                        <Clock size={14} />
-                        <span>Klik tombol "Approval Receive" di atas jika barang sudah tiba di cabang untuk memasukkannya ke Kartu Stok.</span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+                      return (
+                        <tr
+                          key={trf.id}
+                          onClick={() => setDetailTransitTransfer(trf)}
+                          style={{ cursor: 'pointer' }}
+                          title="Klik untuk melihat detail lengkap pengiriman"
+                        >
+                          <td className="mono" style={{ fontWeight: 700, color: '#fbbf24' }}>
+                            {trf.transfer_no}
+                          </td>
+                          <td className="mono" style={{ fontSize: 12.5 }}>
+                            {trf.date}
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                              <span style={{ fontWeight: 600, color: '#ffffff' }}>{sourceName}</span>
+                              <span style={{
+                                fontSize: 10,
+                                fontWeight: 700,
+                                color: isOnlinePurchase ? '#ff6b4a' : '#93c5fd'
+                              }}>
+                                {isOnlinePurchase ? 'Belanja Online' : 'Transfer Antar-Cabang'}
+                              </span>
+                            </div>
+                          </td>
+                          <td>
+                            <span style={{ fontWeight: 500, color: '#e2e8f0' }}>{destName}</span>
+                          </td>
+                          <td>
+                            <div style={{ fontSize: 12, maxWidth: 260, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              <strong style={{ color: 'var(--accent-bright)' }}>{totalItemCount} item:</strong>{' '}
+                              <span style={{ color: 'var(--text-secondary)' }}>{summaryItems}</span>
+                            </div>
+                          </td>
+                          <td style={{ fontSize: 12 }}>
+                            <div>{trf.driver_name || (isOnlinePurchase ? 'Ekspedisi Online' : 'Kurir Internal')}</div>
+                            {trf.vehicle_no && (
+                              <span className="mono" style={{ fontSize: 11, color: '#fbbf24' }}>
+                                [{trf.vehicle_no}]
+                              </span>
+                            )}
+                          </td>
+                          <td className="center" onClick={e => e.stopPropagation()}>
+                            <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => setDetailTransitTransfer(trf)}
+                                title="Lihat Detail Lengkap"
+                                style={{ padding: '5px 10px', fontSize: 12 }}
+                              >
+                                <Eye size={13} style={{ marginRight: 4 }} />
+                                Detail
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-sm"
+                                onClick={() => openReceiveModal(trf)}
+                                title="Approval Terima & Masuk Stok"
+                                style={{
+                                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                                  color: '#ffffff',
+                                  fontWeight: 700,
+                                  padding: '5px 12px',
+                                  fontSize: 12,
+                                  borderRadius: 6,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 5
+                                }}
+                              >
+                                <PackageCheck size={14} />
+                                Receive
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* MODAL DETAIL PENGIRIMAN PERSEDIAAN DALAM PERJALANAN                       */}
+      {/* ========================================================================= */}
+      {detailTransitTransfer && (() => {
+        const trf = detailTransitTransfer;
+        const isOnlinePurchase = trf.source_type === 'EXTERNAL' || trf.transfer_type === 'INBOUND';
+        const sourceName = trf.source_display_name || trf.source_outlet?.name || trf.source_name || (isOnlinePurchase ? 'Shopee' : 'Cabang Asal');
+        const destName = trf.destination_display_name || trf.destination_outlet?.name || trf.destination_name || currentOutlet?.name || 'Cabang Tujuan';
+
+        return (
+          <div className="modal-overlay" onClick={() => setDetailTransitTransfer(null)}>
+            <div
+              className="modal-content"
+              style={{ maxWidth: 760, width: '92%' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="modal-header">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span className="mono" style={{ fontSize: 16, fontWeight: 800, color: '#fbbf24' }}>
+                    {trf.transfer_no}
+                  </span>
+                  <span style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: 12,
+                    background: isOnlinePurchase ? 'rgba(238, 77, 45, 0.18)' : 'rgba(245, 158, 11, 0.18)',
+                    color: isOnlinePurchase ? '#ff6b4a' : '#f59e0b',
+                    border: `1px solid ${isOnlinePurchase ? 'rgba(238, 77, 45, 0.4)' : 'rgba(245, 158, 11, 0.4)'}`
+                  }}>
+                    {isOnlinePurchase ? `Belanja Online: ${sourceName}` : 'Dalam Perjalanan'}
+                  </span>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    Tanggal Pesan/Kirim: <strong style={{ color: '#ffffff' }}>{trf.date}</strong>
+                  </span>
+                </div>
+                <button className="btn btn-ghost btn-icon" onClick={() => setDetailTransitTransfer(null)}>
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+                {/* Logistics Route Strip */}
+                <div style={{
+                  padding: '12px 14px',
+                  background: 'rgba(0,0,0,0.2)',
+                  borderRadius: 8,
+                  border: '1px solid var(--border-soft)',
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+                  gap: 12,
+                  fontSize: 12,
+                  marginBottom: 16
+                }}>
+                  <div>
+                    <div style={{ fontSize: 10.5, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>
+                      {isOnlinePurchase ? 'Sumber / Marketplace' : 'Cabang Pengirim (Asal)'}
+                    </div>
+                    <div style={{ fontWeight: 700, color: isOnlinePurchase ? '#fbbf24' : '#93c5fd', marginTop: 2 }}>
+                      {sourceName}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: 10.5, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Cabang Penerima (Tujuan)</div>
+                    <div style={{ fontWeight: 700, color: '#c084fc', marginTop: 2 }}>
+                      {destName}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: 10.5, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>
+                      {isOnlinePurchase ? 'Kurir & No. Resi' : 'Kurir / Supir'}
+                    </div>
+                    <div style={{ fontWeight: 600, color: '#ffffff', marginTop: 2 }}>
+                      {trf.driver_name || (isOnlinePurchase ? 'Ekspedisi Online' : 'Kurir Internal')}
+                      {trf.vehicle_no && (
+                        <span className="mono" style={{ color: '#fbbf24', marginLeft: 6 }}>
+                          [{trf.vehicle_no}]
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: 10.5, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Dibuat Oleh</div>
+                    <div style={{ fontWeight: 600, color: 'var(--text-secondary)', marginTop: 2 }}>
+                      {trf.creator?.name || 'Staf Cabang'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Items Table */}
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: '#ffffff' }}>
+                    Daftar Barang & Bahan Dikirim ({trf.items?.length || 0} item):
+                  </div>
+                  <div className="table-wrap" style={{ border: '1px solid var(--border-soft)', borderRadius: 8 }}>
+                    <table style={{ margin: 0 }}>
+                      <thead>
+                        <tr>
+                          <th style={{ width: 45, textAlign: 'center' }}>No</th>
+                          <th style={{ width: 80 }}>Tipe</th>
+                          <th style={{ width: 90 }}>Kode</th>
+                          <th>Nama Barang / Bahan</th>
+                          <th className="right" style={{ width: 110 }}>Qty Dikirim</th>
+                          <th style={{ width: 80 }}>Satuan</th>
+                          <th className="right" style={{ width: 140 }}>Konversi Masuk</th>
+                          <th>Catatan Item</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(trf.items || []).map((it, idx) => {
+                          const isProd = it.item_type === 'PRODUCT';
+                          const name = isProd ? (it.menu?.name || it.item_name || 'Produk Retail') : (it.ingredient?.name || it.item_name || 'Bahan Baku');
+                          const code = isProd ? (it.menu?.code || 'PRD') : (it.ingredient?.code || 'BB');
+                          const hasConv = !isProd && it.input_unit && it.unit && it.input_unit.toLowerCase() !== it.unit.toLowerCase();
+
+                          return (
+                            <tr key={it.id || idx}>
+                              <td style={{ textAlign: 'center', color: 'var(--text-muted)' }}>{idx + 1}</td>
+                              <td>
+                                <span style={{
+                                  fontSize: 10.5,
+                                  fontWeight: 700,
+                                  padding: '2px 7px',
+                                  borderRadius: 4,
+                                  background: isProd ? 'rgba(56, 189, 248, 0.15)' : 'rgba(99, 102, 241, 0.15)',
+                                  color: isProd ? '#38bdf8' : 'var(--accent-bright)'
+                                }}>
+                                  {isProd ? 'Retail' : 'Bahan'}
+                                </span>
+                              </td>
+                              <td className="mono" style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{code}</td>
+                              <td style={{ fontWeight: 700, color: '#ffffff' }}>{name}</td>
+                              <td className="mono right" style={{ fontWeight: 700, color: '#38bdf8', fontSize: 13 }}>
+                                {num(it.input_qty || it.qty)}
+                              </td>
+                              <td style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>
+                                {it.input_unit || it.unit || 'satuan'}
+                              </td>
+                              <td className="mono right" style={{ color: hasConv ? 'var(--accent-bright)' : 'var(--text-muted)', fontSize: 12 }}>
+                                {hasConv ? `${num(it.qty)} ${it.unit}` : '—'}
+                              </td>
+                              <td style={{ color: 'var(--text-muted)', fontSize: 11.5 }}>
+                                {it.total_price ? (
+                                  <span>
+                                    <strong style={{ color: '#34d399' }}>{rupiah(it.total_price)}</strong>
+                                    {it.unit_price ? <span style={{ color: '#94a3b8', marginLeft: 4 }}>({rupiah(it.unit_price)}/{it.input_unit || it.unit})</span> : ''}
+                                    {it.notes ? <span style={{ marginLeft: 6 }}>• {it.notes}</span> : ''}
+                                  </span>
+                                ) : (
+                                  it.notes || '—'
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Sender Notes */}
+                {trf.notes && (
+                  <div style={{
+                    padding: '10px 14px',
+                    borderRadius: 8,
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    border: '1px solid var(--border-soft)',
+                    fontSize: 12,
+                    color: 'var(--text-secondary)'
+                  }}>
+                    <strong>Catatan Pengirim:</strong> {trf.notes}
+                  </div>
+                )}
+              </div>
+
+              <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setDetailTransitTransfer(null)}
+                >
+                  Tutup
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    setDetailTransitTransfer(null);
+                    openReceiveModal(trf);
+                  }}
+                  style={{
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    color: '#ffffff',
+                    fontWeight: 800,
+                    padding: '8px 18px',
+                    fontSize: 13,
+                    borderRadius: 8,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 7,
+                    boxShadow: '0 3px 12px rgba(16, 185, 129, 0.35)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <PackageCheck size={16} />
+                  <span>Approval Receive (Terima & Masuk Stok)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ========================================================================= */}
       {/* MODAL APPROVAL RECEIVE: VERIFIKASI & MASUKKAN STOK KE GUDANG               */}
@@ -2157,7 +2248,7 @@ export default function KartuStok() {
                     >
                       {outlets.map(o => (
                         <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
-                          {o.is_main ? '🏢 ' : '📍 '} {o.name}
+                          {o.name} {o.is_main ? '(Pusat)' : ''}
                         </option>
                       ))}
                     </select>
@@ -2174,7 +2265,7 @@ export default function KartuStok() {
                       alignItems: 'center',
                       justifyContent: 'space-between'
                     }}>
-                      <span>📍 {currentOutlet?.name || userOutletName || 'Cabang Penempatan'}</span>
+                      <span>{currentOutlet?.name || userOutletName || 'Cabang Penempatan'}</span>
                       <span style={{ fontSize: 10.5, color: 'var(--ok)', background: 'rgba(16, 217, 122, 0.15)', padding: '2px 6px', borderRadius: 4 }}>
                         Terkunci
                       </span>
@@ -2404,7 +2495,7 @@ export default function KartuStok() {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
                       <div>
                         <label className="form-label" style={{ color: '#34d399', fontWeight: 800, fontSize: 12, margin: '0 0 5px 0' }}>
-                          💵 Total Nota (Rp)
+                          Total Nota (Rp)
                         </label>
                         <input
                           type="number"
@@ -2463,14 +2554,14 @@ export default function KartuStok() {
                             </div>
                           </div>
                           <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>💡 Hasil Pembagian:</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Hasil Pembagian:</div>
                             <div className="mono" style={{ fontSize: 13, fontWeight: 700, color: '#38bdf8', marginTop: 2 }}>
                               {rupiah(mutationForm.unit_price || (Number(mutationForm.total_price) / Number(mutationForm.qty)))} / {mutationForm.unit_type === 'BELI' ? (activeModalIng?.unit_beli || 'unit') : (activeModalIng?.unit_pakai || 'unit')}
                             </div>
                           </div>
                         </div>
                         <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 6, borderTop: '1px dashed rgba(255,255,255,0.1)', paddingTop: 6 }}>
-                          ⚡ HPP Moving Average akan dihitung ulang secara otomatis oleh sistem saat mutasi disimpan.
+                          HPP Moving Average akan dihitung ulang secara otomatis oleh sistem saat mutasi disimpan.
                         </div>
                       </div>
                     )}
@@ -2544,7 +2635,7 @@ export default function KartuStok() {
                   <Check size={14} /> {saving
                     ? 'Menyimpan...'
                     : (mutationForm.type === 'PURCHASE' && mutationForm.is_in_transit)
-                      ? '🚚 Simpan ke Persediaan Dalam Perjalanan'
+                      ? 'Simpan ke Persediaan Dalam Perjalanan'
                       : 'Simpan Mutasi'}
                 </button>
               </div>
