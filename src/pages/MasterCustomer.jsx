@@ -713,7 +713,7 @@ export default function MasterCustomer() {
                   />
                 </div>
 
-                {/* Phone (WA) & Code */}
+                {/* Phone (WA) & Code Member (Auto-Generated) */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: 12 }}>
                   <div>
                     <label className="form-label" style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
@@ -730,15 +730,23 @@ export default function MasterCustomer() {
                   </div>
                   <div>
                     <label className="form-label" style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
-                      Kode Member (Opsional)
+                      Kode Member
                     </label>
-                    <input
-                      type="text"
-                      className="form-control mono"
-                      placeholder="Auto: MBR-XXXX"
-                      value={form.code}
-                      onChange={e => setForm({ ...form, code: e.target.value })}
-                    />
+                    <div style={{
+                      height: 38,
+                      display: 'flex',
+                      alignItems: 'center',
+                      padding: '0 12px',
+                      borderRadius: 8,
+                      background: 'rgba(255, 255, 255, 0.04)',
+                      border: '1px dashed rgba(99, 102, 241, 0.4)',
+                      color: editingCustomer ? '#a5b4fc' : '#34d399',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      fontFamily: 'monospace'
+                    }}>
+                      {editingCustomer ? (form.code || 'MBR-XXXX') : 'Otomatis Sistem (MBR-XXXX)'}
+                    </div>
                   </div>
                 </div>
 
