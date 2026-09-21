@@ -1430,7 +1430,7 @@ export default function TransferBahan() {
                             style={{ marginTop: 2 }}
                           />
                           <div>
-                            <div style={{ fontSize: 12, fontWeight: 700, color: '#ffffff' }}>↩️ Kembalikan ke Cabang Asal</div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: '#ffffff' }}>Kembalikan ke Cabang Asal</div>
                             <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>
                               Barang ditolak & dibawa pulang kurir. Stok cabang asal dipulihkan.
                             </div>
@@ -1586,7 +1586,7 @@ export default function TransferBahan() {
                     }}
                   >
                     <div style={{ fontWeight: 700, fontSize: 13, color: '#818cf8', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <RotateCcw size={15} /> ↩️ Retur ke Cabang Asal
+                      <RotateCcw size={15} /> Retur ke Cabang Asal
                     </div>
                     <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
                       Barang dikembalikan & stok <strong>dipulihkan ke inventaris cabang pengirim</strong> ({returnTargetTransfer.source_display_name}).
@@ -2390,9 +2390,9 @@ export default function TransferBahan() {
               {/* Audit Return Info if returned */}
               {selectedTransfer.returned_at && (
                 <div style={{ fontSize: 11.5, color: '#991b1b', padding: '8px 12px', background: '#fef2f2', borderRadius: 6, border: '1px solid #fecaca', marginBottom: 14 }}>
-                  ⚠️ <strong>Pencatatan Retur Barang:</strong> {new Date(selectedTransfer.returned_at).toLocaleString('id-ID')} oleh <strong>{selectedTransfer.returned_by_name || 'Petugas Retur'}</strong>
+                  <strong>Pencatatan Retur Barang:</strong> {new Date(selectedTransfer.returned_at).toLocaleString('id-ID')} oleh <strong>{selectedTransfer.returned_by_name || 'Petugas Retur'}</strong>
                   <div style={{ marginTop: 2 }}>
-                    <strong>Alasan Utama:</strong> {selectedTransfer.return_reason || '—'} · <strong>Disposisi:</strong> {selectedTransfer.return_disposition === 'RECORD_AS_WASTE' ? '💥 Kerugian Waste (Barang Rusak)' : '↩️ Retur ke Cabang Asal'}
+                    <strong>Alasan Utama:</strong> {selectedTransfer.return_reason || '—'} · <strong>Disposisi:</strong> {selectedTransfer.return_disposition === 'RECORD_AS_WASTE' ? 'Kerugian Waste (Barang Rusak)' : 'Retur ke Cabang Asal'}
                   </div>
                   {selectedTransfer.return_notes && <div style={{ marginTop: 2 }}><strong>Catatan Retur:</strong> {selectedTransfer.return_notes}</div>}
                 </div>

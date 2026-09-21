@@ -1,35 +1,18 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import {
-  Layers, Package, Plus, Edit2, Trash2, CheckCircle2, Search,
-  Coffee, ChefHat, Sparkles, ShoppingBag, ArrowRight, UtensilsCrossed,
-  Tag, Box, Info, Check, RefreshCw, X, AlertCircle, ShieldCheck
-} from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import { rupiah, num, LoadingState, PageHeader } from '../components/ui';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 
-const PRESET_ICONS = [
-  { id: 'Package', label: 'Perlengkapan / Box', icon: Package },
-  { id: 'Layers', label: 'Bahan Baku (Layers)', icon: Layers },
-  { id: 'ChefHat', label: 'Olahan / Dapur', icon: ChefHat },
-  { id: 'Coffee', label: 'Minuman / Dairy', icon: Coffee },
-  { id: 'Sparkles', label: 'Bumbu / Sirup', icon: Sparkles },
-  { id: 'ShoppingBag', label: 'Packaging / Tas', icon: ShoppingBag },
-  { id: 'Tag', label: 'Label / Tag', icon: Tag },
-  { id: 'Box', label: 'Stok Kontainer', icon: Box },
-];
-
 const PRESET_COLORS = [
-  { hex: '#00B14F', label: 'Grab / Hijau Segar' },
-  { hex: '#3B82F6', label: 'Biru Modern' },
-  { hex: '#8B5CF6', label: 'Ungu Elegan' },
-  { hex: '#F59E0B', label: 'Amber / Hangat' },
-  { hex: '#EC4899', label: 'Pink Ceria' },
-  { hex: '#06B6D4', label: 'Cyan / Teal' },
-  { hex: '#10B981', label: 'Emerald' },
-  { hex: '#6366F1', label: 'Indigo' },
+  { hex: '#00B14F', label: 'Hijau (Perlengkapan)' },
+  { hex: '#3B82F6', label: 'Biru (Bahan Baku)' },
+  { hex: '#8B5CF6', label: 'Ungu (Bahan Olahan)' },
+  { hex: '#F59E0B', label: 'Amber (Dairy / Minuman)' },
+  { hex: '#EC4899', label: 'Pink (Bumbu / Sirup)' },
+  { hex: '#06B6D4', label: 'Cyan (Packaging)' },
+  { hex: '#64748B', label: 'Abu-abu (Umum)' },
 ];
 
 const QUICK_SUPPLIES = [
@@ -95,7 +78,7 @@ const QUICK_SUPPLIES = [
   },
   {
     code: 'PAPER-BAG',
-    name: 'Paper Bag / Takeaway Bag',
+    name: 'Paper Bag / Kantong',
     category: 'Perlengkapan',
     type: 'RAW',
     unit_beli: 'Pack',
@@ -106,11 +89,6 @@ const QUICK_SUPPLIES = [
     stok_min: 50,
   },
 ];
-
-function getCategoryIconComponent(iconName) {
-  const found = PRESET_ICONS.find(i => i.id === iconName);
-  return found ? found.icon : Package;
-}
 
 export default function KategoriStok() {
   const navigate = useNavigate();
@@ -129,7 +107,6 @@ export default function KategoriStok() {
     name: '',
     type: 'INGREDIENT',
     color: '#00B14F',
-    icon: 'Package',
     sort_order: 1,
   });
   const [submitting, setSubmitting] = useState(false);
@@ -153,31 +130,27 @@ export default function KategoriStok() {
       setCategories(catRes.data || []);
       setIngredients(ingRes.data || []);
 
-      // Auto-select Perlengkapan if available, otherwise first category
       if (!selectedCategory && (catRes.data || []).length > 0) {
         const perlengkapan = catRes.data.find(c => c.name.toLowerCase().includes('perlengkapan'));
         setSelectedCategory(perlengkapan ? perlengkapan.id : catRes.data[0].id);
       }
     } catch {
-      toast.error('Gagal memuat kategori stok & bahan');
+      toast.error('Gagal memuat kategori stok');
     } finally {
       setLoading(false);
     }
   }
 
-  // Filtered categories
   const filteredCategories = useMemo(() => {
     if (!search.trim()) return categories;
     const q = search.toLowerCase();
     return categories.filter(c => c.name.toLowerCase().includes(q));
   }, [categories, search]);
 
-  // Active Category Object
   const currentCategoryObj = useMemo(() => {
     return categories.find(c => c.id === selectedCategory) || categories[0] || null;
   }, [categories, selectedCategory]);
 
-  // Ingredients under the active selected category
   const activeIngredients = useMemo(() => {
     if (!currentCategoryObj) return [];
     return ingredients.filter(i => {
@@ -186,27 +159,23 @@ export default function KategoriStok() {
     });
   }, [ingredients, currentCategoryObj]);
 
-  // Stats calculation
   const totalCategoriesCount = categories.length;
   const totalIngredientsCount = ingredients.length;
   const perlengkapanCount = useMemo(() => {
     return ingredients.filter(i => (i.category || '').toLowerCase().includes('perlengkapan')).length;
   }, [ingredients]);
 
-  // Open modal to add category
   function handleOpenAddModal() {
     setEditingCategory(null);
     setFormData({
       name: '',
       type: 'INGREDIENT',
       color: '#00B14F',
-      icon: 'Package',
       sort_order: categories.length + 1,
     });
     setModalOpen(true);
   }
 
-  // Open modal to edit category
   function handleOpenEditModal(cat, e) {
     e?.stopPropagation();
     setEditingCategory(cat);
@@ -214,13 +183,11 @@ export default function KategoriStok() {
       name: cat.name,
       type: cat.type || 'INGREDIENT',
       color: cat.color || '#00B14F',
-      icon: cat.icon || 'Package',
       sort_order: cat.sort_order ?? 1,
     });
     setModalOpen(true);
   }
 
-  // Save Category
   async function handleSaveCategory(e) {
     e.preventDefault();
     if (!formData.name.trim()) {
@@ -232,10 +199,10 @@ export default function KategoriStok() {
     try {
       if (editingCategory) {
         const { data } = await api.put(`/categories/${editingCategory.id}`, formData);
-        toast.success(`Kategori "${data.name}" berhasil diperbarui!`);
+        toast.success(`Kategori "${data.name}" berhasil diperbarui`);
       } else {
         const { data } = await api.post('/categories', formData);
-        toast.success(`Kategori "${data.name}" berhasil ditambahkan!`);
+        toast.success(`Kategori "${data.name}" berhasil ditambahkan`);
         setSelectedCategory(data.id);
       }
       setModalOpen(false);
@@ -247,11 +214,10 @@ export default function KategoriStok() {
     }
   }
 
-  // Delete Category
   async function handleDeleteCategory(cat, e) {
     e?.stopPropagation();
     if ((cat.ingredients_count || 0) > 0) {
-      toast.error(`Kategori "${cat.name}" masih memiliki ${cat.ingredients_count} item bahan/perlengkapan aktif!`);
+      toast.error(`Kategori "${cat.name}" masih memiliki ${cat.ingredients_count} item stok aktif.`);
       return;
     }
 
@@ -269,11 +235,10 @@ export default function KategoriStok() {
     }
   }
 
-  // Quick Supply submit
   async function handleSaveSupply(e) {
     e.preventDefault();
     if (!supplyForm.name || !supplyForm.code) {
-      toast.error('Kode dan nama perlengkapan wajib diisi!');
+      toast.error('Kode dan nama item wajib diisi');
       return;
     }
 
@@ -290,7 +255,7 @@ export default function KategoriStok() {
       };
 
       const { data } = await api.post('/ingredients', payload);
-      toast.success(`Perlengkapan "${data.name}" berhasil ditambahkan & siap masuk ke resep!`);
+      toast.success(`Item "${data.name}" berhasil disimpan`);
       setSuppliesModalOpen(false);
       fetchAll();
     } catch (err) {
@@ -301,261 +266,188 @@ export default function KategoriStok() {
   }
 
   return (
-    <div className="page-container" style={{ maxWidth: 1280, margin: '0 auto', paddingBottom: 60 }}>
-      {/* Top Header */}
+    <div className="page-container" style={{ maxWidth: 1200, margin: '0 auto', paddingBottom: 60 }}>
+      {/* Page Header */}
       <PageHeader
         title="Kategori Stok & Perlengkapan"
-        subtitle="Kelola klasifikasi stok bahan mentah, olahan, dan perlengkapan (cup, pipet, tissue) yang otomatis terintegrasi ke resep menu & kalkulasi HPP."
+        subtitle="Kelola klasifikasi stok bahan dan perlengkapan (cup, pipet, tissue). Seluruh item dapat langsung digunakan pada Resep Menu."
         breadcrumb={[
           { label: 'Master Bisnis' },
           { label: 'Kategori Stok' }
         ]}
       />
 
-      {/* Hero Banner: Recipe Integration Notice */}
+      {/* Clear Text Notice Banner */}
       <div style={{
-        background: 'linear-gradient(135deg, rgba(0, 177, 79, 0.12) 0%, rgba(59, 130, 246, 0.08) 100%)',
-        border: '1px solid rgba(0, 177, 79, 0.28)',
-        borderRadius: 14,
-        padding: '16px 20px',
+        background: 'rgba(255, 255, 255, 0.03)',
+        border: '1px solid var(--border)',
+        borderRadius: 10,
+        padding: '14px 18px',
         marginBottom: 20,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         flexWrap: 'wrap',
-        gap: 16
+        gap: 12
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={{
-            width: 44,
-            height: 44,
-            borderRadius: 12,
-            background: 'linear-gradient(135deg, #00B14F 0%, #00873c 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#fff',
-            boxShadow: '0 4px 14px rgba(0, 177, 79, 0.3)',
-            flexShrink: 0
-          }}>
-            <Package size={22} />
+        <div>
+          <div style={{ fontSize: 13.5, fontWeight: 700, color: '#ffffff' }}>
+            Integrasi Resep Menu & Pengurangan Stok Otomatis
           </div>
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span>Perlengkapan (Cup, Pipet, Tissue) Otomatis Terhubung ke Resep Menu</span>
-              <span className="badge badge-success" style={{ fontSize: 10.5, background: '#00B14F', color: '#fff' }}>
-                ✓ AKTIF DI RESEP
-              </span>
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2, maxWidth: 760 }}>
-              Semua item perlengkapan yang didaftarkan di sini otomatis muncul di modul <strong>Master Menu & Resep</strong>.
-              Saat kasir menyelesaikan transaksi penjualan, stok cup, sedotan/pipet, atau tissue akan otomatis terpotong sesuai takaran resep menu!
-            </div>
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+            Item dalam kategori Perlengkapan (cup, pipet/sedotan, tissue) otomatis dapat dipilih saat meracik resep di Master Menu. Stok akan otomatis terpotong saat pesanan diselesaikan di kasir.
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 8 }}>
           <button
             type="button"
             className="btn btn-secondary btn-sm"
             onClick={() => setSuppliesModalOpen(true)}
-            style={{ fontWeight: 700, borderColor: 'rgba(0, 177, 79, 0.4)', color: '#10d97a' }}
+            style={{ fontWeight: 600 }}
           >
-            <Plus size={14} /> Tambah Perlengkapan Cepat
+            + Tambah Perlengkapan Cepat
           </button>
           <button
             type="button"
             className="btn btn-primary btn-sm"
             onClick={() => navigate('/menu')}
-            style={{ fontWeight: 700 }}
+            style={{ fontWeight: 600 }}
           >
-            <UtensilsCrossed size={14} /> Buka Resep Menu <ArrowRight size={14} />
+            Buka Resep Menu
           </button>
         </div>
       </div>
 
-      {/* Key Metric Stats Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 24 }}>
-        <div className="card" style={{ padding: '14px 18px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 12 }}>
-          <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>
+      {/* Clean Metric Bar */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 20 }}>
+        <div className="card" style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: 8 }}>
+          <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>
             Total Kategori Stok
           </div>
-          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 4 }}>
-            <span className="mono" style={{ fontSize: 24, fontWeight: 800, color: '#ffffff' }}>
-              {totalCategoriesCount}
-            </span>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Klasifikasi</span>
+          <div className="mono" style={{ fontSize: 20, fontWeight: 800, color: '#ffffff', marginTop: 4 }}>
+            {totalCategoriesCount} <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)' }}>kategori</span>
           </div>
         </div>
 
-        <div className="card" style={{ padding: '14px 18px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 12 }}>
-          <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>
+        <div className="card" style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: 8 }}>
+          <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>
             Total Item Stok & Bahan
           </div>
-          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 4 }}>
-            <span className="mono" style={{ fontSize: 24, fontWeight: 800, color: '#38bdf8' }}>
-              {totalIngredientsCount}
-            </span>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Item Terdaftar</span>
+          <div className="mono" style={{ fontSize: 20, fontWeight: 800, color: '#ffffff', marginTop: 4 }}>
+            {totalIngredientsCount} <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)' }}>item</span>
           </div>
         </div>
 
-        <div className="card" style={{ padding: '14px 18px', background: 'rgba(0, 177, 79, 0.08)', border: '1px solid rgba(0, 177, 79, 0.25)', borderRadius: 12 }}>
-          <div style={{ fontSize: 11, color: '#10d97a', fontWeight: 700, textTransform: 'uppercase' }}>
-            Item Perlengkapan (Cup/Pipet/Tissue)
+        <div className="card" style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: 8 }}>
+          <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>
+            Item Perlengkapan Terdaftar
           </div>
-          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 4 }}>
-            <span className="mono" style={{ fontSize: 24, fontWeight: 800, color: '#00B14F' }}>
-              {perlengkapanCount}
-            </span>
-            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Item Aktif</span>
-          </div>
-        </div>
-
-        <div className="card" style={{ padding: '14px 18px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 12 }}>
-          <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>
-            Status Resep Menu
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
-            <ShieldCheck size={18} color="#10b981" />
-            <span style={{ fontSize: 13, fontWeight: 700, color: '#10b981' }}>
-              100% Siap Digunakan
-            </span>
+          <div className="mono" style={{ fontSize: 20, fontWeight: 800, color: '#10d97a', marginTop: 4 }}>
+            {perlengkapanCount} <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)' }}>item (cup/pipet/tissue)</span>
           </div>
         </div>
       </div>
 
-      {/* Main Content Layout: Categories Grid + Detail Items View */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 420px) 1fr', gap: 20, alignItems: 'start' }}>
-        {/* Left Column: Categories List & Action */}
-        <div className="card" style={{ padding: 18, borderRadius: 14, border: '1px solid var(--border)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-            <div>
-              <h3 style={{ fontSize: 15, fontWeight: 800, color: '#ffffff', margin: 0 }}>Daftar Kategori</h3>
-              <p style={{ fontSize: 11.5, color: 'var(--text-secondary)', margin: '2px 0 0' }}>
-                Pilih kategori untuk melihat atau menambah item bahan/perlengkapan.
-              </p>
-            </div>
+      {/* Main Two-Column Layout */}
+      <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 18, alignItems: 'start' }}>
+        {/* Left Column: Categories List */}
+        <div className="card" style={{ padding: 14, borderRadius: 10, border: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#ffffff' }}>Kategori</span>
             <button
               type="button"
-              className="btn btn-primary btn-sm"
+              className="btn btn-primary btn-xs"
               onClick={handleOpenAddModal}
-              style={{ fontWeight: 700, gap: 4 }}
+              style={{ fontWeight: 600 }}
             >
-              <Plus size={14} /> Kategori Baru
+              + Kategori
             </button>
           </div>
 
           {/* Search Category */}
-          <div style={{ position: 'relative', marginBottom: 12 }}>
-            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-            <input
-              type="text"
-              className="form-control"
-              placeholder="Cari nama kategori..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              style={{ paddingLeft: 32, fontSize: 12, height: 34, borderRadius: 8 }}
-            />
-          </div>
+          <input
+            type="text"
+            className="form-control"
+            placeholder="Cari kategori..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{ fontSize: 12, height: 32, marginBottom: 10, borderRadius: 6 }}
+          />
 
-          {/* Category Cards List */}
+          {/* Category List */}
           {loading ? (
-            <div style={{ padding: '30px 0' }}><LoadingState /></div>
+            <div style={{ padding: '20px 0' }}><LoadingState /></div>
           ) : filteredCategories.length === 0 ? (
-            <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
-              Tidak ada kategori yang sesuai.
+            <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+              Tidak ada kategori.
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {filteredCategories.map(cat => {
                 const isSelected = selectedCategory === cat.id;
-                const IconComponent = getCategoryIconComponent(cat.icon);
                 const accentColor = cat.color || '#3b82f6';
-                const isPerlengkapan = cat.name.toLowerCase().includes('perlengkapan');
 
                 return (
                   <div
                     key={cat.id}
                     onClick={() => setSelectedCategory(cat.id)}
                     style={{
-                      padding: '12px 14px',
-                      borderRadius: 10,
+                      padding: '10px 12px',
+                      borderRadius: 8,
                       cursor: 'pointer',
                       border: '1px solid',
                       borderColor: isSelected ? accentColor : 'var(--border)',
-                      background: isSelected
-                        ? `linear-gradient(135deg, ${accentColor}18 0%, rgba(255,255,255,0.02) 100%)`
-                        : 'rgba(255, 255, 255, 0.02)',
+                      background: isSelected ? 'rgba(255,255,255,0.06)' : 'rgba(255, 255, 255, 0.01)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
-                      transition: 'all 0.15s ease',
-                      boxShadow: isSelected ? `0 4px 12px ${accentColor}25` : 'none'
+                      transition: 'border-color 0.15s ease'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <div style={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: 10,
-                        background: `${accentColor}20`,
-                        border: `1px solid ${accentColor}40`,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: accentColor,
-                        flexShrink: 0
-                      }}>
-                        <IconComponent size={18} />
-                      </div>
-
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span
+                        style={{
+                          width: 10,
+                          height: 10,
+                          borderRadius: '50%',
+                          background: accentColor,
+                          flexShrink: 0
+                        }}
+                      />
                       <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ fontSize: 13.5, fontWeight: 700, color: '#ffffff' }}>
-                            {cat.name}
-                          </span>
-                          {isPerlengkapan && (
-                            <span style={{
-                              fontSize: 9.5,
-                              padding: '1px 6px',
-                              borderRadius: 4,
-                              background: 'rgba(0, 177, 79, 0.18)',
-                              border: '1px solid rgba(0, 177, 79, 0.35)',
-                              color: '#10d97a',
-                              fontWeight: 800
-                            }}>
-                              UTAMA
-                            </span>
-                          )}
+                        <div style={{ fontSize: 13, fontWeight: isSelected ? 700 : 500, color: '#ffffff' }}>
+                          {cat.name}
                         </div>
-                        <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
-                          <span className="mono" style={{ color: accentColor, fontWeight: 700 }}>
-                            {cat.ingredients_count || 0}
-                          </span> item stok terhubung
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                          {cat.ingredients_count || 0} item stok
                         </div>
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                       <button
                         type="button"
-                        className="btn btn-ghost btn-icon"
+                        className="btn btn-ghost btn-xs"
                         onClick={(e) => handleOpenEditModal(cat, e)}
-                        title="Edit Kategori"
-                        style={{ width: 28, height: 28, padding: 0 }}
+                        style={{ fontSize: 11, padding: '2px 6px', color: 'var(--text-secondary)' }}
                       >
-                        <Edit2 size={13} style={{ color: 'var(--text-secondary)' }} />
+                        Edit
                       </button>
                       <button
                         type="button"
-                        className="btn btn-ghost btn-icon"
+                        className="btn btn-ghost btn-xs"
                         onClick={(e) => handleDeleteCategory(cat, e)}
-                        title={(cat.ingredients_count || 0) > 0 ? "Kategori tidak dapat dihapus karena memiliki item stok" : "Hapus Kategori"}
                         disabled={(cat.ingredients_count || 0) > 0}
-                        style={{ width: 28, height: 28, padding: 0, opacity: (cat.ingredients_count || 0) > 0 ? 0.3 : 1 }}
+                        style={{
+                          fontSize: 11,
+                          padding: '2px 6px',
+                          color: (cat.ingredients_count || 0) > 0 ? 'var(--text-muted)' : '#f87171',
+                          opacity: (cat.ingredients_count || 0) > 0 ? 0.35 : 1
+                        }}
+                        title={(cat.ingredients_count || 0) > 0 ? "Kategori tidak dapat dihapus karena memiliki item stok" : "Hapus Kategori"}
                       >
-                        <Trash2 size={13} style={{ color: '#f87171' }} />
+                        Hapus
                       </button>
                     </div>
                   </div>
@@ -565,8 +457,8 @@ export default function KategoriStok() {
           )}
         </div>
 
-        {/* Right Column: Items under selected category */}
-        <div className="card" style={{ padding: 18, borderRadius: 14, border: '1px solid var(--border)' }}>
+        {/* Right Column: Items in selected category */}
+        <div className="card" style={{ padding: 16, borderRadius: 10, border: '1px solid var(--border)' }}>
           {currentCategoryObj ? (
             <div>
               {/* Category Header */}
@@ -574,41 +466,28 @@ export default function KategoriStok() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                paddingBottom: 14,
+                paddingBottom: 12,
                 borderBottom: '1px solid var(--border)',
-                marginBottom: 16,
+                marginBottom: 14,
                 flexWrap: 'wrap',
-                gap: 10
+                gap: 8
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{
-                    width: 38,
-                    height: 38,
-                    borderRadius: 10,
-                    background: `${currentCategoryObj.color || '#00B14F'}20`,
-                    border: `1px solid ${currentCategoryObj.color || '#00B14F'}40`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: currentCategoryObj.color || '#00B14F'
-                  }}>
-                    {(() => {
-                      const IconC = getCategoryIconComponent(currentCategoryObj.icon);
-                      return <IconC size={20} />;
-                    })()}
-                  </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span
+                    style={{
+                      width: 12,
+                      height: 12,
+                      borderRadius: '50%',
+                      background: currentCategoryObj.color || '#00B14F'
+                    }}
+                  />
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <h2 style={{ fontSize: 16, fontWeight: 800, color: '#ffffff', margin: 0 }}>
-                        {currentCategoryObj.name}
-                      </h2>
-                      <span className="badge badge-neutral" style={{ fontSize: 11 }}>
-                        {activeIngredients.length} item stok
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-                      Item dalam kategori ini otomatis tersedia untuk dipilih dalam <strong>Resep Menu</strong>.
-                    </div>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: '#ffffff' }}>
+                      {currentCategoryObj.name}
+                    </span>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 8 }}>
+                      ({activeIngredients.length} item)
+                    </span>
                   </div>
                 </div>
 
@@ -618,18 +497,18 @@ export default function KategoriStok() {
                       type="button"
                       className="btn btn-secondary btn-sm"
                       onClick={() => setSuppliesModalOpen(true)}
-                      style={{ fontWeight: 700, borderColor: 'rgba(0, 177, 79, 0.4)', color: '#10d97a' }}
+                      style={{ fontWeight: 600 }}
                     >
-                      <Plus size={14} /> Tambah Cup/Pipet/Tissue
+                      + Tambah Cup / Pipet / Tissue
                     </button>
                   )}
                   <button
                     type="button"
                     className="btn btn-outline btn-sm"
                     onClick={() => navigate('/bahan')}
-                    style={{ fontWeight: 700 }}
+                    style={{ fontWeight: 600 }}
                   >
-                    <Package size={14} /> Buka Master Bahan
+                    Buka Master Bahan
                   </button>
                 </div>
               </div>
@@ -637,38 +516,35 @@ export default function KategoriStok() {
               {/* Items Table */}
               {activeIngredients.length === 0 ? (
                 <div style={{
-                  padding: '40px 20px',
+                  padding: '36px 16px',
                   textAlign: 'center',
-                  background: 'rgba(0,0,0,0.15)',
-                  borderRadius: 12,
+                  background: 'rgba(0,0,0,0.1)',
+                  borderRadius: 8,
                   border: '1px dashed var(--border)'
                 }}>
-                  <Package size={36} style={{ margin: '0 auto 10px', color: 'var(--text-muted)' }} />
-                  <div style={{ fontSize: 14, fontWeight: 700, color: '#ffffff' }}>
-                    Belum Ada Item di Kategori "{currentCategoryObj.name}"
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#ffffff' }}>
+                    Belum ada item di kategori "{currentCategoryObj.name}"
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, maxWidth: 460, margin: '4px auto 14px' }}>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4, marginBottom: 14 }}>
                     {currentCategoryObj.name.toLowerCase().includes('perlengkapan')
-                      ? 'Daftarkan perlengkapan seperti Cup Plastik, Sedotan/Pipet, atau Tissue agar otomatis terhitung saat peracikan resep menu.'
-                      : 'Tambahkan bahan atau stok yang tergolong dalam kategori ini dari Master Bahan.'}
+                      ? 'Daftarkan cup, pipet/sedotan, atau tissue agar otomatis terhitung di resep menu.'
+                      : 'Tambahkan bahan baku atau stok ke kategori ini melalui Master Bahan.'}
                   </div>
                   {currentCategoryObj.name.toLowerCase().includes('perlengkapan') ? (
                     <button
                       type="button"
                       className="btn btn-primary btn-sm"
                       onClick={() => setSuppliesModalOpen(true)}
-                      style={{ fontWeight: 700 }}
                     >
-                      <Plus size={14} /> Daftarkan Cup, Pipet & Tissue Sekarang
+                      + Tambah Cup, Pipet & Tissue
                     </button>
                   ) : (
                     <button
                       type="button"
                       className="btn btn-primary btn-sm"
                       onClick={() => navigate('/bahan')}
-                      style={{ fontWeight: 700 }}
                     >
-                      <Plus size={14} /> Tambah Bahan Baru
+                      + Tambah Bahan
                     </button>
                   )}
                 </div>
@@ -683,7 +559,7 @@ export default function KategoriStok() {
                         <th className="right">Harga Beli</th>
                         <th className="right">Biaya / Takaran</th>
                         <th className="right">Stok Fisik</th>
-                        <th className="center">Status Resep</th>
+                        <th className="center">Resep</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -695,28 +571,28 @@ export default function KategoriStok() {
                               {ing.code}
                             </td>
                             <td>
-                              <div style={{ fontWeight: 700, color: '#ffffff' }}>{ing.name}</div>
+                              <div style={{ fontWeight: 600, color: '#ffffff' }}>{ing.name}</div>
                               <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
-                                {ing.type === 'SEMI_FINISHED' ? '🟣 Olahan (Batch Prep)' : '🟢 Bahan Mentah / Perlengkapan'}
+                                {ing.type === 'SEMI_FINISHED' ? 'Bahan Olahan' : 'Bahan Mentah / Kemasan'}
                               </div>
                             </td>
                             <td>
-                              <span className="mono" style={{ fontWeight: 600 }}>1 {ing.unit_beli}</span>
+                              <span className="mono">1 {ing.unit_beli}</span>
                               <span style={{ color: 'var(--text-muted)', margin: '0 4px' }}>=</span>
                               <span className="mono" style={{ color: 'var(--text-secondary)' }}>{ing.konversi} {ing.unit_pakai}</span>
                             </td>
-                            <td className="mono right" style={{ fontWeight: 600 }}>
+                            <td className="mono right">
                               {rupiah(ing.harga)}
                             </td>
-                            <td className="mono right" style={{ color: '#10d97a', fontWeight: 700 }}>
+                            <td className="mono right" style={{ color: '#10d97a', fontWeight: 600 }}>
                               {rupiah(costPerPakai)} / {ing.unit_pakai}
                             </td>
-                            <td className="mono right" style={{ fontWeight: 800, color: (ing.current_stock ?? 0) <= (ing.current_stok_min ?? 0) ? '#f87171' : '#ffffff' }}>
+                            <td className="mono right" style={{ fontWeight: 700, color: (ing.current_stock ?? 0) <= (ing.current_stok_min ?? 0) ? '#f87171' : '#ffffff' }}>
                               {num(ing.current_stock ?? 0)} {ing.unit_pakai}
                             </td>
                             <td className="center">
-                              <span className="badge badge-success" style={{ fontSize: 10, fontWeight: 700, background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
-                                ✓ Masuk Resep
+                              <span className="badge badge-neutral" style={{ fontSize: 10, fontWeight: 600 }}>
+                                Aktif di Resep
                               </span>
                             </td>
                           </tr>
@@ -728,7 +604,7 @@ export default function KategoriStok() {
               )}
             </div>
           ) : (
-            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+            <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)' }}>
               Pilih salah satu kategori di sebelah kiri.
             </div>
           )}
@@ -738,28 +614,28 @@ export default function KategoriStok() {
       {/* Modal: Tambah / Edit Kategori */}
       {modalOpen && (
         <div className="modal-backdrop" onClick={() => setModalOpen(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
             <div className="modal-header">
               <h3 className="modal-title">
-                {editingCategory ? 'Edit Kategori Stok' : 'Tambah Kategori Stok Baru'}
+                {editingCategory ? 'Edit Kategori Stok' : 'Tambah Kategori Stok'}
               </h3>
               <button
                 type="button"
                 className="btn btn-ghost btn-icon"
                 onClick={() => setModalOpen(false)}
               >
-                <X size={18} />
+                ✕
               </button>
             </div>
 
             <form onSubmit={handleSaveCategory}>
               <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div className="form-group">
-                  <label className="form-label">Nama Kategori Stok *</label>
+                  <label className="form-label">Nama Kategori *</label>
                   <input
                     type="text"
                     className="form-control"
-                    placeholder="Contoh: Perlengkapan, Biji Kopi, Sirup, Cup & Packaging"
+                    placeholder="Contoh: Perlengkapan, Bahan Baku, Kemasan"
                     value={formData.name}
                     onChange={e => setFormData({ ...formData, name: e.target.value })}
                     required
@@ -768,45 +644,7 @@ export default function KategoriStok() {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Pilih Ikon</label>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-                    {PRESET_ICONS.map(item => {
-                      const IconComp = item.icon;
-                      const active = formData.icon === item.id;
-                      return (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => setFormData({ ...formData, icon: item.id })}
-                          style={{
-                            padding: '10px 6px',
-                            borderRadius: 8,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            gap: 4,
-                            border: '1px solid',
-                            borderColor: active ? formData.color : 'var(--border)',
-                            background: active ? `${formData.color}20` : 'rgba(255,255,255,0.03)',
-                            color: active ? '#ffffff' : 'var(--text-secondary)',
-                            fontSize: 10.5,
-                            fontWeight: active ? 700 : 500,
-                            transition: 'all 0.15s ease'
-                          }}
-                        >
-                          <IconComp size={18} color={active ? formData.color : 'currentColor'} />
-                          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 70 }}>
-                            {item.id}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Warna Aksen Kategori</label>
+                  <label className="form-label">Warna Label Kategori</label>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {PRESET_COLORS.map(c => {
                       const selected = formData.color === c.hex;
@@ -816,22 +654,16 @@ export default function KategoriStok() {
                           type="button"
                           onClick={() => setFormData({ ...formData, color: c.hex })}
                           style={{
-                            width: 32,
-                            height: 32,
+                            width: 28,
+                            height: 28,
                             borderRadius: '50%',
                             background: c.hex,
-                            border: selected ? '3px solid #ffffff' : '1px solid rgba(255,255,255,0.2)',
-                            boxShadow: selected ? `0 0 10px ${c.hex}` : 'none',
+                            border: selected ? '2px solid #ffffff' : '1px solid rgba(255,255,255,0.15)',
                             cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            transition: 'all 0.15s ease'
+                            transition: 'transform 0.15s ease'
                           }}
                           title={c.label}
-                        >
-                          {selected && <Check size={14} color="#ffffff" />}
-                        </button>
+                        />
                       );
                     })}
                   </div>
@@ -850,21 +682,21 @@ export default function KategoriStok() {
                 </div>
               </div>
 
-              <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                 <button
                   type="button"
-                  className="btn btn-secondary"
+                  className="btn btn-secondary btn-sm"
                   onClick={() => setModalOpen(false)}
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="btn btn-primary"
+                  className="btn btn-primary btn-sm"
                   disabled={submitting}
-                  style={{ fontWeight: 700 }}
+                  style={{ fontWeight: 600 }}
                 >
-                  {submitting ? 'Menyimpan...' : (editingCategory ? 'Simpan Perubahan' : 'Tambah Kategori')}
+                  {submitting ? 'Menyimpan...' : 'Simpan Kategori'}
                 </button>
               </div>
             </form>
@@ -872,15 +704,15 @@ export default function KategoriStok() {
         </div>
       )}
 
-      {/* Modal: Tambah Perlengkapan Cepat (Cup / Pipet / Tissue) */}
+      {/* Modal: Tambah Perlengkapan Cepat */}
       {suppliesModalOpen && (
         <div className="modal-backdrop" onClick={() => setSuppliesModalOpen(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 540 }}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
             <div className="modal-header">
               <div>
-                <h3 className="modal-title">Daftarkan Perlengkapan Baru</h3>
+                <h3 className="modal-title">Tambah Perlengkapan</h3>
                 <p style={{ fontSize: 11.5, color: 'var(--text-secondary)', margin: '2px 0 0' }}>
-                  Item perlengkapan otomatis masuk ke kategori <strong>Perlengkapan</strong> dan siap dipakai di Resep Menu.
+                  Item otomatis masuk ke kategori Perlengkapan dan dapat dipilih pada Resep Menu.
                 </p>
               </div>
               <button
@@ -888,13 +720,13 @@ export default function KategoriStok() {
                 className="btn btn-ghost btn-icon"
                 onClick={() => setSuppliesModalOpen(false)}
               >
-                <X size={18} />
+                ✕
               </button>
             </div>
 
             <form onSubmit={handleSaveSupply}>
               <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                {/* Preset Quick Select Buttons */}
+                {/* Template buttons */}
                 <div>
                   <label className="form-label" style={{ fontSize: 11 }}>Pilih Template Cepat</label>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
@@ -906,15 +738,15 @@ export default function KategoriStok() {
                           type="button"
                           onClick={() => setSupplyForm({ ...tpl })}
                           style={{
-                            padding: '8px 8px',
-                            borderRadius: 8,
+                            padding: '6px 8px',
+                            borderRadius: 6,
                             fontSize: 11,
-                            fontWeight: 700,
+                            fontWeight: 600,
                             cursor: 'pointer',
                             textAlign: 'center',
                             border: '1px solid',
                             borderColor: isActive ? '#00B14F' : 'var(--border)',
-                            background: isActive ? 'rgba(0, 177, 79, 0.15)' : 'rgba(255,255,255,0.03)',
+                            background: isActive ? 'rgba(0, 177, 79, 0.15)' : 'rgba(255,255,255,0.02)',
                             color: isActive ? '#10d97a' : '#ffffff',
                             transition: 'all 0.15s ease'
                           }}
@@ -959,7 +791,7 @@ export default function KategoriStok() {
                       className="form-control"
                       value={supplyForm.unit_beli}
                       onChange={e => setSupplyForm({ ...supplyForm, unit_beli: e.target.value })}
-                      placeholder="Slop / Pack / Dus"
+                      placeholder="Slop / Pack"
                       required
                     />
                   </div>
@@ -975,7 +807,7 @@ export default function KategoriStok() {
                     />
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Isi per Beli (Konversi)</label>
+                    <label className="form-label">Isi per Satuan Beli</label>
                     <input
                       type="number"
                       className="form-control mono right"
@@ -989,7 +821,7 @@ export default function KategoriStok() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: 10 }}>
                   <div className="form-group">
-                    <label className="form-label">Harga Beli per {supplyForm.unit_beli || 'Satuan'}</label>
+                    <label className="form-label">Harga Beli (Rp)</label>
                     <input
                       type="number"
                       className="form-control mono right"
@@ -1021,36 +853,35 @@ export default function KategoriStok() {
                   </div>
                 </div>
 
-                {/* Live cost preview */}
                 <div style={{
-                  padding: '10px 14px',
-                  borderRadius: 8,
-                  background: 'rgba(0, 177, 79, 0.1)',
-                  border: '1px solid rgba(0, 177, 79, 0.3)',
+                  padding: '8px 12px',
+                  borderRadius: 6,
+                  background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid var(--border)',
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center'
                 }}>
-                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Biaya HPP / Takaran Resep:</span>
-                  <span className="mono" style={{ fontSize: 14, fontWeight: 800, color: '#10d97a' }}>
+                  <span style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>Biaya per Takaran Resep:</span>
+                  <span className="mono" style={{ fontSize: 13, fontWeight: 700, color: '#10d97a' }}>
                     {rupiah(Number(supplyForm.harga || 0) / Math.max(Number(supplyForm.konversi || 1), 1))} / {supplyForm.unit_pakai || 'pcs'}
                   </span>
                 </div>
               </div>
 
-              <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                 <button
                   type="button"
-                  className="btn btn-secondary"
+                  className="btn btn-secondary btn-sm"
                   onClick={() => setSuppliesModalOpen(false)}
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="btn btn-primary"
+                  className="btn btn-primary btn-sm"
                   disabled={savingSupply}
-                  style={{ fontWeight: 700 }}
+                  style={{ fontWeight: 600 }}
                 >
                   {savingSupply ? 'Menyimpan...' : 'Simpan Perlengkapan'}
                 </button>

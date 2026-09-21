@@ -462,10 +462,10 @@ export default function Receivables() {
                 style={{ width: 'auto', fontSize: '12px' }}
               >
                 <option value="ALL">Semua Periode</option>
-                <option value="OVERDUE">🚨 Sudah Lewat Jatuh Tempo</option>
-                <option value="TODAY">⚡ Jatuh Tempo Hari Ini</option>
-                <option value="THIS_WEEK">📅 7 Hari ke Depan</option>
-                <option value="THIS_MONTH">🗓️ Bulan Ini</option>
+                <option value="OVERDUE">Sudah Lewat Jatuh Tempo</option>
+                <option value="TODAY">Jatuh Tempo Hari Ini</option>
+                <option value="THIS_WEEK">7 Hari ke Depan</option>
+                <option value="THIS_MONTH">Bulan Ini</option>
               </select>
             </div>
           </div>

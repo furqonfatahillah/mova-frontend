@@ -842,7 +842,7 @@ export default function MasterMenu() {
                             color: isHemat ? '#34d399' : '#fb7185',
                             border: `1px solid ${isHemat ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)'}`,
                           }}>
-                            {isHemat ? '🟢 Hemat' : '⚠️ Over'}
+                            {isHemat ? 'Hemat' : 'Over'}
                           </span>
                         );
                       })()}
@@ -1158,8 +1158,8 @@ export default function MasterMenu() {
                                 border: `1px solid ${hppDiff <= 0 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)'}`,
                               }}>
                                 {hppDiff < 0
-                                  ? `🟢 Efisien: Hemat ${rupiah(Math.abs(hppDiff))} / ${selected.unit || 'porsi'}`
-                                  : (hppDiff > 0 ? `⚠️ Over Budget: +${rupiah(hppDiff)} / ${selected.unit || 'porsi'}` : '⚪ Tepat Sesuai Anggaran')}
+                                  ? `Efisien: Hemat ${rupiah(Math.abs(hppDiff))} / ${selected.unit || 'porsi'}`
+                                  : (hppDiff > 0 ? `Over Budget: +${rupiah(hppDiff)} / ${selected.unit || 'porsi'}` : 'Tepat Sesuai Anggaran')}
                               </span>
                             ) : (
                               <button
@@ -1204,7 +1204,7 @@ export default function MasterMenu() {
                                   <td className="center">
                                     {estimatedHpp > 0 ? (
                                       <span style={{ fontSize: 11, fontWeight: 600, color: hppDiff <= 0 ? '#34d399' : '#fb7185' }}>
-                                        {hppDiff <= 0 ? '✓ Lebih Murah' : '⚠ Lebih Mahal'}
+                                        {hppDiff <= 0 ? 'Lebih Murah' : 'Lebih Mahal'}
                                       </span>
                                     ) : <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>-</span>}
                                   </td>
@@ -1606,7 +1606,7 @@ export default function MasterMenu() {
                                 >
                                   {ingredients.map(i => {
                                     const isPerlengkapan = (i.category || '').toLowerCase().includes('perlengkapan');
-                                    const tag = i.type === 'SEMI_FINISHED' ? '🟣 [Olahan] ' : isPerlengkapan ? '🥤 [Perlengkapan] ' : '🟢 [Mentah] ';
+                                    const tag = i.type === 'SEMI_FINISHED' ? '[Olahan] ' : isPerlengkapan ? '[Perlengkapan] ' : '';
                                     return (
                                       <option key={i.id} value={i.id}>
                                         {tag}{i.name} ({i.category || 'Bahan'}) — {rupiah(i.harga / (i.konversi || 1))}/{i.unit_pakai}
@@ -1879,11 +1879,11 @@ export default function MasterMenu() {
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                           <span style={{ color: 'var(--accent-bright)' }}>{opt.ingredient.name}</span>
                                           {opt.ingredient.type === 'SEMI_FINISHED' ? (
-                                            <span className="pill" style={{ fontSize: 9, background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc' }}>🟣 Olahan (2+ Bahan)</span>
+                                            <span className="pill" style={{ fontSize: 9, background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc' }}>Olahan</span>
                                           ) : (opt.ingredient.category || '').toLowerCase().includes('perlengkapan') ? (
-                                            <span className="pill" style={{ fontSize: 9, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8' }}>🥤 Perlengkapan</span>
+                                            <span className="pill" style={{ fontSize: 9, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8' }}>Perlengkapan</span>
                                           ) : (
-                                            <span className="pill" style={{ fontSize: 9, background: 'rgba(16, 185, 129, 0.15)', color: '#6ee7b7' }}>🟢 Mentah</span>
+                                            <span className="pill" style={{ fontSize: 9, background: 'rgba(16, 185, 129, 0.15)', color: '#6ee7b7' }}>Mentah</span>
                                           )}
                                         </div>
                                       ) : (
@@ -2614,26 +2614,26 @@ export default function MasterMenu() {
                               >
                                 <option value="">-- Tanpa Potong Bahan (Catatan/Rasa) --</option>
                                 {semiFinishedIngredients.length > 0 && (
-                                  <optgroup label="🟣 Bahan Olahan / Racikan (Untuk Topping dari 2+ Bahan)">
+                                  <optgroup label="Bahan Olahan / Racikan">
                                     {semiFinishedIngredients.map(i => (
                                       <option key={i.id} value={i.id}>
-                                        🟣 [Olahan] {i.name} ({i.unit_pakai})
+                                        [Olahan] {i.name} ({i.unit_pakai})
                                       </option>
                                     ))}
                                   </optgroup>
                                 )}
-                                <optgroup label="🟢 Bahan Baku Mentah Langsung (Single Ingredient)">
+                                <optgroup label="Bahan Baku Mentah">
                                   {rawIngredients.filter(i => !(i.category || '').toLowerCase().includes('perlengkapan')).map(i => (
                                     <option key={i.id} value={i.id}>
-                                      🟢 [Mentah] {i.name} ({i.unit_pakai})
+                                      [Mentah] {i.name} ({i.unit_pakai})
                                     </option>
                                   ))}
                                 </optgroup>
                                 {ingredients.filter(i => (i.category || '').toLowerCase().includes('perlengkapan')).length > 0 && (
-                                  <optgroup label="🥤 Perlengkapan & Packaging (Cup, Pipet, Tissue)">
+                                  <optgroup label="Perlengkapan & Kemasan (Cup, Pipet, Tissue)">
                                     {ingredients.filter(i => (i.category || '').toLowerCase().includes('perlengkapan')).map(i => (
                                       <option key={i.id} value={i.id}>
-                                        🥤 [Perlengkapan] {i.name} ({i.unit_pakai})
+                                        [Perlengkapan] {i.name} ({i.unit_pakai})
                                       </option>
                                     ))}
                                   </optgroup>

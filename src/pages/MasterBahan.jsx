@@ -357,21 +357,21 @@ export default function MasterBahan() {
             color: typeFilter === 'PERLENGKAPAN' ? '#ffffff' : '#10d97a'
           }}
         >
-          🥤 Perlengkapan ({ingredients.filter(i => (i.category || '').toLowerCase().includes('perlengkapan')).length})
+          Perlengkapan ({ingredients.filter(i => (i.category || '').toLowerCase().includes('perlengkapan')).length})
         </button>
         <button
           className={`btn btn-sm ${typeFilter === 'RAW' ? 'btn-primary' : 'btn-secondary'}`}
           onClick={() => setTypeFilter('RAW')}
           style={{ display: 'flex', alignItems: 'center', gap: 5 }}
         >
-          🟢 Bahan Mentah ({ingredients.filter(i => i.type !== 'SEMI_FINISHED' && !(i.category || '').toLowerCase().includes('perlengkapan')).length})
+          Bahan Mentah ({ingredients.filter(i => i.type !== 'SEMI_FINISHED' && !(i.category || '').toLowerCase().includes('perlengkapan')).length})
         </button>
         <button
           className={`btn btn-sm ${typeFilter === 'SEMI_FINISHED' ? 'btn-primary' : 'btn-secondary'}`}
           onClick={() => setTypeFilter('SEMI_FINISHED')}
           style={{ display: 'flex', alignItems: 'center', gap: 5 }}
         >
-          🟣 Bahan Olahan / Prep ({ingredients.filter(i => i.type === 'SEMI_FINISHED').length})
+          Bahan Olahan ({ingredients.filter(i => i.type === 'SEMI_FINISHED').length})
         </button>
         <button
           className={`btn btn-sm ${typeFilter === 'LOW_STOCK' ? 'btn-primary' : 'btn-secondary'}`}
@@ -383,7 +383,7 @@ export default function MasterBahan() {
             borderColor: 'rgba(244, 63, 94, 0.4)'
           }}
         >
-          ⚠️ Stok Menipis ({ingredients.filter(i => Number(i.current_stock ?? 0) <= Number(i.current_stok_min ?? i.stok_min ?? 0)).length})
+          Stok Menipis ({ingredients.filter(i => Number(i.current_stock ?? 0) <= Number(i.current_stok_min ?? i.stok_min ?? 0)).length})
         </button>
       </div>
 
@@ -420,8 +420,8 @@ export default function MasterBahan() {
                     value={addForm.type || 'RAW'}
                     onChange={e => setAddForm(p => ({ ...p, type: e.target.value }))}
                   >
-                    <option value="RAW">🟢 Mentah</option>
-                    <option value="SEMI_FINISHED">🟣 Olahan</option>
+                    <option value="RAW">Bahan Mentah</option>
+                    <option value="SEMI_FINISHED">Bahan Olahan</option>
                   </select>
                 </td>
                 <td>
@@ -455,14 +455,14 @@ export default function MasterBahan() {
                 <td className="mono right">
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
                     <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>0</span>
-                    <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>⚡ Otomatis dari Kartu Stok</span>
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Otomatis dari Kartu Stok</span>
                   </div>
                 </td>
                 <td className="mono right">
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
                     <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>0</span>
                     <span style={{ fontSize: 10, color: 'var(--accent-bright)', fontWeight: 500 }}>
-                      ⚡ Otomatis /{addForm.unit_pakai}
+                      Otomatis /{addForm.unit_pakai}
                     </span>
                   </div>
                 </td>
@@ -492,11 +492,11 @@ export default function MasterBahan() {
                   <td>
                     {ing.type === 'SEMI_FINISHED' ? (
                       <span className="pill" style={{ fontSize: 10.5, background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', border: '1px solid rgba(168, 85, 247, 0.3)' }}>
-                        🟣 Olahan
+                        Olahan
                       </span>
                     ) : (
                       <span className="pill" style={{ fontSize: 10.5, background: 'rgba(34, 197, 94, 0.12)', color: '#4ade80', border: '1px solid rgba(34, 197, 94, 0.25)' }}>
-                        🟢 Mentah
+                        Mentah
                       </span>
                     )}
                   </td>
@@ -725,7 +725,7 @@ export default function MasterBahan() {
                         {fmtQtyVal(os.stock, breakdownModal.unit_pakai, hppPari)}
                       </div>
                       <span style={{ fontSize: 10, color: os.is_low ? 'var(--danger)' : 'var(--text-muted)' }}>
-                        {os.is_low ? '⚠️ Di bawah par level' : '✓ Aman'}
+                        {os.is_low ? 'Di bawah par level' : 'Aman'}
                       </span>
                     </div>
                   </div>

@@ -596,7 +596,7 @@ export default function StockOpname() {
                       color: currentOpnameSession.is_closed ? '#34d399' : '#fbbf24',
                       border: `1px solid ${currentOpnameSession.is_closed ? 'rgba(16, 185, 129, 0.35)' : 'rgba(245, 158, 11, 0.35)'}`
                     }}>
-                      {currentOpnameSession.is_closed ? '🟢 TELAH DI-RELEASE' : `⏳ DRAFT (${currentOpnameSession.opname_no || 'Belum Final'})`}
+                      {currentOpnameSession.is_closed ? 'TELAH DI-RELEASE' : `DRAFT (${currentOpnameSession.opname_no || 'Belum Final'})`}
                     </span>
                   )}
                 </div>

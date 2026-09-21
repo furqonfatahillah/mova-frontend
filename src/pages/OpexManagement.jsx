@@ -405,7 +405,7 @@ export default function OpexManagement() {
               onChange={e => setPaymentFilter(e.target.value)}
               style={{ fontSize: 13, height: 36 }}
             >
-              <option value="ALL">💳 Semua Metode Pembayaran</option>
+              <option value="ALL">Semua Metode Pembayaran</option>
               {PAYMENT_METHODS.map(m => (
                 <option key={m.value} value={m.value}>
                   {m.label}
@@ -505,7 +505,7 @@ export default function OpexManagement() {
                       </td>
                       <td style={{ padding: '12px 16px' }}>
                         <span style={{ fontSize: 12, color: '#cbd5e1' }}>
-                          💳 {payMeta.label}
+                          {payMeta.label}
                         </span>
                       </td>
                       <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 800, color: '#f87171', fontSize: 14 }}>

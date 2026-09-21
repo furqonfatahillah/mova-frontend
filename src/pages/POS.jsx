@@ -2351,11 +2351,11 @@ export default function POS() {
                   style={{ width: 150, height: 36, fontSize: 12, borderRadius: 8 }}
                 >
                   <option value="ALL">Semua Metode</option>
-                  <option value="CASH">💵 CASH (Tunai)</option>
-                  <option value="QRIS">📱 QRIS</option>
-                  <option value="TRANSFER">🏦 TRANSFER</option>
-                  <option value="DEBIT">💳 DEBIT / EDC</option>
-                  <option value="GRAB">🛵 GRAB / GrabFood</option>
+                  <option value="CASH">CASH (Tunai)</option>
+                  <option value="QRIS">QRIS</option>
+                  <option value="TRANSFER">TRANSFER</option>
+                  <option value="DEBIT">DEBIT / EDC</option>
+                  <option value="GRAB">GRAB / GrabFood</option>
                 </select>
               </div>
             </div>
@@ -2440,14 +2440,14 @@ export default function POS() {
                                 ...(order.payment_method === 'GRAB' ? { background: '#00B14F', color: '#ffffff', borderColor: '#00B14F' } : {})
                               }}
                             >
-                              {order.payment_method === 'GRAB' ? '🛵 GRAB' : (order.payment_method || 'CASH')}
+                              {order.payment_method || 'CASH'}
                             </span>
                             <span className={`badge ${order.status === 'PAID' ? 'badge-success' : 'badge-warning'}`} style={{ fontSize: 10.5 }}>
-                              {order.status === 'PAID' ? '✓ LUNAS' : '⏳ HOLD'}
+                              {order.status === 'PAID' ? 'LUNAS' : 'HOLD'}
                             </span>
                             {order.is_urgent_note && (
                               <span className="badge badge-danger" style={{ fontSize: 10.5 }}>
-                                ⚠️ NOTA URGENT
+                                NOTA URGENT
                               </span>
                             )}
                             <span className="badge badge-info" style={{ fontSize: 11 }}>
@@ -2456,9 +2456,9 @@ export default function POS() {
                           </div>
 
                           <div style={{ display: 'flex', gap: 14, fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4, flexWrap: 'wrap' }}>
-                            <span>🕒 {order.created_at ? formatLocalDisplay(order.created_at, true) : order.date}</span>
-                            <span>👤 Kasir: <strong style={{ color: '#ffffff' }}>{order.cashier_name}</strong></span>
-                            <span>📦 <strong>{order.items.length}</strong> menu ({order.total_qty} porsi)</span>
+                            <span>{order.created_at ? formatLocalDisplay(order.created_at, true) : order.date}</span>
+                            <span>Kasir: <strong style={{ color: '#ffffff' }}>{order.cashier_name}</strong></span>
+                            <span><strong>{order.items.length}</strong> menu ({order.total_qty} porsi)</span>
                             {order.notes && <span style={{ color: 'var(--text-muted)' }}>*{order.notes}</span>}
                           </div>
                         </div>
@@ -2618,7 +2618,7 @@ export default function POS() {
                             ...(t.payment_method === 'GRAB' ? { background: '#00B14F', color: '#ffffff', borderColor: '#00B14F' } : {})
                           }}
                         >
-                          {t.payment_method === 'GRAB' ? '🛵 GRAB' : (t.payment_method || 'CASH')}
+                          {t.payment_method || 'CASH'}
                         </span>
                       </td>
                       <td>
@@ -3145,7 +3145,7 @@ export default function POS() {
                               )}
                               {status.isSoldOut && !item.isUrgent && (
                                 <span style={{ fontSize: 10, color: 'var(--danger)', background: 'rgba(244,63,94,0.15)', padding: '1px 5px', borderRadius: 4 }}>
-                                  ⚠️ Stok Habis
+                                  Stok Habis
                                 </span>
                               )}
                             </div>
@@ -3728,7 +3728,7 @@ export default function POS() {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
                     <div>
                       <label className="form-label" style={{ color: '#34d399', fontWeight: 800, fontSize: 12, margin: '0 0 5px 0' }}>
-                        💵 Total Nota (Rp)
+                        Total Nota (Rp)
                       </label>
                       <input
                         type="number"
@@ -3865,7 +3865,7 @@ export default function POS() {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
                     <div>
                       <label className="form-label" style={{ color: '#34d399', fontWeight: 800, fontSize: 12, margin: '0 0 5px 0' }}>
-                        💵 Total Nota (Rp)
+                        Total Nota (Rp)
                       </label>
                       <input
                         type="number"
@@ -5143,7 +5143,7 @@ export default function POS() {
                           color: isSingleChoice ? 'var(--accent-bright)' : '#34d399',
                           border: isSingleChoice ? '1px solid rgba(99, 102, 241, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)'
                         }}>
-                          {isSingleChoice ? '🔘 Pilih 1 Opsi' : '☑️ Pilihan Bebas'}
+                          {isSingleChoice ? 'Pilih 1 Opsi' : 'Pilihan Bebas'}
                         </span>
                         <span style={{
                           fontSize: 10,

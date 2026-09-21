@@ -358,16 +358,16 @@ export default function StockMovement() {
                   fontWeight: 600,
                   color: '#ffffff'
                 }}>
-                  <span>📍 {activeOutlet?.name || userOutletName || 'Cabang Penempatan'}</span>
+                  <span>{activeOutlet?.name || userOutletName || 'Cabang Penempatan'}</span>
                 </div>
               )}
 
               <select className="form-control" style={{ width: 'auto', padding: '6px 10px', fontSize: 12 }}
                 value={filterType} onChange={e => setFilterType(e.target.value)}>
                 <option value="ALL">Semua Tipe</option>
-                <option value="WASTE">⚠️ Hanya Waste</option>
-                <option value="PURCHASE">➕ Pembelian (Moving Avg)</option>
-                <option value="SALE_USAGE">🍽️ Pemakaian POS</option>
+                <option value="WASTE">Hanya Waste</option>
+                <option value="PURCHASE">Pembelian (Moving Avg)</option>
+                <option value="SALE_USAGE">Pemakaian POS</option>
                 <option value="TRANSFER_IN">Transfer Masuk</option>
                 <option value="TRANSFER_OUT">Transfer Keluar</option>
               </select>
@@ -514,7 +514,7 @@ export default function StockMovement() {
               {form.type === 'WASTE' && (
                 <div className="form-group fade-in" style={{ background: 'rgba(244, 63, 94, 0.08)', padding: 12, borderRadius: 8, border: '1px solid rgba(244, 63, 94, 0.2)' }}>
                   <label className="form-label" style={{ color: '#fb7185', fontWeight: 600 }}>
-                    ⚠️ Alasan Kerusakan / Waste
+                    Alasan Kerusakan / Waste
                   </label>
                   <select className="form-control" value={form.waste_reason}
                     onChange={e => setForm(f => ({ ...f, waste_reason: e.target.value }))}>
@@ -594,7 +594,7 @@ export default function StockMovement() {
                     {/* Input 1: TOTAL HARGA NOTA (LANGSUNG DARI STRUK / BON BELANJA) */}
                     <div>
                       <label className="form-label" style={{ color: '#34d399', fontWeight: 800, fontSize: 12.5, margin: '0 0 6px 0', display: 'flex', alignItems: 'center', gap: 5 }}>
-                        💵 Total Harga Nota (Rp)
+                        Total Harga Nota (Rp)
                       </label>
                       <input
                         type="number"

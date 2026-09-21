@@ -440,7 +440,7 @@ export default function UrgentNotes() {
                     Total Kurang: <strong style={{ color: '#fbbf24' }}>{num(ing.total_pending_qty)} {ing.unit}</strong> ({ing.note_count} nota)
                   </div>
                   <div style={{ fontSize: 11, color: ing.can_resolve_all ? '#34d399' : '#f87171', marginTop: 2 }}>
-                    Stok Saat Ini: <strong>{num(ing.current_stock)} {ing.unit}</strong> {ing.can_resolve_all ? '✓ Cukup' : '⚠️ Belum Cukup'}
+                    Stok Saat Ini: <strong>{num(ing.current_stock)} {ing.unit}</strong> ({ing.can_resolve_all ? 'Cukup' : 'Belum Cukup'})
                   </div>
                 </div>
 
@@ -719,15 +719,15 @@ export default function UrgentNotes() {
                               fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6,
                               background: 'rgba(239, 68, 68, 0.15)', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.3)'
                             }}>
-                              ⚠️ {group.ready_items_count}/{group.pending_count} Bahan Siap
+                              {group.ready_items_count}/{group.pending_count} Bahan Siap
                             </span>
                           )
                         )}
                       </div>
 
                       <div style={{ display: 'flex', gap: 14, fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4, flexWrap: 'wrap' }}>
-                        <span>🕒 {formatDateTime(group.created_at)}</span>
-                        <span>👤 Kasir: <strong style={{ color: '#ffffff' }}>{group.cashier_name}</strong></span>
+                        <span>{formatDateTime(group.created_at)}</span>
+                        <span>Kasir: <strong style={{ color: '#ffffff' }}>{group.cashier_name}</strong></span>
                         <span>🏬 Cabang: <strong style={{ color: '#ffffff' }}>{group.outlet_name}</strong></span>
                       </div>
                     </div>
@@ -1258,11 +1258,11 @@ export default function UrgentNotes() {
                         <div>
                           <strong style={{ color: '#ffffff' }}>{item.item_name}</strong>
                           <div style={{ fontSize: 11, color: isReady ? '#34d399' : '#f87171' }}>
-                            Stok saat ini: {num(avail)} {item.unit} {isReady ? '✓ Cukup' : '⚠️ Kurang'}
+                            Stok saat ini: {num(avail)} {item.unit} ({isReady ? 'Cukup' : 'Kurang'})
                           </div>
                         </div>
                         <span className="mono" style={{ fontWeight: 800, color: '#fbbf24', fontSize: 13 }}>
-                          ⚡ {num(item.pending_qty)} {item.unit}
+                          {num(item.pending_qty)} {item.unit}
                         </span>
                       </div>
                     );
