@@ -9,12 +9,13 @@ import {
   FileText, CheckCircle2, ChevronRight, PauseCircle, RefreshCw, XCircle, Users,
   Percent, Tag, Gift, Scissors, Split, Divide,
   ShoppingBag, Briefcase, Barcode, Utensils, Coins,
-  Zap, AlertOctagon, Calculator
+  Zap, AlertOctagon, Calculator,
+  ChevronDown, Filter, Layers
 } from 'lucide-react';
 import api from '../api/client';
-import { rupiah, num, LoadingState, PageHeader } from '../components/ui';
+import { rupiah, num, LoadingState, PageHeader, PeriodPicker } from '../components/ui';
 import { printElement } from '../utils/print';
-import { getTodayStr } from '../utils/date';
+import { getTodayStr, getMonthStartStr, formatLocalDisplay } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 
@@ -48,8 +49,18 @@ export default function POS() {
   const [receiptModalOpen, setReceiptModalOpen] = useState(false);
   const [completedOrder, setCompletedOrder] = useState(null);
 
-  // History Tab toggle
+  // History / Riwayat Nota Filters & State
   const [showHistory, setShowHistory] = useState(false);
+  const [historyPeriod, setHistoryPeriod] = useState(() => ({
+    from: getTodayStr(),
+    to: getTodayStr(),
+  }));
+  const [historySearch, setHistorySearch] = useState('');
+  const [historyPaymentMethod, setHistoryPaymentMethod] = useState('ALL');
+  const [historyStatus, setHistoryStatus] = useState('PAID'); // 'PAID' | 'HOLD' | 'ALL'
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyViewMode, setHistoryViewMode] = useState('grouped'); // 'grouped' (per Nota) | 'flat' (rincian item)
+  const [expandedHistoryOrders, setExpandedHistoryOrders] = useState({});
 
   // Modifier Selection Modal State
   const [modifierModal, setModifierModal] = useState({
@@ -207,6 +218,167 @@ export default function POS() {
       setLoading(false);
     }
   }
+
+  async function fetchHistory(overridePeriod, overrideStatus, overridePayment, overrideSearch) {
+    setHistoryLoading(true);
+    try {
+      const activeP = overridePeriod || historyPeriod;
+      const activeStat = overrideStatus !== undefined ? overrideStatus : historyStatus;
+      const activePay = overridePayment !== undefined ? overridePayment : historyPaymentMethod;
+      const activeSearch = overrideSearch !== undefined ? overrideSearch : historySearch;
+
+      const params = {
+        outlet_id: currentTargetOutlet,
+        limit: 1000,
+      };
+      if (activeP?.from) params.from = activeP.from;
+      if (activeP?.to) params.to = activeP.to;
+      if (activeStat && activeStat !== 'ALL') params.status = activeStat;
+      if (activePay && activePay !== 'ALL') params.payment_method = activePay;
+      if (activeSearch && activeSearch.trim()) params.search = activeSearch.trim();
+
+      const res = await api.get('/transactions', { params });
+      setTransactions(res.data || []);
+    } catch (err) {
+      console.error('Error fetching history:', err);
+      toast.error('Gagal memuat riwayat nota');
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (showHistory) {
+      fetchHistory();
+    }
+  }, [showHistory, historyPeriod, historyStatus, historyPaymentMethod, currentTargetOutlet]);
+
+  function handlePresetPeriod(preset) {
+    const today = getTodayStr();
+    if (preset === 'today') {
+      setHistoryPeriod({ from: today, to: today });
+    } else if (preset === '7days') {
+      const d = new Date();
+      d.setDate(d.getDate() - 6);
+      setHistoryPeriod({ from: getTodayStr(d), to: today });
+    } else if (preset === 'month') {
+      setHistoryPeriod({ from: getMonthStartStr(), to: today });
+    }
+  }
+
+  const isPresetActive = (preset) => {
+    const today = getTodayStr();
+    if (preset === 'today') {
+      return historyPeriod.from === today && historyPeriod.to === today;
+    }
+    if (preset === '7days') {
+      const d = new Date();
+      d.setDate(d.getDate() - 6);
+      return historyPeriod.from === getTodayStr(d) && historyPeriod.to === today;
+    }
+    if (preset === 'month') {
+      return historyPeriod.from === getMonthStartStr() && historyPeriod.to === today;
+    }
+    return false;
+  };
+
+  function toggleHistoryOrderExpand(orderNumber) {
+    setExpandedHistoryOrders(prev => ({
+      ...prev,
+      [orderNumber]: !prev[orderNumber]
+    }));
+  }
+
+  // Group transactions by order_number for Nota-level view
+  const groupedHistory = useMemo(() => {
+    const map = new Map();
+
+    for (const t of transactions) {
+      const ord = t.order_number || `TRX-${t.id}`;
+      if (!map.has(ord)) {
+        map.set(ord, {
+          order_number: ord,
+          date: t.date,
+          created_at: t.created_at,
+          customer_name: t.customer_name || 'Pelanggan Umum',
+          order_type: t.order_type || 'DINE_IN',
+          table_number: t.table_number || null,
+          payment_method: t.payment_method || 'CASH',
+          status: t.status || 'PAID',
+          cashier_name: t.user?.name || 'Kasir',
+          shift_name: t.shift?.shift_name || 'Reguler',
+          outlet_name: t.outlet?.name || '',
+          amount_paid: Number(t.amount_paid || 0),
+          change_amount: Number(t.change_amount || 0),
+          subtotal: 0,
+          discount_amount: 0,
+          discount_name: t.discount_name || null,
+          total_price: 0,
+          total_qty: 0,
+          is_urgent_note: false,
+          notes: t.notes || null,
+          items: [],
+          firstRecord: t,
+        });
+      }
+
+      const order = map.get(ord);
+      const itemSubtotal = Number(t.subtotal || t.total_price || 0);
+      const itemDisc = Number(t.discount_amount || 0);
+      const itemTotal = Number(t.total_price || 0);
+      const itemQty = Number(t.qty || 1);
+
+      order.subtotal += itemSubtotal;
+      order.discount_amount += itemDisc;
+      order.total_price += itemTotal;
+      order.total_qty += itemQty;
+
+      if (t.is_urgent_note) order.is_urgent_note = true;
+      if (t.discount_name && !order.discount_name) order.discount_name = t.discount_name;
+      if (t.notes && !order.notes) order.notes = t.notes;
+
+      order.items.push(t);
+    }
+
+    return Array.from(map.values());
+  }, [transactions]);
+
+  const filteredGroupedHistory = useMemo(() => {
+    if (!historySearch.trim()) return groupedHistory;
+    const s = historySearch.toLowerCase().trim();
+    return groupedHistory.filter(ord => {
+      if (ord.order_number?.toLowerCase().includes(s)) return true;
+      if (ord.customer_name?.toLowerCase().includes(s)) return true;
+      if (ord.cashier_name?.toLowerCase().includes(s)) return true;
+      if (ord.table_number?.toLowerCase().includes(s)) return true;
+      if (ord.notes?.toLowerCase().includes(s)) return true;
+      return ord.items.some(it =>
+        it.menu?.name?.toLowerCase().includes(s) ||
+        it.modifiers?.some(m => m.name?.toLowerCase().includes(s))
+      );
+    });
+  }, [groupedHistory, historySearch]);
+
+  const filteredFlatTransactions = useMemo(() => {
+    if (!historySearch.trim()) return transactions;
+    const s = historySearch.toLowerCase().trim();
+    return transactions.filter(t => {
+      if (t.order_number?.toLowerCase().includes(s)) return true;
+      if (t.customer_name?.toLowerCase().includes(s)) return true;
+      if (t.user?.name?.toLowerCase().includes(s)) return true;
+      if (t.menu?.name?.toLowerCase().includes(s)) return true;
+      if (t.notes?.toLowerCase().includes(s)) return true;
+      return t.modifiers?.some(m => m.name?.toLowerCase().includes(s));
+    });
+  }, [transactions, historySearch]);
+
+  const historyStats = useMemo(() => {
+    const totalOrders = filteredGroupedHistory.length;
+    const totalOmset = filteredGroupedHistory.reduce((sum, ord) => sum + (ord.total_price || 0), 0);
+    const totalItems = filteredGroupedHistory.reduce((sum, ord) => sum + (ord.total_qty || 0), 0);
+    const aov = totalOrders > 0 ? Math.round(totalOmset / totalOrders) : 0;
+    return { totalOrders, totalOmset, totalItems, aov };
+  }, [filteredGroupedHistory]);
 
   // Categories extraction
   const categories = useMemo(() => {
@@ -1652,29 +1824,67 @@ export default function POS() {
     });
   }
 
-  // Reprint from history
-  function handleReprint(trx) {
+  // Reprint full order from history
+  function handleReprintOrder(order) {
+    if (!order) return;
     setCompletedOrder({
-      order_number: trx.order_number || `TRX-${trx.id}`,
+      order_number: order.order_number,
+      date: order.date,
+      customer_name: order.customer_name || 'Pelanggan Umum',
+      order_type: order.order_type || 'DINE_IN',
+      table_number: order.table_number || null,
+      payment_method: order.payment_method || 'CASH',
+      amount_paid: order.amount_paid || order.total_price,
+      change_amount: order.change_amount || 0,
+      subtotal: order.subtotal || order.total_price,
+      discount_amount: order.discount_amount || 0,
+      discount_name: order.discount_name || null,
+      total_price: order.total_price,
+      items: (order.items || []).map(t => ({
+        menu_name: t.menu?.name || 'Menu',
+        price: (t.menu?.price || t.total_price / t.qty),
+        qty: t.qty,
+        total_price: t.total_price,
+        notes: t.notes,
+        modifiers: t.modifiers || [],
+      })),
+      cashier: order.cashier_name || currentUser.name || 'Kasir',
+      shift_name: order.shift_name || 'Reguler',
+      created_at: order.created_at || order.date,
+    });
+    setReceiptModalOpen(true);
+  }
+
+  // Reprint from flat history row
+  function handleReprint(trx) {
+    const ordNumber = trx.order_number || `TRX-${trx.id}`;
+    const matchingItems = transactions.filter(t => (t.order_number || `TRX-${t.id}`) === ordNumber);
+    const itemsToPrint = matchingItems.length > 0 ? matchingItems : [trx];
+    const totalP = itemsToPrint.reduce((s, it) => s + Number(it.total_price || 0), 0);
+    const subtotalP = itemsToPrint.reduce((s, it) => s + Number(it.subtotal || it.total_price || 0), 0);
+    const totalDisc = itemsToPrint.reduce((s, it) => s + Number(it.discount_amount || 0), 0);
+
+    setCompletedOrder({
+      order_number: ordNumber,
       date: trx.date,
       customer_name: trx.customer_name || 'Pelanggan Umum',
+      order_type: trx.order_type || 'DINE_IN',
+      table_number: trx.table_number || null,
       payment_method: trx.payment_method || 'CASH',
-      amount_paid: trx.amount_paid || trx.total_price,
+      amount_paid: trx.amount_paid || totalP,
       change_amount: trx.change_amount || 0,
-      subtotal: trx.subtotal || (Number(trx.total_price) + Number(trx.discount_amount || 0)),
-      discount_amount: trx.discount_amount || 0,
+      subtotal: subtotalP,
+      discount_amount: totalDisc,
       discount_name: trx.discount_name || null,
-      total_price: trx.total_price,
-      items: [
-        {
-          menu_name: trx.menu?.name || 'Menu',
-          price: (trx.menu?.price || trx.total_price / trx.qty),
-          qty: trx.qty,
-          total_price: trx.total_price,
-          notes: trx.notes,
-          modifiers: trx.modifiers || [],
-        }
-      ],
+      total_price: totalP,
+      items: itemsToPrint.map(it => ({
+        menu_name: it.menu?.name || 'Menu',
+        price: (it.menu?.price || it.total_price / it.qty),
+        qty: it.qty,
+        total_price: it.total_price,
+        notes: it.notes,
+        modifiers: it.modifiers || [],
+      })),
       cashier: trx.user?.name || currentUser.name || 'Kasir',
       shift_name: trx.shift?.shift_name || 'Reguler',
       created_at: trx.created_at || trx.date,
@@ -1874,44 +2084,491 @@ export default function POS() {
       )}
 
       {/* ========================================================
-          VIEW 1: HISTORY / RIWAYAT TRANSAKSI TAB
+          VIEW 1: HISTORY / RIWAYAT NOTA TRANSAKSI TAB
          ======================================================== */}
       {showHistory ? (
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <div style={{ fontWeight: 700, fontSize: 15, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Receipt size={18} style={{ color: 'var(--accent)' }} />
-              Daftar Riwayat Transaksi Penjualan
+        <div className="card" style={{ padding: '20px 22px' }}>
+          {/* Header Bar */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 12,
+            marginBottom: 20,
+            borderBottom: '1px solid var(--border)',
+            paddingBottom: 16
+          }}>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 18, display: 'flex', alignItems: 'center', gap: 10, color: '#ffffff' }}>
+                <Receipt size={22} style={{ color: 'var(--accent-bright)' }} />
+                <span>Riwayat Nota & Transaksi Kasir</span>
+                <span className="badge badge-neutral mono" style={{ fontSize: 11, padding: '2px 8px' }}>
+                  {filteredGroupedHistory.length} Nota
+                </span>
+              </div>
+              <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', margin: '4px 0 0' }}>
+                Arsip nota transaksi penjualan periode <strong>{formatLocalDisplay(historyPeriod.from)}</strong> s/d <strong>{formatLocalDisplay(historyPeriod.to)}</strong>.
+              </p>
             </div>
-            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-              Menampilkan {transactions.length} transaksi terakhir
-            </span>
+
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              {/* View Mode Toggle: Grup per Nota vs Rincian Item */}
+              <div style={{
+                display: 'inline-flex',
+                background: 'rgba(0, 0, 0, 0.3)',
+                border: '1px solid var(--border)',
+                borderRadius: 8,
+                padding: 2
+              }}>
+                <button
+                  type="button"
+                  onClick={() => setHistoryViewMode('grouped')}
+                  className={`btn btn-sm ${historyViewMode === 'grouped' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ fontSize: 11.5, padding: '4px 10px', height: 32, display: 'flex', alignItems: 'center', gap: 5 }}
+                  title="Tampilan dikelompokkan per Nota / Transaksi"
+                >
+                  <Layers size={13} />
+                  <span>Grup per Nota</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHistoryViewMode('flat')}
+                  className={`btn btn-sm ${historyViewMode === 'flat' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ fontSize: 11.5, padding: '4px 10px', height: 32, display: 'flex', alignItems: 'center', gap: 5 }}
+                  title="Tampilan daftar rincian semua item/menu"
+                >
+                  <FileText size={13} />
+                  <span>Rincian Item</span>
+                </button>
+              </div>
+
+              {/* Refresh Button */}
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => fetchHistory()}
+                disabled={historyLoading}
+                title="Muat ulang data riwayat nota"
+                style={{ height: 32, display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                <RefreshCw size={13} className={historyLoading ? 'spin' : ''} />
+                <span>Segarkan</span>
+              </button>
+
+              {/* Kembali ke Kasir Button */}
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => setShowHistory(false)}
+                style={{ height: 32, display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
+              >
+                <ShoppingCart size={14} />
+                <span>Kembali ke Kasir</span>
+              </button>
+            </div>
           </div>
 
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>No. Order</th>
-                  <th>Tanggal</th>
-                  <th>Menu</th>
-                  <th className="right">Qty</th>
-                  <th className="right">Total</th>
-                  <th>Metode</th>
-                  <th>Tipe</th>
-                  <th>Kasir</th>
-                  <th className="center">Aksi</th>
-                </tr>
-              </thead>
-              <tbody>
-                {transactions.length === 0 ? (
+          {/* KPI Summary Metrics for the Filtered Period */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            gap: 12,
+            marginBottom: 20
+          }}>
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(17, 22, 45, 0.6) 100%)',
+              border: '1px solid rgba(16, 185, 129, 0.25)',
+              borderRadius: 12,
+              padding: '12px 16px'
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ok)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Total Omset ({filteredGroupedHistory.length} Nota)
+              </div>
+              <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: '#34d399', marginTop: 4 }}>
+                {rupiah(historyStats.totalOmset)}
+              </div>
+            </div>
+
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(17, 22, 45, 0.6) 100%)',
+              border: '1px solid rgba(99, 102, 241, 0.25)',
+              borderRadius: 12,
+              padding: '12px 16px'
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#818cf8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Total Transaksi (Nota)
+              </div>
+              <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: '#a5b4fc', marginTop: 4 }}>
+                {historyStats.totalOrders} <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)' }}>nota</span>
+              </div>
+            </div>
+
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(17, 22, 45, 0.6) 100%)',
+              border: '1px solid rgba(245, 158, 11, 0.25)',
+              borderRadius: 12,
+              padding: '12px 16px'
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Rata-Rata per Nota (AOV)
+              </div>
+              <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: '#fde047', marginTop: 4 }}>
+                {rupiah(historyStats.aov)}
+              </div>
+            </div>
+
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.1) 0%, rgba(17, 22, 45, 0.6) 100%)',
+              border: '1px solid rgba(168, 85, 247, 0.25)',
+              borderRadius: 12,
+              padding: '12px 16px'
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#c084fc', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Total Item Terjual
+              </div>
+              <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: '#e9d5ff', marginTop: 4 }}>
+                {historyStats.totalItems} <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)' }}>item</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Filter Toolbar (Range Tanggal + Presets + Status + Metode + Search) */}
+          <div style={{
+            background: 'rgba(0, 0, 0, 0.22)',
+            border: '1px solid var(--border)',
+            borderRadius: 12,
+            padding: '14px 16px',
+            marginBottom: 18,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12
+          }}>
+            {/* Row 1: Date Range Filter + Quick Presets + Status Filter */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <Calendar size={14} style={{ color: 'var(--accent-bright)' }} />
+                  Range Tanggal:
+                </span>
+                <PeriodPicker
+                  from={historyPeriod.from}
+                  to={historyPeriod.to}
+                  onChange={setHistoryPeriod}
+                  label="Rentang Tanggal Nota"
+                  align="left"
+                />
+
+                {/* Quick Presets */}
+                <div style={{ display: 'flex', gap: 5, marginLeft: 4 }}>
+                  <button
+                    type="button"
+                    onClick={() => handlePresetPeriod('today')}
+                    className={`btn btn-sm ${isPresetActive('today') ? 'btn-primary' : 'btn-outline'}`}
+                    style={{ fontSize: 11, padding: '3px 9px', height: 32 }}
+                  >
+                    Hari Ini
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePresetPeriod('7days')}
+                    className={`btn btn-sm ${isPresetActive('7days') ? 'btn-primary' : 'btn-outline'}`}
+                    style={{ fontSize: 11, padding: '3px 9px', height: 32 }}
+                  >
+                    7 Hari
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePresetPeriod('month')}
+                    className={`btn btn-sm ${isPresetActive('month') ? 'btn-primary' : 'btn-outline'}`}
+                    style={{ fontSize: 11, padding: '3px 9px', height: 32 }}
+                  >
+                    Bulan Ini
+                  </button>
+                </div>
+              </div>
+
+              {/* Status Filter Tabs */}
+              <div style={{ display: 'flex', gap: 5, background: 'rgba(0,0,0,0.3)', padding: 3, borderRadius: 8, border: '1px solid var(--border)' }}>
+                <button
+                  type="button"
+                  onClick={() => setHistoryStatus('PAID')}
+                  className={`btn btn-sm ${historyStatus === 'PAID' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ fontSize: 11.5, padding: '3px 10px', height: 28 }}
+                >
+                  ✓ Lunas (PAID)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHistoryStatus('HOLD')}
+                  className={`btn btn-sm ${historyStatus === 'HOLD' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ fontSize: 11.5, padding: '3px 10px', height: 28 }}
+                >
+                  ⏳ Tertunda (HOLD)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHistoryStatus('ALL')}
+                  className={`btn btn-sm ${historyStatus === 'ALL' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ fontSize: 11.5, padding: '3px 10px', height: 28 }}
+                >
+                  Semua Status
+                </button>
+              </div>
+            </div>
+
+            {/* Row 2: Search Input & Payment Method Filter */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+              {/* Search Box */}
+              <div style={{ position: 'relative', flex: 1, minWidth: 260 }}>
+                <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Cari No. Order, Menu, Pelanggan, atau Kasir..."
+                  value={historySearch}
+                  onChange={e => setHistorySearch(e.target.value)}
+                  style={{ paddingLeft: 36, paddingRight: historySearch ? 32 : 12, height: 36, fontSize: 12.5, borderRadius: 8 }}
+                />
+                {historySearch && (
+                  <button
+                    type="button"
+                    onClick={() => setHistorySearch('')}
+                    style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+
+              {/* Payment Method Filter */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Metode:</span>
+                <select
+                  className="form-control"
+                  value={historyPaymentMethod}
+                  onChange={e => setHistoryPaymentMethod(e.target.value)}
+                  style={{ width: 150, height: 36, fontSize: 12, borderRadius: 8 }}
+                >
+                  <option value="ALL">Semua Metode</option>
+                  <option value="CASH">💵 CASH (Tunai)</option>
+                  <option value="QRIS">📱 QRIS</option>
+                  <option value="TRANSFER">🏦 TRANSFER</option>
+                  <option value="DEBIT">💳 DEBIT / EDC</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Main Table / Grouped Cards Area */}
+          {historyLoading ? (
+            <div style={{ padding: '40px 0' }}><LoadingState /></div>
+          ) : filteredGroupedHistory.length === 0 ? (
+            <div style={{
+              background: 'rgba(0, 0, 0, 0.2)',
+              border: '1px dashed var(--border)',
+              borderRadius: 12,
+              padding: '48px 24px',
+              textAlign: 'center'
+            }}>
+              <Receipt size={40} style={{ color: 'var(--text-muted)', margin: '0 auto 12px', opacity: 0.5 }} />
+              <h4 style={{ fontSize: 15, fontWeight: 700, color: '#ffffff', margin: '0 0 6px' }}>
+                Tidak Ada Riwayat Transaksi
+              </h4>
+              <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', margin: 0 }}>
+                Tidak ditemukan transaksi pada rentang tanggal {formatLocalDisplay(historyPeriod.from)} s/d {formatLocalDisplay(historyPeriod.to)}
+                {historySearch ? ` dengan pencarian "${historySearch}"` : ''}.
+              </p>
+            </div>
+          ) : historyViewMode === 'grouped' ? (
+            /* GROUPED VIEW: PER NOTA / ORDER */
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {filteredGroupedHistory.map((order) => {
+                const isExpanded = Boolean(expandedHistoryOrders[order.order_number]);
+                return (
+                  <div
+                    key={order.order_number}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.02)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 12,
+                      overflow: 'hidden',
+                      transition: 'all 0.2s ease',
+                      boxShadow: isExpanded ? '0 4px 20px rgba(0, 0, 0, 0.35)' : 'none'
+                    }}
+                  >
+                    {/* Order Summary Header (Click to toggle expansion) */}
+                    <div
+                      onClick={() => toggleHistoryOrderExpand(order.order_number)}
+                      style={{
+                        padding: '14px 18px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: 12,
+                        cursor: 'pointer',
+                        userSelect: 'none',
+                        background: isExpanded ? 'rgba(255, 255, 255, 0.04)' : 'transparent',
+                        borderBottom: isExpanded ? '1px solid var(--border)' : 'none'
+                      }}
+                    >
+                      {/* Left: Chevron + Order Number + Status Badges + Metas */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                        <div style={{
+                          width: 28, height: 28, borderRadius: 6,
+                          background: 'rgba(255, 255, 255, 0.06)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          color: 'var(--accent-bright)',
+                          transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                          transition: 'transform 0.2s ease'
+                        }}>
+                          <ChevronDown size={15} />
+                        </div>
+
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <span className="mono" style={{ fontSize: 14.5, fontWeight: 800, color: 'var(--accent-bright)' }}>
+                              #{order.order_number}
+                            </span>
+                            <span className="badge badge-neutral" style={{ fontSize: 11, fontWeight: 700 }}>
+                              {order.payment_method || 'CASH'}
+                            </span>
+                            <span className={`badge ${order.status === 'PAID' ? 'badge-success' : 'badge-warning'}`} style={{ fontSize: 10.5 }}>
+                              {order.status === 'PAID' ? '✓ LUNAS' : '⏳ HOLD'}
+                            </span>
+                            {order.is_urgent_note && (
+                              <span className="badge badge-danger" style={{ fontSize: 10.5 }}>
+                                ⚠️ NOTA URGENT
+                              </span>
+                            )}
+                            <span className="badge badge-info" style={{ fontSize: 11 }}>
+                              {order.customer_name} {order.table_number ? `· Meja ${order.table_number}` : ''}
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'flex', gap: 14, fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4, flexWrap: 'wrap' }}>
+                            <span>🕒 {order.created_at ? formatLocalDisplay(order.created_at, true) : order.date}</span>
+                            <span>👤 Kasir: <strong style={{ color: '#ffffff' }}>{order.cashier_name}</strong></span>
+                            <span>📦 <strong>{order.items.length}</strong> menu ({order.total_qty} porsi)</span>
+                            {order.notes && <span style={{ color: 'var(--text-muted)' }}>*{order.notes}</span>}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right: Total Price + Action Buttons */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{ textAlign: 'right' }}>
+                          <div className="mono" style={{ fontSize: 16, fontWeight: 800, color: 'var(--ok)' }}>
+                            {rupiah(order.total_price)}
+                          </div>
+                          {order.discount_amount > 0 && (
+                            <div style={{ fontSize: 11, color: '#f87171' }}>
+                              Hemat: {rupiah(order.discount_amount)} {order.discount_name ? `(${order.discount_name})` : ''}
+                            </div>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleReprintOrder(order);
+                          }}
+                          title="Cetak Ulang Struk Kasir Lengkap"
+                          style={{ fontSize: 11.5, padding: '4px 10px', height: 32, display: 'flex', alignItems: 'center', gap: 5 }}
+                        >
+                          <Printer size={13} />
+                          <span>Struk</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Expanded Items Table */}
+                    {isExpanded && (
+                      <div style={{ padding: '14px 18px', background: 'rgba(0, 0, 0, 0.2)' }}>
+                        <div className="table-wrap">
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>Menu / Item</th>
+                                <th className="right">Harga Satuan</th>
+                                <th className="right">Qty</th>
+                                <th className="right">Subtotal</th>
+                                <th className="right">Diskon</th>
+                                <th className="right">Total</th>
+                                <th>Catatan</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {order.items.map((it, itIdx) => (
+                                <tr key={it.id || itIdx}>
+                                  <td style={{ fontWeight: 600 }}>
+                                    <div>{it.menu?.name}</div>
+                                    {it.modifiers && it.modifiers.length > 0 && (
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                                        {it.modifiers.map((m, mIdx) => (
+                                          <span key={mIdx} style={{
+                                            fontSize: 10,
+                                            background: 'rgba(139, 92, 246, 0.15)',
+                                            color: '#c4b5fd',
+                                            border: '1px solid rgba(139, 92, 246, 0.25)',
+                                            padding: '1px 5px',
+                                            borderRadius: 4
+                                          }}>
+                                            {m.name} {Number(m.price) > 0 && `(+${rupiah(m.price)})`}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="mono right" style={{ fontSize: 12 }}>
+                                    {rupiah(it.menu?.price || it.total_price / it.qty)}
+                                  </td>
+                                  <td className="mono right">{it.qty}</td>
+                                  <td className="mono right" style={{ fontSize: 12 }}>
+                                    {rupiah(it.subtotal || it.total_price)}
+                                  </td>
+                                  <td className="mono right" style={{ fontSize: 12, color: it.discount_amount > 0 ? '#f87171' : 'inherit' }}>
+                                    {it.discount_amount > 0 ? `-${rupiah(it.discount_amount)}` : '—'}
+                                  </td>
+                                  <td className="mono right" style={{ fontWeight: 700, color: 'var(--ok)' }}>
+                                    {rupiah(it.total_price)}
+                                  </td>
+                                  <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                    {it.notes || '—'}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            /* FLAT VIEW: PER ITEM TABLE */
+            <div className="table-wrap">
+              <table>
+                <thead>
                   <tr>
-                    <td colSpan={9} className="center text-muted" style={{ padding: 24 }}>
-                      Belum ada transaksi tercatat.
-                    </td>
+                    <th>No. Order</th>
+                    <th>Tanggal</th>
+                    <th>Menu</th>
+                    <th className="right">Qty</th>
+                    <th className="right">Total</th>
+                    <th>Metode</th>
+                    <th>Pelanggan</th>
+                    <th>Kasir</th>
+                    <th className="center">Aksi</th>
                   </tr>
-                ) : (
-                  transactions.map(t => (
+                </thead>
+                <tbody>
+                  {filteredFlatTransactions.map(t => (
                     <tr key={t.id}>
                       <td className="mono" style={{ fontSize: 12, color: 'var(--accent-bright)', fontWeight: 600 }}>
                         {t.order_number || `TRX-${t.id}`}
@@ -1967,11 +2624,11 @@ export default function POS() {
                         </button>
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       ) : (
         <>
