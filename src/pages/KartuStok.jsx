@@ -24,6 +24,55 @@ const MUTATION_TYPES = [
   { value: 'PREP_OUTPUT', label: 'Hasil Olahan (Prep In)', sign: '+', color: '#a855f7', bg: 'rgba(168, 85, 247, 0.12)', border: 'rgba(168, 85, 247, 0.3)' },
 ];
 
+export const STOCK_CARD_CATEGORIES = [
+  { key: 'ALL', label: 'Semua Kategori' },
+  { key: 'BAHAN', label: 'Bahan' },
+  { key: 'PERLENGKAPAN', label: 'Perlengkapan' },
+  { key: 'SEMI_FINISHED', label: 'Bahan Setengah Jadi' },
+];
+
+export function getItemClassification(it) {
+  if (!it) return 'BAHAN';
+
+  // 1. Bahan Setengah Jadi (Semi-Finished / Batch Prep / Olahan)
+  const isSemi =
+    it.type === 'SEMI_FINISHED' ||
+    it.prep_recipe ||
+    Boolean(it.is_semi_finished) ||
+    ['olahan', 'prep', 'setengah jadi', 'semi_finished', 'semi-finished', 'semi finished'].some(kw =>
+      (it.category || '').toLowerCase().includes(kw) ||
+      (it.name || '').toLowerCase().includes(kw)
+    );
+  if (isSemi) return 'SEMI_FINISHED';
+
+  // 2. Perlengkapan (Packaging, Cup, Pipet, Sedotan, Tissue, Kantong, Kemasan, dll.)
+  const cat = (it.category || '').toLowerCase();
+  const name = (it.name || '').toLowerCase();
+  const code = (it.code || '').toUpperCase();
+
+  const perlengkapanKeywords = [
+    'perlengkapan', 'packaging', 'kemasan', 'cup', 'gelas', 'pipet', 'sedotan',
+    'tissue', 'tisu', 'sealer', 'seal', 'kantong', 'plastik', 'kresek', 'box',
+    'dus', 'paper', 'lid', 'tutup', 'sendok', 'garpu', 'straw', 'pembungkus',
+    'mika', 'stiker', 'label'
+  ];
+
+  const isPerlengkapan =
+    perlengkapanKeywords.some(kw => cat.includes(kw) || name.includes(kw)) ||
+    code.startsWith('CUP') ||
+    code.startsWith('PIPET') ||
+    code.startsWith('TIS') ||
+    code.startsWith('LID') ||
+    code.startsWith('PKG') ||
+    code.startsWith('KMS') ||
+    /^C\d+/.test(code);
+
+  if (isPerlengkapan) return 'PERLENGKAPAN';
+
+  // 3. Bahan (Bahan Mentah / Raw Materials)
+  return 'BAHAN';
+}
+
 export default function KartuStok() {
   const {
     activeOutletId,
@@ -535,29 +584,23 @@ export default function KartuStok() {
     const mentah = [];
 
     for (const i of ingredients) {
-      const cat = (i.category || '').toLowerCase();
-      const isPerlengkapan =
-        cat.includes('perlengkapan') ||
-        cat.includes('packaging') ||
-        cat.includes('kemasan') ||
-        cat.includes('cup') ||
-        cat.includes('pipet') ||
-        cat.includes('sedotan') ||
-        cat.includes('tissue');
+      const cls = getItemClassification(i);
+      const isPerlengkapan = cls === 'PERLENGKAPAN';
+      const isOlahan = cls === 'SEMI_FINISHED';
 
       const item = {
         value: i.id,
         label: i.name,
         code: i.code,
         category: i.category,
-        badge: isPerlengkapan ? 'Perlengkapan' : (i.type === 'SEMI_FINISHED' ? 'Olahan' : 'Mentah'),
+        badge: isPerlengkapan ? 'Perlengkapan' : (isOlahan ? 'Setengah Jadi' : 'Bahan'),
         sublabel: `${i.unit_pakai} • Stok: ${num(i.current_stock ?? 0)}`,
         raw: i,
       };
 
       if (isPerlengkapan) {
         perlengkapan.push(item);
-      } else if (i.type === 'SEMI_FINISHED') {
+      } else if (isOlahan) {
         olahan.push(item);
       } else {
         mentah.push(item);
@@ -565,16 +608,24 @@ export default function KartuStok() {
     }
 
     const groups = [];
-    if (perlengkapan.length > 0) groups.push({ group: 'Perlengkapan & Kemasan (Cup, Pipet, Tissue)', items: perlengkapan });
-    if (olahan.length > 0) groups.push({ group: 'Bahan Olahan (Prep)', items: olahan });
     if (mentah.length > 0) groups.push({ group: 'Bahan Baku Mentah', items: mentah });
+    if (perlengkapan.length > 0) groups.push({ group: 'Perlengkapan & Kemasan (Cup, Pipet, Tissue)', items: perlengkapan });
+    if (olahan.length > 0) groups.push({ group: 'Bahan Setengah Jadi (Prep / Olahan)', items: olahan });
     return groups;
   }, [ingredients]);
 
-  // Available categories in current summary
-  const availableCategories = useMemo(() => {
-    const cats = (summaryData?.items || []).map(i => i.category).filter(Boolean);
-    return ['ALL', ...Array.from(new Set(cats))];
+  // Hitung jumlah item persediaan per klasifikasi (Semua, Bahan, Perlengkapan, Bahan Setengah Jadi)
+  const categoryCounts = useMemo(() => {
+    const counts = { ALL: 0, BAHAN: 0, PERLENGKAPAN: 0, SEMI_FINISHED: 0 };
+    if (!summaryData?.items) return counts;
+    counts.ALL = summaryData.items.length;
+    for (const it of summaryData.items) {
+      const cls = getItemClassification(it);
+      if (counts[cls] !== undefined) {
+        counts[cls]++;
+      }
+    }
+    return counts;
   }, [summaryData]);
 
   // Filtered in-transit transfers
@@ -595,11 +646,14 @@ export default function KartuStok() {
     });
   }, [inTransitList, inTransitSearch]);
 
-  // Filtered summary items
+  // Filtered summary items (Berdasarkan filter klasifikasi & pencarian teks)
   const filteredSummaryItems = useMemo(() => {
     if (!summaryData?.items) return [];
     return summaryData.items.filter(it => {
-      if (itemCategory !== 'ALL' && it.category !== itemCategory) return false;
+      if (itemCategory !== 'ALL') {
+        const cls = getItemClassification(it);
+        if (cls !== itemCategory) return false;
+      }
       if (itemSearch.trim()) {
         const q = itemSearch.toLowerCase();
         const matchName = it.name.toLowerCase().includes(q);
@@ -913,15 +967,38 @@ export default function KartuStok() {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', justifyContent: 'space-between' }}>
               {/* Category Filter Pills */}
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {availableCategories.map(cat => (
-                  <button
-                    key={cat}
-                    className={`btn btn-sm ${itemCategory === cat ? 'btn-primary' : 'btn-ghost'}`}
-                    onClick={() => setItemCategory(cat)}
-                  >
-                    {cat === 'ALL' ? 'Semua Kategori' : cat}
-                  </button>
-                ))}
+                {STOCK_CARD_CATEGORIES.map(cat => {
+                  const count = categoryCounts[cat.key] ?? 0;
+                  const isActive = itemCategory === cat.key;
+                  return (
+                    <button
+                      key={cat.key}
+                      className={`btn btn-sm ${isActive ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() => setItemCategory(cat.key)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 7,
+                        fontWeight: isActive ? 600 : 500,
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <span>{cat.label}</span>
+                      <span
+                        style={{
+                          fontSize: 10.5,
+                          padding: '1px 6px',
+                          borderRadius: 10,
+                          background: isActive ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.08)',
+                          color: isActive ? '#ffffff' : 'var(--text-secondary)',
+                          fontWeight: 700,
+                        }}
+                      >
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Search Box */}
@@ -952,14 +1029,17 @@ export default function KartuStok() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <div>
                 <div style={{ fontWeight: 700, fontSize: 15 }}>
-                  Daftar Bahan Baku di {currentOutlet?.name || 'Gudang'}
+                  {itemCategory === 'PERLENGKAPAN' ? 'Daftar Perlengkapan & Packaging' :
+                   itemCategory === 'SEMI_FINISHED' ? 'Daftar Bahan Setengah Jadi (Prep / Olahan)' :
+                   itemCategory === 'BAHAN' ? 'Daftar Bahan Baku Mentah' :
+                   'Daftar Persediaan & Bahan'} di {currentOutlet?.name || 'Gudang'}
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-                  Periode: <strong>{period.from}</strong> s/d <strong>{period.to}</strong> · Klik nama bahan baku untuk membuka kartu stok & buku besar mutasi lengkap.
+                  Periode: <strong>{period.from}</strong> s/d <strong>{period.to}</strong> · Klik nama item untuk membuka kartu stok & buku besar mutasi lengkap.
                 </div>
               </div>
               <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                Menampilkan <strong>{filteredSummaryItems.length}</strong> bahan baku
+                Menampilkan <strong>{filteredSummaryItems.length}</strong> item
               </span>
             </div>
 
@@ -990,7 +1070,7 @@ export default function KartuStok() {
                     {filteredSummaryItems.length === 0 ? (
                       <tr>
                         <td colSpan={14} style={{ textAlign: 'center', padding: '36px 0', color: 'var(--text-muted)' }}>
-                          Tidak ada bahan baku yang sesuai dengan kriteria pencarian.
+                          Tidak ada item yang sesuai dengan filter atau kriteria pencarian.
                         </td>
                       </tr>
                     ) : (
@@ -1020,9 +1100,41 @@ export default function KartuStok() {
                               </div>
                             </td>
                             <td>
-                              <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 4, background: 'rgba(255,255,255,0.06)', color: 'var(--text-secondary)' }}>
-                                {it.category}
-                              </span>
+                              {(() => {
+                                const cls = getItemClassification(it);
+                                const isPkg = cls === 'PERLENGKAPAN';
+                                const isSemi = cls === 'SEMI_FINISHED';
+                                const badgeStyle = isPkg
+                                  ? { bg: 'rgba(59, 130, 246, 0.15)', text: '#60a5fa', border: 'rgba(59, 130, 246, 0.3)', label: 'Perlengkapan' }
+                                  : isSemi
+                                  ? { bg: 'rgba(234, 179, 8, 0.15)', text: '#facc15', border: 'rgba(234, 179, 8, 0.3)', label: 'Setengah Jadi' }
+                                  : { bg: 'rgba(168, 85, 247, 0.15)', text: '#c084fc', border: 'rgba(168, 85, 247, 0.3)', label: 'Bahan' };
+
+                                return (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                    <span
+                                      style={{
+                                        fontSize: 10.5,
+                                        padding: '2px 7px',
+                                        borderRadius: 4,
+                                        display: 'inline-block',
+                                        width: 'fit-content',
+                                        fontWeight: 600,
+                                        background: badgeStyle.bg,
+                                        color: badgeStyle.text,
+                                        border: `1px solid ${badgeStyle.border}`,
+                                      }}
+                                    >
+                                      {badgeStyle.label}
+                                    </span>
+                                    {it.category && !['Perlengkapan', 'Bahan', 'Setengah Jadi', 'Raw', 'SEMI_FINISHED'].includes(it.category) && (
+                                      <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                        {it.category}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </td>
                             <td className="mono right" style={{ color: 'var(--text-secondary)' }}>
                               {num(it.stok_awal)}
@@ -1120,6 +1232,31 @@ export default function KartuStok() {
                   <span>{currentOutlet?.name || 'Gudang'}</span>
                   <ChevronRight size={13} color="var(--text-muted)" />
                   <strong style={{ color: 'var(--accent-bright)' }}>{selectedIng?.name || 'Bahan'}</strong>
+                  {selectedIng && (() => {
+                    const cls = getItemClassification(selectedIng);
+                    const isPkg = cls === 'PERLENGKAPAN';
+                    const isSemi = cls === 'SEMI_FINISHED';
+                    const badgeStyle = isPkg
+                      ? { bg: 'rgba(59, 130, 246, 0.15)', text: '#60a5fa', border: 'rgba(59, 130, 246, 0.3)', label: 'Perlengkapan' }
+                      : isSemi
+                      ? { bg: 'rgba(234, 179, 8, 0.15)', text: '#facc15', border: 'rgba(234, 179, 8, 0.3)', label: 'Setengah Jadi' }
+                      : { bg: 'rgba(168, 85, 247, 0.15)', text: '#c084fc', border: 'rgba(168, 85, 247, 0.3)', label: 'Bahan' };
+                    return (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          padding: '1px 6px',
+                          borderRadius: 4,
+                          fontWeight: 600,
+                          background: badgeStyle.bg,
+                          color: badgeStyle.text,
+                          border: `1px solid ${badgeStyle.border}`,
+                        }}
+                      >
+                        {badgeStyle.label}
+                      </span>
+                    );
+                  })()}
                   <ChevronRight size={13} color="var(--text-muted)" />
                   <span className="mono" style={{ color: 'var(--text-muted)', fontSize: 11.5 }}>{period.from} s/d {period.to}</span>
                 </div>
@@ -1134,11 +1271,15 @@ export default function KartuStok() {
                   value={selectedIngId}
                   onChange={e => setSelectedIngId(Number(e.target.value))}
                 >
-                  {ingredients.map(i => (
-                    <option key={i.id} value={i.id} style={{ background: '#11162d', color: '#ffffff' }}>
-                      {i.code} - {i.name}
-                    </option>
-                  ))}
+                  {ingredients.map(i => {
+                    const cls = getItemClassification(i);
+                    const tag = cls === 'PERLENGKAPAN' ? '[Perlengkapan] ' : (cls === 'SEMI_FINISHED' ? '[Setengah Jadi] ' : '');
+                    return (
+                      <option key={i.id} value={i.id} style={{ background: '#11162d', color: '#ffffff' }}>
+                        {tag}{i.code} - {i.name}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             </div>
