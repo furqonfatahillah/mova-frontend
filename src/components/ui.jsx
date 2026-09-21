@@ -152,9 +152,12 @@ export const SATUAN_BELI_OPTIONS = [
   'ml',
   'Pcs',
   'Pack',
+  'Slop',
   'Dus',
   'Botol',
   'Kaleng',
+  'Roll',
+  'Bungkus',
   'Ikat',
   'Porsi',
   'Butir',
@@ -163,19 +166,26 @@ export const SATUAN_BELI_OPTIONS = [
 ];
 
 export const SATUAN_PAKAI_OPTIONS = [
+  'pcs',
+  'lembar',
   'gram',
   'ml',
   'Pcs',
   'sdm',
   'sdt',
-  'lembar',
   'porsi',
   'butir',
+  'buah',
+  'roll',
   'Kg',
   'Liter',
 ];
 
 export const KATEGORI_BAHAN_OPTIONS = [
+  'Perlengkapan',
+  'Bahan Baku',
+  'Bahan Olahan',
+  'Packaging',
   'Protein',
   'Sayur',
   'Bumbu',
@@ -183,7 +193,6 @@ export const KATEGORI_BAHAN_OPTIONS = [
   'Cair',
   'Dairy',
   'Minuman',
-  'Packaging',
   'Umum',
 ];
 
@@ -192,6 +201,9 @@ export function getSuggestedConversion(unitBeli, unitPakai) {
   const up = String(unitPakai || '').trim().toLowerCase();
   if ((ub === 'kg' || ub === 'kilogram') && (up === 'gram' || up === 'gr' || up === 'g')) return 1000;
   if ((ub === 'liter' || ub === 'l') && (up === 'ml' || up === 'mililiter')) return 1000;
+  if (ub === 'slop' && (up === 'pcs' || up === 'buah')) return 50;
+  if (ub === 'pack' && (up === 'pcs' || up === 'buah')) return 100;
+  if (ub === 'pack' && up === 'lembar') return 200;
   if (ub === up) return 1;
   return null;
 }

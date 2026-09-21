@@ -11,8 +11,8 @@ import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 
 const emptyForm = {
-  code: '', name: '', category: 'Protein', type: 'RAW', unit_beli: 'Kg',
-  unit_pakai: 'gram', konversi: 1000, harga: 0,
+  code: '', name: '', category: 'Perlengkapan', type: 'RAW', unit_beli: 'Slop',
+  unit_pakai: 'pcs', konversi: 50, harga: 0,
   stok_awal: 0, stok_min: 0, tolerance: 5, yield_qty: 1, yield_unit: 'potong', active: true,
 };
 
@@ -104,12 +104,14 @@ export default function MasterBahan() {
   const [subRecipeModal, setSubRecipeModal] = useState(null);
   const [savingSubRecipe, setSavingSubRecipe] = useState(false);
 
+  const [dbCategories, setDbCategories] = useState([]);
   const { activeOutletId, activeOutlet } = useOutlet();
 
   const availableCategories = useMemo(() => {
+    const fromDb = dbCategories.map(c => c.name).filter(Boolean);
     const custom = ingredients.map(i => i.category).filter(Boolean);
-    return Array.from(new Set([...KATEGORI_BAHAN_OPTIONS, ...custom]));
-  }, [ingredients]);
+    return Array.from(new Set([...KATEGORI_BAHAN_OPTIONS, ...fromDb, ...custom]));
+  }, [ingredients, dbCategories]);
 
   const rawIngredients = useMemo(() => {
     return ingredients.filter(i => i.type !== 'SEMI_FINISHED');
@@ -117,7 +119,9 @@ export default function MasterBahan() {
 
   const displayedIngredients = useMemo(() => {
     return ingredients.filter(i => {
-      if (typeFilter === 'RAW') return i.type !== 'SEMI_FINISHED';
+      const isPerl = (i.category || '').toLowerCase().includes('perlengkapan');
+      if (typeFilter === 'PERLENGKAPAN') return isPerl;
+      if (typeFilter === 'RAW') return i.type !== 'SEMI_FINISHED' && !isPerl;
       if (typeFilter === 'SEMI_FINISHED') return i.type === 'SEMI_FINISHED';
       if (typeFilter === 'LOW_STOCK') return Number(i.current_stock ?? 0) <= Number(i.current_stok_min ?? i.stok_min ?? 0);
       return true;
@@ -129,8 +133,12 @@ export default function MasterBahan() {
   async function fetchIngredients() {
     try {
       const targetOutlet = activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all' ? activeOutletId : undefined;
-      const { data } = await api.get('/ingredients', { params: { outlet_id: targetOutlet } });
-      setIngredients(data);
+      const [ingRes, catRes] = await Promise.all([
+        api.get('/ingredients', { params: { outlet_id: targetOutlet } }),
+        api.get('/categories?type=INGREDIENT').catch(() => ({ data: [] })),
+      ]);
+      setIngredients(ingRes.data || []);
+      setDbCategories(catRes.data || []);
     } catch { toast.error('Gagal memuat bahan'); }
     finally { setLoading(false); }
   }
@@ -275,6 +283,14 @@ export default function MasterBahan() {
           <div style={{ display: 'flex', gap: 8 }}>
             <button
               className="btn btn-secondary"
+              onClick={() => navigate('/kategori-stok')}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, borderColor: 'rgba(0, 177, 79, 0.4)', color: '#10d97a' }}
+            >
+              <Layers size={14} />
+              Kategori Stok & Perlengkapan
+            </button>
+            <button
+              className="btn btn-secondary"
               onClick={() => navigate('/waste')}
               style={{ display: 'flex', alignItems: 'center', gap: 6, borderColor: 'rgba(244, 63, 94, 0.4)', color: '#f43f5e' }}
             >
@@ -332,11 +348,23 @@ export default function MasterBahan() {
           Semua Bahan ({ingredients.length})
         </button>
         <button
+          className={`btn btn-sm ${typeFilter === 'PERLENGKAPAN' ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() => setTypeFilter('PERLENGKAPAN')}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 5,
+            borderColor: typeFilter === 'PERLENGKAPAN' ? '#00B14F' : 'rgba(0, 177, 79, 0.4)',
+            background: typeFilter === 'PERLENGKAPAN' ? '#00B14F' : undefined,
+            color: typeFilter === 'PERLENGKAPAN' ? '#ffffff' : '#10d97a'
+          }}
+        >
+          🥤 Perlengkapan ({ingredients.filter(i => (i.category || '').toLowerCase().includes('perlengkapan')).length})
+        </button>
+        <button
           className={`btn btn-sm ${typeFilter === 'RAW' ? 'btn-primary' : 'btn-secondary'}`}
           onClick={() => setTypeFilter('RAW')}
           style={{ display: 'flex', alignItems: 'center', gap: 5 }}
         >
-          🟢 Bahan Mentah ({ingredients.filter(i => i.type !== 'SEMI_FINISHED').length})
+          🟢 Bahan Mentah ({ingredients.filter(i => i.type !== 'SEMI_FINISHED' && !(i.category || '').toLowerCase().includes('perlengkapan')).length})
         </button>
         <button
           className={`btn btn-sm ${typeFilter === 'SEMI_FINISHED' ? 'btn-primary' : 'btn-secondary'}`}

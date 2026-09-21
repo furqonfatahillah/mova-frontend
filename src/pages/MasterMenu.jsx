@@ -1098,6 +1098,11 @@ export default function MasterMenu() {
                                             Olahan
                                           </span>
                                         )}
+                                        {((it.ingredient?.category || ing?.category || '').toLowerCase().includes('perlengkapan')) && (
+                                          <span className="pill" style={{ fontSize: 9.5, background: 'rgba(0, 177, 79, 0.15)', color: '#10d97a', border: '1px solid rgba(0, 177, 79, 0.3)' }}>
+                                            Perlengkapan
+                                          </span>
+                                        )}
                                       </div>
                                     </td>
                                     <td className="mono right">{num(it.qty)}</td>
@@ -1599,12 +1604,15 @@ export default function MasterMenu() {
                                     if (ing) updateDraft(idx, 'unit', ing.unit_pakai);
                                   }}
                                 >
-                                  {ingredients.map(i => (
-                                    <option key={i.id} value={i.id}>
-                                      {i.type === 'SEMI_FINISHED' ? '🟣 [Olahan] ' : '🟢 [Mentah] '}
-                                      {i.name} ({i.category}) — {rupiah(i.harga / (i.konversi || 1))}/{i.unit_pakai}
-                                    </option>
-                                  ))}
+                                  {ingredients.map(i => {
+                                    const isPerlengkapan = (i.category || '').toLowerCase().includes('perlengkapan');
+                                    const tag = i.type === 'SEMI_FINISHED' ? '🟣 [Olahan] ' : isPerlengkapan ? '🥤 [Perlengkapan] ' : '🟢 [Mentah] ';
+                                    return (
+                                      <option key={i.id} value={i.id}>
+                                        {tag}{i.name} ({i.category || 'Bahan'}) — {rupiah(i.harga / (i.konversi || 1))}/{i.unit_pakai}
+                                      </option>
+                                    );
+                                  })}
                                 </select>
                               </td>
                               <td>
@@ -1872,6 +1880,8 @@ export default function MasterMenu() {
                                           <span style={{ color: 'var(--accent-bright)' }}>{opt.ingredient.name}</span>
                                           {opt.ingredient.type === 'SEMI_FINISHED' ? (
                                             <span className="pill" style={{ fontSize: 9, background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc' }}>🟣 Olahan (2+ Bahan)</span>
+                                          ) : (opt.ingredient.category || '').toLowerCase().includes('perlengkapan') ? (
+                                            <span className="pill" style={{ fontSize: 9, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8' }}>🥤 Perlengkapan</span>
                                           ) : (
                                             <span className="pill" style={{ fontSize: 9, background: 'rgba(16, 185, 129, 0.15)', color: '#6ee7b7' }}>🟢 Mentah</span>
                                           )}
@@ -2613,12 +2623,21 @@ export default function MasterMenu() {
                                   </optgroup>
                                 )}
                                 <optgroup label="🟢 Bahan Baku Mentah Langsung (Single Ingredient)">
-                                  {rawIngredients.map(i => (
+                                  {rawIngredients.filter(i => !(i.category || '').toLowerCase().includes('perlengkapan')).map(i => (
                                     <option key={i.id} value={i.id}>
                                       🟢 [Mentah] {i.name} ({i.unit_pakai})
                                     </option>
                                   ))}
                                 </optgroup>
+                                {ingredients.filter(i => (i.category || '').toLowerCase().includes('perlengkapan')).length > 0 && (
+                                  <optgroup label="🥤 Perlengkapan & Packaging (Cup, Pipet, Tissue)">
+                                    {ingredients.filter(i => (i.category || '').toLowerCase().includes('perlengkapan')).map(i => (
+                                      <option key={i.id} value={i.id}>
+                                        🥤 [Perlengkapan] {i.name} ({i.unit_pakai})
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                )}
                               </select>
                               {opt.ingredient_id && (
                                 <div style={{ fontSize: 9.5, marginTop: 3 }}>

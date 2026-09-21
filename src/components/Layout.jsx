@@ -5,7 +5,7 @@ import {
   ArrowUpDown, ClipboardList, BarChart2, TrendingUp, DollarSign,
   AlertTriangle, LogOut, ScrollText, Menu, X, Clock,
   Store, Send, Users, Building2, ChefHat, Trash2, Percent, Landmark, Wallet, Coins, Gift, Copy, Check, Receipt, Headset,
-  AlertOctagon, CreditCard
+  AlertOctagon, CreditCard, Layers
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
@@ -100,6 +100,7 @@ export default function Layout() {
             items: [
               { to: '/', label: 'Dashboard Tenant', icon: LayoutDashboard },
               { to: '/bahan', label: 'Master Bahan & Resep', icon: Package },
+              { to: '/kategori-stok', label: 'Kategori Stok & Perlengkapan', icon: Layers },
               { to: '/menu', label: 'Master Menu & Harga', icon: UtensilsCrossed },
               { to: '/outlet', label: 'Cabang Outlet', icon: Store },
               { to: '/pos', label: 'POS / Transaksi', icon: ShoppingCart },
@@ -172,6 +173,7 @@ export default function Layout() {
           label: 'Master Bisnis',
           items: [
             { to: '/bahan', label: 'Master Resep & HPP Bahan', icon: Package },
+            { to: '/kategori-stok', label: 'Kategori Stok & Perlengkapan', icon: Layers },
             { to: '/menu', label: 'Master Menu & Modifier', icon: UtensilsCrossed },
             { to: '/outlet', label: 'Tambah Cabang Outlet', icon: Store },
             { to: '/users', label: 'Kelola Manager & Pegawai', icon: Users, isUserMgmt: true },
