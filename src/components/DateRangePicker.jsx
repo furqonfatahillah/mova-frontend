@@ -202,7 +202,7 @@ export default function DateRangePicker({
   const isSameDate = from === to;
 
   return (
-    <div className={`date-range-picker-wrap ${className}`} ref={containerRef} style={{ position: 'relative', display: 'inline-block', ...style }}>
+    <div className={`date-range-picker-wrap ${className}`} ref={containerRef} style={{ position: 'relative', display: 'inline-block', zIndex: isOpen ? 50 : 'auto', ...style }}>
       {/* Trigger Button */}
       <button
         type="button"
