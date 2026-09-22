@@ -234,18 +234,19 @@ export default function DateRangePicker({
       {/* Calendar Popover Dropdown */}
       {isOpen && (
         <div
-          className="card date-picker-popover fade-in"
+          className="date-picker-popover fade-in"
           style={{
             position: 'absolute',
-            top: 'calc(100% + 6px)',
+            top: 'calc(100% + 8px)',
             [align]: 0,
-            zIndex: 999,
+            zIndex: 99999,
             width: 320,
             padding: 16,
-            background: '#ffffff',
-            color: '#0f172a',
+            background: '#13182e',
+            color: '#f8fafc',
             borderRadius: 14,
-            boxShadow: '0 12px 36px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0,0,0,0.08)',
+            border: '1px solid rgba(99, 102, 241, 0.4)',
+            boxShadow: '0 20px 45px rgba(0, 0, 0, 0.95), 0 0 0 1px rgba(99, 102, 241, 0.25)',
             fontFamily: "'Plus Jakarta Sans', sans-serif"
           }}
         >
@@ -261,7 +262,7 @@ export default function DateRangePicker({
                   cursor: 'pointer',
                   fontSize: 14,
                   fontWeight: 800,
-                  color: '#1e293b',
+                  color: '#ffffff',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 4,
@@ -270,7 +271,7 @@ export default function DateRangePicker({
                 }}
               >
                 <span>{MONTH_SHORT[viewMonth]} {viewYear}</span>
-                <ChevronDown size={14} color="#64748b" />
+                <ChevronDown size={14} color="#a5b4fc" />
               </button>
 
               {/* Month/Year Quick Selector Dropdown */}
@@ -279,12 +280,12 @@ export default function DateRangePicker({
                   position: 'absolute',
                   top: '100%',
                   left: 0,
-                  background: '#ffffff',
-                  border: '1px solid #cbd5e1',
+                  background: '#11162d',
+                  border: '1px solid rgba(99, 102, 241, 0.4)',
                   borderRadius: 8,
-                  boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
+                  boxShadow: '0 12px 30px rgba(0,0,0,0.85)',
                   padding: 8,
-                  zIndex: 1000,
+                  zIndex: 100000,
                   display: 'grid',
                   gridTemplateColumns: 'repeat(3, 1fr)',
                   gap: 4,
@@ -304,8 +305,8 @@ export default function DateRangePicker({
                         fontWeight: 700,
                         border: 'none',
                         borderRadius: 4,
-                        background: viewMonth === idx ? '#0284c7' : '#f1f5f9',
-                        color: viewMonth === idx ? '#ffffff' : '#334155',
+                        background: viewMonth === idx ? '#6366f1' : 'rgba(255, 255, 255, 0.06)',
+                        color: viewMonth === idx ? '#ffffff' : '#cbd5e1',
                         cursor: 'pointer'
                       }}
                     >
@@ -322,8 +323,8 @@ export default function DateRangePicker({
                 type="button"
                 onClick={handlePrevMonth}
                 style={{
-                  background: '#f1f5f9',
-                  border: 'none',
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
                   borderRadius: 6,
                   width: 28,
                   height: 28,
@@ -331,7 +332,7 @@ export default function DateRangePicker({
                   alignItems: 'center',
                   justifyContent: 'center',
                   cursor: 'pointer',
-                  color: '#334155'
+                  color: '#ffffff'
                 }}
               >
                 <ChevronLeft size={16} />
@@ -340,8 +341,8 @@ export default function DateRangePicker({
                 type="button"
                 onClick={handleNextMonth}
                 style={{
-                  background: '#f1f5f9',
-                  border: 'none',
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
                   borderRadius: 6,
                   width: 28,
                   height: 28,
@@ -349,7 +350,7 @@ export default function DateRangePicker({
                   alignItems: 'center',
                   justifyContent: 'center',
                   cursor: 'pointer',
-                  color: '#334155'
+                  color: '#ffffff'
                 }}
               >
                 <ChevronRight size={16} />
@@ -364,7 +365,7 @@ export default function DateRangePicker({
             textAlign: 'center',
             fontSize: 12,
             fontWeight: 700,
-            color: '#64748b',
+            color: '#94a3b8',
             marginBottom: 8
           }}>
             {WEEKDAYS.map((w, i) => (
@@ -373,7 +374,7 @@ export default function DateRangePicker({
           </div>
 
           {/* Month Subtitle (e.g. SEP) */}
-          <div style={{ fontSize: 11, fontWeight: 800, color: '#0284c7', textTransform: 'uppercase', marginBottom: 6, paddingLeft: 4 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: '#818cf8', textTransform: 'uppercase', marginBottom: 6, paddingLeft: 4 }}>
             {MONTH_SHORT[viewMonth]}
           </div>
 
@@ -398,11 +399,11 @@ export default function DateRangePicker({
               // Background bar styling for continuous range
               let cellBg = 'transparent';
               if (isBetween) {
-                cellBg = '#dbeafe'; // Light blue highlight bar matching reference image
+                cellBg = 'rgba(99, 102, 241, 0.22)';
               } else if (isStart && !isSingleSelected) {
-                cellBg = 'linear-gradient(to right, transparent 50%, #dbeafe 50%)';
+                cellBg = 'linear-gradient(to right, transparent 50%, rgba(99, 102, 241, 0.22) 50%)';
               } else if (isEnd && !isSingleSelected) {
-                cellBg = 'linear-gradient(to left, transparent 50%, #dbeafe 50%)';
+                cellBg = 'linear-gradient(to left, transparent 50%, rgba(99, 102, 241, 0.22) 50%)';
               }
 
               return (
@@ -425,9 +426,9 @@ export default function DateRangePicker({
                       width: 34,
                       height: 34,
                       borderRadius: '50%',
-                      border: isToday ? '2px solid #0284c7' : 'none',
-                      background: isStart || isEnd ? '#0284c7' : 'transparent',
-                      color: (isStart || isEnd) ? '#ffffff' : (isBetween ? '#1e40af' : '#1e293b'),
+                      border: isToday ? '1.5px solid #818cf8' : 'none',
+                      background: (isStart || isEnd) ? '#6366f1' : 'transparent',
+                      color: (isStart || isEnd) ? '#ffffff' : (isBetween ? '#c7d2fe' : '#f1f5f9'),
                       fontWeight: (isStart || isEnd || isToday) ? 800 : 500,
                       fontSize: 12.5,
                       cursor: 'pointer',
@@ -436,7 +437,8 @@ export default function DateRangePicker({
                       justifyContent: 'center',
                       transition: 'all 0.1s ease',
                       zIndex: 2,
-                      padding: 0
+                      padding: 0,
+                      boxShadow: (isStart || isEnd) ? '0 2px 8px rgba(99, 102, 241, 0.5)' : 'none'
                     }}
                   >
                     {dayNum}
@@ -448,12 +450,12 @@ export default function DateRangePicker({
 
           {/* Quick Presets Shortcuts Panel */}
           <div style={{
-            borderTop: '1px solid #e2e8f0',
+            borderTop: '1px solid rgba(165, 180, 252, 0.15)',
             paddingTop: 10,
             display: 'flex',
             gap: 4,
             flexWrap: 'wrap',
-            justify: 'center'
+            justifyContent: 'center'
           }}>
             {[
               { id: 'TODAY', label: 'Hari Ini' },
@@ -468,11 +470,11 @@ export default function DateRangePicker({
                 style={{
                   fontSize: 11,
                   fontWeight: 600,
-                  padding: '3px 8px',
-                  borderRadius: 4,
-                  border: '1px solid #cbd5e1',
-                  background: '#f8fafc',
-                  color: '#334155',
+                  padding: '4px 10px',
+                  borderRadius: 6,
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  color: '#e2e8f0',
                   cursor: 'pointer'
                 }}
               >
@@ -482,7 +484,7 @@ export default function DateRangePicker({
           </div>
 
           {/* Status Instructions Subtext */}
-          <div style={{ fontSize: 10.5, color: '#64748b', textAlign: 'center', marginTop: 8 }}>
+          <div style={{ fontSize: 10.5, color: '#94a3b8', textAlign: 'center', marginTop: 8 }}>
             {selectingStep === 1 ? '👉 Klik tanggal kedua untuk mengakhiri rentang' : 'Pilih rentang tanggal pada kalender'}
           </div>
         </div>
