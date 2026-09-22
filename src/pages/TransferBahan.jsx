@@ -25,6 +25,7 @@ export default function TransferBahan() {
     canSwitchOutlet,
     currentUser,
     userOutletName,
+    dateRange: period,
   } = useOutlet();
   const [searchParams] = useSearchParams();
   const [transfers, setTransfers] = useState([]);
@@ -98,11 +99,6 @@ export default function TransferBahan() {
       }));
     }
   }, [canSwitchOutlet, currentUser?.outlet_id]);
-
-  const [period, setPeriod] = useState(() => ({
-    from: getMonthStartStr(),
-    to: getMonthEndStr(),
-  }));
 
   // Load all initial data
   useEffect(() => {
@@ -944,7 +940,6 @@ export default function TransferBahan() {
       <div className="card mb-4" style={{ padding: '12px 16px' }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flex: '1 1 300px', flexWrap: 'wrap' }}>
-            <PeriodPicker from={period.from} to={period.to} onChange={setPeriod} align="left" />
             <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
               <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
               <input

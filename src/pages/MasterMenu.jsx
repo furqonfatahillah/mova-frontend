@@ -15,11 +15,12 @@ import { getTodayStr } from '../utils/date';
 import toast from 'react-hot-toast';
 
 export default function MasterMenu() {
-  const { outlets = [], activeOutletId } = useOutlet?.() || {};
+  const { outlets = [], activeOutletId, dateRange } = useOutlet?.() || {};
 
   const [menus, setMenus] = useState([]);
   const [ingredients, setIngredients] = useState([]);
   const [modifierGroups, setModifierGroups] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [selected, setSelected] = useState(null);
   const [draft, setDraft] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -30,9 +31,6 @@ export default function MasterMenu() {
   // State Riwayat HPP (Weighted Moving Average)
   const [hppHistoryData, setHppHistoryData] = useState(null);
   const [hppLoading, setHppLoading] = useState(false);
-  const [hppOutletId, setHppOutletId] = useState(() => activeOutletId || 'ALL');
-  const [hppDateFrom, setHppDateFrom] = useState('');
-  const [hppDateTo, setHppDateTo] = useState('');
 
   // Quick Restock State for Direct Product
   const [restockModalOpen, setRestockModalOpen] = useState(false);
@@ -169,7 +167,7 @@ export default function MasterMenu() {
 
   useEffect(() => { fetchAll(); }, []);
 
-  const fetchHppHistory = async (menuId = selected?.id, targetOutletId = hppOutletId, from = hppDateFrom, to = hppDateTo) => {
+  const fetchHppHistory = async (menuId = selected?.id, targetOutletId = activeOutletId, from = dateRange?.from, to = dateRange?.to) => {
     if (!menuId) return;
     setHppLoading(true);
     try {
@@ -191,9 +189,9 @@ export default function MasterMenu() {
 
   useEffect(() => {
     if (selected?.id && activeTab === 'hpp-history') {
-      fetchHppHistory(selected.id, hppOutletId, hppDateFrom, hppDateTo);
+      fetchHppHistory(selected.id, activeOutletId, dateRange?.from, dateRange?.to);
     }
-  }, [selected?.id, activeTab, hppOutletId]);
+  }, [selected?.id, activeTab, activeOutletId, dateRange]);
 
   const handleExportHppExcel = async () => {
     if (!hppHistoryData || !selected) return;
@@ -2255,7 +2253,7 @@ export default function MasterMenu() {
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
-                      onClick={() => fetchHppHistory(selected.id, hppOutletId, hppDateFrom, hppDateTo)}
+                      onClick={() => fetchHppHistory(selected.id, activeOutletId, dateRange?.from, dateRange?.to)}
                       disabled={hppLoading}
                       style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}
                       title="Perbarui data riwayat HPP"
@@ -2389,87 +2387,24 @@ export default function MasterMenu() {
                   </div>
                 </div>
 
-                {/* Filter Control Bar */}
+                {/* Global Filter Info & Count */}
                 <div style={{
                   display: 'flex',
                   flexWrap: 'wrap',
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   gap: 10,
-                  padding: '12px 16px',
+                  padding: '10px 16px',
                   background: 'rgba(255, 255, 255, 0.02)',
                   border: '1px solid var(--border)',
                   borderRadius: 10,
                   marginBottom: 18
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                    {/* Outlet Filter */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <Store size={14} color="var(--text-muted)" />
-                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Cabang:</span>
-                      <select
-                        className="input"
-                        value={hppOutletId}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setHppOutletId(val);
-                          fetchHppHistory(selected.id, val, hppDateFrom, hppDateTo);
-                        }}
-                        style={{ padding: '4px 10px', fontSize: 12, height: 32, minWidth: 160 }}
-                      >
-                        <option value="ALL">Semua Cabang (Konsolidasi)</option>
-                        {outlets.map(o => (
-                          <option key={o.id} value={o.id}>{o.name}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Date Range Filter */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <Calendar size={14} color="var(--text-muted)" />
-                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Dari:</span>
-                      <input
-                        type="date"
-                        className="input"
-                        value={hppDateFrom}
-                        onChange={(e) => setHppDateFrom(e.target.value)}
-                        style={{ padding: '3px 8px', fontSize: 12, height: 32 }}
-                      />
-                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>s/d:</span>
-                      <input
-                        type="date"
-                        className="input"
-                        value={hppDateTo}
-                        onChange={(e) => setHppDateTo(e.target.value)}
-                        style={{ padding: '3px 8px', fontSize: 12, height: 32 }}
-                      />
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => fetchHppHistory(selected.id, hppOutletId, hppDateFrom, hppDateTo)}
-                        style={{ height: 32, padding: '0 10px', fontSize: 12 }}
-                      >
-                        Filter
-                      </button>
-                      {(hppDateFrom || hppDateTo || (hppOutletId !== 'ALL' && hppOutletId !== activeOutletId)) && (
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          onClick={() => {
-                            setHppDateFrom('');
-                            setHppDateTo('');
-                            setHppOutletId('ALL');
-                            fetchHppHistory(selected.id, 'ALL', '', '');
-                          }}
-                          style={{ height: 32, padding: '0 8px', fontSize: 11, color: 'var(--text-muted)' }}
-                        >
-                          Reset Filter
-                        </button>
-                      )}
-                    </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
+                    <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#6366f1' }}></span>
+                    <span>Tersinkron dengan filter cabang & rentang tanggal global navbar</span>
                   </div>
-
-                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                     Total <strong>{(hppHistoryData?.history || []).length}</strong> log riwayat
                   </div>
                 </div>

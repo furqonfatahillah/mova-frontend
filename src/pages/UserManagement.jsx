@@ -6,6 +6,7 @@ import {
 import api from '../api/client';
 import toast from 'react-hot-toast';
 import { PageHeader, LoadingState, MiniCard, formatDateTime } from '../components/ui';
+import { useOutlet } from '../context/OutletContext';
 
 export default function UserManagement() {
   const currentUser = JSON.parse(localStorage.getItem('pos_user') || '{}');
@@ -16,6 +17,8 @@ export default function UserManagement() {
   const isOwnerOutlet = currentUser.role === 'owner_outlet' || currentUser.role === 'manager_outlet' || Boolean(currentUser.is_owner_outlet);
   const isPegawai = !isPlatformAdmin && !isOwnerBisnis && !isOwnerOutlet;
 
+  const { activeOutletId } = useOutlet();
+
   const [users, setUsers] = useState([]);
   const [counts, setCounts] = useState({ total: 0, pending: 0, active: 0, rejected: 0, suspended: 0 });
   const [outlets, setOutlets] = useState([]);
@@ -25,7 +28,6 @@ export default function UserManagement() {
   // Filters
   const [activeTab, setActiveTab] = useState('pending');
   const [search, setSearch] = useState('');
-  const [outletFilter, setOutletFilter] = useState('');
 
   // Modals
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -268,9 +270,9 @@ export default function UserManagement() {
     if (activeTab === 'active' && u.status !== 'active') return false;
     if (activeTab === 'other' && (u.status === 'pending' || u.status === 'active')) return false;
 
-    // Outlet filter (Owner Website only)
-    if (isOwnerWebsite && outletFilter) {
-      if (String(u.outlet_id) !== String(outletFilter)) return false;
+    // Outlet filter from global navbar
+    if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
+      if (String(u.outlet_id) !== String(activeOutletId)) return false;
     }
 
     // Search filter
@@ -391,26 +393,8 @@ export default function UserManagement() {
             </button>
           </div>
 
-          {/* Filters on the Right: Outlet Dropdown (if Website Owner) & Search */}
+          {/* Filters on the Right: Search */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            {isOwnerWebsite && outlets.length > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Store size={14} color="var(--text-muted)" />
-                <select
-                  className="form-control"
-                  style={{ fontSize: 12.5, padding: '6px 10px', height: 36, minWidth: 170 }}
-                  value={outletFilter}
-                  onChange={e => setOutletFilter(e.target.value)}
-                >
-                  <option value="" style={{ background: '#11162d', color: '#ffffff' }}>Semua Cabang Outlet</option>
-                  {outlets.map(o => (
-                    <option key={o.id} value={o.id} style={{ background: '#11162d', color: '#ffffff' }}>
-                      {o.name} {o.is_main ? '(Pusat)' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
 
             {/* Search */}
             <div style={{ position: 'relative', width: 200 }}>

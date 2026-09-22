@@ -12,17 +12,13 @@ import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [period, setPeriod] = useState(() => ({
-    from: getMonthStartStr(),
-    to: getMonthEndStr(),
-  }));
   const [data, setData] = useState(null);
   const [varData, setVarData] = useState([]);
   const [varMenuData, setVarMenuData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showReportModal, setShowReportModal] = useState(false);
 
-  const { activeOutletId, activeOutlet, currentBusiness, isPlatformAdmin, activeBusinessId, businesses, changeBusiness } = useOutlet();
+  const { activeOutletId, activeOutlet, currentBusiness, isPlatformAdmin, activeBusinessId, businesses, changeBusiness, dateRange: period } = useOutlet();
   const currentUser = JSON.parse(localStorage.getItem('pos_user') || '{}');
   const businessName = currentBusiness?.name || currentUser?.business?.name || 'MOVA POS F&B Management';
   const outletName = (activeOutlet && activeOutletId !== 'ALL' && activeOutletId !== 'all') ? activeOutlet.name : 'Semua Cabang (Konsolidasi)';
@@ -257,8 +253,7 @@ export default function Dashboard() {
           title="Cost Control & Analytics Dashboard"
           subtitle="Evaluasi kinerja HPP, audit variance bahan baku & pemisahan kerugian waste untuk periode berjalan."
         />
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <PeriodPicker from={period.from} to={period.to} onChange={setPeriod} />
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', gap: 8 }}>
             <button
               className="btn btn-secondary btn-sm"

@@ -30,28 +30,15 @@ export default function Receivables() {
   const businessName = currentBusiness?.name || currentUser?.business?.name || 'MOVA POS F&B Management';
   const outletName = (activeOutlet && activeOutletId !== 'ALL' && activeOutletId !== 'all') ? activeOutlet.name : 'Semua Cabang (Konsolidasi)';
 
-  const [selectedOutletId, setSelectedOutletId] = useState(() => {
-    if (!canSwitchOutlet) {
-      return String(currentUser?.outlet_id || activeOutletId || '');
-    }
-    if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
-      return String(activeOutletId);
-    }
-    return '';
-  });
-
   const targetOutlet = useMemo(() => {
     if (!canSwitchOutlet) {
       return Number(currentUser?.outlet_id || activeOutletId || outlets?.[0]?.id || 1);
-    }
-    if (selectedOutletId && selectedOutletId !== 'ALL' && selectedOutletId !== 'all') {
-      return Number(selectedOutletId);
     }
     if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
       return Number(activeOutletId);
     }
     return undefined;
-  }, [selectedOutletId, activeOutletId, outlets, canSwitchOutlet, currentUser?.outlet_id]);
+  }, [activeOutletId, outlets, canSwitchOutlet, currentUser?.outlet_id]);
 
   // Main Data States
   const [items, setItems] = useState([]);
@@ -348,21 +335,6 @@ export default function Receivables() {
         />
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          {canSwitchOutlet && outlets && outlets.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <select
-                className="form-control"
-                style={{ width: 'auto', minWidth: '180px', fontWeight: 600 }}
-                value={selectedOutletId}
-                onChange={e => setSelectedOutletId(e.target.value)}
-              >
-                <option value="ALL">Semua Cabang (Konsolidasi)</option>
-                {outlets.map(o => (
-                  <option key={o.id} value={o.id}>{o.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
 
           <button
             className="btn btn-secondary btn-sm"

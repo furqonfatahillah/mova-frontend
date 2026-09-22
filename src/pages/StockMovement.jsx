@@ -54,32 +54,22 @@ export default function StockMovement() {
     outlets,
     currentUser,
     userOutletName,
+    dateRange: period,
   } = useOutlet();
 
-  const [filterOutlet, setFilterOutlet] = useState(() => {
+  const filterOutlet = useMemo(() => {
     if (!canSwitchOutlet) {
-      return String(currentUser?.outlet_id || activeOutletId || '');
+      return String(currentUser?.outlet_id || activeOutletId || 'ALL');
     }
     if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
       return String(activeOutletId);
     }
     return 'ALL';
-  });
-
-  useEffect(() => {
-    if (!canSwitchOutlet) {
-      const lockedId = String(currentUser?.outlet_id || activeOutletId || '');
-      if (lockedId && filterOutlet !== lockedId) {
-        setFilterOutlet(lockedId);
-      }
-    } else if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
-      setFilterOutlet(String(activeOutletId));
-    }
-  }, [activeOutletId, canSwitchOutlet, currentUser?.outlet_id, filterOutlet]);
+  }, [canSwitchOutlet, currentUser?.outlet_id, activeOutletId]);
 
   const [form, setForm] = useState({
     ingredient_id: '',
-    outlet_id: activeOutletId && activeOutletId !== 'ALL' ? activeOutletId : '1',
+    outlet_id: activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all' ? activeOutletId : '1',
     type: 'PURCHASE',
     waste_reason: 'SPOILED',
     unit_type: 'BELI', // 'BELI' or 'PAKAI'
@@ -90,11 +80,6 @@ export default function StockMovement() {
     note: '',
   });
   const [saving, setSaving] = useState(false);
-
-  const [period, setPeriod] = useState(() => ({
-    from: getMonthStartStr(),
-    to: getMonthEndStr(),
-  }));
 
   useEffect(() => { fetchAll(); }, [filterIng, filterType, filterOutlet, period]);
 
@@ -329,39 +314,6 @@ export default function StockMovement() {
             </div>
 
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <PeriodPicker from={period.from} to={period.to} onChange={setPeriod} align="right" />
-
-              {canSwitchOutlet ? (
-                <select
-                  className="form-control"
-                  style={{ width: 'auto', padding: '6px 10px', fontSize: 12, fontWeight: 600 }}
-                  value={filterOutlet}
-                  onChange={e => setFilterOutlet(e.target.value)}
-                >
-                  <option value="ALL">🏢 Semua Gudang / Cabang</option>
-                  {outlets.map(o => (
-                    <option key={o.id} value={o.id}>
-                      {o.is_main ? '🏢 ' : '📍 '} {o.name}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <div style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '5px 10px',
-                  background: 'rgba(99, 102, 241, 0.12)',
-                  border: '1px solid rgba(99, 102, 241, 0.25)',
-                  borderRadius: 6,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: '#ffffff'
-                }}>
-                  <span>{activeOutlet?.name || userOutletName || 'Cabang Penempatan'}</span>
-                </div>
-              )}
-
               <select className="form-control" style={{ width: 'auto', padding: '6px 10px', fontSize: 12 }}
                 value={filterType} onChange={e => setFilterType(e.target.value)}>
                 <option value="ALL">Semua Tipe</option>

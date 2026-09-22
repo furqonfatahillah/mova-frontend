@@ -24,7 +24,7 @@ function formatDateTime(str) {
 }
 
 export default function UrgentNotes() {
-  const { activeOutletId, activeOutlet, outlets, isOwnerBisnis, isSuperadminPlatform } = useOutlet();
+  const { activeOutletId, activeOutlet, outlets, isOwnerBisnis, isSuperadminPlatform, dateRange: period } = useOutlet();
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -44,10 +44,6 @@ export default function UrgentNotes() {
   // Filters
   const [statusFilter, setStatusFilter] = useState('PENDING'); // 'PENDING' | 'RESOLVED' | 'ALL'
   const [searchQuery, setSearchQuery] = useState('');
-  const [period, setPeriod] = useState(() => ({
-    from: getMonthStartStr(),
-    to: getTodayStr(),
-  }));
 
   // Modals
   const [resolveModal, setResolveModal] = useState({
@@ -503,16 +499,8 @@ export default function UrgentNotes() {
           </button>
         </div>
 
-        {/* Outlet, Period & Search Filter */}
+        {/* Search Filter */}
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-          <PeriodPicker
-            from={period.from}
-            to={period.to}
-            onChange={setPeriod}
-            label="Periode Nota"
-            align="right"
-          />
-
           {/* Search Input */}
           <div style={{ position: 'relative', width: 250 }}>
             <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />

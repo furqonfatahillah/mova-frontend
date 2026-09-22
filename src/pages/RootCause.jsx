@@ -42,74 +42,23 @@ export default function RootCause() {
     canSwitchOutlet,
     currentUser,
     userOutletName,
+    dateRange,
   } = useOutlet();
-
-  const [selectedOutletId, setSelectedOutletId] = useState(() => {
-    if (!canSwitchOutlet) {
-      return String(currentUser?.outlet_id || activeOutletId || '');
-    }
-    if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
-      return String(activeOutletId);
-    }
-    return '';
-  });
 
   const targetOutlet = useMemo(() => {
     if (!canSwitchOutlet) {
       return Number(currentUser?.outlet_id || activeOutletId || outlets?.[0]?.id || 1);
     }
-    if (selectedOutletId && selectedOutletId !== 'ALL' && selectedOutletId !== 'all') {
-      return Number(selectedOutletId);
-    }
     if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
       return Number(activeOutletId);
     }
     return outlets?.[0]?.id || 1;
-  }, [selectedOutletId, activeOutletId, outlets, canSwitchOutlet, currentUser?.outlet_id]);
+  }, [activeOutletId, outlets, canSwitchOutlet, currentUser?.outlet_id]);
 
-  // Opname is monthly-based: default to current month full range (01 to end of month)
-  const [period, setPeriod] = useState(() => ({
-    from: getMonthStartStr(),
-    to: getMonthEndStr(),
-  }));
-
-  const selectedMonthStr = useMemo(() => {
-    if (!period.from) return getTodayStr().slice(0, 7);
-    return period.from.slice(0, 7);
-  }, [period.from]);
-
-  const monthNameFormatted = useMemo(() => {
-    if (!period.from) return '';
-    const [yStr, mStr] = period.from.split('-');
-    const y = parseInt(yStr, 10);
-    const m = parseInt(mStr, 10);
-    if (isNaN(y) || isNaN(m)) return '';
-    const d = new Date(y, m - 1, 1);
-    return d.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
-  }, [period.from]);
-
-  function handleMonthChange(newMonthStr) {
-    if (!newMonthStr) return;
-    const [yearStr, monthStr] = newMonthStr.split('-');
-    const y = parseInt(yearStr, 10);
-    const m = parseInt(monthStr, 10);
-    if (isNaN(y) || isNaN(m)) return;
-
-    const from = `${y}-${String(m).padStart(2, '0')}-01`;
-    const lastDay = new Date(y, m, 0).getDate();
-    const to = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-
-    setPeriod({ from, to });
-  }
-
-  function handleShiftMonth(offset) {
-    const current = selectedMonthStr || getTodayStr().slice(0, 7);
-    const [yStr, mStr] = current.split('-');
-    const d = new Date(parseInt(yStr, 10), parseInt(mStr, 10) - 1 + offset, 1);
-    const newY = d.getFullYear();
-    const newM = String(d.getMonth() + 1).padStart(2, '0');
-    handleMonthChange(`${newY}-${newM}`);
-  }
+  const period = useMemo(() => ({
+    from: dateRange?.from || getMonthStartStr(),
+    to: dateRange?.to || getMonthEndStr(),
+  }), [dateRange]);
 
   const [varData, setVarData] = useState([]);
   const [opnames, setOpnames] = useState({});
@@ -293,83 +242,6 @@ export default function RootCause() {
         />
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-          {canSwitchOutlet && outlets && outlets.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Store size={16} style={{ color: 'var(--primary)' }} />
-              <select
-                className="form-control"
-                style={{ width: 'auto', minWidth: '180px', fontWeight: 600 }}
-                value={selectedOutletId}
-                onChange={e => setSelectedOutletId(e.target.value)}
-              >
-                {outlets.map(o => (
-                  <option key={o.id} value={o.id}>{o.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Monthly Opname Selector */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            background: 'rgba(255, 255, 255, 0.04)',
-            border: '1px solid rgba(255, 255, 255, 0.12)',
-            borderRadius: '10px',
-            padding: '2px 4px',
-            gap: '4px'
-          }}>
-            <button
-              type="button"
-              className="btn btn-secondary btn-icon"
-              style={{ padding: '6px 8px', height: 34, border: 'none', background: 'transparent' }}
-              onClick={() => handleShiftMonth(-1)}
-              title="Bulan Sebelumnya"
-            >
-              <ChevronLeft size={16} />
-            </button>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 6px' }}>
-              <Calendar size={15} style={{ color: 'var(--primary)' }} />
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '13px', fontWeight: 800, color: '#ffffff', lineHeight: 1.2 }}>
-                  {monthNameFormatted || 'Pilih Bulan'}
-                </span>
-                <span className="mono" style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
-                  {period.from} s/d {period.to}
-                </span>
-              </div>
-              <input
-                type="month"
-                className="mono"
-                style={{
-                  fontSize: 12,
-                  fontWeight: 600,
-                  background: 'rgba(0,0,0,0.35)',
-                  color: '#ffffff',
-                  border: '1px solid rgba(255,255,255,0.15)',
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  padding: '3px 6px',
-                  height: 28,
-                  marginLeft: 4
-                }}
-                value={selectedMonthStr}
-                onChange={e => handleMonthChange(e.target.value)}
-              />
-            </div>
-
-            <button
-              type="button"
-              className="btn btn-secondary btn-icon"
-              style={{ padding: '6px 8px', height: 34, border: 'none', background: 'transparent' }}
-              onClick={() => handleShiftMonth(1)}
-              title="Bulan Berikutnya"
-            >
-              <ChevronRight size={16} />
-            </button>
-          </div>
-
           <NavLink
             to="/opname"
             className="btn btn-ghost btn-sm"

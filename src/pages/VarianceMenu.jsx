@@ -7,13 +7,12 @@ import { useOutlet } from '../context/OutletContext';
 import { exportVarianceMenuToExcel } from '../utils/exportReport';
 
 export default function VarianceMenu() {
-  const [period, setPeriod] = useState({ from: '2026-08-01', to: '2026-08-31' });
   const [menuData, setMenuData] = useState([]);
   const [drill, setDrill] = useState(null);
   const [rankBy, setRankBy] = useState('value');
   const [loading, setLoading] = useState(true);
 
-  const { activeOutletId, activeOutlet, currentBusiness } = useOutlet();
+  const { activeOutletId, activeOutlet, currentBusiness, dateRange: period } = useOutlet();
   const currentUser = JSON.parse(localStorage.getItem('pos_user') || '{}');
   const businessName = currentBusiness?.name || currentUser?.business?.name || 'MOVA POS F&B Management';
   const outletName = (activeOutlet && activeOutletId !== 'ALL' && activeOutletId !== 'all') ? activeOutlet.name : 'Semua Cabang (Konsolidasi)';
@@ -67,7 +66,6 @@ export default function VarianceMenu() {
       <div className="flex-between mb-4 flex-wrap gap-3">
         <PageHeader title="Variance per Menu" subtitle="Menu mana yang paling besar menyebabkan variance bahan baku." />
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <PeriodPicker from={period.from} to={period.to} onChange={setPeriod} />
           <button
             className="btn btn-secondary btn-sm"
             style={{

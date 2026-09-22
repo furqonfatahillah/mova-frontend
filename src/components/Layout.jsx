@@ -11,6 +11,7 @@ import api from '../api/client';
 import toast from 'react-hot-toast';
 import { useOutlet as useOutletContext } from '../context/OutletContext';
 import ErrorBoundary from './ErrorBoundary';
+import DateRangePicker from './DateRangePicker';
 
 export default function Layout() {
   const navigate = useNavigate();
@@ -68,6 +69,8 @@ export default function Layout() {
     isCoinLow,
     isCoinOut,
     userReferralCode,
+    dateRange,
+    changeDateRange,
   } = useOutletContext();
 
   const user = currentUser || {};
@@ -703,8 +706,8 @@ export default function Layout() {
             )}
 
             {(isPlatformAdmin ? Boolean(activeBusinessId) : isOwnerBisnis) ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flex: 1, minWidth: 0 }}>
-                <span className="top-header-switcher-label">Ganti Cabang:</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span className="top-header-switcher-label">Cabang:</span>
                 <select
                   id="global-outlet-switcher"
                   className="form-control top-header-outlet-select"
@@ -724,6 +727,21 @@ export default function Layout() {
                 <span>Mutasi & stok bahan diisolasi khusus cabang {user.outlet_name || 'ini'}</span>
               </div>
             ) : null}
+
+            {/* Global Date Range Picker */}
+            {dateRange && (
+              <div className="top-header-date-filter" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span className="top-header-switcher-label">Periode:</span>
+                <DateRangePicker
+                  from={dateRange.from}
+                  to={dateRange.to}
+                  onChange={changeDateRange}
+                  label=""
+                  align="right"
+                  className="top-header-date-picker"
+                />
+              </div>
+            )}
           </div>
         </div>
 

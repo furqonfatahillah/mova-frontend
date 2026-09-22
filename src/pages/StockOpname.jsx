@@ -29,28 +29,25 @@ export default function StockOpname() {
 
   const canRelease = isOwnerBisnis || isPlatformAdmin || isOwnerOutlet || isSuperadminPlatform;
 
-  const [selectedOutletId, setSelectedOutletId] = useState(() => {
+  const targetOutlet = useMemo(() => {
+    if (!canSwitchOutlet) {
+      return Number(currentUser?.outlet_id || activeOutletId || outlets?.[0]?.id || 1);
+    }
+    if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
+      return Number(activeOutletId);
+    }
+    return Number(outlets?.[0]?.id || 1);
+  }, [activeOutletId, outlets, canSwitchOutlet, currentUser?.outlet_id]);
+
+  const historyOutlet = useMemo(() => {
     if (!canSwitchOutlet) {
       return String(currentUser?.outlet_id || activeOutletId || '');
     }
     if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
       return String(activeOutletId);
     }
-    return '';
-  });
-
-  const targetOutlet = useMemo(() => {
-    if (!canSwitchOutlet) {
-      return Number(currentUser?.outlet_id || activeOutletId || outlets?.[0]?.id || 1);
-    }
-    if (selectedOutletId && selectedOutletId !== 'ALL' && selectedOutletId !== 'all') {
-      return Number(selectedOutletId);
-    }
-    if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
-      return Number(activeOutletId);
-    }
-    return outlets?.[0]?.id || 1;
-  }, [selectedOutletId, activeOutletId, outlets, canSwitchOutlet, currentUser?.outlet_id]);
+    return 'ALL';
+  }, [canSwitchOutlet, currentUser?.outlet_id, activeOutletId]);
 
   // --- TAB 1: INPUT OPNAME STATE ---
   const [opnameMode, setOpnameMode] = useState('DAILY'); // 'DAILY' | 'RANGE'
@@ -116,7 +113,6 @@ export default function StockOpname() {
   const [sessions, setSessions] = useState([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
-  const [historyOutlet, setHistoryOutlet] = useState('ALL');
 
   // --- MODAL DETAIL SESI & BERITA ACARA STATE ---
   const [detailModalOpen, setDetailModalOpen] = useState(false);
@@ -134,18 +130,6 @@ export default function StockOpname() {
       opname_date: list[0]?.opname_date,
     };
   }, [opnameMap]);
-
-  useEffect(() => {
-    if (!canSwitchOutlet) {
-      const lockedId = String(currentUser?.outlet_id || activeOutletId || '');
-      if (lockedId && selectedOutletId !== lockedId) {
-        setSelectedOutletId(lockedId);
-      }
-      if (lockedId && historyOutlet !== lockedId) {
-        setHistoryOutlet(lockedId);
-      }
-    }
-  }, [canSwitchOutlet, currentUser?.outlet_id, activeOutletId, selectedOutletId, historyOutlet]);
 
   // Load input data when period, targetOutlet, historyOutlet, or activeTab changes
   useEffect(() => {
@@ -443,27 +427,12 @@ export default function StockOpname() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, alignItems: 'center' }}>
               <div>
                 <label className="form-label" style={{ fontSize: 11.5 }}>Gudang / Cabang Pelaksana</label>
-                {canSwitchOutlet && outlets && outlets.length > 0 ? (
-                  <select
-                    className="form-control"
-                    style={{ fontSize: 13, fontWeight: 700, background: 'var(--card-bg)', color: '#ffffff', cursor: 'pointer' }}
-                    value={targetOutlet}
-                    onChange={e => setSelectedOutletId(e.target.value)}
-                  >
-                    {outlets.map(o => (
-                      <option key={o.id} value={o.id}>
-                        {o.is_main ? '🏢 ' : '📍 '} {o.name} ({o.code})
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13, color: '#ffffff', padding: '6px 12px', background: 'rgba(99, 102, 241, 0.12)', borderRadius: 8, border: '1px solid rgba(99, 102, 241, 0.25)' }}>
-                    <span>{activeOutlet?.name || userOutletName || 'Cabang Penempatan'}</span>
-                    <span style={{ fontSize: 10, padding: '1px 5px', background: 'rgba(16, 217, 122, 0.2)', color: 'var(--ok)', borderRadius: 4, marginLeft: 6 }}>
-                      Terkunci
-                    </span>
-                  </div>
-                )}
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13, color: '#ffffff', padding: '6px 12px', background: 'rgba(99, 102, 241, 0.12)', borderRadius: 8, border: '1px solid rgba(99, 102, 241, 0.25)' }}>
+                  <span>{activeOutlet?.name || userOutletName || 'Cabang Pelaksana'}</span>
+                  {activeOutlet?.is_main && (
+                    <span className="top-header-badge pusat" style={{ marginLeft: 4 }}>PUSAT</span>
+                  )}
+                </div>
               </div>
 
               <div>
@@ -827,28 +796,7 @@ export default function StockOpname() {
 
           {/* Filter Bar */}
           <div className="card mb-4" style={{ padding: '14px 18px' }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', justifyContent: 'space-between' }}>
-              {canSwitchOutlet && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-                    Filter Gudang:
-                  </span>
-                  <select
-                    className="form-control"
-                    style={{ fontSize: 12.5, minWidth: 200 }}
-                    value={historyOutlet}
-                    onChange={e => setHistoryOutlet(e.target.value)}
-                  >
-                    <option value="ALL">Semua Cabang / Gudang</option>
-                    {outlets.map(o => (
-                      <option key={o.id} value={o.id}>
-                        {o.is_main ? '🏢 ' : '📍 '} {o.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', justifyContent: 'flex-end' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div style={{ position: 'relative', width: 260 }}>
                   <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />

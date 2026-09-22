@@ -20,6 +20,7 @@ export default function BatchPrep() {
     outlets,
     currentUser,
     userOutletName,
+    dateRange,
   } = useOutlet();
 
   const [activeTab, setActiveTab] = useState('katalog'); // 'katalog' | 'riwayat'
@@ -389,11 +390,13 @@ export default function BatchPrep() {
         const matchName = b.ingredient?.name?.toLowerCase().includes(s);
         if (!matchNo && !matchName) return false;
       }
-      if (historyFilter.from && b.date < historyFilter.from) return false;
-      if (historyFilter.to && b.date > historyFilter.to) return false;
+      const from = historyFilter.from || dateRange?.from;
+      const to = historyFilter.to || dateRange?.to;
+      if (from && b.date < from) return false;
+      if (to && b.date > to) return false;
       return true;
     });
-  }, [batches, historyFilter]);
+  }, [batches, historyFilter, dateRange]);
 
   if (loading) return <LoadingState />;
 
@@ -683,15 +686,7 @@ export default function BatchPrep() {
               />
             </div>
 
-            <PeriodPicker
-              from={historyFilter.from}
-              to={historyFilter.to}
-              onChange={({ from, to }) => setHistoryFilter(p => ({ ...p, from, to }))}
-              label="Periode"
-              align="left"
-            />
-
-            {(historyFilter.search || historyFilter.from || historyFilter.to) && (
+            {historyFilter.search && (
               <button
                 className="btn btn-ghost btn-sm"
                 onClick={() => setHistoryFilter({ search: '', from: '', to: '' })}

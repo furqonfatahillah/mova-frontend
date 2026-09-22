@@ -1,9 +1,33 @@
 import { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../api/client';
+import { getMonthStartStr, getMonthEndStr } from '../utils/date';
 
 const OutletContext = createContext(null);
 
 export function OutletProvider({ children }) {
+  const [dateRange, setDateRangeState] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('pos_global_date_range');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.from && parsed?.to) return parsed;
+      }
+    } catch {}
+    return {
+      from: getMonthStartStr(),
+      to: getMonthEndStr(),
+    };
+  });
+
+  const changeDateRange = useCallback((newRange) => {
+    if (!newRange || !newRange.from || !newRange.to) return;
+    setDateRangeState(newRange);
+    try {
+      sessionStorage.setItem('pos_global_date_range', JSON.stringify(newRange));
+    } catch {}
+    window.dispatchEvent(new CustomEvent('pos:date_range_changed', { detail: newRange }));
+  }, []);
+
   const [outlets, setOutlets] = useState([]);
   const [loadingOutlets, setLoadingOutlets] = useState(true);
   const [businesses, setBusinesses] = useState([]);
@@ -295,10 +319,18 @@ export function OutletProvider({ children }) {
     remainingTransactions: Number(coinData?.remaining_transactions ?? 0),
     isCoinLow: Boolean(coinData?.is_coin_low),
     isCoinOut: Boolean(coinData?.is_coin_out),
+    dateRange,
+    setDateRange: changeDateRange,
+    changeDateRange,
+    period: dateRange,
+    dateFrom: dateRange.from,
+    dateTo: dateRange.to,
     refreshCoins: fetchCoinData,
     userReferralCode: currentUser?.referral_code,
     refreshUser: refreshCurrentUser,
   }), [
+    dateRange,
+    changeDateRange,
     outlets,
     loadingOutlets,
     currentUser,

@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
-import { PageHeader, LoadingState, rupiah, num, formatDateTime, PeriodPicker } from '../components/ui';
+import { PageHeader, LoadingState, rupiah, num, formatDateTime } from '../components/ui';
 import { getMonthStartStr, getTodayStr } from '../utils/date';
 import { useOutlet } from '../context/OutletContext';
 
@@ -101,7 +101,7 @@ function groupMutationsByDate(mutations) {
 }
 
 export default function CoinManagement() {
-  const { isSuperadminPlatform, isOwnerWebsite, refreshCoins } = useOutlet();
+  const { isSuperadminPlatform, isOwnerWebsite, refreshCoins, dateRange } = useOutlet();
   const isPlatformAdmin = isSuperadminPlatform || isOwnerWebsite;
 
   // --- STATE HOOKS (Always top level) ---
@@ -116,10 +116,10 @@ export default function CoinManagement() {
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'LOW' | 'OUT' | 'SAFE'
   const [historyBusinessFilter, setHistoryBusinessFilter] = useState('');
   const [adminViewMode, setAdminViewMode] = useState('grouped'); // 'grouped' | 'flat'
-  const [historyPeriod, setHistoryPeriod] = useState(() => ({
-    from: getMonthStartStr(),
-    to: getTodayStr(),
-  }));
+  const historyPeriod = useMemo(() => ({
+    from: dateRange?.from || getMonthStartStr(),
+    to: dateRange?.to || getTodayStr(),
+  }), [dateRange?.from, dateRange?.to]);
 
   // Modals
   const [topUpModal, setTopUpModal] = useState({
@@ -498,13 +498,6 @@ export default function CoinManagement() {
                 Riwayat Mutasi Koin per Tanggal ({groupedMutations.length} Hari · {mutations.length} Transaksi)
               </h3>
             </div>
-            <PeriodPicker
-              from={historyPeriod.from}
-              to={historyPeriod.to}
-              onChange={setHistoryPeriod}
-              label="Periode"
-              align="right"
-            />
           </div>
 
           {groupedMutations.length === 0 ? (
@@ -953,14 +946,6 @@ export default function CoinManagement() {
         <>
           <div className="card" style={{ padding: 14, marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>Filter:</span>
-              <PeriodPicker
-                from={historyPeriod.from}
-                to={historyPeriod.to}
-                onChange={setHistoryPeriod}
-                label="Periode"
-                align="left"
-              />
               <select
                 className="form-control"
                 style={{ minWidth: 200 }}

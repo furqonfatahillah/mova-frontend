@@ -45,12 +45,10 @@ export const ACCOUNT_TYPES = [
 ];
 
 export default function CashFlow() {
-  const { activeOutletId, activeOutlet, outlets, currentBusiness } = useOutlet();
+  const { activeOutletId, activeOutlet, outlets, currentBusiness, dateFrom, dateTo } = useOutlet();
   const currentUser = JSON.parse(localStorage.getItem('pos_user') || '{}');
 
   const todayStr = getTodayStr();
-  const [dateFrom, setDateFrom] = useState(() => getMonthStartStr());
-  const [dateTo, setDateTo] = useState(todayStr);
   const [activeTab, setActiveTab] = useState('statement'); // 'statement' | 'reconciliation' | 'journal'
 
   const [loading, setLoading] = useState(true);
@@ -158,31 +156,6 @@ export default function CashFlow() {
     notes: '',
   };
   const [formData, setFormData] = useState(initialForm);
-
-  function applyPreset(type) {
-    const now = new Date();
-    if (type === 'today') {
-      setDateFrom(todayStr);
-      setDateTo(todayStr);
-    } else if (type === '7days') {
-      const past = new Date();
-      past.setDate(now.getDate() - 6);
-      setDateFrom(getTodayStr(past));
-      setDateTo(todayStr);
-    } else if (type === 'this_month') {
-      setDateFrom(getMonthStartStr());
-      setDateTo(todayStr);
-    } else if (type === 'last_month') {
-      const firstPast = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const lastPast = new Date(now.getFullYear(), now.getMonth(), 0);
-      setDateFrom(getTodayStr(firstPast));
-      setDateTo(getTodayStr(lastPast));
-    } else if (type === 'this_year') {
-      const firstYear = new Date(now.getFullYear(), 0, 1);
-      setDateFrom(getTodayStr(firstYear));
-      setDateTo(todayStr);
-    }
-  }
 
   useEffect(() => {
     fetchData();
@@ -423,33 +396,6 @@ export default function CashFlow() {
             <Plus size={16} /> Catat Mutasi Kas (CapEx / Prive)
           </button>
         </div>
-      </div>
-
-      {/* Date Filter Bar */}
-      <div
-        className="card mb-4"
-        style={{
-          padding: '12px 18px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: 12,
-          background: 'rgba(17, 22, 45, 0.65)',
-          backdropFilter: 'blur(12px)',
-          border: '1px solid rgba(165, 180, 252, 0.12)',
-        }}
-      >
-        <PeriodPicker
-          from={dateFrom}
-          to={dateTo}
-          onChange={({ from, to }) => {
-            setDateFrom(from);
-            setDateTo(to);
-          }}
-          label="Periode Kas"
-          align="left"
-        />
       </div>
 
       {/* 2. Top 4 Cash Flow KPI Cards */}

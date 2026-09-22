@@ -8,12 +8,11 @@ import { exportProfitabilityToExcel } from '../utils/exportReport';
 import { printElement } from '../utils/print';
 
 export default function Profitability() {
-  const [period, setPeriod] = useState({ from: '2026-08-01', to: '2026-08-31' });
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showReportModal, setShowReportModal] = useState(false);
 
-  const { activeOutletId, activeOutlet, currentBusiness } = useOutlet();
+  const { activeOutletId, activeOutlet, currentBusiness, dateRange: period } = useOutlet();
   const currentUser = JSON.parse(localStorage.getItem('pos_user') || '{}');
   const businessName = currentBusiness?.name || currentUser?.business?.name || 'MOVA POS F&B Management';
   const outletName = (activeOutlet && activeOutletId !== 'ALL' && activeOutletId !== 'all') ? activeOutlet.name : 'Semua Cabang (Konsolidasi)';
@@ -82,8 +81,7 @@ export default function Profitability() {
           title="Menu Profitability & HPP Dinamis"
           subtitle="Evaluasi margin & HPP aktual berbasis Weighted Moving Average bahan baku, disesuaikan dengan variance per porsi."
         />
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <PeriodPicker from={period.from} to={period.to} onChange={setPeriod} />
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', gap: 8 }}>
             <button
               className="btn btn-secondary btn-sm"

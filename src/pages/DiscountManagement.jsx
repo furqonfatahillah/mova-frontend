@@ -37,7 +37,6 @@ export default function DiscountManagement() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterActive, setFilterActive] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'INACTIVE'
-  const [filterOutlet, setFilterOutlet] = useState('ALL');
 
   // Modal State
   const [modalOpen, setModalOpen] = useState(false);
@@ -86,15 +85,17 @@ export default function DiscountManagement() {
         (filterActive === 'ACTIVE' && d.active) ||
         (filterActive === 'INACTIVE' && !d.active);
 
-      // Outlet
+      // Outlet from global context
       const matchOutlet =
-        filterOutlet === 'ALL' ||
-        (filterOutlet === 'GLOBAL' && !d.outlet_id) ||
-        d.outlet_id?.toString() === filterOutlet;
+        !activeOutletId ||
+        activeOutletId === 'ALL' ||
+        activeOutletId === 'all' ||
+        !d.outlet_id ||
+        String(d.outlet_id) === String(activeOutletId);
 
       return matchSearch && matchStatus && matchOutlet;
     });
-  }, [discounts, searchQuery, filterActive, filterOutlet]);
+  }, [discounts, searchQuery, filterActive, activeOutletId]);
 
   // KPI Metrics
   const metrics = useMemo(() => {
@@ -408,22 +409,6 @@ export default function DiscountManagement() {
             </div>
           </div>
 
-          {/* Outlet Filter */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Cabang:</span>
-            <select
-              className="form-control"
-              style={{ fontSize: 12, padding: '6px 10px', minWidth: 160 }}
-              value={filterOutlet}
-              onChange={e => setFilterOutlet(e.target.value)}
-            >
-              <option value="ALL">Semua Cabang</option>
-              <option value="GLOBAL">🌐 Berlaku Semua Cabang</option>
-              {outlets.map(o => (
-                <option key={o.id} value={o.id.toString()}>📍 {o.name}</option>
-              ))}
-            </select>
-          </div>
         </div>
       </div>
 

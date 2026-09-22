@@ -9,14 +9,13 @@ import { exportVarianceBahanToExcel } from '../utils/exportReport';
 import { printElement } from '../utils/print';
 
 export default function VarianceBahan() {
-  const [period, setPeriod] = useState({ from: '2026-08-01', to: '2026-08-31' });
   const [varData, setVarData] = useState([]);
   const [drill, setDrill] = useState(null);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState('cost_control'); // 'standard' | 'cost_control'
   const [showReportModal, setShowReportModal] = useState(false);
 
-  const { activeOutletId, activeOutlet, currentBusiness } = useOutlet();
+  const { activeOutletId, activeOutlet, currentBusiness, dateRange: period } = useOutlet();
   const currentUser = JSON.parse(localStorage.getItem('pos_user') || '{}');
   const businessName = currentBusiness?.name || currentUser?.business?.name || 'MOVA POS F&B Management';
   const outletName = (activeOutlet && activeOutletId !== 'ALL' && activeOutletId !== 'all') ? activeOutlet.name : 'Semua Cabang (Konsolidasi)';
@@ -92,7 +91,6 @@ export default function VarianceBahan() {
               <Eye size={13} /> Mode Ringkas
             </button>
           </div>
-          <PeriodPicker from={period.from} to={period.to} onChange={setPeriod} />
           <div style={{ display: 'flex', gap: 8 }}>
             <button
               className="btn btn-secondary btn-sm"

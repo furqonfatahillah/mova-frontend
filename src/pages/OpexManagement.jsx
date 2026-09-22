@@ -29,11 +29,9 @@ export const PAYMENT_METHODS = [
 ];
 
 export default function OpexManagement() {
-  const { activeOutletId, activeOutlet, outlets, isOwnerWebsite, isOwnerBisnis } = useOutlet();
+  const { activeOutletId, activeOutlet, outlets, isOwnerWebsite, isOwnerBisnis, dateFrom, dateTo } = useOutlet();
 
   const todayStr = getTodayStr();
-  const [dateFrom, setDateFrom] = useState(() => getMonthStartStr());
-  const [dateTo, setDateTo] = useState(todayStr);
 
   const [loading, setLoading] = useState(true);
   const [expenses, setExpenses] = useState([]);
@@ -59,27 +57,6 @@ export default function OpexManagement() {
     notes: '',
   };
   const [formData, setFormData] = useState(initialForm);
-
-  function applyPreset(type) {
-    const now = new Date();
-    if (type === 'today') {
-      setDateFrom(todayStr);
-      setDateTo(todayStr);
-    } else if (type === '7days') {
-      const past = new Date();
-      past.setDate(now.getDate() - 6);
-      setDateFrom(getTodayStr(past));
-      setDateTo(todayStr);
-    } else if (type === 'this_month') {
-      setDateFrom(getMonthStartStr());
-      setDateTo(todayStr);
-    } else if (type === 'last_month') {
-      const firstPast = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const lastPast = new Date(now.getFullYear(), now.getMonth(), 0);
-      setDateFrom(getTodayStr(firstPast));
-      setDateTo(getTodayStr(lastPast));
-    }
-  }
 
   useEffect(() => {
     fetchData();
@@ -353,22 +330,8 @@ export default function OpexManagement() {
           border: '1px solid rgba(165, 180, 252, 0.15)',
         }}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* Row 1: Date & Presets */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-            <PeriodPicker
-              from={dateFrom}
-              to={dateTo}
-              onChange={({ from, to }) => {
-                setDateFrom(from);
-                setDateTo(to);
-              }}
-              label="Periode OPEX"
-              align="left"
-            />
-          </div>
-
-          {/* Row 2: Search, Category & Payment Filters */}
+        <div>
+          {/* Search, Category & Payment Filters */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
             {/* Search */}
             <div className="search-input-wrapper" style={{ position: 'relative' }}>

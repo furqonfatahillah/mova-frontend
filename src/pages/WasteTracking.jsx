@@ -44,11 +44,11 @@ export default function WasteTracking() {
     outlets,
     currentUser,
     userOutletName,
+    dateFrom,
+    dateTo,
   } = useOutlet();
 
   // Filters
-  const [dateFrom, setDateFrom] = useState(() => getMonthStartStr());
-  const [dateTo, setDateTo] = useState(() => getTodayStr());
   const [filterReason, setFilterReason] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -329,19 +329,9 @@ export default function WasteTracking() {
         </div>
       )}
 
-      {/* Period & Filter Bar */}
+      {/* Filter Bar */}
       <div className="card" style={{ padding: '14px 18px', marginBottom: 20 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 14 }}>
-          <PeriodPicker
-            from={dateFrom}
-            to={dateTo}
-            onChange={({ from, to }) => {
-              setDateFrom(from);
-              setDateTo(to);
-            }}
-            align="left"
-          />
-
+        <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', flexWrap: 'wrap', gap: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
               <Filter size={14} style={{ color: 'var(--accent-bright)' }} />
