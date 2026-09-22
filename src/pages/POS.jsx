@@ -13,7 +13,7 @@ import {
   ChevronDown, Filter, Layers, UserCheck, UserPlus, Star, Award
 } from 'lucide-react';
 import api from '../api/client';
-import { rupiah, num, LoadingState, PageHeader, PeriodPicker } from '../components/ui';
+import { rupiah, num, LoadingState, PageHeader } from '../components/ui';
 import { printElement } from '../utils/print';
 import { getTodayStr, getMonthStartStr, formatLocalDisplay } from '../utils/date';
 import toast from 'react-hot-toast';
@@ -61,10 +61,6 @@ export default function POS() {
 
   // History / Riwayat Nota Filters & State
   const [showHistory, setShowHistory] = useState(false);
-  const [historyPeriod, setHistoryPeriod] = useState(() => ({
-    from: getTodayStr(),
-    to: getTodayStr(),
-  }));
   const [historySearch, setHistorySearch] = useState('');
   const [historyPaymentMethod, setHistoryPaymentMethod] = useState('ALL');
   const [historyStatus, setHistoryStatus] = useState('PAID'); // 'PAID' | 'HOLD' | 'ALL'
@@ -180,7 +176,13 @@ export default function POS() {
     isCoinLow,
     isCoinOut,
     refreshCoins,
+    dateRange,
   } = useOutlet();
+
+  const historyPeriod = useMemo(() => ({
+    from: dateRange?.from || getTodayStr(),
+    to: dateRange?.to || getTodayStr(),
+  }), [dateRange?.from, dateRange?.to]);
 
   const currentTargetOutlet = (!isOwnerBisnis && !isPlatformAdmin && currentUser.outlet_id)
     ? Number(currentUser.outlet_id)
@@ -263,34 +265,6 @@ export default function POS() {
     }
   }, [showHistory, historyPeriod, historyStatus, historyPaymentMethod, currentTargetOutlet]);
 
-  function handlePresetPeriod(preset) {
-    const today = getTodayStr();
-    if (preset === 'today') {
-      setHistoryPeriod({ from: today, to: today });
-    } else if (preset === '7days') {
-      const d = new Date();
-      d.setDate(d.getDate() - 6);
-      setHistoryPeriod({ from: getTodayStr(d), to: today });
-    } else if (preset === 'month') {
-      setHistoryPeriod({ from: getMonthStartStr(), to: today });
-    }
-  }
-
-  const isPresetActive = (preset) => {
-    const today = getTodayStr();
-    if (preset === 'today') {
-      return historyPeriod.from === today && historyPeriod.to === today;
-    }
-    if (preset === '7days') {
-      const d = new Date();
-      d.setDate(d.getDate() - 6);
-      return historyPeriod.from === getTodayStr(d) && historyPeriod.to === today;
-    }
-    if (preset === 'month') {
-      return historyPeriod.from === getMonthStartStr() && historyPeriod.to === today;
-    }
-    return false;
-  };
 
   function toggleHistoryOrderExpand(orderNumber) {
     setExpandedHistoryOrders(prev => ({
@@ -2328,80 +2302,7 @@ export default function POS() {
             flexDirection: 'column',
             gap: 12
           }}>
-            {/* Row 1: Date Range Filter + Quick Presets + Status Filter */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <Calendar size={14} style={{ color: 'var(--accent-bright)' }} />
-                  Range Tanggal:
-                </span>
-                <PeriodPicker
-                  from={historyPeriod.from}
-                  to={historyPeriod.to}
-                  onChange={setHistoryPeriod}
-                  label="Rentang Tanggal Nota"
-                  align="left"
-                />
-
-                {/* Quick Presets */}
-                <div style={{ display: 'flex', gap: 5, marginLeft: 4 }}>
-                  <button
-                    type="button"
-                    onClick={() => handlePresetPeriod('today')}
-                    className={`btn btn-sm ${isPresetActive('today') ? 'btn-primary' : 'btn-outline'}`}
-                    style={{ fontSize: 11, padding: '3px 9px', height: 32 }}
-                  >
-                    Hari Ini
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handlePresetPeriod('7days')}
-                    className={`btn btn-sm ${isPresetActive('7days') ? 'btn-primary' : 'btn-outline'}`}
-                    style={{ fontSize: 11, padding: '3px 9px', height: 32 }}
-                  >
-                    7 Hari
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handlePresetPeriod('month')}
-                    className={`btn btn-sm ${isPresetActive('month') ? 'btn-primary' : 'btn-outline'}`}
-                    style={{ fontSize: 11, padding: '3px 9px', height: 32 }}
-                  >
-                    Bulan Ini
-                  </button>
-                </div>
-              </div>
-
-              {/* Status Filter Tabs */}
-              <div style={{ display: 'flex', gap: 5, background: 'rgba(0,0,0,0.3)', padding: 3, borderRadius: 8, border: '1px solid var(--border)' }}>
-                <button
-                  type="button"
-                  onClick={() => setHistoryStatus('PAID')}
-                  className={`btn btn-sm ${historyStatus === 'PAID' ? 'btn-primary' : 'btn-ghost'}`}
-                  style={{ fontSize: 11.5, padding: '3px 10px', height: 28 }}
-                >
-                  ✓ Lunas (PAID)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setHistoryStatus('HOLD')}
-                  className={`btn btn-sm ${historyStatus === 'HOLD' ? 'btn-primary' : 'btn-ghost'}`}
-                  style={{ fontSize: 11.5, padding: '3px 10px', height: 28 }}
-                >
-                  ⏳ Tertunda (HOLD)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setHistoryStatus('ALL')}
-                  className={`btn btn-sm ${historyStatus === 'ALL' ? 'btn-primary' : 'btn-ghost'}`}
-                  style={{ fontSize: 11.5, padding: '3px 10px', height: 28 }}
-                >
-                  Semua Status
-                </button>
-              </div>
-            </div>
-
-            {/* Row 2: Search Input & Payment Method Filter */}
+            {/* Filter Bar: Search, Payment Method, and Status Filter Tabs */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
               {/* Search Box */}
               <div style={{ position: 'relative', flex: 1, minWidth: 260 }}>
@@ -2435,12 +2336,40 @@ export default function POS() {
                   style={{ width: 150, height: 36, fontSize: 12, borderRadius: 8 }}
                 >
                   <option value="ALL">Semua Metode</option>
-                  <option value="CASH">CASH (Tunai)</option>
+                  <option value="CASH">Tunai (CASH)</option>
                   <option value="QRIS">QRIS</option>
-                  <option value="TRANSFER">TRANSFER</option>
-                  <option value="DEBIT">DEBIT / EDC</option>
-                  <option value="GRAB">GRAB / GrabFood</option>
+                  <option value="TRANSFER">Transfer Bank</option>
+                  <option value="DEBIT">Kartu Debit</option>
+                  <option value="CREDIT">Kartu Kredit</option>
                 </select>
+              </div>
+
+              {/* Status Filter Tabs */}
+              <div style={{ display: 'flex', gap: 5, background: 'rgba(0,0,0,0.3)', padding: 3, borderRadius: 8, border: '1px solid var(--border)' }}>
+                <button
+                  type="button"
+                  onClick={() => setHistoryStatus('PAID')}
+                  className={`btn btn-sm ${historyStatus === 'PAID' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ fontSize: 11.5, padding: '3px 10px', height: 28 }}
+                >
+                  ✓ Lunas (PAID)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHistoryStatus('HOLD')}
+                  className={`btn btn-sm ${historyStatus === 'HOLD' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ fontSize: 11.5, padding: '3px 10px', height: 28 }}
+                >
+                  ⏳ Tertunda (HOLD)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHistoryStatus('ALL')}
+                  className={`btn btn-sm ${historyStatus === 'ALL' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ fontSize: 11.5, padding: '3px 10px', height: 28 }}
+                >
+                  Semua Status
+                </button>
               </div>
             </div>
           </div>
