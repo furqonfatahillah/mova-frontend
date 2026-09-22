@@ -2,9 +2,11 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   Plus, Save, X, Edit2, Trash2, UtensilsCrossed, Check, Layers, Sliders,
   CheckSquare, Tag, Package, Scissors, Sparkles, AlertCircle, RefreshCw, Barcode, Info,
-  Copy, Search, Calculator
+  Copy, Search, Calculator, TrendingUp, TrendingDown, Clock, Activity,
+  ArrowUpRight, ArrowDownRight, FileSpreadsheet, History, Calendar, Filter, Store
 } from 'lucide-react';
 import api from '../api/client';
+import { useOutlet } from '../context/OutletContext';
 import {
   rupiah, num, LoadingState, PageHeader, AuditInfo, formatDateTime,
   SATUAN_PAKAI_OPTIONS, UnitSelect, SearchableSelect
@@ -13,6 +15,8 @@ import { getTodayStr } from '../utils/date';
 import toast from 'react-hot-toast';
 
 export default function MasterMenu() {
+  const { outlets = [], activeOutletId } = useOutlet?.() || {};
+
   const [menus, setMenus] = useState([]);
   const [ingredients, setIngredients] = useState([]);
   const [modifierGroups, setModifierGroups] = useState([]);
@@ -20,8 +24,15 @@ export default function MasterMenu() {
   const [draft, setDraft] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState('recipe'); // 'recipe' | 'modifiers'
+  const [activeTab, setActiveTab] = useState('recipe'); // 'recipe' | 'modifiers' | 'hpp-history'
   const [selectedType, setSelectedType] = useState('ALL'); // 'ALL' | 'RECIPE' | 'DIRECT' | 'SERVICE'
+
+  // State Riwayat HPP (Weighted Moving Average)
+  const [hppHistoryData, setHppHistoryData] = useState(null);
+  const [hppLoading, setHppLoading] = useState(false);
+  const [hppOutletId, setHppOutletId] = useState(() => activeOutletId || 'ALL');
+  const [hppDateFrom, setHppDateFrom] = useState('');
+  const [hppDateTo, setHppDateTo] = useState('');
 
   // Quick Restock State for Direct Product
   const [restockModalOpen, setRestockModalOpen] = useState(false);
@@ -157,6 +168,107 @@ export default function MasterMenu() {
   }, [searchableIngredientGroups]);
 
   useEffect(() => { fetchAll(); }, []);
+
+  const fetchHppHistory = async (menuId = selected?.id, targetOutletId = hppOutletId, from = hppDateFrom, to = hppDateTo) => {
+    if (!menuId) return;
+    setHppLoading(true);
+    try {
+      const params = {};
+      if (targetOutletId && targetOutletId !== 'ALL' && targetOutletId !== 'all') {
+        params.outlet_id = targetOutletId;
+      }
+      if (from) params.from = from;
+      if (to) params.to = to;
+      const res = await api.get(`/menus/${menuId}/hpp-history`, { params });
+      setHppHistoryData(res.data);
+    } catch (err) {
+      console.error('Gagal memuat riwayat HPP:', err);
+      toast.error('Gagal mengambil data riwayat HPP menu');
+    } finally {
+      setHppLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selected?.id && activeTab === 'hpp-history') {
+      fetchHppHistory(selected.id, hppOutletId, hppDateFrom, hppDateTo);
+    }
+  }, [selected?.id, activeTab, hppOutletId]);
+
+  const handleExportHppExcel = async () => {
+    if (!hppHistoryData || !selected) return;
+    try {
+      toast.loading('Menyiapkan file Excel riwayat HPP...', { id: 'export-hpp' });
+      const XLSX = await import('xlsx');
+      const wb = XLSX.utils.book_new();
+
+      const historyRows = [
+        ['LAPORAN RIWAYAT PERUBAHAN HPP (WEIGHTED MOVING AVERAGE)'],
+        ['Menu', selected.name],
+        ['Kode Menu', selected.code],
+        ['Kategori', selected.category || 'Main'],
+        ['Harga Jual', selected.price || 0],
+        ['HPP Saat Ini', hppHistoryData.current_hpp || 0],
+        ['Margin Saat Ini (%)', `${hppHistoryData.current_margin_pct || 0}%`],
+        ['Tanggal Cetak', new Date().toLocaleString('id-ID')],
+        [],
+        ['No', 'Tanggal', 'Cabang', 'Tipe Pemicu', 'HPP Sebelum', 'HPP Sesudah', 'Selisih (Rp)', 'Perubahan (%)', 'Margin Sebelum', 'Margin Sesudah', 'Bahan Pemicu', 'Catatan / Alasan', 'Petugas']
+      ];
+
+      (hppHistoryData.history || []).forEach((h, idx) => {
+        historyRows.push([
+          idx + 1,
+          h.date || '',
+          h.outlet?.name || 'Semua Cabang (Pusat)',
+          h.trigger_type || '',
+          h.hpp_before || 0,
+          h.hpp_after || 0,
+          h.diff || 0,
+          `${h.percentage_change || 0}%`,
+          `${h.margin_before_pct || 0}%`,
+          `${h.margin_after_pct || 0}%`,
+          h.ingredient_name || h.ingredient?.name || '-',
+          h.notes || '',
+          h.user?.name || '-'
+        ]);
+      });
+
+      const wsHistory = XLSX.utils.aoa_to_sheet(historyRows);
+      XLSX.utils.book_append_sheet(wb, wsHistory, 'Riwayat Perubahan HPP');
+
+      if (hppHistoryData.ingredients_breakdown?.length > 0) {
+        const breakdownRows = [
+          ['KOMPOSISI BAHAN PEMBENTUK HPP TERKINI (1 PORSI)'],
+          ['Menu', selected.name],
+          ['Total HPP Porsi', hppHistoryData.current_hpp || 0],
+          [],
+          ['No', 'Bahan Baku / Komponen', 'Tipe', 'Takaran Porsi', 'Satuan', 'Harga Satuan Avg (Rp)', 'Subtotal Biaya (Rp)', 'Kontribusi (%)']
+        ];
+
+        hppHistoryData.ingredients_breakdown.forEach((b, idx) => {
+          breakdownRows.push([
+            idx + 1,
+            b.name || '',
+            b.type || '',
+            b.qty || 0,
+            b.unit || '',
+            b.cost_per_unit || 0,
+            b.subtotal || 0,
+            `${b.contribution_pct || 0}%`
+          ]);
+        });
+
+        const wsBreakdown = XLSX.utils.aoa_to_sheet(breakdownRows);
+        XLSX.utils.book_append_sheet(wb, wsBreakdown, 'Komposisi Bahan');
+      }
+
+      XLSX.writeFile(wb, `Riwayat_HPP_${selected.code}_${selected.name.replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`);
+      toast.success('File Excel riwayat HPP berhasil diunduh!', { id: 'export-hpp' });
+    } catch (err) {
+      console.error(err);
+      toast.error('Gagal mengekspor riwayat HPP ke Excel', { id: 'export-hpp' });
+    }
+  };
 
   async function fetchAll(selectId = null) {
     try {
@@ -1046,6 +1158,32 @@ export default function MasterMenu() {
                   <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>
                     Aktual Margin: {marginPct}%
                   </div>
+                  <div style={{ marginTop: 6, display: 'flex', justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveTab('hpp-history');
+                        fetchHppHistory(selected.id);
+                      }}
+                      style={{
+                        padding: '2px 8px',
+                        background: 'rgba(16, 185, 129, 0.15)',
+                        border: '1px solid rgba(16, 185, 129, 0.35)',
+                        borderRadius: 6,
+                        color: '#34d399',
+                        fontSize: 10,
+                        fontWeight: 700,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        cursor: 'pointer'
+                      }}
+                      title="Lihat riwayat pergerakan HPP menu ini berdasarkan perubahan harga moving average bahan baku"
+                    >
+                      <Clock size={11} /> Riwayat HPP
+                    </button>
+                  </div>
                 </div>
 
                 {/* Card 3: Varians / Selisih (Khusus Menu Resep / Olahan) */}
@@ -1104,7 +1242,7 @@ export default function MasterMenu() {
             </div>
 
             {/* Tab Navigation */}
-            <div style={{ display: 'flex', gap: 10, borderBottom: '1px solid var(--border)', marginBottom: 18 }}>
+            <div style={{ display: 'flex', gap: 10, borderBottom: '1px solid var(--border)', marginBottom: 18, flexWrap: 'wrap' }}>
               <button
                 type="button"
                 onClick={() => setActiveTab('recipe')}
@@ -1145,6 +1283,33 @@ export default function MasterMenu() {
                 {selected.modifier_groups && selected.modifier_groups.length > 0 && (
                   <span className="pill pill-accent mono" style={{ fontSize: 10 }}>
                     {selected.modifier_groups.length}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('hpp-history');
+                  if (selected) fetchHppHistory(selected.id);
+                }}
+                style={{
+                  padding: '8px 16px',
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: activeTab === 'hpp-history' ? '2px solid var(--accent)' : '2px solid transparent',
+                  color: activeTab === 'hpp-history' ? 'var(--accent-bright)' : 'var(--text-secondary)',
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6
+                }}
+              >
+                <TrendingUp size={15} /> Riwayat & Tren HPP
+                {hppHistoryData?.stats?.total_changes > 0 && (
+                  <span className="pill pill-accent mono" style={{ fontSize: 10 }}>
+                    {hppHistoryData.stats.total_changes}
                   </span>
                 )}
               </button>
@@ -2042,6 +2207,574 @@ export default function MasterMenu() {
                       </div>
                     ))}
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* ========================================================
+                TAB 3: RIWAYAT & TREN HPP (WEIGHTED MOVING AVERAGE)
+               ======================================================== */}
+            {activeTab === 'hpp-history' && (
+              <div style={{ animation: 'fadeIn 0.25s ease' }}>
+                {/* Header Banner & Controls */}
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start',
+                  marginBottom: 16,
+                  flexWrap: 'wrap',
+                  gap: 12
+                }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: 8,
+                        background: 'rgba(16, 185, 129, 0.15)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'var(--accent-bright)'
+                      }}>
+                        <TrendingUp size={18} />
+                      </div>
+                      <span style={{ fontSize: 16, fontWeight: 800, color: '#ffffff' }}>
+                        Riwayat Perubahan HPP — {selected.name}
+                      </span>
+                      <span className="pill pill-accent mono" style={{ fontSize: 10 }}>
+                        Weighted Moving Average
+                      </span>
+                    </div>
+                    <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, maxWidth: 680 }}>
+                      Sistem menghitung HPP secara dinamis mengikuti pergerakan harga rata-rata bahan baku (Moving Avg). Setiap pembelian restock bahan baru, transfer cabang, atau produksi batch olahan akan tercatat otomatis pada log di bawah.
+                    </p>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => fetchHppHistory(selected.id, hppOutletId, hppDateFrom, hppDateTo)}
+                      disabled={hppLoading}
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}
+                      title="Perbarui data riwayat HPP"
+                    >
+                      <RefreshCw size={13} className={hppLoading ? 'spin' : ''} /> Segarkan
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={handleExportHppExcel}
+                      disabled={!hppHistoryData || hppLoading}
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}
+                      title="Unduh laporan lengkap ke file Excel (.xlsx)"
+                    >
+                      <FileSpreadsheet size={13} /> Ekspor Excel
+                    </button>
+                  </div>
+                </div>
+
+                {/* 4 KPI Summary Cards */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                  gap: 12,
+                  marginBottom: 16
+                }}>
+                  {/* KPI 1: HPP Saat Ini */}
+                  <div style={{
+                    background: 'rgba(16, 185, 129, 0.08)',
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                    borderRadius: 10,
+                    padding: '12px 16px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 11, color: '#6ee7b7', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        HPP Saat Ini (Aktual)
+                      </span>
+                      <span className="pill pill-accent mono" style={{ fontSize: 9 }}>
+                        Moving Avg
+                      </span>
+                    </div>
+                    <div className="mono" style={{ fontSize: 19, fontWeight: 800, color: 'var(--accent-bright)', marginTop: 4 }}>
+                      {rupiah(hppHistoryData?.current_hpp ?? hpp)}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span>Target Dasar:</span>
+                      <strong style={{ color: estimatedHpp > 0 ? '#93c5fd' : 'var(--text-muted)' }}>
+                        {estimatedHpp > 0 ? rupiah(estimatedHpp) : 'Belum diset'}
+                      </strong>
+                    </div>
+                  </div>
+
+                  {/* KPI 2: Rentang Fluktuasi HPP */}
+                  <div style={{
+                    background: 'rgba(59, 130, 246, 0.08)',
+                    border: '1px solid rgba(59, 130, 246, 0.25)',
+                    borderRadius: 10,
+                    padding: '12px 16px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 11, color: '#93c5fd', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Rentang Fluktuasi
+                      </span>
+                      <span className="pill" style={{ fontSize: 9, background: 'rgba(59, 130, 246, 0.2)', color: '#bfdbfe' }}>
+                        Min – Max
+                      </span>
+                    </div>
+                    <div className="mono" style={{ fontSize: 15, fontWeight: 700, color: '#93c5fd', marginTop: 6 }}>
+                      {rupiah(hppHistoryData?.stats?.min_hpp || (hppHistoryData?.current_hpp ?? hpp))}
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', margin: '0 4px' }}>s/d</span>
+                      {rupiah(hppHistoryData?.stats?.max_hpp || (hppHistoryData?.current_hpp ?? hpp))}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                      Rata-rata: <strong className="mono" style={{ color: '#ffffff' }}>{rupiah(hppHistoryData?.stats?.avg_hpp || (hppHistoryData?.current_hpp ?? hpp))}</strong>
+                    </div>
+                  </div>
+
+                  {/* KPI 3: Perubahan Terakhir */}
+                  <div style={{
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 10,
+                    padding: '12px 16px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Perubahan Terakhir
+                      </span>
+                      <span className="pill mono" style={{ fontSize: 9, background: 'rgba(255,255,255,0.06)' }}>
+                        {hppHistoryData?.stats?.total_changes || 0} event
+                      </span>
+                    </div>
+                    <div className="mono" style={{
+                      fontSize: 17,
+                      fontWeight: 800,
+                      marginTop: 4,
+                      color: (hppHistoryData?.stats?.latest_diff || 0) > 0 ? '#fb7185' : ((hppHistoryData?.stats?.latest_diff || 0) < 0 ? '#34d399' : 'var(--text-muted)')
+                    }}>
+                      {(hppHistoryData?.stats?.latest_diff || 0) > 0
+                        ? `+${rupiah(hppHistoryData.stats.latest_diff)} (+${hppHistoryData.stats.latest_pct_change}%)`
+                        : ((hppHistoryData?.stats?.latest_diff || 0) < 0
+                            ? `-${rupiah(Math.abs(hppHistoryData.stats.latest_diff))} (${hppHistoryData.stats.latest_pct_change}%)`
+                            : 'Rp0 (Stabil)')}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                      Tanggal: <span className="mono" style={{ color: 'var(--text-secondary)' }}>{hppHistoryData?.stats?.latest_change_date || '-'}</span>
+                    </div>
+                  </div>
+
+                  {/* KPI 4: Gross Margin Saat Ini */}
+                  <div style={{
+                    background: 'rgba(245, 158, 11, 0.08)',
+                    border: '1px solid rgba(245, 158, 11, 0.25)',
+                    borderRadius: 10,
+                    padding: '12px 16px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 11, color: '#fcd34d', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Margin Laba Kotor
+                      </span>
+                      <span className="pill mono" style={{ fontSize: 9, background: 'rgba(245, 158, 11, 0.2)', color: '#fde68a' }}>
+                        Harga {rupiah(selected.price)}
+                      </span>
+                    </div>
+                    <div className="mono" style={{ fontSize: 19, fontWeight: 800, color: '#fbbf24', marginTop: 4 }}>
+                      {hppHistoryData?.current_margin_pct ?? marginPct}%
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                      Laba per {selected.unit || 'porsi'}: <strong className="mono" style={{ color: '#ffffff' }}>{rupiah(selected.price - (hppHistoryData?.current_hpp ?? hpp))}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Filter Control Bar */}
+                <div style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 10,
+                  padding: '12px 16px',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 10,
+                  marginBottom: 18
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    {/* Outlet Filter */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Store size={14} color="var(--text-muted)" />
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Cabang:</span>
+                      <select
+                        className="input"
+                        value={hppOutletId}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setHppOutletId(val);
+                          fetchHppHistory(selected.id, val, hppDateFrom, hppDateTo);
+                        }}
+                        style={{ padding: '4px 10px', fontSize: 12, height: 32, minWidth: 160 }}
+                      >
+                        <option value="ALL">Semua Cabang (Konsolidasi)</option>
+                        {outlets.map(o => (
+                          <option key={o.id} value={o.id}>{o.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Date Range Filter */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Calendar size={14} color="var(--text-muted)" />
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Dari:</span>
+                      <input
+                        type="date"
+                        className="input"
+                        value={hppDateFrom}
+                        onChange={(e) => setHppDateFrom(e.target.value)}
+                        style={{ padding: '3px 8px', fontSize: 12, height: 32 }}
+                      />
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>s/d:</span>
+                      <input
+                        type="date"
+                        className="input"
+                        value={hppDateTo}
+                        onChange={(e) => setHppDateTo(e.target.value)}
+                        style={{ padding: '3px 8px', fontSize: 12, height: 32 }}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => fetchHppHistory(selected.id, hppOutletId, hppDateFrom, hppDateTo)}
+                        style={{ height: 32, padding: '0 10px', fontSize: 12 }}
+                      >
+                        Filter
+                      </button>
+                      {(hppDateFrom || hppDateTo || (hppOutletId !== 'ALL' && hppOutletId !== activeOutletId)) && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => {
+                            setHppDateFrom('');
+                            setHppDateTo('');
+                            setHppOutletId('ALL');
+                            fetchHppHistory(selected.id, 'ALL', '', '');
+                          }}
+                          style={{ height: 32, padding: '0 8px', fontSize: 11, color: 'var(--text-muted)' }}
+                        >
+                          Reset Filter
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                    Total <strong>{(hppHistoryData?.history || []).length}</strong> log riwayat
+                  </div>
+                </div>
+
+                {/* Section 1: Komposisi Biaya Bahan Pembentuk HPP Terkini */}
+                <div style={{
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 10,
+                  padding: 16,
+                  marginBottom: 20
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#ffffff' }}>
+                        Komposisi Biaya Bahan Pembentuk HPP Terkini (1 {selected.unit || 'porsi'})
+                      </div>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+                        Proporsi biaya masing-masing bahan baku terhadap total HPP berdasarkan harga moving average saat ini.
+                      </div>
+                    </div>
+                    <div className="mono" style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-bright)' }}>
+                      Total HPP: {rupiah(hppHistoryData?.current_hpp ?? hpp)}
+                    </div>
+                  </div>
+
+                  {(!hppHistoryData?.ingredients_breakdown || hppHistoryData.ingredients_breakdown.length === 0) ? (
+                    <div style={{ padding: 18, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                      Menu ini belum memiliki rincian bahan baku atau belum dikonfigurasi resepnya.
+                    </div>
+                  ) : (
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Bahan Baku / Komponen</th>
+                            <th>Kategori</th>
+                            <th className="right" style={{ width: 120 }}>Takaran Porsi</th>
+                            <th className="right" style={{ width: 160 }}>Harga Avg Satuan</th>
+                            <th className="right" style={{ width: 140 }}>Biaya Bahan</th>
+                            <th style={{ width: 180 }}>Porsi terhadap HPP (%)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {hppHistoryData.ingredients_breakdown.map((b, idx) => (
+                            <tr key={idx}>
+                              <td style={{ fontWeight: 600, color: '#ffffff' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{
+                                    width: 8, height: 8, borderRadius: '50%',
+                                    background: idx === 0 ? '#34d399' : (idx === 1 ? '#60a5fa' : (idx === 2 ? '#fbbf24' : '#c084fc'))
+                                  }} />
+                                  <span>{b.name}</span>
+                                </div>
+                              </td>
+                              <td>
+                                <span className="pill" style={{ fontSize: 9.5, background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)' }}>
+                                  {b.category || b.type || 'Bahan'}
+                                </span>
+                              </td>
+                              <td className="mono right" style={{ fontWeight: 600 }}>
+                                {num(b.qty)} {b.unit}
+                              </td>
+                              <td className="mono right" style={{ color: 'var(--text-secondary)' }}>
+                                {rupiah(b.cost_per_unit)} / {b.unit}
+                              </td>
+                              <td className="mono right" style={{ fontWeight: 700, color: '#ffffff' }}>
+                                {rupiah(b.subtotal)}
+                              </td>
+                              <td>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <div style={{ flex: 1, height: 6, background: 'rgba(255,255,255,0.08)', borderRadius: 4, overflow: 'hidden' }}>
+                                    <div style={{
+                                      width: `${Math.min(b.contribution_pct, 100)}%`,
+                                      height: '100%',
+                                      borderRadius: 4,
+                                      background: idx === 0 ? 'var(--accent)' : (idx === 1 ? '#3b82f6' : (idx === 2 ? '#f59e0b' : '#a855f7'))
+                                    }} />
+                                  </div>
+                                  <span className="mono" style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)', minWidth: 38 }}>
+                                    {b.contribution_pct}%
+                                  </span>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* Section 2: Log Kronologis Riwayat Perubahan HPP */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#ffffff' }}>
+                        Log Kronologis Riwayat Perubahan HPP
+                      </div>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+                        Setiap kali harga rata-rata bahan berubah (akibat restock / mutasi / transfer), riwayat baru tercatat di bawah ini secara real-time.
+                      </div>
+                    </div>
+                  </div>
+
+                  {hppLoading ? (
+                    <LoadingState message="Memuat riwayat perubahan HPP..." />
+                  ) : (!hppHistoryData?.history || hppHistoryData.history.length === 0) ? (
+                    <div style={{
+                      padding: '36px 20px',
+                      textAlign: 'center',
+                      background: 'rgba(255,255,255,0.02)',
+                      border: '1px dashed var(--border)',
+                      borderRadius: 12,
+                      color: 'var(--text-muted)'
+                    }}>
+                      <Clock size={32} color="var(--text-muted)" style={{ margin: '0 auto 10px' }} />
+                      <div style={{ fontSize: 14, fontWeight: 600, color: '#ffffff', marginBottom: 4 }}>
+                        Belum Ada Perubahan HPP yang Tercatat
+                      </div>
+                      <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', maxWidth: 460, margin: '0 auto' }}>
+                        HPP menu ini saat ini adalah <strong>{rupiah(hppHistoryData?.current_hpp ?? hpp)}</strong>. Begitu bahan bakunya dibeli dengan harga baru atau resepnya direvisi, sistem akan otomatis mencatat riwayat perubahan HPP di sini.
+                      </p>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {hppHistoryData.history.map((h) => {
+                        const isUp = (h.diff || 0) > 0;
+                        const isDown = (h.diff || 0) < 0;
+                        const isZero = (h.diff || 0) === 0;
+
+                        // Trigger labels & icons
+                        let triggerLabel = 'Pembelian / Restock';
+                        let triggerBg = 'rgba(59, 130, 246, 0.15)';
+                        let triggerColor = '#93c5fd';
+
+                        if (h.trigger_type === 'TRANSFER_IN') {
+                          triggerLabel = 'Transfer Antar Cabang';
+                          triggerBg = 'rgba(168, 85, 247, 0.15)';
+                          triggerColor = '#d8b4fe';
+                        } else if (h.trigger_type === 'BATCH_PREP') {
+                          triggerLabel = 'Produksi Batch Dapur';
+                          triggerBg = 'rgba(245, 158, 11, 0.15)';
+                          triggerColor = '#fcd34d';
+                        } else if (h.trigger_type === 'RECIPE_UPDATE') {
+                          triggerLabel = 'Pembaruan Resep';
+                          triggerBg = 'rgba(16, 185, 129, 0.15)';
+                          triggerColor = '#6ee7b7';
+                        } else if (h.trigger_type === 'DIRECT_RESTOCK') {
+                          triggerLabel = 'Restock Produk Retail';
+                          triggerBg = 'rgba(59, 130, 246, 0.15)';
+                          triggerColor = '#93c5fd';
+                        } else if (h.trigger_type === 'MANUAL_EDIT') {
+                          triggerLabel = 'Penyesuaian Manual';
+                          triggerBg = 'rgba(255, 255, 255, 0.1)';
+                          triggerColor = '#ffffff';
+                        } else if (h.trigger_type === 'BASELINE') {
+                          triggerLabel = 'Acuan Awal (Baseline)';
+                          triggerBg = 'rgba(16, 185, 129, 0.15)';
+                          triggerColor = '#34d399';
+                        }
+
+                        return (
+                          <div
+                            key={h.id}
+                            style={{
+                              background: 'rgba(255, 255, 255, 0.02)',
+                              border: '1px solid var(--border)',
+                              borderRadius: 10,
+                              padding: 14,
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            {/* Card Header Row */}
+                            <div style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              flexWrap: 'wrap',
+                              gap: 8,
+                              paddingBottom: 10,
+                              borderBottom: '1px solid rgba(255,255,255,0.05)'
+                            }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                <span style={{
+                                  fontSize: 10.5,
+                                  fontWeight: 700,
+                                  padding: '2px 8px',
+                                  borderRadius: 6,
+                                  background: triggerBg,
+                                  color: triggerColor
+                                }}>
+                                  {triggerLabel}
+                                </span>
+                                <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                                  {formatDateTime(h.created_at || h.date)}
+                                </span>
+                                {h.outlet && (
+                                  <span className="pill" style={{ fontSize: 10, background: 'rgba(255,255,255,0.06)' }}>
+                                    Cabang: {h.outlet.name}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* HPP Before -> After & Diff Pill */}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <div style={{ textAlign: 'right' }}>
+                                  <span className="mono" style={{ fontSize: 12, color: 'var(--text-muted)', textDecoration: isZero ? 'none' : 'line-through' }}>
+                                    {rupiah(h.hpp_before)}
+                                  </span>
+                                  <span style={{ margin: '0 6px', color: 'var(--text-muted)' }}>→</span>
+                                  <span className="mono" style={{ fontSize: 14, fontWeight: 800, color: '#ffffff' }}>
+                                    {rupiah(h.hpp_after)}
+                                  </span>
+                                </div>
+
+                                <div style={{ minWidth: 100, textAlign: 'right' }}>
+                                  {isUp && (
+                                    <span style={{
+                                      fontSize: 11,
+                                      fontWeight: 700,
+                                      padding: '2px 8px',
+                                      borderRadius: 6,
+                                      background: 'rgba(244, 63, 94, 0.15)',
+                                      color: '#fb7185',
+                                      border: '1px solid rgba(244, 63, 94, 0.3)',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 3
+                                    }}>
+                                      <ArrowUpRight size={12} /> +{rupiah(h.diff)} (+{h.percentage_change}%)
+                                    </span>
+                                  )}
+                                  {isDown && (
+                                    <span style={{
+                                      fontSize: 11,
+                                      fontWeight: 700,
+                                      padding: '2px 8px',
+                                      borderRadius: 6,
+                                      background: 'rgba(16, 185, 129, 0.15)',
+                                      color: '#34d399',
+                                      border: '1px solid rgba(16, 185, 129, 0.3)',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 3
+                                    }}>
+                                      <ArrowDownRight size={12} /> -{rupiah(Math.abs(h.diff))} ({h.percentage_change}%)
+                                    </span>
+                                  )}
+                                  {isZero && (
+                                    <span className="pill" style={{ fontSize: 11, background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)' }}>
+                                      Tetap (Rp0)
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Card Body Details */}
+                            <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
+                              <div style={{ flex: 1, minWidth: 260 }}>
+                                {h.ingredient_name && (
+                                  <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 6,
+                                    fontSize: 12,
+                                    marginBottom: 4,
+                                    color: '#e2e8f0'
+                                  }}>
+                                    <Package size={13} color="var(--accent-bright)" />
+                                    <span>Bahan Pemicu: <strong>{h.ingredient_name}</strong></span>
+                                    {h.portion_qty > 0 && (
+                                      <span style={{ color: 'var(--text-muted)' }}>
+                                        ({num(h.portion_qty)} {h.portion_unit || 'satuan'}/porsi)
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                                <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                                  {h.notes}
+                                </div>
+                              </div>
+
+                              {/* Margin Impact & Audit */}
+                              <div style={{ textAlign: 'right', fontSize: 11.5 }}>
+                                <div style={{ color: 'var(--text-muted)' }}>
+                                  Margin: <strong className="mono" style={{ color: '#ffffff' }}>{h.margin_before_pct}%</strong>
+                                  <span style={{ margin: '0 4px' }}>→</span>
+                                  <strong className="mono" style={{
+                                    color: h.margin_after_pct >= h.margin_before_pct ? '#34d399' : '#fb7185'
+                                  }}>
+                                    {h.margin_after_pct}%
+                                  </strong>
+                                </div>
+                                <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 2 }}>
+                                  Dicatat: {h.user?.name || 'Sistem Otomatis'}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
