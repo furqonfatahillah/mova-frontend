@@ -56,11 +56,21 @@ export default function TransferBahan() {
   // Modal Return state
   const [returnModalOpen, setReturnModalOpen] = useState(false);
   const [returnTargetTransfer, setReturnTargetTransfer] = useState(null);
-  const [returnDisposition, setReturnDisposition] = useState('RECORD_AS_WASTE');
+  const [returnDisposition, setReturnDisposition] = useState('RETURN_TO_SOURCE');
   const [returnReason, setReturnReason] = useState('Barang rusak saat pengiriman / rusak di jalan');
   const [returnNotes, setReturnNotes] = useState('');
   const [returnItems, setReturnItems] = useState([]);
   const [returning, setReturning] = useState(false);
+
+  // Modal Approve Return state (Source Branch Approval)
+  const [approveReturnModalOpen, setApproveReturnModalOpen] = useState(false);
+  const [approveReturnTarget, setApproveReturnTarget] = useState(null);
+  const [approveReturnDisposition, setApproveReturnDisposition] = useState('RETURN_TO_SOURCE');
+  const [approveReturnNotes, setApproveReturnNotes] = useState('');
+  const [approveReturnItems, setApproveReturnItems] = useState([]);
+  const [rejectMode, setRejectMode] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [approvingReturn, setApprovingReturn] = useState(false);
 
   // Form state
   const todayStr = getTodayStr();
@@ -853,6 +863,116 @@ export default function TransferBahan() {
     }
   }
 
+  // Open Approve Return Modal (Source Branch Approval)
+  function openApproveReturnModal(trf) {
+    setApproveReturnTarget(trf);
+    setApproveReturnDisposition(trf.return_disposition || 'RETURN_TO_SOURCE');
+    setApproveReturnNotes('');
+    setRejectMode(false);
+    setRejectReason('');
+
+    const initialItems = (trf.items || [])
+      .filter(it => Number(it.returned_qty) > 0)
+      .map(it => {
+        const isProd = it.item_type === 'PRODUCT';
+        const name = isProd ? (it.menu?.name || it.item_name || 'Produk') : (it.ingredient?.name || it.item_name || 'Bahan');
+        const retQty = Number(it.returned_qty || 0);
+        return {
+          id: it.id,
+          name,
+          unit: it.input_unit || it.unit || 'satuan',
+          input_qty: Number(it.input_qty || it.qty || 0),
+          received_qty: Number(it.received_qty || 0),
+          returned_qty: retQty,
+          approved_qty: Number(it.return_approved_qty || 0) > 0 ? Number(it.return_approved_qty) : retQty,
+          rejected_qty: Number(it.return_rejected_qty || 0),
+          reason: it.return_reason || trf.return_reason || ''
+        };
+      });
+    setApproveReturnItems(initialItems);
+    setApproveReturnModalOpen(true);
+  }
+
+  function handleApproveReturnItemQtyChange(idx, val) {
+    setApproveReturnItems(prev => {
+      const copy = [...prev];
+      const ret = copy[idx].returned_qty;
+      const numVal = val === '' ? '' : Math.max(0, Number(val));
+      const validAppr = typeof numVal === 'number' ? Math.min(ret, numVal) : 0;
+      copy[idx] = {
+        ...copy[idx],
+        approved_qty: val === '' ? '' : validAppr,
+        rejected_qty: Math.max(0, ret - (val === '' ? 0 : validAppr))
+      };
+      return copy;
+    });
+  }
+
+  // Submit Approval of Return
+  async function handleConfirmApproveReturn(e) {
+    e?.preventDefault();
+    if (!approveReturnTarget) return;
+
+    setApprovingReturn(true);
+    try {
+      const payload = {
+        return_disposition: approveReturnDisposition,
+        return_approval_notes: approveReturnNotes || null,
+        items: approveReturnItems.map(it => ({
+          id: it.id,
+          approved_qty: Number(it.approved_qty === '' ? 0 : it.approved_qty),
+          rejected_qty: Number(it.rejected_qty || 0),
+        }))
+      };
+
+      const { data } = await api.post(`/transfers/${approveReturnTarget.id}/approve-return`, payload);
+
+      setTransfers(prev => prev.map(t => (t.id === data.transfer.id ? data.transfer : t)));
+      if (selectedTransfer?.id === data.transfer.id) {
+        setSelectedTransfer(data.transfer);
+      }
+
+      setApproveReturnModalOpen(false);
+      toast.success(data.message || 'Persetujuan retur berhasil disimpan!');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal memproses persetujuan retur');
+    } finally {
+      setApprovingReturn(false);
+    }
+  }
+
+  // Submit Reject of Return
+  async function handleConfirmRejectReturn(e) {
+    e?.preventDefault();
+    if (!approveReturnTarget) return;
+
+    if (!rejectReason.trim()) {
+      toast.error('Ketik alasan penolakan retur!');
+      return;
+    }
+
+    setApprovingReturn(true);
+    try {
+      const payload = {
+        return_rejected_reason: rejectReason.trim()
+      };
+
+      const { data } = await api.post(`/transfers/${approveReturnTarget.id}/reject-return`, payload);
+
+      setTransfers(prev => prev.map(t => (t.id === data.transfer.id ? data.transfer : t)));
+      if (selectedTransfer?.id === data.transfer.id) {
+        setSelectedTransfer(data.transfer);
+      }
+
+      setApproveReturnModalOpen(false);
+      toast.success(data.message || 'Retur transfer berhasil ditolak.');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal menolak retur transfer');
+    } finally {
+      setApprovingReturn(false);
+    }
+  }
+
   // Cancel Transfer
   async function handleCancelTransfer(transfer) {
     if (transfer.status === 'CANCELLED') return;
@@ -882,6 +1002,11 @@ export default function TransferBahan() {
       let matchStatus = false;
       if (filterStatus === 'ALL') matchStatus = true;
       else if (filterStatus === 'IN_TRANSIT') matchStatus = t.status === 'IN_TRANSIT' || t.status === 'PENDING';
+      else if (filterStatus === 'PENDING_RETURN') matchStatus = t.return_status === 'PENDING';
+      else if (filterStatus === 'COMPLETED') matchStatus = t.status === 'COMPLETED' || (t.return_status === 'APPROVED' && t.status !== 'CANCELLED');
+      else if (filterStatus === 'PARTIALLY_RETURNED') matchStatus = t.status === 'PARTIALLY_RETURNED';
+      else if (filterStatus === 'RETURNED') matchStatus = t.status === 'RETURNED';
+      else if (filterStatus === 'CANCELLED') matchStatus = t.status === 'CANCELLED';
       else matchStatus = t.status === filterStatus;
 
       const q = searchQuery.toLowerCase().trim();
@@ -897,14 +1022,15 @@ export default function TransferBahan() {
   if (loading) return <LoadingState />;
 
   const inTransitCount = transfers.filter(t => t.status === 'IN_TRANSIT' || t.status === 'PENDING').length;
-  const completedCount = transfers.filter(t => t.status === 'COMPLETED').length;
+  const pendingReturnCount = transfers.filter(t => t.return_status === 'PENDING').length;
+  const completedCount = transfers.filter(t => t.status === 'COMPLETED' || t.return_status === 'APPROVED').length;
   const totalItemsCount = transfers.reduce((acc, t) => acc + (t.total_items || t.items?.length || 0), 0);
 
   return (
     <div className="fade-in">
       <PageHeader
         title="Transfer Barang Antar Cabang"
-        subtitle={`Distribusi bahan baku dan produk retail langsung antar cabang di dalam ${userBusinessName || 'perusahaan Anda'} dengan bukti surat jalan dan fitur penerimaan.`}
+        subtitle={`Distribusi bahan baku dan produk retail langsung antar cabang di dalam ${userBusinessName || 'perusahaan Anda'} dengan bukti surat jalan, penerimaan, dan persetujuan retur.`}
         action={
           <button className="btn btn-primary" onClick={openCreateModal}>
             + Buat Transfer Antar Cabang
@@ -925,14 +1051,14 @@ export default function TransferBahan() {
           color="var(--warning)"
         />
         <MiniCard
+          label="Menunggu Approval Retur"
+          value={`${pendingReturnCount} Perlu Ditinjau`}
+          color="#f59e0b"
+        />
+        <MiniCard
           label="Transfer Selesai / Diterima"
           value={`${completedCount} Selesai`}
           color="var(--ok)"
-        />
-        <MiniCard
-          label="Total Alokasi Barang Terdistribusi"
-          value={`${totalItemsCount} Unit/Pos`}
-          color="var(--accent-bright)"
         />
       </div>
 
@@ -958,6 +1084,7 @@ export default function TransferBahan() {
             {[
               { id: 'ALL', label: 'Semua' },
               { id: 'IN_TRANSIT', label: `Transit (${inTransitCount})` },
+              { id: 'PENDING_RETURN', label: `Approval Retur (${pendingReturnCount})` },
               { id: 'COMPLETED', label: 'Selesai' },
               { id: 'PARTIALLY_RETURNED', label: 'Retur Parsial' },
               { id: 'RETURNED', label: 'Retur Total' },
@@ -968,7 +1095,12 @@ export default function TransferBahan() {
                 type="button"
                 className={`btn btn-sm ${filterStatus === tab.id ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={() => setFilterStatus(tab.id)}
-                style={{ fontSize: 12, padding: '4px 10px' }}
+                style={{
+                  fontSize: 12,
+                  padding: '4px 10px',
+                  borderColor: tab.id === 'PENDING_RETURN' && pendingReturnCount > 0 ? 'rgba(245, 158, 11, 0.5)' : undefined,
+                  color: tab.id === 'PENDING_RETURN' && filterStatus !== 'PENDING_RETURN' && pendingReturnCount > 0 ? '#fbbf24' : undefined
+                }}
               >
                 {tab.label}
               </button>
@@ -996,9 +1128,9 @@ export default function TransferBahan() {
                 <th style={{ minWidth: 160 }}>Cabang Penerima (Tujuan)</th>
                 <th style={{ minWidth: 220 }}>Rincian Barang & Bahan</th>
                 <th style={{ minWidth: 130 }}>Kurir / Supir</th>
-                <th style={{ width: 120 }} className="center">Status</th>
+                <th style={{ width: 135 }} className="center">Status</th>
                 <th style={{ minWidth: 150 }}>Riwayat Audit</th>
-                <th style={{ width: 170 }} className="center">Aksi</th>
+                <th style={{ width: 180 }} className="center">Aksi</th>
               </tr>
             </thead>
             <tbody>
@@ -1014,11 +1146,27 @@ export default function TransferBahan() {
                   const isReturned = trf.status === 'RETURNED';
                   const isPartialReturned = trf.status === 'PARTIALLY_RETURNED';
                   const isInTransit = trf.status === 'IN_TRANSIT' || trf.status === 'PENDING';
+                  const isPendingReturn = trf.return_status === 'PENDING';
+                  const isApprovedReturn = trf.return_status === 'APPROVED' || trf.return_status === 'PARTIALLY_APPROVED';
+                  const isRejectedReturn = trf.return_status === 'REJECTED';
+
                   const sourceText = trf.source_display_name || trf.source_outlet?.name || trf.source_name || 'Lokasi Asal';
                   const destText = trf.destination_display_name || trf.destination_outlet?.name || trf.destination_name || 'Lokasi Tujuan';
 
+                  // Permissions for current user
+                  const isSourceBranchUser = Boolean(
+                    isPlatformAdmin ||
+                    isOwnerBisnis ||
+                    (activeOutletId && String(activeOutletId) === String(trf.source_outlet_id)) ||
+                    (currentUser?.outlet_id && String(currentUser.outlet_id) === String(trf.source_outlet_id))
+                  );
+                  const isDestBranchUser = Boolean(
+                    (activeOutletId && String(activeOutletId) === String(trf.destination_outlet_id)) ||
+                    (currentUser?.outlet_id && String(currentUser.outlet_id) === String(trf.destination_outlet_id))
+                  );
+
                   return (
-                    <tr key={trf.id} style={{ opacity: isCancelled ? 0.6 : 1 }}>
+                    <tr key={trf.id} style={{ opacity: isCancelled ? 0.6 : 1, background: isPendingReturn && isSourceBranchUser ? 'rgba(245, 158, 11, 0.04)' : undefined }}>
                       <td className="mono" style={{ fontWeight: 600, color: 'var(--accent)' }}>
                         {trf.transfer_no}
                       </td>
@@ -1048,7 +1196,6 @@ export default function TransferBahan() {
                             {trf.items?.map(it => {
                               const isProd = it.item_type === 'PRODUCT';
                               const name = isProd ? (it.menu?.name || it.item_name || 'Produk') : (it.ingredient?.name || it.item_name || 'Bahan');
-                              const hasConv = !isProd && it.input_unit && it.unit && it.input_unit !== it.unit && it.input_qty;
                               const badge = isProd ? '📦 ' : '🧪 ';
                               const hasRet = Number(it.returned_qty) > 0;
                               return (
@@ -1077,6 +1224,18 @@ export default function TransferBahan() {
                       <td className="center">
                         {isCancelled ? (
                           <span className="pill pill-danger" style={{ fontSize: 10.5 }}>BATAL</span>
+                        ) : isPendingReturn ? (
+                          <span className="pill" style={{ fontSize: 10.5, display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', border: '1px solid rgba(245, 158, 11, 0.5)' }}>
+                            <Clock size={11} /> RETUR PENDING
+                          </span>
+                        ) : isApprovedReturn ? (
+                          <span className="pill pill-ok" style={{ fontSize: 10.5, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <ShieldCheck size={11} /> RETUR DISETUJUI
+                          </span>
+                        ) : isRejectedReturn ? (
+                          <span className="pill pill-danger" style={{ fontSize: 10.5, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <AlertTriangle size={11} /> RETUR DITOLAK
+                          </span>
                         ) : isReturned ? (
                           <span className="pill" style={{ fontSize: 10.5, display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(239, 68, 68, 0.2)', color: '#fca5a5', border: '1px solid rgba(239, 68, 68, 0.4)' }}>
                             <RotateCcw size={11} /> RETUR TOTAL
@@ -1105,6 +1264,35 @@ export default function TransferBahan() {
                       </td>
                       <td className="center">
                         <div style={{ display: 'flex', gap: 5, justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' }}>
+                          {/* Button Approval Retur jika sedang menunggu approval cabang asal */}
+                          {isPendingReturn && isSourceBranchUser && (
+                            <button
+                              className="btn btn-sm"
+                              onClick={() => openApproveReturnModal(trf)}
+                              title="Verifikasi & Persetujuan Retur dari Cabang Penerima"
+                              style={{
+                                background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                                color: '#ffffff',
+                                padding: '4px 9px',
+                                fontSize: 11,
+                                fontWeight: 700,
+                                border: 'none',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                boxShadow: '0 2px 8px rgba(99, 102, 241, 0.35)',
+                              }}
+                            >
+                              <ShieldCheck size={12} /> Approval Retur
+                            </button>
+                          )}
+
+                          {isPendingReturn && !isSourceBranchUser && isDestBranchUser && (
+                            <span style={{ fontSize: 10.5, color: '#fcd34d', fontWeight: 600, padding: '2px 6px', background: 'rgba(245, 158, 11, 0.12)', borderRadius: 4 }}>
+                              Menunggu Cabang Asal
+                            </span>
+                          )}
+
                           {isInTransit && (
                             <button
                               className="btn btn-sm"
@@ -1130,7 +1318,7 @@ export default function TransferBahan() {
                             <button
                               className="btn btn-sm"
                               onClick={() => openReturnModal(trf)}
-                              title="Retur Barang Transfer (Ditolak Langsung / Batal Terima)"
+                              title="Ajukan Retur Barang Transfer ke Cabang Asal"
                               style={{
                                 background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
                                 color: '#ffffff',
@@ -1158,7 +1346,7 @@ export default function TransferBahan() {
                           >
                             <Eye size={13} />
                           </button>
-                          {!isCancelled && (
+                          {!isCancelled && isInTransit && (
                             <button
                               className="btn btn-ghost btn-sm"
                               onClick={() => handleCancelTransfer(trf)}
@@ -1709,6 +1897,292 @@ export default function TransferBahan() {
         </div>
       )}
 
+      {/* Modal Approve / Reject Return (Persetujuan Cabang Pengirim) */}
+      {approveReturnModalOpen && approveReturnTarget && (
+        <div className="modal-backdrop" onClick={() => setApproveReturnModalOpen(false)}>
+          <div
+            className="modal-content card"
+            style={{ maxWidth: 720, width: '100%', margin: '20px', maxHeight: '92vh', overflowY: 'auto' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex-between mb-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: '50%',
+                  background: rejectMode ? 'rgba(239, 68, 68, 0.15)' : 'rgba(99, 102, 241, 0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: rejectMode ? '#f87171' : 'var(--accent-bright)'
+                }}>
+                  <ShieldCheck size={20} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>
+                    {rejectMode ? 'Tolak Pengajuan Retur Transfer' : 'Verifikasi & Persetujuan Retur Barang'}
+                  </h3>
+                  <span style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                    Surat Jalan: <strong className="mono" style={{ color: 'var(--accent-bright)' }}>{approveReturnTarget.transfer_no}</strong>
+                    {' · '}Dari Cabang Tujuan: <strong>{approveReturnTarget.destination_display_name}</strong>
+                  </span>
+                </div>
+              </div>
+              <button
+                className="btn btn-ghost btn-icon"
+                onClick={() => setApproveReturnModalOpen(false)}
+                style={{ padding: 4 }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Mode Switcher Tabs */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16, background: 'rgba(255, 255, 255, 0.03)', padding: 4, borderRadius: 8 }}>
+              <button
+                type="button"
+                className={`btn btn-sm ${!rejectMode ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setRejectMode(false)}
+                style={{ flex: 1, fontWeight: 700, fontSize: 12.5 }}
+              >
+                ✓ Setujui Retur (Approval)
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${rejectMode ? 'btn-secondary' : 'btn-ghost'}`}
+                onClick={() => setRejectMode(true)}
+                style={{
+                  flex: 1,
+                  fontWeight: 700,
+                  fontSize: 12.5,
+                  color: rejectMode ? '#fca5a5' : 'var(--text-muted)',
+                  borderColor: rejectMode ? 'rgba(239, 68, 68, 0.5)' : undefined
+                }}
+              >
+                ✕ Tolak Retur (Reject)
+              </button>
+            </div>
+
+            {/* Overview Box */}
+            <div style={{
+              background: 'rgba(99, 102, 241, 0.06)',
+              border: '1px solid rgba(99, 102, 241, 0.2)',
+              borderRadius: 10,
+              padding: '12px 14px',
+              marginBottom: 16,
+              fontSize: 12.5,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4
+            }}>
+              <div>🏢 Cabang Pengirim (Asal): <strong>{approveReturnTarget.source_display_name}</strong></div>
+              <div>🏢 Cabang Penerima (Pengaju): <strong>{approveReturnTarget.destination_display_name}</strong></div>
+              {approveReturnTarget.returned_at && (
+                <div style={{ color: 'var(--text-secondary)' }}>
+                  👤 Diajukan oleh <strong>{approveReturnTarget.returned_by_name || 'Petugas Cabang Tujuan'}</strong> pada {new Date(approveReturnTarget.returned_at).toLocaleString('id-ID')}
+                </div>
+              )}
+              <div style={{ color: '#fbbf24', marginTop: 2 }}>
+                ⚠️ <strong>Alasan Retur Dilaporkan:</strong> {approveReturnTarget.return_reason || 'Barang rusak / kurang'}
+                {approveReturnTarget.return_notes && <span> ({approveReturnTarget.return_notes})</span>}
+              </div>
+            </div>
+
+            {!rejectMode ? (
+              <form onSubmit={handleConfirmApproveReturn}>
+                {/* DISPOSISI RETUR */}
+                <div className="form-group mb-4">
+                  <label className="form-label" style={{ fontWeight: 700, fontSize: 12.5 }}>Pilih Tindakan & Disposisi Retur</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <div
+                      onClick={() => setApproveReturnDisposition('RETURN_TO_SOURCE')}
+                      style={{
+                        padding: 12,
+                        borderRadius: 10,
+                        cursor: 'pointer',
+                        border: approveReturnDisposition === 'RETURN_TO_SOURCE' ? '2px solid #6366f1' : '1px solid var(--border)',
+                        background: approveReturnDisposition === 'RETURN_TO_SOURCE' ? 'rgba(99, 102, 241, 0.12)' : 'var(--bg-main)',
+                        transition: 'all 0.2s ease'
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, fontSize: 13, color: '#818cf8', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <RotateCcw size={15} /> Kembalikan ke Stok Cabang Asal
+                      </div>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                        Barang fisik telah sampai di cabang pengirim dalam kondisi baik. Stok <strong>dipulihkan ke cabang asal</strong> ({approveReturnTarget.source_display_name}).
+                      </div>
+                    </div>
+
+                    <div
+                      onClick={() => setApproveReturnDisposition('RECORD_AS_WASTE')}
+                      style={{
+                        padding: 12,
+                        borderRadius: 10,
+                        cursor: 'pointer',
+                        border: approveReturnDisposition === 'RECORD_AS_WASTE' ? '2px solid #f59e0b' : '1px solid var(--border)',
+                        background: approveReturnDisposition === 'RECORD_AS_WASTE' ? 'rgba(245, 158, 11, 0.12)' : 'var(--bg-main)',
+                        transition: 'all 0.2s ease'
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, fontSize: 13, color: '#f59e0b', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <AlertTriangle size={15} /> 💥 Catat Sebagai Kerugian (Waste)
+                      </div>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                        Barang rusak total / hancur di jalan. Masuk ke modul <strong>Waste Tracking & Laba Rugi</strong>. Stok tidak dipulihkan.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ITEMS VERIFICATION TABLE */}
+                <div className="card mb-4" style={{ background: 'var(--bg-card-subtle)', padding: 12 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: 'var(--text-primary)' }}>
+                    Verifikasi Jumlah Barang yang Disetujui:
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {approveReturnItems.map((item, idx) => (
+                      <div
+                        key={item.id}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '1fr 140px 180px',
+                          gap: 10,
+                          alignItems: 'center',
+                          padding: '10px 12px',
+                          background: 'var(--bg-main)',
+                          borderRadius: 8,
+                          border: '1px solid var(--border-soft)'
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 12.5 }}>{item.name}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                            Kirim: <strong>{num(item.input_qty)} {item.unit}</strong> · Diterima Cabang B: <strong>{num(item.received_qty)}</strong> · Diajukan Retur: <strong style={{ color: '#fb7185' }}>{num(item.returned_qty)} {item.unit}</strong>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label style={{ fontSize: 10.5, color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>Jumlah Disetujui</label>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <input
+                              type="number"
+                              step="any"
+                              min="0"
+                              max={item.returned_qty}
+                              className="form-control mono right"
+                              style={{ padding: '4px 6px', fontSize: 12 }}
+                              value={item.approved_qty}
+                              onChange={e => handleApproveReturnItemQtyChange(idx, e.target.value)}
+                            />
+                            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.unit}</span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label style={{ fontSize: 10.5, color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>Alasan dari Cabang Tujuan</label>
+                          <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                            {item.reason || 'Barang rusak / kurang'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* APPROVAL NOTES */}
+                <div className="form-group mb-4">
+                  <label className="form-label">Catatan Persetujuan (Opsional)</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Contoh: Fisik barang telah diterima di gudang asal dan diperiksa"
+                    value={approveReturnNotes}
+                    onChange={e => setApproveReturnNotes(e.target.value)}
+                  />
+                </div>
+
+                <div className="flex-between">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setApproveReturnModalOpen(false)}
+                    disabled={approvingReturn}
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn"
+                    disabled={approvingReturn}
+                    style={{
+                      background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                      color: '#ffffff',
+                      fontWeight: 800,
+                      padding: '8px 20px',
+                      border: 'none',
+                      boxShadow: '0 4px 12px rgba(16, 185, 129, 0.35)'
+                    }}
+                  >
+                    {approvingReturn ? 'Menyimpan Persetujuan...' : '✓ Setujui Retur & Simpan'}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <form onSubmit={handleConfirmRejectReturn}>
+                <div style={{
+                  background: 'rgba(239, 68, 68, 0.08)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  borderRadius: 10,
+                  padding: 14,
+                  marginBottom: 16,
+                  fontSize: 12,
+                  color: '#fca5a5',
+                  lineHeight: 1.5
+                }}>
+                  <strong>Perhatian:</strong> Menolak pengajuan retur menyatakan bahwa cabang pengirim TIDAK mengakui kerusakan atau pengembalian barang ini. Stok tidak akan ditambahkan ke cabang asal.
+                </div>
+
+                <div className="form-group mb-4">
+                  <label className="form-label" style={{ fontWeight: 700 }}>Alasan Penolakan Retur <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <textarea
+                    rows={3}
+                    className="form-control"
+                    placeholder="Contoh: Barang tidak dikirimkan kembali secara fisik / kemasan rusak setelah sampai di cabang tujuan"
+                    value={rejectReason}
+                    onChange={e => setRejectReason(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="flex-between">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setApproveReturnModalOpen(false)}
+                    disabled={approvingReturn}
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-danger"
+                    disabled={approvingReturn}
+                    style={{
+                      fontWeight: 800,
+                      padding: '8px 20px',
+                    }}
+                  >
+                    {approvingReturn ? 'Menolak Retur...' : '✕ Tolak Pengajuan Retur'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Modal Buat Transfer Fleksibel */}
       {createModalOpen && (
         <div className="modal-backdrop" onClick={() => setCreateModalOpen(false)}>
@@ -2244,7 +2718,27 @@ export default function TransferBahan() {
                   Surat Jalan Transfer Barang — {selectedTransfer.transfer_no}
                 </span>
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {selectedTransfer.return_status === 'PENDING' && (isPlatformAdmin || isOwnerBisnis || (activeOutletId && String(activeOutletId) === String(selectedTransfer.source_outlet_id)) || (currentUser?.outlet_id && String(currentUser.outlet_id) === String(selectedTransfer.source_outlet_id))) && (
+                  <button
+                    className="btn btn-sm"
+                    onClick={() => {
+                      setDetailModalOpen(false);
+                      openApproveReturnModal(selectedTransfer);
+                    }}
+                    style={{
+                      background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                      color: '#ffffff',
+                      fontWeight: 700,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      boxShadow: '0 2px 8px rgba(99, 102, 241, 0.35)'
+                    }}
+                  >
+                    <ShieldCheck size={14} /> Approval Retur
+                  </button>
+                )}
                 {(selectedTransfer.status === 'IN_TRANSIT' || selectedTransfer.status === 'PENDING') && (
                   <button
                     className="btn btn-sm"
@@ -2382,14 +2876,55 @@ export default function TransferBahan() {
                 </div>
               )}
 
-              {/* Audit Return Info if returned */}
+              {/* Audit Return Info & Approval Status */}
               {selectedTransfer.returned_at && (
-                <div style={{ fontSize: 11.5, color: '#991b1b', padding: '8px 12px', background: '#fef2f2', borderRadius: 6, border: '1px solid #fecaca', marginBottom: 14 }}>
-                  <strong>Pencatatan Retur Barang:</strong> {new Date(selectedTransfer.returned_at).toLocaleString('id-ID')} oleh <strong>{selectedTransfer.returned_by_name || 'Petugas Retur'}</strong>
+                <div style={{
+                  fontSize: 11.5,
+                  padding: '10px 12px',
+                  borderRadius: 6,
+                  marginBottom: 14,
+                  background: selectedTransfer.return_status === 'APPROVED' ? '#f0fdf4' : selectedTransfer.return_status === 'REJECTED' ? '#fef2f2' : '#fffbeb',
+                  border: `1px solid ${selectedTransfer.return_status === 'APPROVED' ? '#bbf7d0' : selectedTransfer.return_status === 'REJECTED' ? '#fecaca' : '#fde68a'}`,
+                  color: selectedTransfer.return_status === 'APPROVED' ? '#166534' : selectedTransfer.return_status === 'REJECTED' ? '#991b1b' : '#92400e'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <strong>
+                      {selectedTransfer.return_status === 'APPROVED' ? '✓ Persetujuan Retur (Disetujui Cabang Pengirim)' :
+                       selectedTransfer.return_status === 'REJECTED' ? '✕ Penolakan Retur (Ditolak Cabang Pengirim)' :
+                       '⚠️ Pengajuan Retur Barang (Menunggu Persetujuan Cabang Pengirim)'}
+                    </strong>
+                    <span style={{
+                      fontWeight: 700,
+                      fontSize: 10.5,
+                      padding: '2px 6px',
+                      borderRadius: 4,
+                      background: selectedTransfer.return_status === 'APPROVED' ? '#dcfce7' : selectedTransfer.return_status === 'REJECTED' ? '#fee2e2' : '#fef3c7',
+                      color: selectedTransfer.return_status === 'APPROVED' ? '#15803d' : selectedTransfer.return_status === 'REJECTED' ? '#b91c1c' : '#b45309'
+                    }}>
+                      Status Retur: {selectedTransfer.return_status || 'PENDING'}
+                    </span>
+                  </div>
+                  <div>
+                    Diajukan pada {new Date(selectedTransfer.returned_at).toLocaleString('id-ID')} oleh <strong>{selectedTransfer.returned_by_name || 'Petugas Cabang Tujuan'}</strong>.
+                  </div>
                   <div style={{ marginTop: 2 }}>
-                    <strong>Alasan Utama:</strong> {selectedTransfer.return_reason || '—'} · <strong>Disposisi:</strong> {selectedTransfer.return_disposition === 'RECORD_AS_WASTE' ? 'Kerugian Waste (Barang Rusak)' : 'Retur ke Cabang Asal'}
+                    <strong>Alasan Retur:</strong> {selectedTransfer.return_reason || '—'} · <strong>Disposisi:</strong> {selectedTransfer.return_disposition === 'RECORD_AS_WASTE' ? 'Kerugian Waste (Barang Rusak)' : 'Dipulihkan ke Stok Cabang Asal'}
                   </div>
                   {selectedTransfer.return_notes && <div style={{ marginTop: 2 }}><strong>Catatan Retur:</strong> {selectedTransfer.return_notes}</div>}
+
+                  {selectedTransfer.return_approved_at && (
+                    <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed #bbf7d0', color: '#15803d' }}>
+                      ✓ <strong>Disetujui pada:</strong> {new Date(selectedTransfer.return_approved_at).toLocaleString('id-ID')} oleh <strong>{selectedTransfer.return_approved_by_name || 'Cabang Asal / Owner'}</strong>
+                      {selectedTransfer.return_approval_notes && <div style={{ marginTop: 2 }}><strong>Catatan Persetujuan:</strong> {selectedTransfer.return_approval_notes}</div>}
+                    </div>
+                  )}
+
+                  {selectedTransfer.return_rejected_at && (
+                    <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed #fecaca', color: '#b91c1c' }}>
+                      ✕ <strong>Ditolak pada:</strong> {new Date(selectedTransfer.return_rejected_at).toLocaleString('id-ID')} oleh <strong>{selectedTransfer.return_rejected_by_name || 'Cabang Asal / Owner'}</strong>
+                      {selectedTransfer.return_rejected_reason && <div style={{ marginTop: 2 }}><strong>Alasan Penolakan:</strong> {selectedTransfer.return_rejected_reason}</div>}
+                    </div>
+                  )}
                 </div>
               )}
 
