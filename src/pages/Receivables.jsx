@@ -5,7 +5,7 @@ import {
   Calendar, CheckCircle2, AlertOctagon, Clock, DollarSign,
   ChevronRight, X, User, Phone, MapPin, CreditCard,
   Trash2, Edit3, ArrowRight, ShieldAlert, Receipt, Send, Check,
-  Users, CheckSquare, Square, Layers, Sparkles
+  Users, CheckSquare, Square, Layers, Sparkles, History
 } from 'lucide-react';
 import api from '../api/client';
 import {
@@ -99,6 +99,43 @@ export default function Receivables() {
   const selectedTotalRemaining = useMemo(() => {
     return selectedUnpaidReceivables.reduce((acc, curr) => acc + (curr.remaining_amount || 0), 0);
   }, [selectedUnpaidReceivables]);
+
+  // Extract all payments across all receivables for the "PAYMENTS" history tab
+  const allPaymentLogs = useMemo(() => {
+    const logs = [];
+    for (const rec of items) {
+      if (Array.isArray(rec.payments)) {
+        for (const p of rec.payments) {
+          logs.push({
+            ...p,
+            receivable_id: rec.id,
+            receivable_no: rec.receivable_no,
+            customer_name: rec.customer_name,
+            customer_phone: rec.customer_phone,
+            total_amount: rec.total_amount,
+            remaining_amount: rec.remaining_amount,
+            outlet_name: rec.outlet?.name || rec.outlet_name,
+          });
+        }
+      }
+    }
+    // Sort newest payment date first
+    return logs.sort((a, b) => new Date(b.payment_date || b.created_at) - new Date(a.payment_date || a.created_at));
+  }, [items]);
+
+  // Filtered payment logs for search
+  const filteredPaymentLogs = useMemo(() => {
+    if (!searchQuery || !searchQuery.trim()) return allPaymentLogs;
+    const q = searchQuery.toLowerCase().trim();
+    return allPaymentLogs.filter(p =>
+      (p.payment_no && p.payment_no.toLowerCase().includes(q)) ||
+      (p.customer_name && p.customer_name.toLowerCase().includes(q)) ||
+      (p.receivable_no && p.receivable_no.toLowerCase().includes(q)) ||
+      (p.notes && p.notes.toLowerCase().includes(q)) ||
+      (p.reference_no && p.reference_no.toLowerCase().includes(q)) ||
+      (p.payment_method && p.payment_method.toLowerCase().includes(q))
+    );
+  }, [allPaymentLogs, searchQuery]);
 
   function toggleSelectReceivable(id) {
     setSelectedReceivableIds(prev =>
@@ -659,6 +696,26 @@ export default function Receivables() {
               }}
             >
               <Receipt size={15} /> Semua Nota Kasbon ({items.length})
+            </button>
+
+            <button
+              onClick={() => setActiveTab('PAYMENTS')}
+              style={{
+                padding: '7px 16px',
+                borderRadius: '7px',
+                border: 'none',
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                background: activeTab === 'PAYMENTS' ? 'var(--primary)' : 'transparent',
+                color: activeTab === 'PAYMENTS' ? '#ffffff' : 'var(--text-secondary)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <History size={15} /> Riwayat Pelunasan ({allPaymentLogs.length})
             </button>
           </div>
 
@@ -1229,6 +1286,115 @@ export default function Receivables() {
           </table>
         </div>
       </>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 3: RIWAYAT PEMBAYARAN & CICILAN (PAYMENT LOGS HISTORY) */}
+      {/* ========================================================================= */}
+      {activeTab === 'PAYMENTS' && (
+        <div className="table-wrap fade-in" style={{ width: '100%', overflowX: 'auto', borderRadius: '12px' }}>
+          <table style={{ width: '100%', minWidth: '1100px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+            <thead>
+              <tr style={{ background: 'rgba(23, 28, 56, 0.7)', borderBottom: '1px solid var(--border-strong)' }}>
+                <th style={{ padding: '14px 16px', fontWeight: 700 }}>No. Pembayaran & Tanggal</th>
+                <th style={{ padding: '14px 16px', fontWeight: 700 }}>Pelanggan / Peminjam</th>
+                <th style={{ padding: '14px 16px', fontWeight: 700 }}>No. Nota Kasbon</th>
+                <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'center' }}>Metode</th>
+                <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'right' }}>Nominal Dibayar</th>
+                <th style={{ padding: '14px 16px', fontWeight: 700 }}>Kasir / Penerima</th>
+                <th style={{ padding: '14px 16px', fontWeight: 700 }}>Keterangan / Ref</th>
+                <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'center', width: '100px' }}>Aksi</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredPaymentLogs.length === 0 ? (
+                <tr>
+                  <td colSpan={8} style={{ textAlign: 'center', padding: '48px 16px', color: 'var(--text-secondary)' }}>
+                    <History size={32} style={{ margin: '0 auto 10px', opacity: 0.5 }} />
+                    <div style={{ fontWeight: 600, fontSize: '14px' }}>Belum Ada Riwayat Pembayaran</div>
+                    <div style={{ fontSize: '12px', marginTop: '4px' }}>Catatan pelunasan atau cicilan kasbon yang diterima akan muncul di sini</div>
+                  </td>
+                </tr>
+              ) : (
+                filteredPaymentLogs.map(log => (
+                  <tr
+                    key={log.id}
+                    style={{
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                      transition: 'background 0.2s ease'
+                    }}
+                  >
+                    {/* Payment No & Date */}
+                    <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
+                      <div className="mono" style={{ fontWeight: 700, color: 'var(--primary)' }}>
+                        {log.payment_no || `PAY-${log.id}`}
+                      </div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                        📅 {log.payment_date || log.created_at}
+                      </div>
+                    </td>
+
+                    {/* Customer */}
+                    <td style={{ padding: '14px 16px' }}>
+                      <div style={{ fontWeight: 700, color: '#ffffff' }}>
+                        {log.customer_name}
+                      </div>
+                      {log.customer_phone && (
+                        <div style={{ fontSize: '11px', color: '#38bdf8', marginTop: '2px' }}>
+                          📞 {log.customer_phone}
+                        </div>
+                      )}
+                    </td>
+
+                    {/* Receivable No */}
+                    <td style={{ padding: '14px 16px' }}>
+                      <div className="mono" style={{ fontWeight: 600, color: '#ffffff' }}>
+                        {log.receivable_no}
+                      </div>
+                    </td>
+
+                    {/* Method */}
+                    <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                      <span className="pill pill-neutral mono" style={{ fontSize: '11px', fontWeight: 700 }}>
+                        {log.payment_method || 'CASH'}
+                      </span>
+                    </td>
+
+                    {/* Amount */}
+                    <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 900, color: 'var(--ok)', fontSize: '14px' }}>
+                      + {rupiah(log.amount)}
+                    </td>
+
+                    {/* Receiver */}
+                    <td style={{ padding: '14px 16px' }}>
+                      <div style={{ fontSize: '12.5px', color: '#ffffff' }}>
+                        {log.receiver?.name || 'Kasir'}
+                      </div>
+                    </td>
+
+                    {/* Ref / Notes */}
+                    <td style={{ padding: '14px 16px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                      {log.reference_no && <div style={{ fontWeight: 600, color: '#ffffff' }}>Ref: {log.reference_no}</div>}
+                      {log.notes ? <span>{log.notes}</span> : <span>-</span>}
+                    </td>
+
+                    {/* Actions */}
+                    <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                      <button
+                        className="btn btn-danger btn-icon"
+                        onClick={() => handleDeletePayment(log.receivable_id, log.id)}
+                        style={{ padding: '5px', height: '28px', width: '28px' }}
+                        title="Hapus / Batal Catatan Pembayaran Ini"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {/* ========================================================================= */}
