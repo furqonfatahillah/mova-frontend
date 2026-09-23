@@ -1764,7 +1764,7 @@ export default function POS() {
         // Paying an open bill
         const payload = {
           payment_method: paymentMethod,
-          amount_paid: paymentMethod === 'CASH' ? parsedCash : Number(activeOpenBillPayment.total_price),
+          amount_paid: (paymentMethod === 'CASH' || paymentMethod === 'KASBON') ? parsedCash : Number(activeOpenBillPayment.total_price),
           change_amount: paymentMethod === 'CASH' ? changeAmount : 0,
           notes: orderNotes || undefined,
         };
@@ -1806,7 +1806,7 @@ export default function POS() {
           customer_name: selectedCustomer ? selectedCustomer.name : (customerName || undefined),
           customer_id: selectedCustomer ? selectedCustomer.id : undefined,
           payment_method: paymentMethod,
-          amount_paid: paymentMethod === 'CASH' ? parsedCash : cartTotal,
+          amount_paid: (paymentMethod === 'CASH' || paymentMethod === 'KASBON') ? parsedCash : cartTotal,
           change_amount: paymentMethod === 'CASH' ? changeAmount : 0,
           notes: orderNotes || undefined,
           shift_id: activeShift?.shift?.id || undefined,
@@ -4301,7 +4301,11 @@ export default function POS() {
                       type="button"
                       onClick={() => {
                         setPaymentMethod(m.key);
-                        if (m.key !== 'CASH') setCashReceived(payableTotal.toString());
+                        if (m.key === 'KASBON') {
+                          setCashReceived('0');
+                        } else if (m.key !== 'CASH') {
+                          setCashReceived(payableTotal.toString());
+                        }
                       }}
                       style={{
                         padding: '10px 8px',
