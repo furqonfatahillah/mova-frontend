@@ -4721,6 +4721,26 @@ export default function POS() {
                     </div>
                   </>
                 )}
+                {(completedOrder.payment_method === 'KASBON' || completedOrder.payment_method === 'PIUTANG') && (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5 }}>
+                      <span>DP / Tunai Dibayar:</span>
+                      <span>{Number(completedOrder.amount_paid) > 0 ? rupiah(completedOrder.amount_paid) : 'Rp0 (Full Kasbon)'}</span>
+                    </div>
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      fontSize: 11,
+                      fontWeight: 900,
+                      marginTop: 2,
+                      paddingTop: 2,
+                      borderTop: '1px dotted #000'
+                    }}>
+                      <span>SISA KASBON / HUTANG:</span>
+                      <span>{rupiah(Math.max(0, (Number(completedOrder.total_price) || 0) - (Number(completedOrder.amount_paid) || 0)))}</span>
+                    </div>
+                  </>
+                )}
                 {completedOrder.remaining_total !== undefined && (
                   <div style={{
                     display: 'flex',
