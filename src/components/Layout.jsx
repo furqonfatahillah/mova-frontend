@@ -120,7 +120,7 @@ export default function Layout() {
               { to: '/opex', label: 'Biaya Operasional (OPEX)', icon: Receipt },
               { to: '/profit-loss', label: 'Laba Rugi (P&L)', icon: Landmark },
               { to: '/cash-flow', label: 'Arus Kas (Cash Flow)', icon: Wallet },
-              { to: '/piutang', label: 'Buku Piutang', icon: CreditCard },
+              { to: '/piutang', label: 'Kasbon Customer', icon: CreditCard },
               { to: '/variance/bahan', label: 'Variance Bahan', icon: BarChart2 },
               { to: '/variance/menu', label: 'Variance Menu', icon: TrendingUp },
               { to: '/profitability', label: 'Profitability', icon: DollarSign },
@@ -205,7 +205,7 @@ export default function Layout() {
           items: [
             { to: '/profit-loss', label: 'Laba Rugi (P&L)', icon: Landmark },
             { to: '/cash-flow', label: 'Arus Kas (Cash Flow)', icon: Wallet },
-            { to: '/piutang', label: 'Buku Piutang Usaha', icon: CreditCard },
+            { to: '/piutang', label: 'Kasbon Customer', icon: CreditCard },
             { to: '/variance/bahan', label: 'Analisis Varian Bahan', icon: BarChart2 },
             { to: '/variance/menu', label: 'Analisis Varian Menu', icon: TrendingUp },
             { to: '/profitability', label: 'Profitability (Menu Eng.)', icon: DollarSign },
@@ -251,7 +251,7 @@ export default function Layout() {
             { to: '/batch-prep', label: 'Batch Prep Dapur', icon: ChefHat },
             { to: '/waste', label: 'Waste Log', icon: Trash2 },
             { to: '/opex', label: 'Biaya Operasional Cabang', icon: Receipt },
-            { to: '/piutang', label: 'Buku Piutang Cabang', icon: CreditCard },
+            { to: '/piutang', label: 'Kasbon Customer', icon: CreditCard },
           ],
         },
         {

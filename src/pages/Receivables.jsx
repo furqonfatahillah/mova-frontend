@@ -1,17 +1,18 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  Wallet, PlusCircle, Search, Filter, RefreshCw, Eye,
+  Wallet, PlusCircle, Search, RefreshCw, Eye,
   Printer, FileSpreadsheet, MessageCircle, AlertCircle,
   Calendar, CheckCircle2, AlertOctagon, Clock, DollarSign,
   ChevronRight, X, User, Phone, MapPin, CreditCard,
-  Trash2, Edit3, ArrowRight, ShieldAlert, Receipt, Send, Check
+  Trash2, Edit3, ArrowRight, ShieldAlert, Receipt, Send, Check,
+  Users, CheckSquare, Square, Layers, Sparkles
 } from 'lucide-react';
 import api from '../api/client';
 import {
   num, rupiah, pct, StatusPill, LoadingState,
   PageHeader, MiniCard, formatDateTime
 } from '../components/ui';
-import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
+import { getTodayStr } from '../utils/date';
 import { useOutlet } from '../context/OutletContext';
 import { exportReceivablesToExcel } from '../utils/exportReport';
 import { printElement } from '../utils/print';
@@ -40,8 +41,13 @@ export default function Receivables() {
     return undefined;
   }, [activeOutletId, outlets, canSwitchOutlet, currentUser?.outlet_id]);
 
+  // Tab State: 'CUSTOMERS' (Ringkasan Per Pelanggan) vs 'RECEIVABLES' (Daftar Nota Detail)
+  const [activeTab, setActiveTab] = useState('CUSTOMERS');
+
   // Main Data States
   const [items, setItems] = useState([]);
+  const [customerSummary, setCustomerSummary] = useState([]);
+  const [masterCustomers, setMasterCustomers] = useState([]);
   const [stats, setStats] = useState({
     total_receivables: 0,
     total_remaining: 0,
@@ -63,13 +69,31 @@ export default function Receivables() {
 
   // Modal States
   const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [payModal, setPayModal] = useState({ open: false, item: null, amount: '', payment_date: getTodayStr(), payment_method: 'TRANSFER', reference_no: '', notes: '' });
+  const [payModal, setPayModal] = useState({
+    open: false, item: null, amount: '', payment_date: getTodayStr(),
+    payment_method: 'CASH', reference_no: '', notes: ''
+  });
+
+  // Bulk Payment Modal State
+  const [bulkPayModal, setBulkPayModal] = useState({
+    open: false,
+    customerGroup: null,
+    selectedIds: [],
+    amount: '',
+    payment_date: getTodayStr(),
+    payment_method: 'CASH',
+    reference_no: '',
+    notes: '',
+  });
+
   const [historyModal, setHistoryModal] = useState({ open: false, item: null });
   const [invoiceModal, setInvoiceModal] = useState({ open: false, item: null });
+  const [expandedCustomerKey, setExpandedCustomerKey] = useState(null);
 
   // Form State for New / Edit Receivable
   const [form, setForm] = useState({
     id: null,
+    customer_id: '',
     customer_name: '',
     customer_phone: '',
     customer_address: '',
@@ -77,7 +101,7 @@ export default function Receivables() {
     due_date: getTodayStr(),
     total_amount: '',
     initial_paid: '',
-    payment_method: 'TRANSFER',
+    payment_method: 'CASH',
     reference_no: '',
     notes: '',
     outlet_id: '',
@@ -86,6 +110,7 @@ export default function Receivables() {
 
   useEffect(() => {
     fetchData();
+    fetchMasterCustomers();
   }, [targetOutlet, statusFilter, dueFilter]);
 
   async function fetchData() {
@@ -96,18 +121,33 @@ export default function Receivables() {
         status: statusFilter !== 'ALL' ? statusFilter : undefined,
         due_filter: dueFilter !== 'ALL' ? dueFilter : undefined,
       };
-      const res = await api.get('/receivables', { params });
-      setItems(res.data?.data || []);
-      setStats(res.data?.stats || {});
+
+      const [resAll, resCust] = await Promise.all([
+        api.get('/receivables', { params }),
+        api.get('/receivables/customers', { params: { outlet_id: targetOutlet } }),
+      ]);
+
+      setItems(resAll.data?.data || []);
+      setStats(resAll.data?.stats || {});
+      setCustomerSummary(resCust.data?.data || []);
     } catch (err) {
       console.error('Error fetching receivables:', err);
-      toast.error('Gagal memuat data buku piutang');
+      toast.error('Gagal memuat data kasbon customer');
     } finally {
       setLoading(false);
     }
   }
 
-  // Filtered dataset for instant text search
+  async function fetchMasterCustomers() {
+    try {
+      const res = await api.get('/customers');
+      setMasterCustomers(res.data?.data || res.data || []);
+    } catch (err) {
+      console.error('Error fetching master customers:', err);
+    }
+  }
+
+  // Filtered dataset for instant text search (Items)
   const filteredItems = useMemo(() => {
     if (!searchQuery.trim()) return items;
     const q = searchQuery.toLowerCase().trim();
@@ -122,6 +162,36 @@ export default function Receivables() {
     });
   }, [items, searchQuery]);
 
+  // Filtered customer summary
+  const filteredCustomerSummary = useMemo(() => {
+    if (!searchQuery.trim()) return customerSummary;
+    const q = searchQuery.toLowerCase().trim();
+    return customerSummary.filter(c => {
+      return (
+        c.customer_name?.toLowerCase().includes(q) ||
+        c.customer_phone?.toLowerCase().includes(q)
+      );
+    });
+  }, [customerSummary, searchQuery]);
+
+  // Select customer in create modal
+  function handleSelectCustomerInForm(customerId) {
+    if (!customerId) {
+      setForm(f => ({ ...f, customer_id: '', customer_name: '', customer_phone: '', customer_address: '' }));
+      return;
+    }
+    const found = masterCustomers.find(c => String(c.id) === String(customerId));
+    if (found) {
+      setForm(f => ({
+        ...f,
+        customer_id: found.id,
+        customer_name: found.name || '',
+        customer_phone: found.phone || '',
+        customer_address: found.address || '',
+      }));
+    }
+  }
+
   // Handle Create / Edit Submit
   async function handleSaveReceivable(e) {
     e.preventDefault();
@@ -130,7 +200,7 @@ export default function Receivables() {
       return;
     }
     if (!form.total_amount || Number(form.total_amount) <= 0) {
-      toast.error('Total nominal piutang harus lebih dari 0');
+      toast.error('Total nominal kasbon harus lebih dari 0');
       return;
     }
     if (!form.due_date) {
@@ -142,16 +212,18 @@ export default function Receivables() {
     try {
       if (form.id) {
         await api.put(`/receivables/${form.id}`, {
+          customer_id: form.customer_id || null,
           customer_name: form.customer_name,
           customer_phone: form.customer_phone,
           customer_address: form.customer_address,
           due_date: form.due_date,
           notes: form.notes,
         });
-        toast.success('Data piutang berhasil diperbarui');
+        toast.success('Data kasbon berhasil diperbarui');
       } else {
         await api.post('/receivables', {
           outlet_id: form.outlet_id || targetOutlet || outlets?.[0]?.id || 1,
+          customer_id: form.customer_id || null,
           customer_name: form.customer_name,
           customer_phone: form.customer_phone,
           customer_address: form.customer_address,
@@ -163,14 +235,14 @@ export default function Receivables() {
           reference_no: form.reference_no,
           notes: form.notes,
         });
-        toast.success('Tagihan piutang baru berhasil dicatat');
+        toast.success('Tagihan kasbon baru berhasil dicatat');
       }
       setCreateModalOpen(false);
       resetForm();
       fetchData();
     } catch (err) {
       console.error(err);
-      toast.error(err.response?.data?.message || 'Gagal menyimpan tagihan piutang');
+      toast.error(err.response?.data?.message || 'Gagal menyimpan tagihan kasbon');
     } finally {
       setSubmitting(false);
     }
@@ -179,6 +251,7 @@ export default function Receivables() {
   function resetForm() {
     setForm({
       id: null,
+      customer_id: '',
       customer_name: '',
       customer_phone: '',
       customer_address: '',
@@ -186,7 +259,7 @@ export default function Receivables() {
       due_date: getTodayStr(),
       total_amount: '',
       initial_paid: '',
-      payment_method: 'TRANSFER',
+      payment_method: 'CASH',
       reference_no: '',
       notes: '',
       outlet_id: targetOutlet || '',
@@ -196,6 +269,7 @@ export default function Receivables() {
   function openEditModal(item) {
     setForm({
       id: item.id,
+      customer_id: item.customer_id || '',
       customer_name: item.customer_name || '',
       customer_phone: item.customer_phone || '',
       customer_address: item.customer_address || '',
@@ -203,7 +277,7 @@ export default function Receivables() {
       due_date: item.due_date || getTodayStr(),
       total_amount: String(item.total_amount || ''),
       initial_paid: '',
-      payment_method: 'TRANSFER',
+      payment_method: 'CASH',
       reference_no: '',
       notes: item.notes || '',
       outlet_id: item.outlet_id || '',
@@ -211,7 +285,7 @@ export default function Receivables() {
     setCreateModalOpen(true);
   }
 
-  // Handle Payment Submit
+  // Handle Single Payment Submit
   async function handleAddPayment(e) {
     e.preventDefault();
     if (!payModal.item) return;
@@ -220,14 +294,14 @@ export default function Receivables() {
       toast.error('Nominal pembayaran harus lebih dari 0');
       return;
     }
-    if (amountNum > payModal.item.remaining_amount) {
-      toast.error(`Nominal pembayaran melebihi sisa piutang (${rupiah(payModal.item.remaining_amount)})`);
+    if (amountNum > (payModal.item.remaining_amount + 0.01)) {
+      toast.error(`Nominal pembayaran melebihi sisa kasbon (${rupiah(payModal.item.remaining_amount)})`);
       return;
     }
 
     setSubmitting(true);
     try {
-      const res = await api.post(`/receivables/${payModal.item.id}/payments`, {
+      await api.post(`/receivables/${payModal.item.id}/payments`, {
         amount: amountNum,
         payment_date: payModal.payment_date,
         payment_method: payModal.payment_method,
@@ -235,7 +309,7 @@ export default function Receivables() {
         notes: payModal.notes,
       });
       toast.success(`Pembayaran ${rupiah(amountNum)} berhasil dicatat!`);
-      setPayModal({ open: false, item: null, amount: '', payment_date: getTodayStr(), payment_method: 'TRANSFER', reference_no: '', notes: '' });
+      setPayModal({ open: false, item: null, amount: '', payment_date: getTodayStr(), payment_method: 'CASH', reference_no: '', notes: '' });
       fetchData();
     } catch (err) {
       console.error(err);
@@ -245,18 +319,97 @@ export default function Receivables() {
     }
   }
 
+  // Open Bulk Payment Modal for a customer group
+  function openBulkPayModal(custGroup) {
+    const unpaidList = custGroup.unpaid_items || [];
+    const allIds = unpaidList.map(i => i.id);
+    const totalRemaining = custGroup.total_remaining || 0;
+
+    setBulkPayModal({
+      open: true,
+      customerGroup: custGroup,
+      selectedIds: allIds,
+      amount: String(totalRemaining),
+      payment_date: getTodayStr(),
+      payment_method: 'CASH',
+      reference_no: '',
+      notes: '',
+    });
+  }
+
+  // Toggle selection in Bulk Payment
+  function toggleBulkPayItem(id) {
+    setBulkPayModal(prev => {
+      const isSelected = prev.selectedIds.includes(id);
+      const newSelected = isSelected
+        ? prev.selectedIds.filter(x => x !== id)
+        : [...prev.selectedIds, id];
+
+      // Calculate total remaining for newly selected items
+      const unpaidList = prev.customerGroup?.unpaid_items || [];
+      const newTotal = unpaidList
+        .filter(i => newSelected.includes(i.id))
+        .reduce((acc, curr) => acc + (curr.remaining_amount || 0), 0);
+
+      return {
+        ...prev,
+        selectedIds: newSelected,
+        amount: String(newTotal),
+      };
+    });
+  }
+
+  // Handle Bulk Payment Submit
+  async function handleBulkPaymentSubmit(e) {
+    e.preventDefault();
+    if (!bulkPayModal.customerGroup) return;
+
+    const amountNum = Number(bulkPayModal.amount);
+    if (!amountNum || amountNum <= 0) {
+      toast.error('Nominal pelunasan harus lebih dari 0');
+      return;
+    }
+    if (bulkPayModal.selectedIds.length === 0) {
+      toast.error('Pilih setidaknya 1 transaksi kasbon yang ingin dibayar');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const res = await api.post('/receivables/bulk-payment', {
+        customer_id: bulkPayModal.customerGroup.customer_id || undefined,
+        customer_name: bulkPayModal.customerGroup.customer_name,
+        receivable_ids: bulkPayModal.selectedIds,
+        amount: amountNum,
+        payment_date: bulkPayModal.payment_date,
+        payment_method: bulkPayModal.payment_method,
+        reference_no: bulkPayModal.reference_no,
+        notes: bulkPayModal.notes,
+      });
+
+      toast.success(`Pembayaran sekaligus ${rupiah(amountNum)} untuk ${bulkPayModal.customerGroup.customer_name} berhasil dicatat!`);
+      setBulkPayModal({ open: false, customerGroup: null, selectedIds: [], amount: '', payment_date: getTodayStr(), payment_method: 'CASH', reference_no: '', notes: '' });
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      toast.error(err.response?.data?.message || 'Gagal memproses pelunasan sekaligus');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   // Handle Delete Receivable
   async function handleDelete(item) {
-    if (!window.confirm(`Yakin ingin menghapus tagihan piutang ${item.receivable_no} (${item.customer_name})?`)) {
+    if (!window.confirm(`Yakin ingin menghapus tagihan kasbon ${item.receivable_no} (${item.customer_name})?`)) {
       return;
     }
     try {
       await api.delete(`/receivables/${item.id}`);
-      toast.success('Data piutang berhasil dihapus');
+      toast.success('Data kasbon berhasil dihapus');
       fetchData();
     } catch (err) {
       console.error(err);
-      toast.error('Gagal menghapus piutang');
+      toast.error('Gagal menghapus kasbon');
     }
   }
 
@@ -267,7 +420,7 @@ export default function Receivables() {
     }
     try {
       const res = await api.delete(`/receivables/${receivableId}/payments/${paymentId}`);
-      toast.success('Pembayaran dibatalkan, sisa piutang disesuaikan');
+      toast.success('Pembayaran dibatalkan, sisa kasbon disesuaikan');
       setHistoryModal(prev => ({
         ...prev,
         item: res.data,
@@ -280,18 +433,34 @@ export default function Receivables() {
   }
 
   // WhatsApp Reminder Generator
-  function openWhatsApp(item) {
-    if (!item.customer_phone) {
+  function openWhatsApp(itemOrGroup) {
+    const phoneNum = itemOrGroup.customer_phone;
+    if (!phoneNum) {
       toast.error('Nomor telepon/WhatsApp pelanggan tidak terdaftar');
       return;
     }
-    // Clean phone number (replace 08xx with 628xx)
-    let phone = item.customer_phone.replace(/[^0-9]/g, '');
+
+    let phone = phoneNum.replace(/[^0-9]/g, '');
     if (phone.startsWith('0')) {
       phone = '62' + phone.slice(1);
     }
 
-    const message = `Halo Kak ${item.customer_name},\n\nKami dari *${businessName}* (${item.outlet_name || 'Outlet'}).\n\nMengingatkan perihal tagihan pesanan dengan rincian berikut:\n• *No. Invoice*: ${item.receivable_no}\n• *Total Tagihan*: ${rupiah(item.total_amount)}\n• *Sudah Dibayar*: ${rupiah(item.paid_amount)}\n• *Sisa Tagihan*: *${rupiah(item.remaining_amount)}*\n• *Jatuh Tempo*: ${item.due_date}\n${item.notes ? `• *Keterangan*: ${item.notes}\n` : ''}\nMohon konfirmasi pembayaran atau bukti transfer jika telah melakukan pelunasan.\n\nTerima kasih banyak atas kerjasamanya! 🙏`;
+    const custName = itemOrGroup.customer_name;
+    const isGroup = !!itemOrGroup.total_remaining;
+    const totalRemaining = isGroup ? itemOrGroup.total_remaining : itemOrGroup.remaining_amount;
+
+    let message = `Halo Kak ${custName},\n\nKami dari *${businessName}* (${outletName}).\n\nMengingatkan perihal catatan *Kasbon Pelanggan* dengan rincian berikut:\n`;
+
+    if (isGroup && itemOrGroup.unpaid_items?.length > 0) {
+      message += `• *Total Hutang Kasbon*: *${rupiah(totalRemaining)}*\n• *Jumlah Transaksi*: ${itemOrGroup.unpaid_count} nota\n\nRincian Nota Kasbon:\n`;
+      itemOrGroup.unpaid_items.forEach((u, idx) => {
+        message += `${idx + 1}. #${u.receivable_no} (${u.issue_date}) - Sisa: ${rupiah(u.remaining_amount)}\n`;
+      });
+    } else {
+      message += `• *No. Invoice*: ${itemOrGroup.receivable_no}\n• *Total Tagihan*: ${rupiah(itemOrGroup.total_amount)}\n• *Sudah Dibayar*: ${rupiah(itemOrGroup.paid_amount)}\n• *Sisa Kasbon*: *${rupiah(itemOrGroup.remaining_amount)}*\n• *Jatuh Tempo*: ${itemOrGroup.due_date}\n`;
+    }
+
+    message += `\nMohon konfirmasi pembayaran atau bukti transfer jika telah melakukan pelunasan.\n\nTerima kasih banyak atas kerjasamanya! 🙏`;
 
     const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
     window.open(url, '_blank');
@@ -307,10 +476,10 @@ export default function Receivables() {
         businessName,
         userName: currentUser?.name || 'Administrator',
       });
-      toast.success(`Buku Piutang berhasil diekspor: ${fname}`);
+      toast.success(`Buku Kasbon berhasil diekspor: ${fname}`);
     } catch (err) {
       console.error(err);
-      toast.error('Gagal mengekspor data piutang ke Excel');
+      toast.error('Gagal mengekspor data kasbon ke Excel');
     }
   }
 
@@ -318,24 +487,23 @@ export default function Receivables() {
   function handlePrintInvoice() {
     printElement(
       'printable-invoice-document',
-      `Invoice Tagihan - ${invoiceModal.item?.receivable_no || 'Piutang'}`,
+      `Bukti Kasbon - ${invoiceModal.item?.receivable_no || 'Kasbon'}`,
       { orientation: 'portrait', margin: '10mm 10mm' }
     );
   }
 
-  if (loading && items.length === 0) return <LoadingState />;
+  if (loading && items.length === 0 && customerSummary.length === 0) return <LoadingState />;
 
   return (
     <div className="fade-in" style={{ paddingBottom: '40px' }}>
       {/* Header */}
       <div className="flex-between mb-6" style={{ flexWrap: 'wrap', gap: '16px' }}>
         <PageHeader
-          title="Buku Piutang Usaha (Accounts Receivable)"
-          subtitle="Manajemen penagihan piutang pelanggan, katering & instansi, kontrol jatuh tempo, dan riwayat cicilan pelunasan."
+          title="Kasbon Customer (Pelanggan Berhutang)"
+          subtitle="Manajemen kasbon pelanggan, pelunasan sekaligus beberapa transaksi, cicilan bertahap, dan integrasi kasir."
         />
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-
           <button
             className="btn btn-secondary btn-sm"
             onClick={fetchData}
@@ -358,7 +526,7 @@ export default function Receivables() {
             onClick={() => { resetForm(); setCreateModalOpen(true); }}
             style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}
           >
-            <PlusCircle size={15} /> + Tagihan Piutang Baru
+            <PlusCircle size={15} /> + Tagihan Kasbon Baru
           </button>
         </div>
       </div>
@@ -366,15 +534,15 @@ export default function Receivables() {
       {/* KPI Stats Cards */}
       <div className="grid-4 mb-6">
         <MiniCard
-          label="Total Sisa Piutang Berjalan"
+          label="Total Sisa Kasbon Berjalan"
           value={rupiah(stats.total_remaining)}
-          sub={`Dari total ${rupiah(stats.total_receivables)} tagihan`}
+          sub={`Dari total ${rupiah(stats.total_receivables)} tagihan kasbon`}
           icon={<Wallet size={20} color="var(--primary)" />}
         />
         <MiniCard
-          label="Piutang Lewat Jatuh Tempo"
+          label="Kasbon Lewat Jatuh Tempo"
           value={rupiah(stats.total_overdue)}
-          sub={`${stats.count_overdue} tagihan butuh penagihan segera`}
+          sub={`${stats.count_overdue} nota kasbon butuh penagihan`}
           icon={<AlertOctagon size={20} color={stats.count_overdue > 0 ? '#ef4444' : 'var(--ok)'} />}
         />
         <MiniCard
@@ -384,321 +552,560 @@ export default function Receivables() {
           icon={<CheckCircle2 size={20} color="var(--ok)" />}
         />
         <MiniCard
-          label="Total Debitur / Pelanggan"
+          label="Total Pelanggan Berhutang"
           value={`${stats.total_customers || 0} Pelanggan`}
           sub={`${stats.count_unpaid} Belum Bayar · ${stats.count_partial} Cicil · ${stats.count_paid} Lunas`}
-          icon={<User size={20} color="#60a5fa" />}
+          icon={<Users size={20} color="#60a5fa" />}
         />
       </div>
 
-      {/* Filter & Search Bar */}
+      {/* Mode View Switcher & Search Bar */}
       <div className="card mb-5" style={{ padding: '14px 18px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
-          {/* Search */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: '240px' }}>
-            <Search size={16} style={{ color: 'var(--text-secondary)' }} />
-            <input
-              type="text"
-              className="form-control"
-              placeholder="Cari nama pelanggan, nomor HP, invoice, atau catatan..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              style={{ border: 'none', background: 'transparent', padding: '4px 0', fontSize: '13px' }}
-            />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+          
+          {/* Tabs */}
+          <div style={{ display: 'inline-flex', background: 'rgba(255, 255, 255, 0.06)', padding: '4px', borderRadius: '10px', gap: '4px' }}>
+            <button
+              onClick={() => setActiveTab('CUSTOMERS')}
+              style={{
+                padding: '7px 16px',
+                borderRadius: '7px',
+                border: 'none',
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                background: activeTab === 'CUSTOMERS' ? 'var(--primary)' : 'transparent',
+                color: activeTab === 'CUSTOMERS' ? '#ffffff' : 'var(--text-secondary)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <Users size={15} /> Ringkasan Per Pelanggan ({customerSummary.filter(c => c.total_remaining > 0).length})
+            </button>
+
+            <button
+              onClick={() => setActiveTab('RECEIVABLES')}
+              style={{
+                padding: '7px 16px',
+                borderRadius: '7px',
+                border: 'none',
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                background: activeTab === 'RECEIVABLES' ? 'var(--primary)' : 'transparent',
+                color: activeTab === 'RECEIVABLES' ? '#ffffff' : 'var(--text-secondary)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <Receipt size={15} /> Semua Nota Kasbon ({items.length})
+            </button>
           </div>
 
-          {/* Filter Dropdowns */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Status:</span>
-              <select
-                className="form-control form-control-sm"
-                value={statusFilter}
-                onChange={e => setStatusFilter(e.target.value)}
-                style={{ width: 'auto', fontSize: '12px' }}
-              >
-                <option value="ALL">Semua Status</option>
-                <option value="UNPAID">Belum Dibayar (UNPAID)</option>
-                <option value="PARTIAL">Cicilan / Sebagian (PARTIAL)</option>
-                <option value="PAID">Sudah Lunas (PAID)</option>
-                <option value="OVERDUE">Jatuh Tempo (OVERDUE)</option>
-              </select>
+          {/* Search & Filters */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', flex: 1, justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0, 0, 0, 0.2)', padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--border)', minWidth: '240px' }}>
+              <Search size={15} style={{ color: 'var(--text-secondary)' }} />
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Cari nama pelanggan, HP, atau nota..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                style={{ border: 'none', background: 'transparent', padding: 0, fontSize: '13px', color: '#ffffff' }}
+              />
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Jatuh Tempo:</span>
-              <select
-                className="form-control form-control-sm"
-                value={dueFilter}
-                onChange={e => setDueFilter(e.target.value)}
-                style={{ width: 'auto', fontSize: '12px' }}
-              >
-                <option value="ALL">Semua Periode</option>
-                <option value="OVERDUE">Sudah Lewat Jatuh Tempo</option>
-                <option value="TODAY">Jatuh Tempo Hari Ini</option>
-                <option value="THIS_WEEK">7 Hari ke Depan</option>
-                <option value="THIS_MONTH">Bulan Ini</option>
-              </select>
-            </div>
+            {activeTab === 'RECEIVABLES' && (
+              <>
+                <select
+                  className="form-control form-control-sm"
+                  value={statusFilter}
+                  onChange={e => setStatusFilter(e.target.value)}
+                  style={{ width: 'auto', fontSize: '12px' }}
+                >
+                  <option value="ALL">Semua Status</option>
+                  <option value="UNPAID">Belum Dibayar (UNPAID)</option>
+                  <option value="PARTIAL">Cicilan (PARTIAL)</option>
+                  <option value="PAID">Sudah Lunas (PAID)</option>
+                  <option value="OVERDUE">Jatuh Tempo (OVERDUE)</option>
+                </select>
+
+                <select
+                  className="form-control form-control-sm"
+                  value={dueFilter}
+                  onChange={e => setDueFilter(e.target.value)}
+                  style={{ width: 'auto', fontSize: '12px' }}
+                >
+                  <option value="ALL">Semua Periode</option>
+                  <option value="OVERDUE">Sudah Lewat Jatuh Tempo</option>
+                  <option value="TODAY">Jatuh Tempo Hari Ini</option>
+                  <option value="THIS_WEEK">7 Hari ke Depan</option>
+                </select>
+              </>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Main Table */}
-      <div className="table-wrap" style={{ width: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch', borderRadius: '12px' }}>
-        <table style={{ width: '100%', minWidth: '1180px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
-          <thead>
-            <tr style={{ background: 'rgba(23, 28, 56, 0.7)', borderBottom: '1px solid var(--border-strong)' }}>
-              <th style={{ padding: '14px 16px', fontWeight: 700 }}>No. Tagihan & Tanggal</th>
-              <th style={{ padding: '14px 16px', fontWeight: 700 }}>Pelanggan / Debitur</th>
-              <th style={{ padding: '14px 16px', fontWeight: 700 }}>Jatuh Tempo</th>
-              <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'right' }}>Total Tagihan</th>
-              <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'right' }}>Sudah Dibayar</th>
-              <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'right' }}>Sisa Piutang</th>
-              <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'center' }}>Progress</th>
-              <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'center' }}>Status</th>
-              <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'center', width: '220px', minWidth: '220px' }}>Aksi</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredItems.length === 0 ? (
-              <tr>
-                <td colSpan={9} style={{ textAlign: 'center', padding: '48px 16px', color: 'var(--text-secondary)' }}>
-                  <AlertCircle size={32} style={{ margin: '0 auto 10px', opacity: 0.5 }} />
-                  <div style={{ fontWeight: 600, fontSize: '14px' }}>Tidak ada data piutang yang ditemukan</div>
-                  <div style={{ fontSize: '12px', marginTop: '4px' }}>Coba ubah kata kunci pencarian atau filter status di atas</div>
-                </td>
-              </tr>
-            ) : (
-              filteredItems.map(item => {
-                const isPaid = item.status === 'PAID';
-                const isOverdue = item.is_overdue;
-                const daysRem = item.days_remaining;
-                const pctPaid = item.progress_pct ?? (item.total_amount > 0 ? Math.round((item.paid_amount / item.total_amount) * 100) : 0);
+      {/* ========================================================================= */}
+      {/* TAB 1: RINGKASAN PER PELANGGAN (CUSTOMER DEBT SUMMARY) */}
+      {/* ========================================================================= */}
+      {activeTab === 'CUSTOMERS' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {filteredCustomerSummary.length === 0 ? (
+            <div className="card text-center" style={{ padding: '48px 16px', color: 'var(--text-secondary)' }}>
+              <Users size={36} style={{ margin: '0 auto 10px', opacity: 0.5 }} />
+              <div style={{ fontWeight: 600, fontSize: '15px' }}>Tidak Ada Data Pelanggan Kasbon</div>
+              <div style={{ fontSize: '12px', marginTop: '4px' }}>Belum ada pencatatan kasbon pelanggan terdaftar pada outlet ini</div>
+            </div>
+          ) : (
+            filteredCustomerSummary.map((cust, idx) => {
+              const hasDebt = cust.total_remaining > 0;
+              const isExpanded = expandedCustomerKey === cust.group_key;
 
-                return (
-                  <tr
-                    key={item.id}
-                    style={{
-                      borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-                      background: isOverdue ? 'rgba(239, 68, 68, 0.04)' : undefined,
-                      transition: 'background 0.2s ease'
-                    }}
-                  >
-                    {/* Invoice & Date */}
-                    <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
-                      <div style={{ fontWeight: 700, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span>{item.receivable_no}</span>
+              return (
+                <div
+                  key={cust.group_key || idx}
+                  className="card fade-in"
+                  style={{
+                    border: cust.has_overdue ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid var(--border)',
+                    background: cust.has_overdue ? 'rgba(239, 68, 68, 0.03)' : undefined,
+                    padding: '18px 20px',
+                    borderRadius: '14px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+                    {/* Left: Customer Info */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                      <div style={{
+                        width: '46px',
+                        height: '46px',
+                        borderRadius: '12px',
+                        background: hasDebt ? 'rgba(245, 158, 11, 0.15)' : 'rgba(34, 197, 94, 0.15)',
+                        border: hasDebt ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid rgba(34, 197, 94, 0.3)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: hasDebt ? '#f59e0b' : '#22c55e',
+                        fontWeight: 800,
+                        fontSize: '18px'
+                      }}>
+                        {cust.customer_name?.charAt(0)?.toUpperCase() || 'P'}
                       </div>
-                      <div className="mono" style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                        Terbit: {item.issue_date}
-                      </div>
-                      {item.outlet_name && (
-                        <div style={{ fontSize: '10.5px', color: 'var(--primary)', marginTop: '2px' }}>
-                          📍 {item.outlet_name}
-                        </div>
-                      )}
-                    </td>
 
-                    {/* Customer Info */}
-                    <td style={{ padding: '14px 16px' }}>
-                      <div style={{ fontWeight: 700, color: '#ffffff', fontSize: '13.5px' }}>
-                        {item.customer_name}
-                      </div>
-                      {item.customer_phone ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', color: '#38bdf8', marginTop: '2px' }}>
-                          <Phone size={12} />
-                          <span>{item.customer_phone}</span>
-                          <button
-                            onClick={() => openWhatsApp(item)}
-                            title="Kirim Pesan WhatsApp"
-                            style={{
-                              background: 'rgba(34, 197, 94, 0.15)',
-                              border: '1px solid rgba(34, 197, 94, 0.3)',
-                              color: '#4ade80',
-                              borderRadius: '4px',
-                              padding: '1px 6px',
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontWeight: 800, color: '#ffffff', fontSize: '16px' }}>
+                            {cust.customer_name}
+                          </span>
+                          {cust.has_overdue && (
+                            <span style={{
                               fontSize: '10.5px',
                               fontWeight: 700,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '3px'
-                            }}
-                          >
-                            <MessageCircle size={10} /> WA
-                          </button>
+                              color: '#ef4444',
+                              background: 'rgba(239, 68, 68, 0.15)',
+                              padding: '2px 7px',
+                              borderRadius: '4px'
+                            }}>
+                              Jatuh Tempo!
+                            </span>
+                          )}
                         </div>
-                      ) : (
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>No HP: —</div>
-                      )}
-                      {item.notes && (
-                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '3px', fontStyle: 'italic', maxWidth: '220px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          "{item.notes}"
-                        </div>
-                      )}
-                    </td>
 
-                    {/* Due Date & Countdown */}
-                    <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
-                      <div className="mono" style={{ fontWeight: 600, color: '#ffffff' }}>
-                        {item.due_date}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '3px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                          {cust.customer_phone ? (
+                            <span style={{ color: '#38bdf8', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                              <Phone size={12} /> {cust.customer_phone}
+                            </span>
+                          ) : (
+                            <span>No HP: —</span>
+                          )}
+                          <span>• {cust.unpaid_count} Nota Belum Lunas</span>
+                          <span>• Kasbon Terakhir: {cust.latest_issue_date}</span>
+                        </div>
                       </div>
-                      {isPaid ? (
-                        <span style={{ fontSize: '11px', color: 'var(--ok)', display: 'inline-flex', alignItems: 'center', gap: '3px', marginTop: '2px' }}>
-                          <Check size={11} /> Lunas
-                        </span>
-                      ) : isOverdue ? (
-                        <span style={{
-                          fontSize: '10.5px',
-                          fontWeight: 700,
-                          color: '#ef4444',
-                          background: 'rgba(239, 68, 68, 0.15)',
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          display: 'inline-block',
-                          marginTop: '2px'
-                        }}>
-                          Lewat {Math.abs(daysRem)} Hari!
-                        </span>
-                      ) : daysRem === 0 ? (
-                        <span style={{
-                          fontSize: '10.5px',
-                          fontWeight: 700,
-                          color: '#f59e0b',
-                          background: 'rgba(245, 158, 11, 0.15)',
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          display: 'inline-block',
-                          marginTop: '2px'
-                        }}>
-                          ⚡ Jatuh Tempo Hari Ini
-                        </span>
-                      ) : (
-                        <span style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px', display: 'block' }}>
-                          Sisa {daysRem} hari
-                        </span>
-                      )}
-                    </td>
+                    </div>
 
-                    {/* Total Amount */}
-                    <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600, color: '#ffffff', whiteSpace: 'nowrap' }}>
-                      {rupiah(item.total_amount)}
-                    </td>
-
-                    {/* Paid Amount */}
-                    <td style={{ padding: '14px 16px', textAlign: 'right', color: 'var(--ok)', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                      {rupiah(item.paid_amount)}
-                    </td>
-
-                    {/* Remaining Amount */}
-                    <td style={{ padding: '14px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      <span style={{
-                        fontWeight: 800,
-                        fontSize: '14px',
-                        color: isPaid ? 'var(--ok)' : (isOverdue ? '#f87171' : '#fbbf24')
-                      }}>
-                        {rupiah(item.remaining_amount)}
-                      </span>
-                    </td>
-
-                    {/* Progress Bar */}
-                    <td style={{ padding: '14px 16px', textAlign: 'center', minWidth: '100px', whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                    {/* Right: Amounts & Actions */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          Total Sisa Kasbon
+                        </div>
                         <div style={{
-                          width: '60px',
-                          height: '6px',
-                          background: 'rgba(255, 255, 255, 0.1)',
-                          borderRadius: '3px',
-                          overflow: 'hidden'
+                          fontWeight: 800,
+                          fontSize: '18px',
+                          color: hasDebt ? (cust.has_overdue ? '#f87171' : '#fbbf24') : 'var(--ok)'
                         }}>
-                          <div style={{
-                            width: `${Math.min(pctPaid, 100)}%`,
-                            height: '100%',
-                            background: isPaid ? '#10b981' : (pctPaid > 0 ? '#38bdf8' : 'transparent'),
-                            borderRadius: '3px'
-                          }} />
+                          {rupiah(cust.total_remaining)}
                         </div>
-                        <span className="mono" style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                          {pctPaid}%
-                        </span>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                          Dari total {rupiah(cust.total_kasbon)}
+                        </div>
                       </div>
-                    </td>
 
-                    {/* Status */}
-                    <td style={{ padding: '14px 16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                      {isPaid ? (
-                        <span className="pill pill-ok mono">LUNAS</span>
-                      ) : isOverdue ? (
-                        <span className="pill pill-danger mono">JATUH TEMPO</span>
-                      ) : item.status === 'PARTIAL' ? (
-                        <span className="pill pill-warn mono">SEBAGIAN</span>
-                      ) : (
-                        <span className="pill pill-muted mono">BELUM BAYAR</span>
-                      )}
-                    </td>
-
-                    {/* Actions */}
-                    <td style={{ padding: '12px 16px', textAlign: 'center', width: '220px', minWidth: '220px' }}>
-                      <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'nowrap' }}>
-                        {!isPaid && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {hasDebt && (
                           <button
                             className="btn btn-primary btn-sm"
-                            onClick={() => setPayModal({ open: true, item, amount: String(item.remaining_amount), payment_date: getTodayStr(), payment_method: 'TRANSFER', reference_no: '', notes: '' })}
-                            style={{ padding: '5px 10px', fontSize: '11.5px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}
-                            title="Catat Pembayaran / Cicilan"
+                            onClick={() => openBulkPayModal(cust)}
+                            style={{ fontWeight: 700, padding: '8px 14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                           >
-                            <CreditCard size={12} /> Bayar
+                            <CreditCard size={14} /> Bayar Sekaligus
+                          </button>
+                        )}
+
+                        {cust.customer_phone && (
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => openWhatsApp(cust)}
+                            style={{ color: '#4ade80', borderColor: 'rgba(74, 222, 128, 0.3)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                            title="Kirim Pengingat Kasbon WA"
+                          >
+                            <MessageCircle size={14} /> WA
                           </button>
                         )}
 
                         <button
-                          className="btn btn-secondary btn-icon"
-                          onClick={() => setHistoryModal({ open: true, item })}
-                          style={{ padding: '6px', height: '30px', width: '30px', flexShrink: 0 }}
-                          title="Riwayat Pembayaran & Cicilan"
+                          className="btn btn-ghost btn-sm btn-icon"
+                          onClick={() => setExpandedCustomerKey(isExpanded ? null : cust.group_key)}
+                          title="Lihat Rincian Nota Kasbon"
                         >
-                          <Receipt size={13} />
-                        </button>
-
-                        <button
-                          className="btn btn-secondary btn-icon"
-                          onClick={() => setInvoiceModal({ open: true, item })}
-                          style={{ padding: '6px', height: '30px', width: '30px', flexShrink: 0 }}
-                          title="Cetak Dokumen Invoice Tagihan"
-                        >
-                          <Printer size={13} />
-                        </button>
-
-                        <button
-                          className="btn btn-secondary btn-icon"
-                          onClick={() => openEditModal(item)}
-                          style={{ padding: '6px', height: '30px', width: '30px', flexShrink: 0 }}
-                          title="Edit Data Piutang"
-                        >
-                          <Edit3 size={13} />
-                        </button>
-
-                        <button
-                          className="btn btn-danger btn-icon"
-                          onClick={() => handleDelete(item)}
-                          style={{ padding: '6px', height: '30px', width: '30px', flexShrink: 0 }}
-                          title="Hapus Piutang"
-                        >
-                          <Trash2 size={13} />
+                          <ChevronRight size={16} style={{ transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }} />
                         </button>
                       </div>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+                    </div>
+                  </div>
+
+                  {/* Expanded Detail Rows */}
+                  {isExpanded && (
+                    <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--primary)', marginBottom: '10px' }}>
+                        Rincian Nota Kasbon ({cust.customer_name}):
+                      </div>
+                      <div className="table-wrap">
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                          <thead>
+                            <tr style={{ background: 'rgba(0,0,0,0.3)', color: 'var(--text-secondary)' }}>
+                              <th style={{ padding: '8px 12px' }}>No. Invoice</th>
+                              <th style={{ padding: '8px 12px' }}>Tgl Terbit</th>
+                              <th style={{ padding: '8px 12px' }}>Jatuh Tempo</th>
+                              <th style={{ padding: '8px 12px', textAlign: 'right' }}>Total Tagihan</th>
+                              <th style={{ padding: '8px 12px', textAlign: 'right' }}>Sudah Dibayar</th>
+                              <th style={{ padding: '8px 12px', textAlign: 'right' }}>Sisa Kasbon</th>
+                              <th style={{ padding: '8px 12px', textAlign: 'center' }}>Status</th>
+                              <th style={{ padding: '8px 12px', textAlign: 'center' }}>Aksi</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(cust.all_items || []).map(item => (
+                              <tr key={item.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                                <td style={{ padding: '8px 12px', fontWeight: 700, color: '#ffffff' }}>{item.receivable_no}</td>
+                                <td style={{ padding: '8px 12px' }}>{item.issue_date}</td>
+                                <td style={{ padding: '8px 12px' }}>{item.due_date}</td>
+                                <td style={{ padding: '8px 12px', textAlign: 'right' }}>{rupiah(item.total_amount)}</td>
+                                <td style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--ok)' }}>{rupiah(item.paid_amount)}</td>
+                                <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: item.remaining_amount > 0 ? '#fbbf24' : 'var(--ok)' }}>
+                                  {rupiah(item.remaining_amount)}
+                                </td>
+                                <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                                  {item.remaining_amount <= 0 ? (
+                                    <span className="pill pill-ok mono" style={{ fontSize: '10px' }}>LUNAS</span>
+                                  ) : item.is_overdue ? (
+                                    <span className="pill pill-danger mono" style={{ fontSize: '10px' }}>JATUH TEMPO</span>
+                                  ) : (
+                                    <span className="pill pill-warn mono" style={{ fontSize: '10px' }}>BELUM LUNAS</span>
+                                  )}
+                                </td>
+                                <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                                  {item.remaining_amount > 0 && (
+                                    <button
+                                      className="btn btn-secondary btn-sm"
+                                      onClick={() => setPayModal({ open: true, item, amount: String(item.remaining_amount), payment_date: getTodayStr(), payment_method: 'CASH', reference_no: '', notes: '' })}
+                                      style={{ padding: '3px 8px', fontSize: '11px' }}
+                                    >
+                                      Cicil / Bayar
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
 
       {/* ========================================================================= */}
-      {/* MODAL 1: TAMBAH / EDIT PIUTANG BARU */}
+      {/* TAB 2: DAFTAR SEMUA NOTA KASBON (RECEIVABLES TABLE DETAIL) */}
+      {/* ========================================================================= */}
+      {activeTab === 'RECEIVABLES' && (
+        <div className="table-wrap" style={{ width: '100%', overflowX: 'auto', borderRadius: '12px' }}>
+          <table style={{ width: '100%', minWidth: '1180px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+            <thead>
+              <tr style={{ background: 'rgba(23, 28, 56, 0.7)', borderBottom: '1px solid var(--border-strong)' }}>
+                <th style={{ padding: '14px 16px', fontWeight: 700 }}>No. Tagihan & Tanggal</th>
+                <th style={{ padding: '14px 16px', fontWeight: 700 }}>Pelanggan / Peminjam</th>
+                <th style={{ padding: '14px 16px', fontWeight: 700 }}>Jatuh Tempo</th>
+                <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'right' }}>Total Kasbon</th>
+                <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'right' }}>Sudah Dibayar</th>
+                <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'right' }}>Sisa Kasbon</th>
+                <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'center' }}>Progress</th>
+                <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'center' }}>Status</th>
+                <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'center', width: '220px', minWidth: '220px' }}>Aksi</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredItems.length === 0 ? (
+                <tr>
+                  <td colSpan={9} style={{ textAlign: 'center', padding: '48px 16px', color: 'var(--text-secondary)' }}>
+                    <AlertCircle size={32} style={{ margin: '0 auto 10px', opacity: 0.5 }} />
+                    <div style={{ fontWeight: 600, fontSize: '14px' }}>Tidak ada data kasbon yang ditemukan</div>
+                    <div style={{ fontSize: '12px', marginTop: '4px' }}>Coba ubah kata kunci pencarian atau filter status di atas</div>
+                  </td>
+                </tr>
+              ) : (
+                filteredItems.map(item => {
+                  const isPaid = item.status === 'PAID';
+                  const isOverdue = item.is_overdue;
+                  const daysRem = item.days_remaining;
+                  const pctPaid = item.progress_pct ?? (item.total_amount > 0 ? Math.round((item.paid_amount / item.total_amount) * 100) : 0);
+
+                  return (
+                    <tr
+                      key={item.id}
+                      style={{
+                        borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                        background: isOverdue ? 'rgba(239, 68, 68, 0.04)' : undefined,
+                        transition: 'background 0.2s ease'
+                      }}
+                    >
+                      {/* Invoice & Date */}
+                      <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontWeight: 700, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span>{item.receivable_no}</span>
+                        </div>
+                        <div className="mono" style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                          Terbit: {item.issue_date}
+                        </div>
+                        {item.outlet_name && (
+                          <div style={{ fontSize: '10.5px', color: 'var(--primary)', marginTop: '2px' }}>
+                            📍 {item.outlet_name}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Customer Info */}
+                      <td style={{ padding: '14px 16px' }}>
+                        <div style={{ fontWeight: 700, color: '#ffffff', fontSize: '13.5px' }}>
+                          {item.customer_name}
+                        </div>
+                        {item.customer_phone ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', color: '#38bdf8', marginTop: '2px' }}>
+                            <Phone size={12} />
+                            <span>{item.customer_phone}</span>
+                            <button
+                              onClick={() => openWhatsApp(item)}
+                              title="Kirim Pesan WhatsApp"
+                              style={{
+                                background: 'rgba(34, 197, 94, 0.15)',
+                                border: '1px solid rgba(34, 197, 94, 0.3)',
+                                color: '#4ade80',
+                                borderRadius: '4px',
+                                padding: '1px 6px',
+                                fontSize: '10.5px',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '3px'
+                              }}
+                            >
+                              <MessageCircle size={10} /> WA
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>No HP: —</div>
+                        )}
+                        {item.notes && (
+                          <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '3px', fontStyle: 'italic', maxWidth: '220px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            "{item.notes}"
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Due Date & Countdown */}
+                      <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
+                        <div className="mono" style={{ fontWeight: 600, color: '#ffffff' }}>
+                          {item.due_date}
+                        </div>
+                        {isPaid ? (
+                          <span style={{ fontSize: '11px', color: 'var(--ok)', display: 'inline-flex', alignItems: 'center', gap: '3px', marginTop: '2px' }}>
+                            <Check size={11} /> Lunas
+                          </span>
+                        ) : isOverdue ? (
+                          <span style={{
+                            fontSize: '10.5px',
+                            fontWeight: 700,
+                            color: '#ef4444',
+                            background: 'rgba(239, 68, 68, 0.15)',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            display: 'inline-block',
+                            marginTop: '2px'
+                          }}>
+                            Lewat {Math.abs(daysRem)} Hari!
+                          </span>
+                        ) : daysRem === 0 ? (
+                          <span style={{
+                            fontSize: '10.5px',
+                            fontWeight: 700,
+                            color: '#f59e0b',
+                            background: 'rgba(245, 158, 11, 0.15)',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            display: 'inline-block',
+                            marginTop: '2px'
+                          }}>
+                            ⚡ Jatuh Tempo Hari Ini
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px', display: 'block' }}>
+                            Sisa {daysRem} hari
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Total Amount */}
+                      <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600, color: '#ffffff', whiteSpace: 'nowrap' }}>
+                        {rupiah(item.total_amount)}
+                      </td>
+
+                      {/* Paid Amount */}
+                      <td style={{ padding: '14px 16px', textAlign: 'right', color: 'var(--ok)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                        {rupiah(item.paid_amount)}
+                      </td>
+
+                      {/* Remaining Amount */}
+                      <td style={{ padding: '14px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <span style={{
+                          fontWeight: 800,
+                          fontSize: '14px',
+                          color: isPaid ? 'var(--ok)' : (isOverdue ? '#f87171' : '#fbbf24')
+                        }}>
+                          {rupiah(item.remaining_amount)}
+                        </span>
+                      </td>
+
+                      {/* Progress Bar */}
+                      <td style={{ padding: '14px 16px', textAlign: 'center', minWidth: '100px', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                          <div style={{
+                            width: '60px',
+                            height: '6px',
+                            background: 'rgba(255, 255, 255, 0.1)',
+                            borderRadius: '3px',
+                            overflow: 'hidden'
+                          }}>
+                            <div style={{
+                              width: `${Math.min(pctPaid, 100)}%`,
+                              height: '100%',
+                              background: isPaid ? '#10b981' : (pctPaid > 0 ? '#38bdf8' : 'transparent'),
+                              borderRadius: '3px'
+                            }} />
+                          </div>
+                          <span className="mono" style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                            {pctPaid}%
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Status */}
+                      <td style={{ padding: '14px 16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                        {isPaid ? (
+                          <span className="pill pill-ok mono">LUNAS</span>
+                        ) : isOverdue ? (
+                          <span className="pill pill-danger mono">JATUH TEMPO</span>
+                        ) : item.status === 'PARTIAL' ? (
+                          <span className="pill pill-warn mono">SEBAGIAN</span>
+                        ) : (
+                          <span className="pill pill-muted mono">BELUM BAYAR</span>
+                        )}
+                      </td>
+
+                      {/* Actions */}
+                      <td style={{ padding: '12px 16px', textAlign: 'center', width: '220px', minWidth: '220px' }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'nowrap' }}>
+                          {!isPaid && (
+                            <button
+                              className="btn btn-primary btn-sm"
+                              onClick={() => setPayModal({ open: true, item, amount: String(item.remaining_amount), payment_date: getTodayStr(), payment_method: 'CASH', reference_no: '', notes: '' })}
+                              style={{ padding: '5px 10px', fontSize: '11.5px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}
+                              title="Catat Pembayaran / Cicilan"
+                            >
+                              <CreditCard size={12} /> Bayar
+                            </button>
+                          )}
+
+                          <button
+                            className="btn btn-secondary btn-icon"
+                            onClick={() => setHistoryModal({ open: true, item })}
+                            style={{ padding: '6px', height: '30px', width: '30px', flexShrink: 0 }}
+                            title="Riwayat Pembayaran & Cicilan"
+                          >
+                            <Receipt size={13} />
+                          </button>
+
+                          <button
+                            className="btn btn-secondary btn-icon"
+                            onClick={() => setInvoiceModal({ open: true, item })}
+                            style={{ padding: '6px', height: '30px', width: '30px', flexShrink: 0 }}
+                            title="Cetak Bukti Dokumen Kasbon"
+                          >
+                            <Printer size={13} />
+                          </button>
+
+                          <button
+                            className="btn btn-secondary btn-icon"
+                            onClick={() => openEditModal(item)}
+                            style={{ padding: '6px', height: '30px', width: '30px', flexShrink: 0 }}
+                            title="Edit Data Kasbon"
+                          >
+                            <Edit3 size={13} />
+                          </button>
+
+                          <button
+                            className="btn btn-danger btn-icon"
+                            onClick={() => handleDelete(item)}
+                            style={{ padding: '6px', height: '30px', width: '30px', flexShrink: 0 }}
+                            title="Hapus Kasbon"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 1: TAMBAH / EDIT KASBON BARU */}
       {/* ========================================================================= */}
       {createModalOpen && (
         <div className="modal-backdrop fade-in" style={{
@@ -713,7 +1120,7 @@ export default function Receivables() {
             <div className="flex-between mb-4">
               <h3 style={{ fontSize: '17px', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Wallet size={18} style={{ color: 'var(--primary)' }} />
-                {form.id ? 'Edit Data Tagihan Piutang' : 'Catat Tagihan Piutang Baru'}
+                {form.id ? 'Edit Data Tagihan Kasbon' : 'Catat Kasbon Pelanggan Baru'}
               </h3>
               <button className="btn btn-ghost btn-icon" onClick={() => setCreateModalOpen(false)}>
                 <X size={16} />
@@ -721,15 +1128,36 @@ export default function Receivables() {
             </div>
 
             <form onSubmit={handleSaveReceivable}>
+              {/* Master Customer Selector */}
+              {masterCustomers.length > 0 && !form.id && (
+                <div className="form-group mb-3">
+                  <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
+                    Pilih Dari Master Pelanggan (Opsional)
+                  </label>
+                  <select
+                    className="form-control"
+                    value={form.customer_id}
+                    onChange={e => handleSelectCustomerInForm(e.target.value)}
+                  >
+                    <option value="">-- Pelanggan Baru / Input Manual --</option>
+                    {masterCustomers.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} {c.phone ? `(${c.phone})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div className="grid-2 gap-3 mb-3">
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
-                    Nama Pelanggan / Debitur <span style={{ color: 'var(--danger)' }}>*</span>
+                    Nama Pelanggan <span style={{ color: 'var(--danger)' }}>*</span>
                   </label>
                   <input
                     type="text"
                     className="form-control"
-                    placeholder="Contoh: PT Sumber Rezeki / Ibu Maya"
+                    placeholder="Contoh: Pak Paksi / Ibu Maya"
                     value={form.customer_name}
                     onChange={e => setForm(f => ({ ...f, customer_name: e.target.value }))}
                     required
@@ -757,7 +1185,7 @@ export default function Receivables() {
                 <input
                   type="text"
                   className="form-control"
-                  placeholder="Alamat kantor / tempat pengiriman pesanan (opsional)"
+                  placeholder="Alamat / lokasi (opsional)"
                   value={form.customer_address}
                   onChange={e => setForm(f => ({ ...f, customer_address: e.target.value }))}
                 />
@@ -766,7 +1194,7 @@ export default function Receivables() {
               <div className="grid-2 gap-3 mb-3">
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
-                    Tanggal Terbit Tagihan <span style={{ color: 'var(--danger)' }}>*</span>
+                    Tanggal Terbit Kasbon <span style={{ color: 'var(--danger)' }}>*</span>
                   </label>
                   <input
                     type="date"
@@ -794,30 +1222,28 @@ export default function Receivables() {
               <div className="grid-2 gap-3 mb-3">
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
-                    Total Nominal Tagihan (Rp) <span style={{ color: 'var(--danger)' }}>*</span>
+                    Total Nominal Kasbon (Rp) <span style={{ color: 'var(--danger)' }}>*</span>
                   </label>
                   <input
                     type="number"
-                    min="1"
                     className="form-control mono"
                     placeholder="0"
                     value={form.total_amount}
                     onChange={e => setForm(f => ({ ...f, total_amount: e.target.value }))}
-                    disabled={Boolean(form.id)}
-                    required
+                    required={!form.id}
+                    disabled={!!form.id}
                   />
                 </div>
 
                 {!form.id && (
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
-                      Uang Muka / Bayar Awal (Rp)
+                      Uang Muka / DP Awal (Rp)
                     </label>
                     <input
                       type="number"
-                      min="0"
                       className="form-control mono"
-                      placeholder="0 (jika ada DP)"
+                      placeholder="0 (opsional)"
                       value={form.initial_paid}
                       onChange={e => setForm(f => ({ ...f, initial_paid: e.target.value }))}
                     />
@@ -825,62 +1251,25 @@ export default function Receivables() {
                 )}
               </div>
 
-              {!form.id && Number(form.initial_paid) > 0 && (
-                <div className="grid-2 gap-3 mb-3" style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: '8px' }}>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label" style={{ fontSize: '11.5px' }}>Metode Bayar DP</label>
-                    <select
-                      className="form-control form-control-sm"
-                      value={form.payment_method}
-                      onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))}
-                    >
-                      <option value="TRANSFER">Transfer Bank</option>
-                      <option value="CASH">Tunai (Cash)</option>
-                      <option value="QRIS">QRIS</option>
-                      <option value="DEBIT">Kartu Debit</option>
-                    </select>
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label" style={{ fontSize: '11.5px' }}>No. Ref / Bukti Transfer DP</label>
-                    <input
-                      type="text"
-                      className="form-control form-control-sm"
-                      placeholder="Nomor referensi (opsional)"
-                      value={form.reference_no}
-                      onChange={e => setForm(f => ({ ...f, reference_no: e.target.value }))}
-                    />
-                  </div>
-                </div>
-              )}
-
               <div className="form-group mb-4">
                 <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
-                  Catatan / Rincian Menu & Pesanan
+                  Catatan / Rincian Pesanan Kasbon
                 </label>
                 <textarea
                   className="form-control"
                   rows={2}
-                  placeholder="Contoh: Paket Katering Nasi Kotak 50 Pax untuk Acara Seminar Gedung B..."
+                  placeholder="Contoh: Kasbon katering rapat 30 porsi nasi kotak"
                   value={form.notes}
                   onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
                 />
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setCreateModalOpen(false)}
-                >
+                <button type="button" className="btn btn-secondary" onClick={() => setCreateModalOpen(false)}>
                   Batal
                 </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={submitting}
-                  style={{ minWidth: '120px' }}
-                >
-                  {submitting ? 'Menyimpan...' : (form.id ? 'Simpan Perubahan' : 'Terbitkan Piutang')}
+                <button type="submit" className="btn btn-primary" disabled={submitting}>
+                  {submitting ? 'Menyimpan...' : (form.id ? 'Simpan Perubahan' : 'Catat Kasbon')}
                 </button>
               </div>
             </form>
@@ -889,7 +1278,173 @@ export default function Receivables() {
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL 2: CATAT PEMBAYARAN / CICILAN ANGSURAN */}
+      {/* MODAL 2: PEMBAYARAN SEKALIGUS BEBERAPA TRANSAKSI (BULK PAYMENT MODAL) */}
+      {/* ========================================================================= */}
+      {bulkPayModal.open && bulkPayModal.customerGroup && (
+        <div className="modal-backdrop fade-in" style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.75)', zIndex: 999, display: 'flex',
+          alignItems: 'center', justifyContent: 'center', padding: '16px'
+        }}>
+          <div className="card modal-content" style={{
+            maxWidth: '680px', width: '100%', maxHeight: '90vh',
+            overflowY: 'auto', padding: '24px', borderRadius: '16px'
+          }}>
+            <div className="flex-between mb-3">
+              <h3 style={{ fontSize: '17px', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <CreditCard size={18} style={{ color: 'var(--primary)' }} />
+                Pelunasan Kasbon Sekaligus: {bulkPayModal.customerGroup.customer_name}
+              </h3>
+              <button className="btn btn-ghost btn-icon" onClick={() => setBulkPayModal(prev => ({ ...prev, open: false }))}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+              Pelanggan ini memiliki <strong style={{ color: '#ffffff' }}>{bulkPayModal.customerGroup.unpaid_count} nota kasbon belum lunas</strong> dengan total sisa hutang <strong style={{ color: '#fbbf24' }}>{rupiah(bulkPayModal.customerGroup.total_remaining)}</strong>. Anda dapat melunasi sekaligus atau sebagian.
+            </p>
+
+            <form onSubmit={handleBulkPaymentSubmit}>
+              {/* Table of Unpaid Items with Checkboxes */}
+              <div style={{ marginBottom: '18px', background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>Pilih Nota Kasbon Yang Ingin Dibayar:</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                    Terpilih: {bulkPayModal.selectedIds.length} dari {bulkPayModal.customerGroup.unpaid_items.length} nota
+                  </span>
+                </div>
+
+                <div style={{ maxHeight: '180px', overflowY: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                    <thead>
+                      <tr style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)' }}>
+                        <th style={{ padding: '6px', textAlign: 'center', width: '36px' }}>Pilih</th>
+                        <th style={{ padding: '6px 10px', textAlign: 'left' }}>No. Invoice</th>
+                        <th style={{ padding: '6px 10px', textAlign: 'left' }}>Terbit</th>
+                        <th style={{ padding: '6px 10px', textAlign: 'right' }}>Total Tagihan</th>
+                        <th style={{ padding: '6px 10px', textAlign: 'right' }}>Sisa Kasbon</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bulkPayModal.customerGroup.unpaid_items.map(item => {
+                        const isChecked = bulkPayModal.selectedIds.includes(item.id);
+                        return (
+                          <tr
+                            key={item.id}
+                            onClick={() => toggleBulkPayItem(item.id)}
+                            style={{
+                              cursor: 'pointer',
+                              background: isChecked ? 'rgba(59, 130, 246, 0.1)' : undefined,
+                              borderBottom: '1px solid rgba(255, 255, 255, 0.05)'
+                            }}
+                          >
+                            <td style={{ padding: '6px', textAlign: 'center' }}>
+                              {isChecked ? <CheckSquare size={16} color="var(--primary)" /> : <Square size={16} color="var(--text-muted)" />}
+                            </td>
+                            <td style={{ padding: '6px 10px', fontWeight: 700, color: '#ffffff' }}>{item.receivable_no}</td>
+                            <td style={{ padding: '6px 10px' }}>{item.issue_date}</td>
+                            <td style={{ padding: '6px 10px', textAlign: 'right' }}>{rupiah(item.total_amount)}</td>
+                            <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 700, color: '#fbbf24' }}>{rupiah(item.remaining_amount)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Amount & Payment Method */}
+              <div className="grid-2 gap-3 mb-3">
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
+                    Nominal Pelunasan Diterima (Rp) <span style={{ color: 'var(--danger)' }}>*</span>
+                  </label>
+                  <input
+                    type="number"
+                    className="form-control mono"
+                    placeholder="0"
+                    value={bulkPayModal.amount}
+                    onChange={e => setBulkPayModal(prev => ({ ...prev, amount: e.target.value }))}
+                    required
+                  />
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                    Pembayaran akan didistribusikan dari nota kasbon yang paling lama.
+                  </div>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
+                    Metode Pembayaran <span style={{ color: 'var(--danger)' }}>*</span>
+                  </label>
+                  <select
+                    className="form-control"
+                    value={bulkPayModal.payment_method}
+                    onChange={e => setBulkPayModal(prev => ({ ...prev, payment_method: e.target.value }))}
+                  >
+                    <option value="CASH">CASH (Tunai Kasir)</option>
+                    <option value="QRIS">QRIS / E-Wallet</option>
+                    <option value="TRANSFER">Bank Transfer</option>
+                    <option value="DEBIT">Kartu Debit / Kredit</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid-2 gap-3 mb-3">
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
+                    Tanggal Pembayaran <span style={{ color: 'var(--danger)' }}>*</span>
+                  </label>
+                  <input
+                    type="date"
+                    className="form-control mono"
+                    value={bulkPayModal.payment_date}
+                    onChange={e => setBulkPayModal(prev => ({ ...prev, payment_date: e.target.value }))}
+                    required
+                  />
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
+                    Nomor Referensi / Struk
+                  </label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="No. Ref Transfer / Struk (opsional)"
+                    value={bulkPayModal.reference_no}
+                    onChange={e => setBulkPayModal(prev => ({ ...prev, reference_no: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <div className="form-group mb-4">
+                <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
+                  Catatan Pelunasan Sekaligus
+                </label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Contoh: Lunas transfer via BCA oleh Pak Paksi"
+                  value={bulkPayModal.notes}
+                  onChange={e => setBulkPayModal(prev => ({ ...prev, notes: e.target.value }))}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setBulkPayModal(prev => ({ ...prev, open: false }))}>
+                  Batal
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={submitting}>
+                  {submitting ? 'Memproses...' : 'Proses Pelunasan Sekaligus'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 3: CATAT PEMBAYARAN / CICILAN NOTA TUNGGAL */}
       {/* ========================================================================= */}
       {payModal.open && payModal.item && (
         <div className="modal-backdrop fade-in" style={{
@@ -898,91 +1453,46 @@ export default function Receivables() {
           alignItems: 'center', justifyContent: 'center', padding: '16px'
         }}>
           <div className="card modal-content" style={{
-            maxWidth: '480px', width: '100%', padding: '24px', borderRadius: '16px'
+            maxWidth: '500px', width: '100%', padding: '24px', borderRadius: '16px'
           }}>
             <div className="flex-between mb-3">
-              <h3 style={{ fontSize: '16px', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h3 style={{ fontSize: '17px', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <CreditCard size={18} style={{ color: 'var(--ok)' }} />
-                Catat Pembayaran / Cicilan Piutang
+                Pembayaran / Cicilan Kasbon
               </h3>
-              <button className="btn btn-ghost btn-icon" onClick={() => setPayModal({ open: false, item: null })}>
+              <button className="btn btn-ghost btn-icon" onClick={() => setPayModal({ open: false, item: null, amount: '', payment_date: getTodayStr(), payment_method: 'CASH', reference_no: '', notes: '' })}>
                 <X size={16} />
               </button>
             </div>
 
-            {/* Target Item Summary */}
-            <div style={{
-              background: 'rgba(255, 255, 255, 0.04)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              borderRadius: '10px',
-              padding: '12px 14px',
-              marginBottom: '16px',
-              fontSize: '12.5px'
-            }}>
-              <div className="flex-between">
-                <span style={{ color: 'var(--text-secondary)' }}>Pelanggan:</span>
-                <strong style={{ color: '#ffffff' }}>{payModal.item.customer_name}</strong>
-              </div>
-              <div className="flex-between" style={{ marginTop: '4px' }}>
-                <span style={{ color: 'var(--text-secondary)' }}>No. Invoice:</span>
-                <span className="mono" style={{ color: '#ffffff' }}>{payModal.item.receivable_no}</span>
-              </div>
-              <div className="flex-between" style={{ marginTop: '4px' }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Total Tagihan Awal:</span>
-                <span style={{ color: '#ffffff' }}>{rupiah(payModal.item.total_amount)}</span>
-              </div>
-              <div className="flex-between" style={{ marginTop: '4px' }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Sudah Terbayar:</span>
-                <span style={{ color: 'var(--ok)' }}>{rupiah(payModal.item.paid_amount)}</span>
-              </div>
-              <div className="flex-between" style={{ marginTop: '6px', paddingTop: '6px', borderTop: '1px dashed rgba(255,255,255,0.1)' }}>
-                <span style={{ fontWeight: 700, color: '#ffffff' }}>Sisa yang Harus Dibayar:</span>
-                <strong className="mono" style={{ color: '#fbbf24', fontSize: '15px' }}>{rupiah(payModal.item.remaining_amount)}</strong>
+            <div style={{ background: 'rgba(255,255,255,0.05)', padding: '12px 14px', borderRadius: '10px', marginBottom: '16px', fontSize: '12.5px' }}>
+              <div>Pelanggan: <strong style={{ color: '#ffffff' }}>{payModal.item.customer_name}</strong></div>
+              <div>No. Invoice: <span className="mono" style={{ color: 'var(--primary)' }}>{payModal.item.receivable_no}</span></div>
+              <div style={{ marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
+                <span>Sisa Kasbon:</span>
+                <span style={{ color: '#fbbf24', fontSize: '14px' }}>{rupiah(payModal.item.remaining_amount)}</span>
               </div>
             </div>
 
             <form onSubmit={handleAddPayment}>
               <div className="form-group mb-3">
                 <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
-                  Nominal Pembayaran (Rp) <span style={{ color: 'var(--danger)' }}>*</span>
+                  Nominal Pembayaran Diterima (Rp) <span style={{ color: 'var(--danger)' }}>*</span>
                 </label>
                 <input
                   type="number"
-                  min="1"
-                  max={payModal.item.remaining_amount}
                   className="form-control mono"
-                  placeholder="Masukkan nominal bayar..."
+                  placeholder="0"
                   value={payModal.amount}
                   onChange={e => setPayModal(p => ({ ...p, amount: e.target.value }))}
                   required
-                  autoFocus
                 />
-                <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    style={{ fontSize: '11px', padding: '2px 8px' }}
-                    onClick={() => setPayModal(p => ({ ...p, amount: String(payModal.item.remaining_amount) }))}
-                  >
-                    Bayar Lunas ({rupiah(payModal.item.remaining_amount)})
-                  </button>
-                  {payModal.item.remaining_amount > 200000 && (
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      style={{ fontSize: '11px', padding: '2px 8px' }}
-                      onClick={() => setPayModal(p => ({ ...p, amount: String(Math.round(payModal.item.remaining_amount / 2)) }))}
-                    >
-                      50% ({rupiah(Math.round(payModal.item.remaining_amount / 2))})
-                    </button>
-                  )}
-                </div>
               </div>
 
               <div className="grid-2 gap-3 mb-3">
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
-                    Tanggal Bayar <span style={{ color: 'var(--danger)' }}>*</span>
+                    Tanggal Pembayaran <span style={{ color: 'var(--danger)' }}>*</span>
                   </label>
                   <input
                     type="date"
@@ -995,29 +1505,29 @@ export default function Receivables() {
 
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
-                    Metode Pembayaran
+                    Metode Pembayaran <span style={{ color: 'var(--danger)' }}>*</span>
                   </label>
                   <select
                     className="form-control"
                     value={payModal.payment_method}
                     onChange={e => setPayModal(p => ({ ...p, payment_method: e.target.value }))}
                   >
-                    <option value="TRANSFER">Transfer Bank</option>
-                    <option value="CASH">Tunai (Cash)</option>
-                    <option value="QRIS">QRIS</option>
-                    <option value="DEBIT">Kartu Debit</option>
+                    <option value="CASH">CASH (Tunai)</option>
+                    <option value="QRIS">QRIS / E-Wallet</option>
+                    <option value="TRANSFER">Bank Transfer</option>
+                    <option value="DEBIT">Kartu Debit / Kredit</option>
                   </select>
                 </div>
               </div>
 
               <div className="form-group mb-3">
                 <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
-                  No. Referensi / Bukti Transfer
+                  Nomor Referensi / Bank
                 </label>
                 <input
                   type="text"
                   className="form-control"
-                  placeholder="Contoh: BCA-8839210291 (opsional)"
+                  placeholder="No. Ref Transfer (opsional)"
                   value={payModal.reference_no}
                   onChange={e => setPayModal(p => ({ ...p, reference_no: e.target.value }))}
                 />
@@ -1027,29 +1537,20 @@ export default function Receivables() {
                 <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
                   Catatan Pembayaran
                 </label>
-                <textarea
+                <input
+                  type="text"
                   className="form-control"
-                  rows={2}
-                  placeholder="Catatan pelunasan / angsuran ke-X..."
+                  placeholder="Keterangan cicilan (opsional)"
                   value={payModal.notes}
                   onChange={e => setPayModal(p => ({ ...p, notes: e.target.value }))}
                 />
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setPayModal({ open: false, item: null })}
-                >
+                <button type="button" className="btn btn-secondary" onClick={() => setPayModal({ open: false, item: null, amount: '', payment_date: getTodayStr(), payment_method: 'CASH', reference_no: '', notes: '' })}>
                   Batal
                 </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={submitting}
-                  style={{ minWidth: '130px' }}
-                >
+                <button type="submit" className="btn btn-primary" disabled={submitting}>
                   {submitting ? 'Menyimpan...' : 'Simpan Pembayaran'}
                 </button>
               </div>
@@ -1059,7 +1560,7 @@ export default function Receivables() {
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL 3: RIWAYAT PEMBAYARAN & CICILAN */}
+      {/* MODAL 4: RIWAYAT PEMBAYARAN & CICILAN */}
       {/* ========================================================================= */}
       {historyModal.open && historyModal.item && (
         <div className="modal-backdrop fade-in" style={{
@@ -1068,126 +1569,74 @@ export default function Receivables() {
           alignItems: 'center', justifyContent: 'center', padding: '16px'
         }}>
           <div className="card modal-content" style={{
-            maxWidth: '560px', width: '100%', maxHeight: '85vh',
+            maxWidth: '600px', width: '100%', maxHeight: '90vh',
             overflowY: 'auto', padding: '24px', borderRadius: '16px'
           }}>
-            <div className="flex-between mb-4">
-              <div>
-                <h3 style={{ fontSize: '16px', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Receipt size={18} style={{ color: 'var(--primary)' }} />
-                  Riwayat Cicilan Pelunasan
-                </h3>
-                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                  {historyModal.item.receivable_no} · {historyModal.item.customer_name}
-                </div>
-              </div>
+            <div className="flex-between mb-3">
+              <h3 style={{ fontSize: '17px', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Receipt size={18} style={{ color: 'var(--primary)' }} />
+                Riwayat Pembayaran Kasbon: {historyModal.item.receivable_no}
+              </h3>
               <button className="btn btn-ghost btn-icon" onClick={() => setHistoryModal({ open: false, item: null })}>
                 <X size={16} />
               </button>
             </div>
 
-            {/* Summary Progress */}
-            <div style={{
-              background: 'rgba(255, 255, 255, 0.04)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              borderRadius: '10px',
-              padding: '12px 16px',
-              marginBottom: '16px'
-            }}>
-              <div className="flex-between mb-2">
-                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Status Pelunasan:</span>
-                <span style={{ fontSize: '13px', fontWeight: 800, color: historyModal.item.status === 'PAID' ? 'var(--ok)' : '#fbbf24' }}>
-                  {rupiah(historyModal.item.paid_amount)} / {rupiah(historyModal.item.total_amount)}
-                </span>
+            <div style={{ background: 'rgba(255,255,255,0.05)', padding: '12px 14px', borderRadius: '10px', marginBottom: '16px', fontSize: '12.5px', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+              <div>
+                <div>Pelanggan: <strong style={{ color: '#ffffff' }}>{historyModal.item.customer_name}</strong></div>
+                <div>Total Kasbon: <strong style={{ color: '#ffffff' }}>{rupiah(historyModal.item.total_amount)}</strong></div>
               </div>
-              <div style={{
-                width: '100%',
-                height: '8px',
-                background: 'rgba(255, 255, 255, 0.1)',
-                borderRadius: '4px',
-                overflow: 'hidden'
-              }}>
-                <div style={{
-                  width: `${historyModal.item.progress_pct}%`,
-                  height: '100%',
-                  background: historyModal.item.status === 'PAID' ? '#10b981' : '#38bdf8'
-                }} />
-              </div>
-              <div className="flex-between mt-2" style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                <span>{historyModal.item.progress_pct}% Terbayar</span>
-                <span>Sisa Piutang: <strong style={{ color: '#ffffff' }}>{rupiah(historyModal.item.remaining_amount)}</strong></span>
+              <div style={{ textAlign: 'right' }}>
+                <div>Sudah Dibayar: <strong style={{ color: 'var(--ok)' }}>{rupiah(historyModal.item.paid_amount)}</strong></div>
+                <div>Sisa Kasbon: <strong style={{ color: '#fbbf24' }}>{rupiah(historyModal.item.remaining_amount)}</strong></div>
               </div>
             </div>
 
-            {/* Timeline of payments */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {(historyModal.item.payments || []).length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-secondary)', fontSize: '13px' }}>
-                  Belum ada catatan pembayaran cicilan untuk tagihan ini.
-                </div>
-              ) : (
-                historyModal.item.payments.map((pay, idx) => (
-                  <div
-                    key={pay.id}
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.02)',
-                      border: '1px solid rgba(255, 255, 255, 0.06)',
-                      borderRadius: '10px',
-                      padding: '12px 14px',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: '12px'
-                    }}
-                  >
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          background: 'rgba(56, 189, 248, 0.15)',
-                          color: '#38bdf8'
-                        }}>
-                          #{idx + 1}
-                        </span>
-                        <strong className="mono" style={{ fontSize: '14px', color: '#10b981' }}>
-                          +{rupiah(pay.amount)}
-                        </strong>
-                        <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                          ({pay.payment_method})
-                        </span>
-                      </div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                        📅 {pay.payment_date} · Diterima oleh: <span style={{ color: '#ffffff' }}>{pay.received_by_name}</span>
-                        {pay.reference_no && ` · Ref: ${pay.reference_no}`}
-                      </div>
-                      {pay.notes && (
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', fontStyle: 'italic' }}>
-                          "{pay.notes}"
-                        </div>
-                      )}
-                    </div>
-
-                    <button
-                      className="btn btn-ghost btn-icon"
-                      onClick={() => handleDeletePayment(historyModal.item.id, pay.id)}
-                      title="Batalkan & Hapus Pembayaran Ini"
-                      style={{ color: '#f87171', padding: '4px' }}
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                ))
-              )}
+            <div className="table-wrap mb-4">
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                <thead>
+                  <tr style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)' }}>
+                    <th style={{ padding: '8px 10px', textAlign: 'left' }}>No. Pembayaran</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'left' }}>Tanggal</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'left' }}>Metode</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'right' }}>Jumlah (Rp)</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'center' }}>Aksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(!historyModal.item.payments || historyModal.item.payments.length === 0) ? (
+                    <tr>
+                      <td colSpan={5} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
+                        Belum ada riwayat pembayaran / cicilan tercatat
+                      </td>
+                    </tr>
+                  ) : (
+                    historyModal.item.payments.map(pay => (
+                      <tr key={pay.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                        <td style={{ padding: '8px 10px', fontWeight: 700, color: '#ffffff' }}>{pay.payment_no}</td>
+                        <td style={{ padding: '8px 10px' }}>{pay.payment_date}</td>
+                        <td style={{ padding: '8px 10px' }}>{pay.payment_method}</td>
+                        <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: 'var(--ok)' }}>{rupiah(pay.amount)}</td>
+                        <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                          <button
+                            className="btn btn-danger btn-icon"
+                            onClick={() => handleDeletePayment(historyModal.item.id, pay.id)}
+                            style={{ padding: '4px', height: '26px', width: '26px' }}
+                            title="Batalkan & Hapus Pembayaran Ini"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
 
-            <div style={{ marginTop: '20px', textAlign: 'right' }}>
-              <button
-                className="btn btn-secondary btn-sm"
-                onClick={() => setHistoryModal({ open: false, item: null })}
-              >
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary" onClick={() => setHistoryModal({ open: false, item: null })}>
                 Tutup
               </button>
             </div>
@@ -1196,26 +1645,26 @@ export default function Receivables() {
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL 4: CETAK DOKUMEN INVOICE PIUTANG */}
+      {/* MODAL 5: CETAK BUKTI KASBON CUSTOMER */}
       {/* ========================================================================= */}
       {invoiceModal.open && invoiceModal.item && (
         <div className="modal-backdrop fade-in" style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.8)', zIndex: 999, display: 'flex',
+          background: 'rgba(0,0,0,0.75)', zIndex: 999, display: 'flex',
           alignItems: 'center', justifyContent: 'center', padding: '16px'
         }}>
           <div className="card modal-content" style={{
-            maxWidth: '680px', width: '100%', maxHeight: '90vh',
+            maxWidth: '600px', width: '100%', maxHeight: '90vh',
             overflowY: 'auto', padding: '24px', borderRadius: '16px'
           }}>
-            <div className="flex-between mb-4 no-print">
-              <h3 style={{ fontSize: '16px', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div className="flex-between mb-4">
+              <h3 style={{ fontSize: '17px', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Printer size={18} style={{ color: 'var(--primary)' }} />
-                Pratinjau Dokumen Invoice Tagihan
+                Dokumen Bukti Kasbon Customer
               </h3>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button className="btn btn-primary btn-sm" onClick={handlePrintInvoice}>
-                  <Printer size={14} /> Cetak Dokumen
+                  <Printer size={14} /> Cetak
                 </button>
                 <button className="btn btn-ghost btn-icon" onClick={() => setInvoiceModal({ open: false, item: null })}>
                   <X size={16} />
@@ -1223,130 +1672,76 @@ export default function Receivables() {
               </div>
             </div>
 
-            {/* Printable Document Area */}
+            {/* Print Area */}
             <div id="printable-invoice-document" style={{
-              background: '#ffffff',
-              color: '#0f172a',
-              padding: '32px',
-              borderRadius: '8px',
-              fontFamily: "'Plus Jakarta Sans', sans-serif"
+              background: '#ffffff', color: '#1e293b', padding: '24px', borderRadius: '12px', fontSize: '13px'
             }}>
-              {/* Invoice Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #e2e8f0', paddingBottom: '20px', marginBottom: '20px' }}>
+              <div style={{ textAlign: 'center', borderBottom: '2px solid #0f172a', paddingBottom: '12px', marginBottom: '16px' }}>
+                <div style={{ fontSize: '18px', fontWeight: 800, textTransform: 'uppercase', color: '#0f172a' }}>{businessName}</div>
+                <div style={{ fontSize: '12px', color: '#475569' }}>{invoiceModal.item.outlet_name || outletName}</div>
+                <div style={{ fontSize: '14px', fontWeight: 700, marginTop: '8px', color: '#0284c7' }}>
+                  BUKTI SURAT KASBON CUSTOMER
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', fontSize: '12px' }}>
                 <div>
-                  <h2 style={{ fontSize: '20px', fontWeight: 900, color: '#0f172a', margin: 0 }}>
-                    {businessName}
-                  </h2>
-                  <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-                    {invoiceModal.item.outlet_name || 'Outlet Utama'}
-                  </div>
+                  <div><strong>Kepada Yth:</strong> {invoiceModal.item.customer_name}</div>
+                  {invoiceModal.item.customer_phone && <div><strong>No. HP/WA:</strong> {invoiceModal.item.customer_phone}</div>}
+                  {invoiceModal.item.customer_address && <div><strong>Alamat:</strong> {invoiceModal.item.customer_address}</div>}
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <h1 style={{ fontSize: '22px', fontWeight: 900, color: '#4f46e5', margin: 0, letterSpacing: '1px' }}>
-                    INVOICE TAGIHAN
-                  </h1>
-                  <div className="mono" style={{ fontSize: '13px', fontWeight: 700, color: '#334155', marginTop: '4px' }}>
-                    #{invoiceModal.item.receivable_no}
-                  </div>
+                  <div><strong>No. Invoice:</strong> {invoiceModal.item.receivable_no}</div>
+                  <div><strong>Tanggal Terbit:</strong> {invoiceModal.item.issue_date}</div>
+                  <div><strong>Jatuh Tempo:</strong> <span style={{ color: '#dc2626', fontWeight: 700 }}>{invoiceModal.item.due_date}</span></div>
                 </div>
               </div>
 
-              {/* Billed To & Dates */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
-                <div>
-                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>
-                    Ditujukan Kepada (Pelanggan):
-                  </div>
-                  <div style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>
-                    {invoiceModal.item.customer_name}
-                  </div>
-                  {invoiceModal.item.customer_phone && (
-                    <div style={{ fontSize: '12px', color: '#475569', marginTop: '2px' }}>
-                      Telp / WA: {invoiceModal.item.customer_phone}
-                    </div>
-                  )}
-                  {invoiceModal.item.customer_address && (
-                    <div style={{ fontSize: '12px', color: '#475569', marginTop: '2px' }}>
-                      Alamat: {invoiceModal.item.customer_address}
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ textAlign: 'right', fontSize: '12.5px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginBottom: '4px' }}>
-                    <span style={{ color: '#64748b' }}>Tanggal Terbit:</span>
-                    <strong style={{ color: '#0f172a' }}>{invoiceModal.item.issue_date}</strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginBottom: '4px' }}>
-                    <span style={{ color: '#64748b' }}>Jatuh Tempo:</span>
-                    <strong style={{ color: '#dc2626' }}>{invoiceModal.item.due_date}</strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                    <span style={{ color: '#64748b' }}>Status Pembayaran:</span>
-                    <strong style={{ color: invoiceModal.item.status === 'PAID' ? '#16a34a' : '#d97706' }}>
-                      {invoiceModal.item.status_label || invoiceModal.item.status}
-                    </strong>
-                  </div>
-                </div>
-              </div>
-
-              {/* Table of Items */}
-              <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '24px', fontSize: '13px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '16px', fontSize: '12px' }}>
                 <thead>
-                  <tr style={{ background: '#f8fafc', borderTop: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0' }}>
-                    <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Deskripsi Pesanan / Keterangan</th>
-                    <th style={{ padding: '10px 12px', textAlign: 'right', color: '#475569' }}>Jumlah (IDR)</th>
+                  <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #cbd5e1' }}>
+                    <th style={{ padding: '8px', textAlign: 'left' }}>Deskripsi / Catatan Pesanan</th>
+                    <th style={{ padding: '8px', textAlign: 'right' }}>Total Kasbon</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '14px 12px' }}>
-                      <div style={{ fontWeight: 700, color: '#0f172a' }}>
-                        Pesanan Tagihan Piutang — {invoiceModal.item.customer_name}
-                      </div>
-                      <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-                        {invoiceModal.item.notes || 'Tagihan operasional pesanan produk / katering'}
-                      </div>
+                  <tr>
+                    <td style={{ padding: '10px 8px', borderBottom: '1px solid #e2e8f0' }}>
+                      {invoiceModal.item.notes || 'Pengambilan barang/pesanan kasbon pelanggan'}
+                      {invoiceModal.item.order_number && <div style={{ fontSize: '11px', color: '#64748b' }}>Order Ref: #{invoiceModal.item.order_number}</div>}
                     </td>
-                    <td style={{ padding: '14px 12px', textAlign: 'right', fontWeight: 800, color: '#0f172a' }}>
+                    <td style={{ padding: '10px 8px', textAlign: 'right', fontWeight: 700, borderBottom: '1px solid #e2e8f0' }}>
                       {rupiah(invoiceModal.item.total_amount)}
                     </td>
                   </tr>
                 </tbody>
               </table>
 
-              {/* Totals */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '32px' }}>
-                <div style={{ width: '280px', fontSize: '13px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', color: '#475569' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '20px' }}>
+                <div style={{ width: '220px', fontSize: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
                     <span>Total Tagihan:</span>
-                    <strong>{rupiah(invoiceModal.item.total_amount)}</strong>
+                    <span>{rupiah(invoiceModal.item.total_amount)}</span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', color: '#16a34a' }}>
-                    <span>Sudah Dibayar:</span>
-                    <strong>{rupiah(invoiceModal.item.paid_amount)}</strong>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', color: '#16a34a' }}>
+                    <span>Telah Dibayar:</span>
+                    <span>{rupiah(invoiceModal.item.paid_amount)}</span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '2px solid #0f172a', marginTop: '6px', fontSize: '15px' }}>
-                    <span style={{ fontWeight: 800, color: '#0f172a' }}>Sisa Pembayaran:</span>
-                    <strong style={{ fontWeight: 900, color: '#dc2626' }}>{rupiah(invoiceModal.item.remaining_amount)}</strong>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderTop: '2px solid #0f172a', fontWeight: 800, fontSize: '14px', color: '#dc2626' }}>
+                    <span>Sisa Kasbon:</span>
+                    <span>{rupiah(invoiceModal.item.remaining_amount)}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Payment Instructions / Signatures */}
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px', borderTop: '1px solid #e2e8f0', paddingTop: '20px', fontSize: '12px', color: '#64748b' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '30px', textAlign: 'center', fontSize: '11px', color: '#475569' }}>
                 <div>
-                  <div style={{ fontWeight: 700, color: '#0f172a', marginBottom: '4px' }}>Instruksi Pembayaran:</div>
-                  <div>• Mohon lakukan pembayaran sebelum tanggal jatuh tempo <strong>{invoiceModal.item.due_date}</strong>.</div>
-                  <div>• Pembayaran dapat ditransfer ke rekening operasional perusahaan atau via kasir cabang.</div>
-                  <div>• Harap kirimkan bukti transfer setelah pembayaran dilakukan.</div>
+                  <div>Pelanggan / Peminjam</div>
+                  <div style={{ marginTop: '40px', fontWeight: 700 }}>({invoiceModal.item.customer_name})</div>
                 </div>
-                <div style={{ textAlign: 'center' }}>
-                  <div>Hormat Kami,</div>
-                  <div style={{ height: '48px' }} />
-                  <strong style={{ color: '#0f172a', borderTop: '1px solid #cbd5e1', paddingTop: '4px', display: 'block' }}>
-                    {businessName}
-                  </strong>
+                <div>
+                  <div>Kasir / Management</div>
+                  <div style={{ marginTop: '40px', fontWeight: 700 }}>({currentUser?.name || 'Kasir PIC'})</div>
                 </div>
               </div>
             </div>

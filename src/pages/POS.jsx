@@ -4285,12 +4285,13 @@ export default function POS() {
             {/* Payment Method Pills */}
             <div className="form-group mb-3">
               <label className="form-label">Metode Pembayaran</label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
                 {[
                   { key: 'CASH', label: 'Tunai', icon: Banknote },
                   { key: 'QRIS', label: 'QRIS', icon: QrCode },
-                  { key: 'TRANSFER', label: 'Transfer / EDC', icon: CreditCard },
+                  { key: 'TRANSFER', label: 'Transfer', icon: CreditCard },
                   { key: 'GRAB', label: 'GrabFood', icon: ShoppingBag },
+                  { key: 'KASBON', label: 'Kasbon', icon: Wallet },
                 ].map(m => {
                   const Icon = m.icon;
                   const active = paymentMethod === m.key;
@@ -4413,6 +4414,36 @@ export default function POS() {
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--accent-bright)', marginTop: 4 }}>
                   BCA · Mandiri · GoPay · OVO · DANA · ShopeePay
+                </div>
+              </div>
+            )}
+
+            {/* KASBON Info & Customer prompt */}
+            {paymentMethod === 'KASBON' && (
+              <div style={{
+                background: 'rgba(245, 158, 11, 0.08)',
+                border: '1px solid rgba(245, 158, 11, 0.3)',
+                borderRadius: 12,
+                padding: 14,
+                marginBottom: 16
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: '#fbbf24', marginBottom: 4 }}>
+                  <Wallet size={16} /> Kasbon Customer (Hutang Pelanggan)
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginBottom: 10 }}>
+                  Transaksi akan terhubung ke Buku Kasbon Customer. Sisa tagihan dapat dicicil atau dilunasi kemudian.
+                </div>
+                <div className="form-group mb-0">
+                  <label className="form-label" style={{ fontSize: 11, fontWeight: 600 }}>Nama Pelanggan / Debitur <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={customerName}
+                    onChange={e => setCustomerName(e.target.value)}
+                    placeholder="Masukkan Nama Pelanggan..."
+                    style={{ fontSize: 13, background: 'rgba(0,0,0,0.3)' }}
+                    required
+                  />
                 </div>
               </div>
             )}
