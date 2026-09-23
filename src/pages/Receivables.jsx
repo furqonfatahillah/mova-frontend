@@ -89,6 +89,62 @@ export default function Receivables() {
   const [historyModal, setHistoryModal] = useState({ open: false, item: null });
   const [invoiceModal, setInvoiceModal] = useState({ open: false, item: null });
   const [expandedCustomerKey, setExpandedCustomerKey] = useState(null);
+  const [selectedReceivableIds, setSelectedReceivableIds] = useState([]);
+
+  // Selected items from Receivables table for multi-select bulk payment
+  const selectedUnpaidReceivables = useMemo(() => {
+    return items.filter(i => selectedReceivableIds.includes(i.id) && i.remaining_amount > 0);
+  }, [items, selectedReceivableIds]);
+
+  const selectedTotalRemaining = useMemo(() => {
+    return selectedUnpaidReceivables.reduce((acc, curr) => acc + (curr.remaining_amount || 0), 0);
+  }, [selectedUnpaidReceivables]);
+
+  function toggleSelectReceivable(id) {
+    setSelectedReceivableIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  }
+
+  function toggleSelectAllReceivables() {
+    const unpaidItems = filteredItems.filter(i => i.remaining_amount > 0);
+    const unpaidIds = unpaidItems.map(i => i.id);
+    const allSelected = unpaidIds.length > 0 && unpaidIds.every(id => selectedReceivableIds.includes(id));
+
+    if (allSelected) {
+      setSelectedReceivableIds(prev => prev.filter(id => !unpaidIds.includes(id)));
+    } else {
+      setSelectedReceivableIds(prev => [...new Set([...prev, ...unpaidIds])]);
+    }
+  }
+
+  function openBulkPayFromTableSelection() {
+    if (selectedUnpaidReceivables.length === 0) {
+      toast.error('Tidak ada nota kasbon belum lunas yang dipilih');
+      return;
+    }
+
+    const uniqueCustomerNames = [...new Set(selectedUnpaidReceivables.map(i => i.customer_name))].filter(Boolean);
+    const displayName = uniqueCustomerNames.length === 1
+      ? uniqueCustomerNames[0]
+      : `${uniqueCustomerNames[0]} (+${uniqueCustomerNames.length - 1} pelanggan lain)`;
+
+    setBulkPayModal({
+      open: true,
+      customerGroup: {
+        customer_name: displayName,
+        unpaid_count: selectedUnpaidReceivables.length,
+        total_remaining: selectedTotalRemaining,
+        unpaid_items: selectedUnpaidReceivables,
+      },
+      selectedIds: selectedUnpaidReceivables.map(i => i.id),
+      amount: String(selectedTotalRemaining),
+      payment_date: getTodayStr(),
+      payment_method: 'CASH',
+      reference_no: '',
+      notes: '',
+    });
+  }
 
   // Form State for New / Edit Receivable
   const [form, setForm] = useState({
@@ -850,48 +906,118 @@ export default function Receivables() {
       {/* ========================================================================= */}
       {/* TAB 2: DAFTAR SEMUA NOTA KASBON (RECEIVABLES TABLE DETAIL) */}
       {/* ========================================================================= */}
+      {/* ========================================================================= */}
+      {/* TAB 2: DAFTAR SEMUA NOTA KASBON (RECEIVABLES TABLE DETAIL) */}
+      {/* ========================================================================= */}
       {activeTab === 'RECEIVABLES' && (
-        <div className="table-wrap" style={{ width: '100%', overflowX: 'auto', borderRadius: '12px' }}>
-          <table style={{ width: '100%', minWidth: '1180px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
-            <thead>
-              <tr style={{ background: 'rgba(23, 28, 56, 0.7)', borderBottom: '1px solid var(--border-strong)' }}>
-                <th style={{ padding: '14px 16px', fontWeight: 700 }}>No. Tagihan & Tanggal</th>
-                <th style={{ padding: '14px 16px', fontWeight: 700 }}>Pelanggan / Peminjam</th>
-                <th style={{ padding: '14px 16px', fontWeight: 700 }}>Jatuh Tempo</th>
-                <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'right' }}>Total Kasbon</th>
-                <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'right' }}>Sudah Dibayar</th>
-                <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'right' }}>Sisa Kasbon</th>
-                <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'center' }}>Progress</th>
-                <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'center' }}>Status</th>
-                <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'center', width: '220px', minWidth: '220px' }}>Aksi</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredItems.length === 0 ? (
-                <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: '48px 16px', color: 'var(--text-secondary)' }}>
-                    <AlertCircle size={32} style={{ margin: '0 auto 10px', opacity: 0.5 }} />
-                    <div style={{ fontWeight: 600, fontSize: '14px' }}>Tidak ada data kasbon yang ditemukan</div>
-                    <div style={{ fontSize: '12px', marginTop: '4px' }}>Coba ubah kata kunci pencarian atau filter status di atas</div>
-                  </td>
-                </tr>
-              ) : (
-                filteredItems.map(item => {
-                  const isPaid = item.status === 'PAID';
-                  const isOverdue = item.is_overdue;
-                  const daysRem = item.days_remaining;
-                  const pctPaid = item.progress_pct ?? (item.total_amount > 0 ? Math.round((item.paid_amount / item.total_amount) * 100) : 0);
+        <>
+          {/* Top Selection Banner */}
+          {selectedReceivableIds.length > 0 && (
+            <div className="card mb-4 fade-in" style={{
+              padding: '14px 20px',
+              background: 'linear-gradient(135deg, rgba(124, 58, 237, 0.22) 0%, rgba(79, 70, 229, 0.32) 100%)',
+              border: '1px solid rgba(139, 92, 246, 0.45)',
+              borderRadius: '14px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '12px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <CheckSquare size={22} color="var(--accent-bright)" />
+                <div>
+                  <div style={{ fontSize: '14px', fontWeight: 800, color: '#ffffff' }}>
+                    Terpilih {selectedUnpaidReceivables.length} Nota Kasbon
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    Total sisa tagihan terpilih: <strong style={{ color: '#fbbf24' }}>{rupiah(selectedTotalRemaining)}</strong>
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setSelectedReceivableIds([])}
+                  style={{ color: 'var(--text-secondary)' }}
+                >
+                  Batal Pilihan
+                </button>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={openBulkPayFromTableSelection}
+                  style={{ fontWeight: 800, padding: '9px 18px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}
+                >
+                  <CreditCard size={16} /> Bayar Sekaligus ({selectedUnpaidReceivables.length} Nota)
+                </button>
+              </div>
+            </div>
+          )}
 
-                  return (
-                    <tr
-                      key={item.id}
-                      style={{
-                        borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-                        background: isOverdue ? 'rgba(239, 68, 68, 0.04)' : undefined,
-                        transition: 'background 0.2s ease'
-                      }}
-                    >
-                      {/* Invoice & Date */}
+          <div className="table-wrap" style={{ width: '100%', overflowX: 'auto', borderRadius: '12px' }}>
+            <table style={{ width: '100%', minWidth: '1220px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+              <thead>
+                <tr style={{ background: 'rgba(23, 28, 56, 0.7)', borderBottom: '1px solid var(--border-strong)' }}>
+                  <th style={{ padding: '14px 10px', textAlign: 'center', width: '44px' }}>
+                    <input
+                      type="checkbox"
+                      checked={
+                        filteredItems.filter(i => i.remaining_amount > 0).length > 0 &&
+                        filteredItems.filter(i => i.remaining_amount > 0).every(i => selectedReceivableIds.includes(i.id))
+                      }
+                      onChange={toggleSelectAllReceivables}
+                      style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: 'var(--primary)' }}
+                      title="Pilih Semua Nota Belum Lunas"
+                    />
+                  </th>
+                  <th style={{ padding: '14px 16px', fontWeight: 700 }}>No. Tagihan & Tanggal</th>
+                  <th style={{ padding: '14px 16px', fontWeight: 700 }}>Pelanggan / Peminjam</th>
+                  <th style={{ padding: '14px 16px', fontWeight: 700 }}>Jatuh Tempo</th>
+                  <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'right' }}>Total Kasbon</th>
+                  <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'right' }}>Sudah Dibayar</th>
+                  <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'right' }}>Sisa Kasbon</th>
+                  <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'center' }}>Progress</th>
+                  <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'center' }}>Status</th>
+                  <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'center', width: '220px', minWidth: '220px' }}>Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredItems.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} style={{ textAlign: 'center', padding: '48px 16px', color: 'var(--text-secondary)' }}>
+                      <AlertCircle size={32} style={{ margin: '0 auto 10px', opacity: 0.5 }} />
+                      <div style={{ fontWeight: 600, fontSize: '14px' }}>Tidak ada data kasbon yang ditemukan</div>
+                      <div style={{ fontSize: '12px', marginTop: '4px' }}>Coba ubah kata kunci pencarian atau filter status di atas</div>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredItems.map(item => {
+                    const isPaid = item.status === 'PAID';
+                    const isOverdue = item.is_overdue;
+                    const daysRem = item.days_remaining;
+                    const pctPaid = item.progress_pct ?? (item.total_amount > 0 ? Math.round((item.paid_amount / item.total_amount) * 100) : 0);
+                    const isSelected = selectedReceivableIds.includes(item.id);
+
+                    return (
+                      <tr
+                        key={item.id}
+                        style={{
+                          borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                          background: isSelected ? 'rgba(124, 58, 237, 0.12)' : (isOverdue ? 'rgba(239, 68, 68, 0.04)' : undefined),
+                          transition: 'background 0.2s ease'
+                        }}
+                      >
+                        {/* Checkbox Column */}
+                        <td style={{ padding: '14px 10px', textAlign: 'center' }}>
+                          <input
+                            type="checkbox"
+                            disabled={isPaid}
+                            checked={isSelected}
+                            onChange={() => toggleSelectReceivable(item.id)}
+                            style={{ width: '16px', height: '16px', cursor: isPaid ? 'not-allowed' : 'pointer', accentColor: 'var(--primary)' }}
+                          />
+                        </td>
+                        {/* Invoice & Date */}
                       <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
                         <div style={{ fontWeight: 700, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <span>{item.receivable_no}</span>
@@ -1102,6 +1228,7 @@ export default function Receivables() {
             </tbody>
           </table>
         </div>
+      </>
       )}
 
       {/* ========================================================================= */}
