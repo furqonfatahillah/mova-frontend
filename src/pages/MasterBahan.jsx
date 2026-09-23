@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Edit2, Check, X, Store, Sparkles, Info, Calculator, ChefHat, Flame, Trash2 } from 'lucide-react';
+import { Plus, Edit2, Check, X, Store, Sparkles, Info, Calculator, ChefHat, Flame, Trash2, FileSpreadsheet } from 'lucide-react';
 import api from '../api/client';
 import {
   rupiah, num, fmtQtyVal, LoadingState, PageHeader, AuditInfo,
@@ -9,6 +9,7 @@ import {
 } from '../components/ui';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
+import ImportMasterModal from '../components/ImportMasterModal';
 
 const emptyForm = {
   code: '', name: '', category: 'Perlengkapan', type: 'RAW', unit_beli: 'Slop',
@@ -103,6 +104,7 @@ export default function MasterBahan() {
   // Sub-Recipe configuration modal
   const [subRecipeModal, setSubRecipeModal] = useState(null);
   const [savingSubRecipe, setSavingSubRecipe] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   const [dbCategories, setDbCategories] = useState([]);
   const { activeOutletId, activeOutlet } = useOutlet();
@@ -281,6 +283,14 @@ export default function MasterBahan() {
         subtitle="Data bahan, satuan, konversi, harga beli rata-rata bergerak (Moving Average), harga satuan pakai, dan batas toleransi."
         action={
           <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowImportModal(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, borderColor: 'rgba(16, 185, 129, 0.4)', color: '#10b981' }}
+            >
+              <FileSpreadsheet size={14} />
+              Import Excel
+            </button>
             <button
               className="btn btn-secondary"
               onClick={() => navigate('/perlengkapan')}
@@ -950,6 +960,15 @@ export default function MasterBahan() {
           </div>
         </div>
       )}
+
+      <ImportMasterModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        targetMaster="INGREDIENT"
+        onSuccess={() => {
+          fetchIngredients();
+        }}
+      />
     </div>
   );
 }

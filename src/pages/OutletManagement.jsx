@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import {
   Store, Plus, Edit2, Trash2, CheckCircle2,
-  Building2, Phone, MapPin, User, ShieldCheck, X, Check
+  Building2, Phone, MapPin, User, ShieldCheck, X, Check, FileSpreadsheet
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
 import { PageHeader, LoadingState, AuditInfo, MiniCard } from '../components/ui';
+import ImportMasterModal from '../components/ImportMasterModal';
 
 const emptyForm = {
   code: '',
@@ -24,6 +25,7 @@ export default function OutletManagement() {
   const [editingOutlet, setEditingOutlet] = useState(null);
   const [formData, setFormData] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   useEffect(() => {
     fetchOutlets();
@@ -126,12 +128,22 @@ export default function OutletManagement() {
   return (
     <div className="fade-in">
       <PageHeader
-        title="Master Cabang Outlet"
+        title="Master Cabang Outlet & Gudang"
         subtitle="Kelola data cabang outlet, gudang utama/pusat, kontak, dan alokasi transfer bahan baku."
         action={
-          <button className="btn btn-primary" onClick={openCreateModal}>
-            + Tambah Cabang Baru
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowImportModal(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, borderColor: 'rgba(16, 185, 129, 0.4)', color: '#10b981' }}
+            >
+              <FileSpreadsheet size={14} />
+              Import Excel
+            </button>
+            <button className="btn btn-primary" onClick={openCreateModal}>
+              + Tambah Cabang Baru
+            </button>
+          </div>
         }
       />
 
@@ -410,6 +422,15 @@ export default function OutletManagement() {
           </div>
         </div>
       )}
+
+      <ImportMasterModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        targetMaster="OUTLET"
+        onSuccess={() => {
+          fetchOutlets();
+        }}
+      />
     </div>
   );
 }

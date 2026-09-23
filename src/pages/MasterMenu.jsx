@@ -13,6 +13,7 @@ import {
 } from '../components/ui';
 import { getTodayStr } from '../utils/date';
 import toast from 'react-hot-toast';
+import ImportMasterModal from '../components/ImportMasterModal';
 
 export default function MasterMenu() {
   const { outlets = [], activeOutletId, dateRange } = useOutlet?.() || {};
@@ -41,6 +42,7 @@ export default function MasterMenu() {
 
   // Modal State for Add/Edit Menu
   const [modalOpen, setModalOpen] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [modalMode, setModalMode] = useState('create'); // 'create' | 'edit'
   const [menuForm, setMenuForm] = useState({
     code: '',
@@ -860,9 +862,19 @@ export default function MasterMenu() {
         title="Master Produk & Menu (Universal POS)"
         subtitle="Kelola produk olahan resep (F&B/BOM), barang jadi retail langsung (stok & modal), dan jasa layanan non-stok."
         action={
-          <button className="btn btn-primary" onClick={openCreateModal}>
-            + Tambah Produk / Menu
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowImportModal(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, borderColor: 'rgba(16, 185, 129, 0.4)', color: '#10b981' }}
+            >
+              <FileSpreadsheet size={14} />
+              Import Excel
+            </button>
+            <button className="btn btn-primary" onClick={openCreateModal}>
+              + Tambah Produk / Menu
+            </button>
+          </div>
         }
       />
 
@@ -3665,6 +3677,15 @@ export default function MasterMenu() {
           </div>
         </div>
       )}
+
+      <ImportMasterModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        targetMaster="MENU"
+        onSuccess={() => {
+          fetchAll();
+        }}
+      />
     </div>
   );
 }

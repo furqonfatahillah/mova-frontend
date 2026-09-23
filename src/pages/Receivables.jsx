@@ -17,6 +17,7 @@ import { useOutlet } from '../context/OutletContext';
 import { exportReceivablesToExcel } from '../utils/exportReport';
 import { printElement } from '../utils/print';
 import toast from 'react-hot-toast';
+import ImportMasterModal from '../components/ImportMasterModal';
 
 export default function Receivables() {
   const {
@@ -61,6 +62,7 @@ export default function Receivables() {
     total_customers: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
@@ -611,7 +613,15 @@ export default function Receivables() {
             onClick={handleExportExcel}
             style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#10b981' }}
           >
-            <FileSpreadsheet size={14} /> Excel
+            <FileSpreadsheet size={14} /> Export Excel
+          </button>
+
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => setShowImportModal(true)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)' }}
+          >
+            <FileSpreadsheet size={14} /> Import Excel
           </button>
 
           <button
@@ -2041,6 +2051,15 @@ export default function Receivables() {
           </div>
         </div>
       )}
+
+      <ImportMasterModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        targetMaster="RECEIVABLE"
+        onSuccess={() => {
+          fetchData();
+        }}
+      />
     </div>
   );
 }
