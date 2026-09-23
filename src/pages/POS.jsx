@@ -10,7 +10,7 @@ import {
   Percent, Tag, Gift, Scissors, Split, Divide,
   ShoppingBag, Briefcase, Barcode, Utensils, Coins,
   Zap, AlertOctagon, Calculator,
-  ChevronDown, Filter, Layers, UserCheck, UserPlus, Star, Award
+  ChevronDown, Filter, Layers, UserCheck, UserPlus, Star, Award, Wallet
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, num, LoadingState, PageHeader } from '../components/ui';
