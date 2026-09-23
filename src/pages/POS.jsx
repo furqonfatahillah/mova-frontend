@@ -4175,8 +4175,8 @@ export default function POS() {
          ======================================================== */}
       {paymentModalOpen && (
         <div className="modal-overlay" onClick={() => setPaymentModalOpen(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 460, maxHeight: '90vh', overflowY: 'auto', padding: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <h3 style={{ fontSize: 17, fontWeight: 800, color: '#ffffff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Banknote size={20} style={{ color: activeOpenBillPayment ? '#fbbf24' : 'var(--accent)' }} />
                 {activeOpenBillPayment ? 'Pelunasan Tagihan Terbuka (Open Bill)' : 'Pembayaran Transaksi'}
@@ -4198,8 +4198,8 @@ export default function POS() {
                   : 'rgba(139, 92, 246, 0.12)',
               border: `1px solid ${isCoinOut ? 'rgba(239, 68, 68, 0.4)' : isCoinLow ? 'rgba(245, 158, 11, 0.35)' : 'rgba(139, 92, 246, 0.25)'}`,
               borderRadius: 12,
-              padding: '10px 14px',
-              marginBottom: 14,
+              padding: '8px 12px',
+              marginBottom: 10,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -4233,9 +4233,9 @@ export default function POS() {
                 : 'linear-gradient(135deg, rgba(124, 58, 237, 0.15) 0%, rgba(79, 70, 229, 0.25) 100%)',
               border: activeOpenBillPayment ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid rgba(139, 92, 246, 0.3)',
               borderRadius: 14,
-              padding: '16px 18px',
+              padding: '12px 16px',
               textAlign: 'center',
-              marginBottom: 18
+              marginBottom: 12
             }}>
               <span style={{ fontSize: 11.5, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
                 {activeOpenBillPayment ? 'Total Tagihan Terbuka' : 'Total Tagihan Pembayaran'}
