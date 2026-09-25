@@ -55,6 +55,21 @@ export default function POS() {
   const [cashReceived, setCashReceived] = useState('');
   const [orderNotes, setOrderNotes] = useState('');
 
+  // Midtrans Live Dynamic QRIS State
+  const [midtransQris, setMidtransQris] = useState({
+    active: false,
+    loading: false,
+    orderId: null,
+    grossAmount: 0,
+    qrImageUrl: null,
+    qrString: null,
+    isPaid: false,
+    environment: 'sandbox',
+    checking: false,
+    error: null,
+  });
+  const [showStaticQrisFallback, setShowStaticQrisFallback] = useState(false);
+
   // Receipt Modal State
   const [receiptModalOpen, setReceiptModalOpen] = useState(false);
   const [completedOrder, setCompletedOrder] = useState(null);
@@ -1750,6 +1765,103 @@ export default function POS() {
       setCancelBillModal(p => ({ ...p, submitting: false }));
     }
   }
+
+  // ====================================================
+  // MIDTRANS LIVE DYNAMIC QRIS INTEGRATION
+  // ====================================================
+  async function generateMidtransQris() {
+    if (payableTotal <= 0) {
+      toast.error('Nominal tagihan harus lebih dari Rp 0!');
+      return;
+    }
+
+    setMidtransQris(prev => ({ ...prev, loading: true, error: null, isPaid: false }));
+    try {
+      const orderRef = activeOpenBillPayment
+        ? activeOpenBillPayment.order_number
+        : ('MOVA-' + Date.now().toString().slice(-8) + '-' + Math.floor(Math.random() * 900 + 100));
+
+      const { data } = await api.post('/payment-gateways/midtrans/charge-qris', {
+        gross_amount: payableTotal,
+        order_id: orderRef,
+        customer_name: selectedCustomer ? selectedCustomer.name : (customerName || 'Pelanggan'),
+      });
+
+      if (data.status === 'success') {
+        setMidtransQris({
+          active: true,
+          loading: false,
+          orderId: data.order_id,
+          grossAmount: data.gross_amount,
+          qrImageUrl: data.qr_image_url,
+          qrString: data.qr_string,
+          isPaid: false,
+          environment: data.environment || 'sandbox',
+          checking: false,
+          error: null,
+        });
+        toast.success('QRIS Dinamis Midtrans siap! Customer dapat scan sekarang.');
+      } else {
+        throw new Error(data.message || 'Gagal membuat tagihan QRIS Midtrans');
+      }
+    } catch (err) {
+      console.error(err);
+      const msg = err.response?.data?.message || err.message || 'Gagal menghubungi Midtrans';
+      setMidtransQris(prev => ({ ...prev, loading: false, error: msg }));
+      toast.error(msg);
+    }
+  }
+
+  async function checkMidtransPaymentStatus(orderId) {
+    if (!orderId || midtransQris.isPaid) return;
+    setMidtransQris(prev => ({ ...prev, checking: true }));
+    try {
+      const { data } = await api.get(`/payment-gateways/midtrans/status/${orderId}`);
+      if (data.is_paid) {
+        setMidtransQris(prev => ({ ...prev, isPaid: true, checking: false }));
+        toast.success('🎉 Pembayaran QRIS Midtrans BERHASIL & LUNAS!');
+        setTimeout(() => {
+          handleProcessOrder();
+        }, 1200);
+      } else {
+        setMidtransQris(prev => ({ ...prev, checking: false }));
+      }
+    } catch (err) {
+      setMidtransQris(prev => ({ ...prev, checking: false }));
+    }
+  }
+
+  // Auto-polling for Midtrans QRIS status while modal is open
+  useEffect(() => {
+    let interval = null;
+    if (paymentModalOpen && paymentMethod === 'QRIS' && midtransQris.active && midtransQris.orderId && !midtransQris.isPaid) {
+      interval = setInterval(() => {
+        checkMidtransPaymentStatus(midtransQris.orderId);
+      }, 3000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [paymentModalOpen, paymentMethod, midtransQris.active, midtransQris.orderId, midtransQris.isPaid]);
+
+  // Reset QRIS when closing payment modal
+  useEffect(() => {
+    if (!paymentModalOpen) {
+      setMidtransQris({
+        active: false,
+        loading: false,
+        orderId: null,
+        grossAmount: 0,
+        qrImageUrl: null,
+        qrString: null,
+        isPaid: false,
+        environment: 'sandbox',
+        checking: false,
+        error: null,
+      });
+      setShowStaticQrisFallback(false);
+    }
+  }, [paymentModalOpen]);
 
   // Submit payment (Handles both regular cart and open bill payment)
   async function handleProcessOrder() {
@@ -4389,36 +4501,252 @@ export default function POS() {
               </div>
             )}
 
-            {/* QRIS Simulator */}
+            {/* QRIS Midtrans Dynamic & Static Section */}
             {paymentMethod === 'QRIS' && (
               <div style={{
                 background: 'rgba(255,255,255,0.03)',
                 border: '1px solid var(--border)',
-                borderRadius: 12,
+                borderRadius: 14,
                 padding: 18,
-                textAlign: 'center',
-                marginBottom: 16
+                marginBottom: 16,
               }}>
-                <div style={{
-                  width: 140, height: 140,
-                  background: '#ffffff',
-                  borderRadius: 10,
-                  margin: '0 auto 12px',
-                  padding: 8,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  <QrCode size={110} color="#000000" />
-                  <span style={{ fontSize: 9, color: '#000', fontWeight: 800 }}>MOVA QRIS</span>
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                  Arahkan kamera / e-wallet pelanggan ke kode QR di atas.
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--accent-bright)', marginTop: 4 }}>
-                  BCA · Mandiri · GoPay · OVO · DANA · ShopeePay
-                </div>
+                {/* 1. Active Midtrans Dynamic QRIS Screen */}
+                {midtransQris.active && midtransQris.qrImageUrl && !showStaticQrisFallback ? (
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '4px 10px',
+                      borderRadius: 20,
+                      background: midtransQris.isPaid ? 'rgba(16, 185, 129, 0.2)' : 'rgba(56, 189, 248, 0.15)',
+                      color: midtransQris.isPaid ? '#34d399' : '#38bdf8',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      marginBottom: 12
+                    }}>
+                      <Zap size={13} />
+                      {midtransQris.isPaid ? 'PEMBAYARAN DITERIMA & LUNAS' : `MIDTRANS QRIS DINAMIS (${midtransQris.environment.toUpperCase()})`}
+                    </div>
+
+                    {/* QR Code Container */}
+                    <div style={{
+                      width: 200, height: 200,
+                      background: '#ffffff',
+                      borderRadius: 12,
+                      margin: '0 auto 12px',
+                      padding: 10,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+                      border: midtransQris.isPaid ? '3px solid #10b981' : '1px solid #e2e8f0',
+                      position: 'relative'
+                    }}>
+                      <img
+                        src={midtransQris.qrImageUrl}
+                        alt="Midtrans QRIS Code"
+                        style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                      />
+                      {midtransQris.isPaid && (
+                        <div style={{
+                          position: 'absolute',
+                          inset: 0,
+                          background: 'rgba(16, 185, 129, 0.9)',
+                          borderRadius: 10,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: '#ffffff'
+                        }}>
+                          <CheckCircle2 size={48} />
+                          <span style={{ fontSize: 13, fontWeight: 800, marginTop: 6 }}>LUNAS</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Order & Nominal Info */}
+                    <div style={{ fontSize: 16, fontWeight: 800, color: '#ffffff', marginBottom: 2 }}>
+                      {rupiah(midtransQris.grossAmount)}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 12 }}>
+                      Ref Order: <span className="mono" style={{ color: 'var(--text-secondary)' }}>{midtransQris.orderId}</span>
+                    </div>
+
+                    {/* Live Status Indicator */}
+                    <div style={{
+                      padding: '10px 14px',
+                      borderRadius: 10,
+                      background: midtransQris.isPaid ? 'rgba(16, 185, 129, 0.15)' : 'rgba(56, 189, 248, 0.08)',
+                      border: `1px solid ${midtransQris.isPaid ? 'rgba(16, 185, 129, 0.3)' : 'rgba(56, 189, 248, 0.25)'}`,
+                      marginBottom: 12,
+                      fontSize: 12,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      color: midtransQris.isPaid ? '#34d399' : '#e0f2fe'
+                    }}>
+                      {midtransQris.isPaid ? (
+                        <>
+                          <CheckCircle2 size={16} />
+                          <strong>Pembayaran sukses! Menyelesaikan nota kasir...</strong>
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw size={14} className={midtransQris.checking ? "spin" : ""} style={{ animation: 'spin 2s linear infinite' }} />
+                          <span>Menunggu customer scan & bayar... (Cek otomatis aktif)</span>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Action buttons */}
+                    {!midtransQris.isPaid && (
+                      <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                        <button
+                          type="button"
+                          className="btn btn-outline"
+                          onClick={() => checkMidtransPaymentStatus(midtransQris.orderId)}
+                          disabled={midtransQris.checking}
+                          style={{ fontSize: 12, padding: '6px 12px' }}
+                        >
+                          <RefreshCw size={13} className={midtransQris.checking ? "spin" : ""} />
+                          {midtransQris.checking ? 'Mengecek...' : 'Cek Status Sekarang'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          onClick={() => generateMidtransQris()}
+                          style={{ fontSize: 12, padding: '6px 12px', color: 'var(--text-muted)' }}
+                        >
+                          Generate Ulang
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : !showStaticQrisFallback ? (
+                  /* 2. Prompt to Generate Midtrans Dynamic QRIS */
+                  <div style={{ textAlign: 'center', padding: '6px 4px' }}>
+                    <div style={{
+                      width: 50, height: 50,
+                      borderRadius: '50%',
+                      background: 'rgba(56, 189, 248, 0.12)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      margin: '0 auto 10px',
+                      color: '#38bdf8'
+                    }}>
+                      <QrCode size={26} />
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#ffffff', marginBottom: 4 }}>
+                      Pembayaran QRIS Dinamis Midtrans
+                    </div>
+                    <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 auto 16px', maxWidth: 360 }}>
+                      Sistem akan membuat kode QR resmi dengan nominal terkunci sebesar <strong>{rupiah(payableTotal)}</strong>. Saat customer scan & bayar, kasir otomatis lunas tanpa perlu klik manual.
+                    </p>
+
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={() => generateMidtransQris()}
+                      disabled={midtransQris.loading}
+                      style={{
+                        width: '100%',
+                        padding: '12px 18px',
+                        fontSize: 13,
+                        fontWeight: 700,
+                        background: 'linear-gradient(135deg, #0284c7, #8b5cf6)',
+                        border: 'none',
+                        borderRadius: 10,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 8,
+                        boxShadow: '0 4px 16px rgba(2, 132, 199, 0.3)'
+                      }}
+                    >
+                      {midtransQris.loading ? (
+                        <>
+                          <RefreshCw size={16} className="spin" />
+                          <span>Menghubungi Midtrans...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Zap size={16} />
+                          <span>Buat QRIS Midtrans ({rupiah(payableTotal)})</span>
+                        </>
+                      )}
+                    </button>
+
+                    <div style={{ marginTop: 14 }}>
+                      <button
+                        type="button"
+                        onClick={() => setShowStaticQrisFallback(true)}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'var(--text-muted)',
+                          fontSize: 11.5,
+                          cursor: 'pointer',
+                          textDecoration: 'underline'
+                        }}
+                      >
+                        Atau gunakan QRIS Statis Toko (Konfirmasi Kasir Manual)
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  /* 3. Static QRIS Fallback (Manual Confirmation) */
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: 12
+                    }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b' }}>
+                        QRIS STATIS TOKO (MANUAL)
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowStaticQrisFallback(false)}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: '#38bdf8',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        ⚡ Pakai Midtrans Dinamis
+                      </button>
+                    </div>
+
+                    <div style={{
+                      width: 140, height: 140,
+                      background: '#ffffff',
+                      borderRadius: 10,
+                      margin: '0 auto 12px',
+                      padding: 8,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <QrCode size={110} color="#000000" />
+                      <span style={{ fontSize: 9, color: '#000', fontWeight: 800 }}>MOVA QRIS</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                      Arahkan kamera / e-wallet pelanggan ke kode QR di atas.
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--accent-bright)', marginTop: 4 }}>
+                      BCA · Mandiri · GoPay · OVO · DANA · ShopeePay
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

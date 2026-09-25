@@ -1128,6 +1128,49 @@ export default function PaymentSettings() {
                     onChange={(e) => setGatewayConfig({ ...gatewayConfig, midtrans_merchant_id: e.target.value })}
                   />
                 </div>
+
+                {/* Midtrans Webhook Notification URL Box */}
+                <div style={{
+                  padding: 14,
+                  borderRadius: 12,
+                  background: 'rgba(56, 189, 248, 0.08)',
+                  border: '1px solid rgba(56, 189, 248, 0.25)',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 700, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Globe size={15} /> URL Webhook / Payment Notification
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const webhookUrl = `${window.location.protocol}//${window.location.hostname}:8000/api/payment-gateways/midtrans/webhook`;
+                        navigator.clipboard.writeText(webhookUrl);
+                        toast.success('URL Webhook Midtrans berhasil disalin!');
+                      }}
+                      style={{
+                        background: 'rgba(56, 189, 248, 0.15)',
+                        border: '1px solid rgba(56, 189, 248, 0.3)',
+                        borderRadius: 6,
+                        color: '#38bdf8',
+                        padding: '3px 8px',
+                        fontSize: 11,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4
+                      }}
+                    >
+                      <Copy size={12} /> Salin URL Webhook
+                    </button>
+                  </div>
+                  <div className="mono" style={{ fontSize: 11.5, color: '#e0f2fe', wordBreak: 'break-all', background: 'rgba(0,0,0,0.35)', padding: '8px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+                    {`${window.location.protocol}//${window.location.hostname}:8000/api/payment-gateways/midtrans/webhook`}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.5 }}>
+                    💡 <strong>Cara Pakai:</strong> Buka portal <strong>Midtrans Dashboard &gt; Settings &gt; Configuration</strong>, lalu tempelkan (paste) URL di atas pada kolom <strong>Payment Notification URL</strong>. Dengan ini, ketika customer scan &amp; bayar QRIS di kasir, sistem POS akan otomatis mendeteksi transaksi lunas secara real-time!
+                  </div>
+                </div>
               </div>
             )}
 
