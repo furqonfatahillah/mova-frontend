@@ -229,7 +229,7 @@ export default function Register() {
       <div className="auth-card" style={{ maxWidth: 520 }}>
         <div className="auth-logo">
           <div className="auth-logo-icon">
-            <img src="/MOVA.svg" alt="MOVA POS Logo" />
+            <img src="/MOVA.png" alt="MOVA POS Logo" />
           </div>
           <h1>Daftar MOVA POS</h1>
           <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 4 }}>

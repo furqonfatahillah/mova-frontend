@@ -354,7 +354,7 @@ export default function Layout() {
         </button>
         <div className="mobile-topbar-brand">
           <div className="sidebar-logo-icon" style={{ width: 28, height: 28, margin: 0, borderRadius: 7, padding: 3 }}>
-            <img src="/MOVA.svg" alt="MOVA POS Logo" />
+            <img src="/MOVA.png" alt="MOVA POS Logo" />
           </div>
           <span style={{ fontWeight: 700, fontSize: 13.5, color: '#ffffff' }}>MOVA</span>
           {/* Active outlet badge on mobile */}
@@ -384,7 +384,7 @@ export default function Layout() {
         <div className="sidebar-logo">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div className="sidebar-logo-icon">
-              <img src="/MOVA.svg" alt="MOVA POS Logo" />
+              <img src="/MOVA.png" alt="MOVA POS Logo" />
             </div>
             {/* Close / Collapse Button */}
             <button
