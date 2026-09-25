@@ -587,6 +587,15 @@ export default function Receivables() {
     );
   }
 
+  // Print Full Receivables Report (LAPORAN PIUTANG CUSTOMER)
+  function handlePrintReceivablesReport() {
+    printElement(
+      'printable-receivables-report',
+      `LAPORAN PIUTANG CUSTOMER - ${businessName}`,
+      { orientation: 'portrait' }
+    );
+  }
+
   if (loading && items.length === 0 && customerSummary.length === 0) return <LoadingState />;
 
   return (
@@ -612,8 +621,18 @@ export default function Receivables() {
             className="btn btn-secondary btn-sm"
             onClick={handleExportExcel}
             style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#10b981' }}
+            title="Unduh format spreadsheet Excel (.xlsx)"
           >
             <FileSpreadsheet size={14} /> Export Excel
+          </button>
+
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={handlePrintReceivablesReport}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#38bdf8' }}
+            title="Unduh / Cetak Dokumen PDF Resmi Laporan Piutang Customer"
+          >
+            <Printer size={14} /> Export PDF
           </button>
 
           <button
@@ -2060,6 +2079,70 @@ export default function Receivables() {
           fetchData();
         }}
       />
+
+      {/* Printable Report Document for LAPORAN PIUTANG CUSTOMER */}
+      <div id="printable-receivables-report" style={{ display: 'none' }}>
+        <div style={{ padding: 15, fontFamily: "'Plus Jakarta Sans', Arial, sans-serif", color: '#000000' }}>
+          <div style={{ borderBottom: '2px solid #000000', paddingBottom: 10, marginBottom: 14 }}>
+            <h2 style={{ margin: 0, fontSize: 18, textTransform: 'uppercase', letterSpacing: 1, fontWeight: 900 }}>
+              {businessName}
+            </h2>
+            <div style={{ fontSize: 14, fontWeight: 'bold', marginTop: 2 }}>
+              LAPORAN PIUTANG CUSTOMER
+            </div>
+            <div style={{ fontSize: 11, marginTop: 4 }}>
+              Cabang: {outletName} | Dicetak: {new Date().toLocaleString('id-ID')}
+            </div>
+          </div>
+
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10, margin: '8px 0' }}>
+            <thead>
+              <tr style={{ background: '#f4f4f4', borderBottom: '1px solid #000' }}>
+                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'center' }}>No.</th>
+                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>Customer</th>
+                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>Tanggal</th>
+                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>Jam</th>
+                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>No.Penjualan</th>
+                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'right' }}>Piutang</th>
+                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'right' }}>Dibayar</th>
+                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'right' }}>Sisa Piutang</th>
+                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>Usia Piutang</th>
+                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>Jatuh Tempo</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredItems.map((it, idx) => {
+                const issueTs = new Date(it.issue_date).getTime();
+                const nowTs = new Date().getTime();
+                const diffDays = Math.max(0, Math.floor((nowTs - issueTs) / (1000 * 60 * 60 * 24)));
+                return (
+                  <tr key={idx} style={{ borderBottom: '1px solid #ddd' }}>
+                    <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'center' }}>{idx + 1}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 6px', fontWeight: 'bold' }}>{it.customer_name || 'Walk-in Customer'}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 6px' }}>{it.issue_date || '-'}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 6px' }}>{it.created_at ? it.created_at.substring(11, 16) : '00:00'}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 6px' }}>{it.order_number || it.receivable_no || '-'}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right' }}>{Number(it.total_amount).toLocaleString('id-ID')}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right' }}>{Number(it.paid_amount).toLocaleString('id-ID')}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right', fontWeight: 'bold' }}>{Number(it.remaining_amount).toLocaleString('id-ID')}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 6px' }}>{diffDays} Hari</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 6px' }}>{it.due_date || '-'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr style={{ fontWeight: 900, background: '#f4f4f4', borderTop: '2px solid #000' }}>
+                <td colSpan={7} style={{ border: '1px solid #000', padding: '6px 8px' }}>Total Piutang</td>
+                <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'right' }}>
+                  {Number(stats?.total_remaining || 0).toLocaleString('id-ID')}
+                </td>
+                <td colSpan={2} style={{ border: '1px solid #000', padding: '6px 8px' }}></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

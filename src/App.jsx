@@ -37,6 +37,7 @@ const OpexManagement = lazy(() => import('./pages/OpexManagement'));
 const UrgentNotes = lazy(() => import('./pages/UrgentNotes'));
 const Receivables = lazy(() => import('./pages/Receivables'));
 const MasterCustomer = lazy(() => import('./pages/MasterCustomer'));
+const SalesReport = lazy(() => import('./pages/SalesReport'));
 
 function PrivateRoute({ children }) {
   const token = localStorage.getItem('pos_token');
@@ -134,6 +135,7 @@ export default function App() {
               <Route path="piutang"        element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><Receivables /></RoleRoute>} />
               <Route path="profitability"  element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><Profitability /></RoleRoute>} />
               <Route path="root-cause"     element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><RootCause /></RoleRoute>} />
+              <Route path="laporan-penjualan" element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><SalesReport /></RoleRoute>} />
             </Route>
           </Routes>
         </Suspense>

@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import api from '../api/client';
 import { pct, rupiah, StatusPill, LoadingState, PeriodPicker, PageHeader } from '../components/ui';
-import { FileSpreadsheet } from 'lucide-react';
+import { FileSpreadsheet, Printer } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 import { exportVarianceMenuToExcel } from '../utils/exportReport';
+import { printElement } from '../utils/print';
 
 export default function VarianceMenu() {
   const [menuData, setMenuData] = useState([]);
@@ -47,6 +48,14 @@ export default function VarianceMenu() {
     }
   }
 
+  function handlePrintPdf() {
+    printElement(
+      'printable-variance-menu-report',
+      `Laporan Ranking Variance Menu - ${period.from} sd ${period.to}`,
+      { orientation: 'portrait' }
+    );
+  }
+
   const sorted = [...menuData].sort((a, b) => {
     if (rankBy === 'value') return Math.abs(b.variance_value) - Math.abs(a.variance_value);
     if (rankBy === 'pct')   return b.weighted_pct - a.weighted_pct;
@@ -81,6 +90,22 @@ export default function VarianceMenu() {
             title="Unduh Ranking Variance Menu ke Excel (.xlsx)"
           >
             <FileSpreadsheet size={15} /> Export Excel
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              borderColor: 'rgba(56, 189, 248, 0.4)',
+              color: '#38bdf8',
+              background: 'rgba(56, 189, 248, 0.08)',
+              fontWeight: 600,
+            }}
+            onClick={handlePrintPdf}
+            title="Unduh / Cetak Dokumen PDF Resmi"
+          >
+            <Printer size={15} /> Export PDF / Cetak
           </button>
         </div>
       </div>
@@ -190,6 +215,57 @@ export default function VarianceMenu() {
           </div>
         </div>
       )}
+
+      {/* Hidden Printable Container for PDF Export */}
+      <div id="printable-variance-menu-report" style={{ display: 'none' }}>
+        <div style={{ padding: 15, fontFamily: "'Plus Jakarta Sans', Arial, sans-serif", color: '#000000' }}>
+          <div style={{ borderBottom: '2px solid #000000', paddingBottom: 10, marginBottom: 14 }}>
+            <h2 style={{ margin: 0, fontSize: 18, textTransform: 'uppercase', letterSpacing: 1, fontWeight: 900 }}>
+              {businessName}
+            </h2>
+            <div style={{ fontSize: 14, fontWeight: 'bold', marginTop: 2 }}>
+              LAPORAN AUDIT RANKING VARIANSI MENU
+            </div>
+            <div style={{ fontSize: 11, marginTop: 4 }}>
+              Periode: {period.from} s/d {period.to} | Cabang: {outletName} | Dicetak: {new Date().toLocaleString('id-ID')}
+            </div>
+          </div>
+
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10, margin: '8px 0' }}>
+            <thead>
+              <tr style={{ background: '#f4f4f4', borderBottom: '1px solid #000' }}>
+                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'center' }}>No.</th>
+                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>Menu</th>
+                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'right' }}>Qty Terjual</th>
+                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'right' }}>Weighted %</th>
+                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'right' }}>Variance Value</th>
+                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'right' }}>Kontribusi</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((row, idx) => (
+                <tr key={idx} style={{ borderBottom: '1px solid #ddd' }}>
+                  <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'center' }}>{idx + 1}</td>
+                  <td style={{ border: '1px solid #000', padding: '4px 6px', fontWeight: 'bold' }}>{row.menu?.name}</td>
+                  <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right' }}>{row.qty_terjual}</td>
+                  <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right' }}>{row.weighted_pct !== null ? `${row.weighted_pct}%` : '—'}</td>
+                  <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right', fontWeight: 'bold' }}>{Number(row.variance_value || 0).toLocaleString('id-ID')}</td>
+                  <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right' }}>{total !== 0 ? `${((Math.abs(row.variance_value || 0) / Math.abs(total)) * 100).toFixed(1)}%` : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr style={{ fontWeight: 900, background: '#f4f4f4', borderTop: '2px solid #000' }}>
+                <td colSpan={2} style={{ border: '1px solid #000', padding: '6px 8px' }}>Total Variance</td>
+                <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'right' }}>{sorted.reduce((s, r) => s + (r.qty_terjual || 0), 0)}</td>
+                <td style={{ border: '1px solid #000', padding: '6px 8px' }}></td>
+                <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'right' }}>{Number(total).toLocaleString('id-ID')}</td>
+                <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'right' }}>100%</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

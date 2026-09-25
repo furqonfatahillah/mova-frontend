@@ -194,18 +194,18 @@ body,
 }
 
 .sidebar-logo-icon {
-  width: 38px;
-  height: 38px;
-  background: var(--accent-gradient);
+  width: 40px;
+  height: 40px;
+  background: transparent;
   border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 18px;
   margin-bottom: 12px;
-  box-shadow: 0 4px 16px var(--accent-glow);
+  box-shadow: none;
   color: #ffffff;
-  padding: 6px;
+  padding: 0;
   overflow: hidden;
 }
 
@@ -802,18 +802,18 @@ textarea.form-control {
 }
 
 .auth-logo-icon {
-  width: 58px;
-  height: 58px;
-  background: var(--accent-gradient);
+  width: 68px;
+  height: 68px;
+  background: transparent;
   border-radius: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 24px;
   margin: 0 auto 14px;
-  box-shadow: 0 6px 25px var(--accent-glow);
+  box-shadow: none;
   color: #ffffff;
-  padding: 10px;
+  padding: 0;
   overflow: hidden;
 }
 
@@ -3077,7 +3077,10 @@ textarea.form-control {
    Pure Black & White, Zero Dark Fill, Razor Sharp Text
    ===================================================== */
 @media print {
-  *, *::before, *::after {
+
+  *,
+  *::before,
+  *::after {
     background-color: transparent !important;
     background-image: none !important;
     color: #000000 !important;
@@ -3088,7 +3091,11 @@ textarea.form-control {
     print-color-adjust: exact !important;
   }
 
-  html, body, #root, .app-layout, .main-content {
+  html,
+  body,
+  #root,
+  .app-layout,
+  .main-content {
     background: #ffffff !important;
     color: #000000 !important;
     width: 100% !important;
@@ -3142,7 +3149,10 @@ textarea.form-control {
   }
 
   /* Badges & Pills */
-  .badge, .tag, [class*="badge"], [class*="chip"] {
+  .badge,
+  .tag,
+  [class*="badge"],
+  [class*="chip"] {
     background: transparent !important;
     color: #000000 !important;
     border: 1px solid #000000 !important;
@@ -3152,7 +3162,8 @@ textarea.form-control {
   }
 
   /* Images & Logos */
-  img, svg {
+  img,
+  svg {
     filter: grayscale(100%) contrast(160%) !important;
   }
 }

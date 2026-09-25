@@ -5,7 +5,7 @@ import {
   ArrowUpDown, ClipboardList, BarChart2, TrendingUp, DollarSign,
   AlertTriangle, LogOut, ScrollText, Menu, X, Clock,
   Store, Send, Users, UserCheck, Building2, ChefHat, Trash2, Percent, Landmark, Wallet, Coins, Gift, Copy, Check, Receipt, Headset,
-  AlertOctagon, CreditCard, Boxes
+  AlertOctagon, CreditCard, Boxes, FileSpreadsheet
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
@@ -125,6 +125,7 @@ export default function Layout() {
               { to: '/variance/menu', label: 'Variance Menu', icon: TrendingUp },
               { to: '/profitability', label: 'Profitability', icon: DollarSign },
               { to: '/root-cause', label: 'Root Cause', icon: AlertTriangle },
+              { to: '/laporan-penjualan', label: 'Laporan Penjualan (POS)', icon: FileSpreadsheet },
             ],
           },
           {
@@ -210,6 +211,7 @@ export default function Layout() {
             { to: '/variance/menu', label: 'Analisis Varian Menu', icon: TrendingUp },
             { to: '/profitability', label: 'Profitability (Menu Eng.)', icon: DollarSign },
             { to: '/root-cause', label: 'Root Cause Analysis', icon: AlertTriangle },
+            { to: '/laporan-penjualan', label: 'Laporan Penjualan (POS)', icon: FileSpreadsheet },
           ],
         },
         {
@@ -269,6 +271,7 @@ export default function Layout() {
           items: [
             { to: '/variance/bahan', label: 'Analisis Varian Bahan', icon: BarChart2 },
             { to: '/variance/menu', label: 'Analisis Varian Menu', icon: TrendingUp },
+            { to: '/laporan-penjualan', label: 'Laporan Penjualan (POS)', icon: FileSpreadsheet },
           ],
         },
         {
@@ -353,7 +356,7 @@ export default function Layout() {
           <Menu size={22} />
         </button>
         <div className="mobile-topbar-brand">
-          <div className="sidebar-logo-icon" style={{ width: 28, height: 28, margin: 0, borderRadius: 7, padding: 3 }}>
+          <div className="sidebar-logo-icon" style={{ width: 28, height: 28, margin: 0, borderRadius: 7, padding: 0 }}>
             <img src="/MOVA.png" alt="MOVA POS Logo" />
           </div>
           <span style={{ fontWeight: 700, fontSize: 13.5, color: '#ffffff' }}>MOVA</span>
