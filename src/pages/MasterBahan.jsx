@@ -121,7 +121,13 @@ export default function MasterBahan() {
 
   const displayedIngredients = useMemo(() => {
     return ingredients.filter(i => {
-      const isPerl = (i.category || '').toLowerCase().includes('perlengkapan');
+      const cat = (i.category || '').toLowerCase();
+      const code = (i.code || '').toUpperCase();
+      const isPerl = cat.includes('perlengkapan') ||
+        cat.includes('packaging') ||
+        cat.includes('kemasan') ||
+        code.startsWith('PLK-') ||
+        code.startsWith('PKG-');
       if (typeFilter === 'PERLENGKAPAN') return isPerl;
       if (typeFilter === 'RAW') return i.type !== 'SEMI_FINISHED' && !isPerl;
       if (typeFilter === 'SEMI_FINISHED') return i.type === 'SEMI_FINISHED';

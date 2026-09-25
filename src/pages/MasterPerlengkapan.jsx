@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Plus, Edit2, Check, X, Store, Trash2, Search,
   ExternalLink, ScrollText, UtensilsCrossed, AlertTriangle,
-  PackageCheck, RefreshCw, ShoppingBag, Package
+  PackageCheck, RefreshCw, ShoppingBag, Package, FileSpreadsheet
 } from 'lucide-react';
 import api from '../api/client';
 import {
@@ -13,6 +13,7 @@ import {
 } from '../components/ui';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
+import ImportMasterModal from '../components/ImportMasterModal';
 
 const KATEGORI_PERLENGKAPAN_OPTIONS = [
   'Perlengkapan',
@@ -193,6 +194,7 @@ export default function MasterPerlengkapan() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterSubCat, setFilterSubCat] = useState('ALL');
   const [breakdownModal, setBreakdownModal] = useState(null);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   const { activeOutletId, activeOutlet } = useOutlet();
 
@@ -210,6 +212,7 @@ export default function MasterPerlengkapan() {
       const perlengkapanList = (data || []).filter(i => {
         const cat = (i.category || '').toLowerCase();
         const name = (i.name || '').toLowerCase();
+        const code = (i.code || '').toUpperCase();
         return (
           cat.includes('perlengkapan') ||
           cat.includes('packaging') ||
@@ -218,11 +221,24 @@ export default function MasterPerlengkapan() {
           cat.includes('pipet') ||
           cat.includes('sedotan') ||
           cat.includes('tissue') ||
+          cat.includes('sealer') ||
+          cat.includes('kantong') ||
+          cat.includes('paperbag') ||
+          cat.includes('box') ||
+          cat.includes('sendok') ||
+          cat.includes('garpu') ||
           name.includes('cup') ||
           name.includes('pipet') ||
           name.includes('sedotan') ||
           name.includes('tissue') ||
-          name.includes('sealer')
+          name.includes('sealer') ||
+          name.includes('kantong') ||
+          name.includes('paperbag') ||
+          name.includes('box') ||
+          name.includes('sendok') ||
+          name.includes('garpu') ||
+          code.startsWith('PLK-') ||
+          code.startsWith('PKG-')
         );
       });
 
@@ -356,6 +372,14 @@ export default function MasterPerlengkapan() {
         subtitle="Kelola stok perlengkapan operasional cafe/resto (cup, sedotan, pipet, tissue, tutup cup, kantong plastik). Seluruh item otomatis terintegrasi dengan Kartu Stok dan Gramasi Resep Menu."
         action={
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowImportModal(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, borderColor: 'rgba(16, 185, 129, 0.4)', color: '#10b981' }}
+              title="Import data perlengkapan dari file Excel"
+            >
+              <FileSpreadsheet size={14} /> Import Excel
+            </button>
             <button
               className="btn btn-secondary"
               onClick={() => navigate('/bahan')}
@@ -837,6 +861,15 @@ export default function MasterPerlengkapan() {
           </div>
         </div>
       )}
+
+      <ImportMasterModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        targetMaster="PERLENGKAPAN"
+        onSuccess={() => {
+          fetchPerlengkapan();
+        }}
+      />
     </div>
   );
 }

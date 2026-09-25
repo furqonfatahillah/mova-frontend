@@ -7,6 +7,7 @@ import api from '../api/client';
 import { rupiah, LoadingState } from './ui';
 import {
   downloadIngredientTemplate,
+  downloadPerlengkapanTemplate,
   downloadMenuTemplate,
   downloadReceivableTemplate,
   downloadOutletTemplate
@@ -23,7 +24,7 @@ async function getXLSX() {
 export default function ImportMasterModal({
   isOpen,
   onClose,
-  targetMaster = 'INGREDIENT', // 'INGREDIENT' | 'MENU' | 'RECEIVABLE' | 'OUTLET'
+  targetMaster = 'INGREDIENT', // 'INGREDIENT' | 'PERLENGKAPAN' | 'MENU' | 'RECEIVABLE' | 'OUTLET'
   onSuccess,
 }) {
   const [selectedMaster, setSelectedMaster] = useState(targetMaster);
@@ -45,6 +46,13 @@ export default function ImportMasterModal({
       endpoint: '/ingredients/bulk-import',
       columns: ['Nama Bahan*', 'Tipe*', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*'],
       sampleHint: 'Contoh: Tepung Terigu, Satuan Beli: kg, Satuan Pakai: gram, Konversi: 1000, Harga: 14000',
+    },
+    PERLENGKAPAN: {
+      title: 'Master Perlengkapan & Packaging',
+      downloadFn: downloadPerlengkapanTemplate,
+      endpoint: '/perlengkapans/bulk-import',
+      columns: ['Nama Perlengkapan*', 'Kategori', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*'],
+      sampleHint: 'Contoh: Cup Dingin 16oz Sablon, Satuan Beli: Slop, Satuan Pakai: pcs, Konversi: 50, Harga: 25000',
     },
     MENU: {
       title: 'Master Menu & F&B',
@@ -145,6 +153,38 @@ export default function ImportMasterModal({
           if (harga < 0) errors.push('Harga beli tidak boleh negatif.');
 
           mappedData = { code, name, category, type, unit_beli: unitBeli, unit_pakai: unitPakai, konversi, harga, minstok: minStock, initial_stock: initialStock, notes };
+
+        } else if (currentMasterType === 'PERLENGKAPAN') {
+          const name = getVal(row, ['namaperlengkapan', 'namabarang', 'nama', 'perlengkapan', 'item']);
+          const code = getVal(row, ['kodeperlengkapan', 'kode', 'code']);
+          const category = getVal(row, ['kategori', 'category']) || 'Perlengkapan';
+          const unitBeli = getVal(row, ['satuanbeli', 'unitbeli']) || 'Slop';
+          const unitPakai = getVal(row, ['satuanpakai', 'unitpakai']) || 'pcs';
+          const konversi = parseFloat(getVal(row, ['konversi', 'faktorkonversi'])) || 1;
+          const harga = parseFloat(getVal(row, ['hargabeli', 'harga', 'hargasatuan'])) || 0;
+          const minStock = parseFloat(getVal(row, ['stokminimal', 'minstok'])) || 0;
+          const initialStock = parseFloat(getVal(row, ['stokawal', 'stok'])) || 0;
+          const tolerance = parseFloat(getVal(row, ['batastoleransi', 'toleransi', 'tolerance'])) || 5;
+          const notes = getVal(row, ['catatan', 'spesifikasi', 'keterangan']);
+
+          if (!name) errors.push('Nama perlengkapan wajib diisi.');
+          if (harga < 0) errors.push('Harga beli tidak boleh negatif.');
+          if (konversi <= 0) errors.push('Faktor konversi harus lebih dari 0.');
+
+          mappedData = {
+            code,
+            name,
+            category,
+            type: 'RAW',
+            unit_beli: unitBeli,
+            unit_pakai: unitPakai,
+            konversi,
+            harga,
+            minstok: minStock,
+            initial_stock: initialStock,
+            tolerance,
+            notes: notes || 'Imported Perlengkapan from Excel'
+          };
 
         } else if (currentMasterType === 'MENU') {
           const name = getVal(row, ['namamenu', 'nama', 'menu']);
@@ -276,6 +316,7 @@ export default function ImportMasterModal({
         <div style={{ display: 'flex', gap: '8px', marginBottom: '18px', flexWrap: 'wrap' }}>
           {[
             { key: 'INGREDIENT', label: 'Master Bahan' },
+            { key: 'PERLENGKAPAN', label: 'Master Perlengkapan' },
             { key: 'MENU', label: 'Master Menu' },
             { key: 'RECEIVABLE', label: 'Kasbon / Piutang' },
             { key: 'OUTLET', label: 'Outlet & Gudang' },
@@ -437,6 +478,7 @@ export default function ImportMasterModal({
                       </td>
                       <td style={{ padding: '8px 12px', color: 'var(--text-secondary)', fontSize: '11px' }}>
                         {currentMasterType === 'INGREDIENT' && `${row.data.type} · Satuan: ${row.data.unit_beli}/${row.data.unit_pakai} · ${rupiah(row.data.harga)}`}
+                        {currentMasterType === 'PERLENGKAPAN' && `${row.data.category} · Satuan: ${row.data.unit_beli}/${row.data.unit_pakai} (1 ${row.data.unit_beli} = ${row.data.konversi} ${row.data.unit_pakai}) · ${rupiah(row.data.harga)}`}
                         {currentMasterType === 'MENU' && `${row.data.category} · ${row.data.item_type} · ${rupiah(row.data.price)}`}
                         {currentMasterType === 'RECEIVABLE' && `Total: ${rupiah(row.data.total_amount)} · DP: ${rupiah(row.data.initial_paid)}`}
                         {currentMasterType === 'OUTLET' && `${row.data.type} · PIC: ${row.data.pic_name || '—'} · ${row.data.phone || ''}`}

@@ -48,6 +48,33 @@ export async function downloadIngredientTemplate() {
 }
 
 /**
+ * Download Template Excel Master Perlengkapan & Packaging
+ */
+export async function downloadPerlengkapanTemplate() {
+  const XLSX = await getXLSX();
+  const wb = XLSX.utils.book_new();
+
+  const rows = [
+    ['TEMPLATE IMPORT MASTER PERLENGKAPAN & PACKAGING — MOVA POS'],
+    ['Petunjuk: Baris bertanda (*) wajib diisi. Jangan mengubah nama kolom pada baris header (Baris 5).'],
+    [],
+    ['=== PETUNJUK KATEGORI & SATUAN PERLENGKAPAN ==='],
+    ['Kode Perlengkapan', 'Nama Perlengkapan*', 'Kategori', 'Satuan Beli*', 'Satuan Pakai*', 'Faktor Konversi*', 'Harga Beli Per Satuan Beli (Rp)*', 'Stok Minimal', 'Stok Awal', 'Batas Toleransi (%)', 'Catatan / Spesifikasi'],
+    ['PLK-001', 'Cup Dingin 16oz Sablon Logo', 'Cup & Gelas', 'Slop', 'pcs', 50, 25000, 100, 500, 5, 'Sablon logo 2 sisi, 1 slop = 50 pcs'],
+    ['PLK-002', 'Sedotan Boba Steril (Wrap)', 'Sedotan / Pipet', 'Pack', 'pcs', 100, 15000, 200, 1000, 5, 'Sedotan steril bungkus plastik'],
+    ['PLK-003', 'Tissue Makan Meja (Lunch Paper)', 'Tissue', 'Pack', 'lembar', 250, 12500, 500, 2500, 5, '1 pack = 250 lembar tissue'],
+    ['PLK-004', 'Roll Plastik Sealer Cup Motif', 'Tutup Cup / Sealer', 'Roll', 'pcs', 1200, 75000, 300, 2400, 5, '1 roll estimasi 1.200 cup'],
+    ['PLK-005', 'Kantong Plastik Kresek T-Shirt 1 Cup', 'Kantong & Paperbag', 'Pack', 'pcs', 100, 8500, 100, 500, 5, 'Bahan ramah lingkungan bening'],
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = fitColumns(rows);
+  XLSX.utils.book_append_sheet(wb, ws, 'Master Perlengkapan');
+
+  XLSX.writeFile(wb, `Template_Import_Master_Perlengkapan_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+/**
  * Download Template Excel Master Menu
  */
 export async function downloadMenuTemplate() {
