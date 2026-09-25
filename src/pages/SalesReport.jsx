@@ -93,16 +93,6 @@ const TABS = [
   },
 ];
 
-function getInitialDates() {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  const start = `${y}-${m}-01`;
-  const today = `${y}-${m}-${d}`;
-  return { from: start, to: today };
-}
-
 function formatIndoDate(dateStr) {
   if (!dateStr) return '';
   try {
@@ -122,7 +112,6 @@ function formatIndoDate(dateStr) {
 
 export default function SalesReport() {
   const [activeTab, setActiveTab] = useState('by-product');
-  const [dates, setDates] = useState(getInitialDates);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState({
@@ -132,18 +121,14 @@ export default function SalesReport() {
     outlet_name: 'Semua Cabang (Konsolidasi)',
   });
 
-  const { activeOutletId, outlets, currentBusiness } = useOutlet();
-  const [selectedOutlet, setSelectedOutlet] = useState(activeOutletId || 'ALL');
-
-  useEffect(() => {
-    if (activeOutletId) {
-      setSelectedOutlet(activeOutletId);
-    }
-  }, [activeOutletId]);
+  const { activeOutletId, activeOutlet, currentBusiness, dateRange: period } = useOutlet();
+  const currentUser = JSON.parse(localStorage.getItem('pos_user') || '{}');
+  const businessName = currentBusiness?.name || currentUser?.business?.name || 'MOVA POS';
+  const outletName = (activeOutlet && activeOutletId !== 'ALL' && activeOutletId !== 'all') ? activeOutlet.name : 'Semua Cabang (Konsolidasi)';
 
   useEffect(() => {
     fetchReport();
-  }, [activeTab, dates.from, dates.to, selectedOutlet]);
+  }, [activeTab, period?.from, period?.to, activeOutletId]);
 
   async function fetchReport() {
     setLoading(true);
@@ -158,11 +143,11 @@ export default function SalesReport() {
       else if (activeTab === 'customer-receivables') endpoint = '/reports/sales/customer-receivables';
       else if (activeTab === 'promos') endpoint = '/reports/sales/promos';
 
-      const targetOutlet = selectedOutlet !== 'ALL' && selectedOutlet !== 'all' ? selectedOutlet : undefined;
+      const targetOutlet = activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all' ? activeOutletId : undefined;
       const { data } = await api.get(endpoint, {
         params: {
-          from: dates.from,
-          to: dates.to,
+          from: period?.from,
+          to: period?.to,
           outlet_id: targetOutlet,
           search: search.trim() || undefined,
         },
@@ -171,51 +156,15 @@ export default function SalesReport() {
       setReportData({
         items: data.items || [],
         summary: data.summary || {},
-        business_name: data.business_name || currentBusiness?.name || 'MOVA POS',
-        outlet_name: data.outlet_name || 'Semua Cabang',
-        period: data.period || dates,
+        business_name: data.business_name || businessName,
+        outlet_name: data.outlet_name || outletName,
+        period: data.period || period,
       });
     } catch (err) {
       console.error(err);
       toast.error('Gagal mengambil data laporan penjualan');
     } finally {
       setLoading(false);
-    }
-  }
-
-  // Quick Date Range Presets
-  function applyDatePreset(preset) {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = now.getMonth();
-    const pad = (n) => String(n).padStart(2, '0');
-
-    if (preset === 'today') {
-      const dStr = `${y}-${pad(m + 1)}-${pad(now.getDate())}`;
-      setDates({ from: dStr, to: dStr });
-    } else if (preset === 'yesterday') {
-      const yest = new Date(now);
-      yest.setDate(yest.getDate() - 1);
-      const dStr = `${yest.getFullYear()}-${pad(yest.getMonth() + 1)}-${pad(yest.getDate())}`;
-      setDates({ from: dStr, to: dStr });
-    } else if (preset === '7days') {
-      const d7 = new Date(now);
-      d7.setDate(d7.getDate() - 6);
-      setDates({
-        from: `${d7.getFullYear()}-${pad(d7.getMonth() + 1)}-${pad(d7.getDate())}`,
-        to: `${y}-${pad(m + 1)}-${pad(now.getDate())}`,
-      });
-    } else if (preset === 'thisMonth') {
-      const start = `${y}-${pad(m + 1)}-01`;
-      const end = `${y}-${pad(m + 1)}-${pad(now.getDate())}`;
-      setDates({ from: start, to: end });
-    } else if (preset === 'lastMonth') {
-      const lastMonthDate = new Date(y, m - 1, 1);
-      const lastMonthEnd = new Date(y, m, 0);
-      setDates({
-        from: `${lastMonthDate.getFullYear()}-${pad(lastMonthDate.getMonth() + 1)}-01`,
-        to: `${lastMonthEnd.getFullYear()}-${pad(lastMonthEnd.getMonth() + 1)}-${pad(lastMonthEnd.getDate())}`,
-      });
     }
   }
 
@@ -307,9 +256,9 @@ export default function SalesReport() {
       const payload = {
         items: filteredItems,
         summary: activeSummary,
-        period: dates,
-        outletName: reportData.outlet_name,
-        businessName: reportData.business_name,
+        period: period || { from: '', to: '' },
+        outletName: outletName,
+        businessName: businessName,
       };
 
       let fname = '';
@@ -344,7 +293,7 @@ export default function SalesReport() {
       activeTab === 'peak-hours' ||
       activeTab === 'customer-receivables';
     const currentTabMeta = TABS.find((t) => t.id === activeTab);
-    const title = `${currentTabMeta?.title || 'Laporan Penjualan'} (${dates.from} sd ${dates.to})`;
+    const title = `${currentTabMeta?.title || 'Laporan Penjualan'} (${period?.from || ''} sd ${period?.to || ''})`;
     const printElId = `printable-report-${activeTab}`;
 
     printElement(printElId, title, {
@@ -354,9 +303,9 @@ export default function SalesReport() {
   }
 
   const currentTabInfo = TABS.find((t) => t.id === activeTab);
-  const periodText = dates.from === dates.to
-    ? `Per ${formatIndoDate(dates.from)}`
-    : `Per ${formatIndoDate(dates.from)} s/d ${formatIndoDate(dates.to)}`;
+  const periodText = period?.from === period?.to
+    ? `Per ${formatIndoDate(period?.from)}`
+    : `Per ${formatIndoDate(period?.from)} s/d ${formatIndoDate(period?.to)}`;
 
   return (
     <div className="fade-in" style={{ paddingBottom: 60 }}>
@@ -462,81 +411,60 @@ export default function SalesReport() {
         })}
       </div>
 
-      {/* Filter Toolbar Card */}
+      {/* Filter Toolbar Card (Uses Global Navbar Filters) */}
       <div
         className="card mb-4"
         style={{
-          padding: '14px 18px',
+          padding: '12px 18px',
           background: 'var(--bg-card)',
           borderRadius: 12,
           border: '1px solid var(--border)',
         }}
       >
-        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-          {/* Quick Date Presets */}
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {[
-              { id: 'today', label: 'Hari Ini' },
-              { id: 'yesterday', label: 'Kemarin' },
-              { id: '7days', label: '7 Hari' },
-              { id: 'thisMonth', label: 'Bulan Ini' },
-              { id: 'lastMonth', label: 'Bulan Lalu' },
-            ].map((p) => (
-              <button
-                key={p.id}
-                className="btn btn-secondary btn-xs"
-                style={{ fontSize: 11, padding: '4px 10px' }}
-                onClick={() => applyDatePreset(p.id)}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-
-          <div style={{ height: 20, width: 1, background: 'var(--border)' }} />
-
-          {/* Date Picker Range */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Calendar size={15} style={{ color: 'var(--text-muted)' }} />
-            <input
-              type="date"
-              className="input input-sm"
-              value={dates.from}
-              onChange={(e) => setDates((prev) => ({ ...prev, from: e.target.value }))}
-              style={{ width: 135, fontSize: 12 }}
-            />
-            <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>s/d</span>
-            <input
-              type="date"
-              className="input input-sm"
-              value={dates.to}
-              onChange={(e) => setDates((prev) => ({ ...prev, to: e.target.value }))}
-              style={{ width: 135, fontSize: 12 }}
-            />
-          </div>
-
-          {/* Outlet Filter (if multi-outlet access) */}
-          {outlets && outlets.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Store size={15} style={{ color: 'var(--text-muted)' }} />
-              <select
-                className="input input-sm"
-                value={selectedOutlet}
-                onChange={(e) => setSelectedOutlet(e.target.value)}
-                style={{ minWidth: 160, fontSize: 12 }}
-              >
-                <option value="ALL">Semua Cabang (Konsolidasi)</option>
-                {outlets.map((ot) => (
-                  <option key={ot.id} value={ot.id}>
-                    {ot.name}
-                  </option>
-                ))}
-              </select>
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+          {/* Visual Indicator of Active Scope from Global Navbar */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 14px',
+                borderRadius: 8,
+                background: 'rgba(56, 189, 248, 0.08)',
+                border: '1px solid rgba(56, 189, 248, 0.2)',
+                fontSize: 12,
+                color: '#38bdf8',
+                fontWeight: 600,
+              }}
+              title="Periode sinkron otomatis dengan filter tanggal di navbar"
+            >
+              <Calendar size={14} />
+              <span>Periode Global: <strong>{periodText}</strong></span>
             </div>
-          )}
+
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 14px',
+                borderRadius: 8,
+                background: 'rgba(16, 185, 129, 0.08)',
+                border: '1px solid rgba(16, 185, 129, 0.2)',
+                fontSize: 12,
+                color: '#34d399',
+                fontWeight: 600,
+              }}
+              title="Cabang sinkron otomatis dengan pilihan cabang di navbar"
+            >
+              <Store size={14} />
+              <span>Cabang: <strong>{outletName}</strong></span>
+            </div>
+          </div>
 
           {/* Search Input */}
-          <div style={{ marginLeft: 'auto', minWidth: 200, position: 'relative' }}>
+          <div style={{ minWidth: 260, position: 'relative' }}>
             <Search
               size={14}
               style={{
@@ -550,7 +478,7 @@ export default function SalesReport() {
             <input
               type="text"
               className="input input-sm"
-              placeholder="Cari produk / customer / kasir..."
+              placeholder="Cari data pada laporan ini..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               style={{ paddingLeft: 30, fontSize: 12, width: '100%' }}

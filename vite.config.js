@@ -4,7 +4,9 @@ export default defineConfig({
   build: {
     sourcemap: false,
     cssCodeSplit: true,
+    assetsInlineLimit: 4096,
     chunkSizeWarningLimit: 600,
+    minify: true,
     rollupOptions: {
       output: {
         manualChunks(id) {
