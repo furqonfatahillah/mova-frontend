@@ -20,7 +20,8 @@ import {
   CheckCircle2,
   DollarSign,
   Flame,
-  BadgeAlert
+  BadgeAlert,
+  X
 } from 'lucide-react';
 import { printElement } from '../utils/print';
 import {
@@ -211,6 +212,29 @@ export default function SalesReport() {
       });
     });
   }, [reportData.items, search]);
+
+  const searchPlaceholder = useMemo(() => {
+    switch (activeTab) {
+      case 'by-product':
+        return 'Cari nama produk, SKU, kategori...';
+      case 'point-redemptions':
+        return 'Cari customer, no transaksi, reward...';
+      case 'payments':
+        return 'Cari no penjualan, customer, kasir...';
+      case 'transactions':
+        return 'Cari no nota, produk, customer, kasir...';
+      case 'by-customer':
+        return 'Cari nama customer, no nota, produk...';
+      case 'peak-hours':
+        return 'Cari jam operasional atau hari...';
+      case 'customer-receivables':
+        return 'Cari nama pelanggan, nota piutang...';
+      case 'promos':
+        return 'Cari nama promo, kode voucher...';
+      default:
+        return 'Cari data pada laporan ini...';
+    }
+  }, [activeTab]);
 
   // Recalculate summary if filtered
   const activeSummary = useMemo(() => {
@@ -493,26 +517,31 @@ export default function SalesReport() {
             </div>
           </div>
 
-          {/* Search Input */}
-          <div style={{ minWidth: 260, position: 'relative' }}>
-            <Search
-              size={14}
-              style={{
-                position: 'absolute',
-                left: 10,
-                top: '50%',
-                transform: 'translateY(-50%)',
-                color: 'var(--text-muted)',
-              }}
-            />
+          {/* Themed Search Bar - MOVA Midnight Violet Design System */}
+          <div className="search-box" style={{ minWidth: 280, maxWidth: 380, flex: '1 1 280px' }}>
+            <Search size={15} className="search-box-icon" />
             <input
               type="text"
-              className="input input-sm"
-              placeholder="Cari data pada laporan ini..."
+              className="search-box-input"
+              placeholder={searchPlaceholder}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              style={{ paddingLeft: 30, fontSize: 12, width: '100%' }}
             />
+            {search && (
+              <>
+                <span className="search-box-badge">
+                  {filteredItems.length} hasil
+                </span>
+                <button
+                  type="button"
+                  className="search-box-clear"
+                  onClick={() => setSearch('')}
+                  title="Hapus pencarian (Esc)"
+                >
+                  <X size={12} />
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -1018,8 +1047,22 @@ export default function SalesReport() {
                 <tbody>
                   {filteredItems.length === 0 ? (
                     <tr>
-                      <td colSpan={compareEnabled ? 15 : 11} className="text-center" style={{ padding: 32, color: 'var(--text-muted)' }}>
-                        Tidak ada data penjualan produk untuk periode ini.
+                      <td colSpan={compareEnabled ? 15 : 11} className="text-center" style={{ padding: 36, color: 'var(--text-muted)' }}>
+                        {search ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                            <div>Tidak ada produk yang cocok dengan kata kunci <strong>"{search}"</strong>.</div>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => setSearch('')}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12 }}
+                            >
+                              <X size={12} /> Bersihkan Pencarian
+                            </button>
+                          </div>
+                        ) : (
+                          'Tidak ada data penjualan produk untuk periode ini.'
+                        )}
                       </td>
                     </tr>
                   ) : (
