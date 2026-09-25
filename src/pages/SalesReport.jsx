@@ -126,9 +126,30 @@ export default function SalesReport() {
   const businessName = currentBusiness?.name || currentUser?.business?.name || 'MOVA POS';
   const outletName = (activeOutlet && activeOutletId !== 'ALL' && activeOutletId !== 'all') ? activeOutlet.name : 'Semua Cabang (Konsolidasi)';
 
+  // Comparison & Evaluation States
+  const [compareEnabled, setCompareEnabled] = useState(false);
+  const [compareMode, setCompareMode] = useState('previous_month'); // 'previous_month' | 'previous_period' | 'previous_year' | 'custom'
+  const [customCompareFrom, setCustomCompareFrom] = useState('');
+  const [customCompareTo, setCustomCompareTo] = useState('');
+
+  // Default custom compare dates to 1 month prior
+  useEffect(() => {
+    if (period?.from && !customCompareFrom) {
+      try {
+        const dFrom = new Date(period.from);
+        dFrom.setMonth(dFrom.getMonth() - 1);
+        setCustomCompareFrom(dFrom.toISOString().slice(0, 10));
+
+        const dTo = new Date(period.to);
+        dTo.setMonth(dTo.getMonth() - 1);
+        setCustomCompareTo(dTo.toISOString().slice(0, 10));
+      } catch {}
+    }
+  }, [period]);
+
   useEffect(() => {
     fetchReport();
-  }, [activeTab, period?.from, period?.to, activeOutletId]);
+  }, [activeTab, period?.from, period?.to, activeOutletId, compareEnabled, compareMode, customCompareFrom, customCompareTo]);
 
   async function fetchReport() {
     setLoading(true);
@@ -144,14 +165,23 @@ export default function SalesReport() {
       else if (activeTab === 'promos') endpoint = '/reports/sales/promos';
 
       const targetOutlet = activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all' ? activeOutletId : undefined;
-      const { data } = await api.get(endpoint, {
-        params: {
-          from: period?.from,
-          to: period?.to,
-          outlet_id: targetOutlet,
-          search: search.trim() || undefined,
-        },
-      });
+      const params = {
+        from: period?.from,
+        to: period?.to,
+        outlet_id: targetOutlet,
+        search: search.trim() || undefined,
+      };
+
+      if (compareEnabled) {
+        params.compare = 1;
+        params.compare_with = compareMode;
+        if (compareMode === 'custom' && customCompareFrom && customCompareTo) {
+          params.compare_from = customCompareFrom;
+          params.compare_to = customCompareTo;
+        }
+      }
+
+      const { data } = await api.get(endpoint, { params });
 
       setReportData({
         items: data.items || [],
@@ -487,6 +517,271 @@ export default function SalesReport() {
         </div>
       </div>
 
+      {/* Mode Perbandingan & Evaluasi Bisnis Bar */}
+      <div
+        className="card mb-4"
+        style={{
+          padding: '14px 18px',
+          background: compareEnabled
+            ? 'linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(139, 92, 246, 0.06))'
+            : 'var(--bg-card)',
+          borderRadius: 12,
+          border: compareEnabled
+            ? '1.5px solid rgba(139, 92, 246, 0.45)'
+            : '1px solid var(--border)',
+          transition: 'all 0.2s ease',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+          {/* Left: Toggle & Info */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button
+              type="button"
+              onClick={() => setCompareEnabled(!compareEnabled)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '7px 14px',
+                borderRadius: 8,
+                fontSize: 12.5,
+                fontWeight: 700,
+                cursor: 'pointer',
+                border: '1px solid',
+                background: compareEnabled ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : 'rgba(255, 255, 255, 0.05)',
+                borderColor: compareEnabled ? '#8b5cf6' : 'rgba(165, 180, 252, 0.2)',
+                color: '#ffffff',
+                boxShadow: compareEnabled ? '0 2px 10px rgba(99, 102, 241, 0.4)' : 'none',
+                transition: 'all 0.18s ease',
+              }}
+            >
+              <TrendingUp size={15} />
+              <span>{compareEnabled ? '✓ Mode Evaluasi Aktif' : '+ Aktifkan Mode Perbandingan'}</span>
+            </button>
+
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#ffffff' }}>
+                Evaluasi Performa Bisnis & Perbandingan Periode
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                Bandingkan omzet penjualan, kuantitas produk, dan kas dengan bulan lalu atau rentang tanggal kustom.
+              </div>
+            </div>
+          </div>
+
+          {/* Right: Comparison Mode Selector (Visible when compareEnabled is true) */}
+          {compareEnabled && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>Bandingkan Dengan:</span>
+              <div style={{ display: 'flex', gap: 6, background: 'rgba(0,0,0,0.25)', padding: 3, borderRadius: 8, border: '1px solid rgba(165, 180, 252, 0.15)' }}>
+                {[
+                  { id: 'previous_month', label: '📅 Bulan Lalu (MoM)' },
+                  { id: 'previous_period', label: '🗓️ Periode Sebelumnya' },
+                  { id: 'previous_year', label: '📆 Tahun Lalu (YoY)' },
+                  { id: 'custom', label: '🎯 Tanggal Kustom' },
+                ].map((mode) => (
+                  <button
+                    key={mode.id}
+                    onClick={() => setCompareMode(mode.id)}
+                    style={{
+                      fontSize: 11.5,
+                      fontWeight: compareMode === mode.id ? 700 : 500,
+                      padding: '5px 10px',
+                      borderRadius: 6,
+                      border: 'none',
+                      cursor: 'pointer',
+                      background: compareMode === mode.id ? 'var(--accent)' : 'transparent',
+                      color: compareMode === mode.id ? '#ffffff' : 'var(--text-secondary)',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    {mode.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Custom date range picker (if custom mode is selected) */}
+        {compareEnabled && compareMode === 'custom' && (
+          <div style={{
+            marginTop: 12,
+            paddingTop: 12,
+            borderTop: '1px solid rgba(165, 180, 252, 0.12)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            flexWrap: 'wrap',
+          }}>
+            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Rentang Tanggal Pembanding:</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type="date"
+                className="form-control"
+                style={{ padding: '4px 8px', fontSize: 12, width: 140 }}
+                value={customCompareFrom}
+                onChange={(e) => setCustomCompareFrom(e.target.value)}
+              />
+              <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>s/d</span>
+              <input
+                type="date"
+                className="form-control"
+                style={{ padding: '4px 8px', fontSize: 12, width: 140 }}
+                value={customCompareTo}
+                onChange={(e) => setCustomCompareTo(e.target.value)}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Comparison Range Info Badge */}
+        {compareEnabled && activeSummary?.comparison && (
+          <div style={{
+            marginTop: 10,
+            padding: '6px 12px',
+            background: 'rgba(99, 102, 241, 0.1)',
+            borderRadius: 6,
+            fontSize: 11.5,
+            color: '#c4b5fd',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 8,
+          }}>
+            <span>
+              🔍 Membandingkan: <strong>{periodText}</strong> VS <strong>{formatIndoDate(activeSummary.comparison.period?.from)} s/d {formatIndoDate(activeSummary.comparison.period?.to)}</strong>
+            </span>
+            <span style={{ fontWeight: 700, color: '#34d399' }}>
+              ✓ Data evaluasi pertumbuhan berhasil dikalkulasi
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Comparison Growth Scorecards (Evaluasi Pertumbuhan Bisnis) */}
+      {compareEnabled && activeSummary?.comparison && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+          gap: 12,
+          marginBottom: 18,
+        }}>
+          {/* Card 1: Omzet Growth */}
+          {activeSummary.comparison.sales && (
+            <div className="card" style={{ padding: '14px 16px', background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.25)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 700 }}>
+                  Pertumbuhan Omzet
+                </span>
+                <span style={{
+                  fontSize: 11,
+                  fontWeight: 800,
+                  padding: '2px 8px',
+                  borderRadius: 6,
+                  background: activeSummary.comparison.sales.growth_pct >= 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                  color: activeSummary.comparison.sales.growth_pct >= 0 ? '#34d399' : '#f87171',
+                }}>
+                  {activeSummary.comparison.sales.growth_pct >= 0 ? '▲ +' : '▼ '}
+                  {activeSummary.comparison.sales.growth_pct}%
+                </span>
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: '#ffffff', marginTop: 6 }}>
+                {rupiah(activeSummary.comparison.sales.current)}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                Lalu: {rupiah(activeSummary.comparison.sales.previous)} ({activeSummary.comparison.sales.delta >= 0 ? '+' : ''}{rupiah(activeSummary.comparison.sales.delta)})
+              </div>
+            </div>
+          )}
+
+          {/* Card 2: Qty Sold Growth */}
+          {activeSummary.comparison.qty && (
+            <div className="card" style={{ padding: '14px 16px', background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.25)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 700 }}>
+                  Volume Produk Terjual
+                </span>
+                <span style={{
+                  fontSize: 11,
+                  fontWeight: 800,
+                  padding: '2px 8px',
+                  borderRadius: 6,
+                  background: activeSummary.comparison.qty.growth_pct >= 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                  color: activeSummary.comparison.qty.growth_pct >= 0 ? '#34d399' : '#f87171',
+                }}>
+                  {activeSummary.comparison.qty.growth_pct >= 0 ? '▲ +' : '▼ '}
+                  {activeSummary.comparison.qty.growth_pct}%
+                </span>
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: '#38bdf8', marginTop: 6 }}>
+                {activeSummary.comparison.qty.current?.toLocaleString('id-ID')}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                Lalu: {activeSummary.comparison.qty.previous?.toLocaleString('id-ID')} ({activeSummary.comparison.qty.delta >= 0 ? '+' : ''}{activeSummary.comparison.qty.delta})
+              </div>
+            </div>
+          )}
+
+          {/* Card 3: Total Transaction Growth */}
+          {activeSummary.comparison.total_transaction && (
+            <div className="card" style={{ padding: '14px 16px', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 700 }}>
+                  Total Pembayaran
+                </span>
+                <span style={{
+                  fontSize: 11,
+                  fontWeight: 800,
+                  padding: '2px 8px',
+                  borderRadius: 6,
+                  background: activeSummary.comparison.total_transaction.growth_pct >= 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                  color: activeSummary.comparison.total_transaction.growth_pct >= 0 ? '#34d399' : '#f87171',
+                }}>
+                  {activeSummary.comparison.total_transaction.growth_pct >= 0 ? '▲ +' : '▼ '}
+                  {activeSummary.comparison.total_transaction.growth_pct}%
+                </span>
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: '#34d399', marginTop: 6 }}>
+                {rupiah(activeSummary.comparison.total_transaction.current)}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                Lalu: {rupiah(activeSummary.comparison.total_transaction.previous)}
+              </div>
+            </div>
+          )}
+
+          {/* Card 4: Discount Growth */}
+          {activeSummary.comparison.discount && (
+            <div className="card" style={{ padding: '14px 16px', background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 700 }}>
+                  Diskon & Promo Diberikan
+                </span>
+                <span style={{
+                  fontSize: 11,
+                  fontWeight: 800,
+                  padding: '2px 8px',
+                  borderRadius: 6,
+                  background: 'rgba(245, 158, 11, 0.2)',
+                  color: '#fbbf24',
+                }}>
+                  {activeSummary.comparison.discount.growth_pct >= 0 ? '▲ +' : '▼ '}
+                  {activeSummary.comparison.discount.growth_pct}%
+                </span>
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: '#fbbf24', marginTop: 6 }}>
+                {rupiah(activeSummary.comparison.discount.current)}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                Lalu: {rupiah(activeSummary.comparison.discount.previous)}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Summary KPI Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 18 }}>
         {activeTab === 'by-product' && (
@@ -707,19 +1002,23 @@ export default function SalesReport() {
                     <th>Kode Produk</th>
                     <th>Nama Produk / Sub Produk</th>
                     <th className="right">Qty Terjual</th>
+                    {compareEnabled && <th className="right" style={{ color: '#c4b5fd' }}>Qty Lalu</th>}
+                    {compareEnabled && <th className="right" style={{ color: '#c4b5fd' }}>Selisih Qty</th>}
                     <th className="right">Qty Refund</th>
                     <th>Satuan</th>
                     <th className="right">Modal (HPP)</th>
                     <th className="right">Harga</th>
                     <th className="right">Disc</th>
                     <th className="right">Total Nilai Terjual</th>
+                    {compareEnabled && <th className="right" style={{ color: '#34d399' }}>Omzet Lalu</th>}
+                    {compareEnabled && <th className="center" style={{ color: '#c4b5fd' }}>Pertumbuhan %</th>}
                     <th className="right">Total Nilai Refund</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredItems.length === 0 ? (
                     <tr>
-                      <td colSpan={11} className="text-center" style={{ padding: 32, color: 'var(--text-muted)' }}>
+                      <td colSpan={compareEnabled ? 15 : 11} className="text-center" style={{ padding: 32, color: 'var(--text-muted)' }}>
                         Tidak ada data penjualan produk untuk periode ini.
                       </td>
                     </tr>
@@ -732,6 +1031,16 @@ export default function SalesReport() {
                         <td className="right" style={{ fontWeight: 700, color: '#38bdf8' }}>
                           {item.qty_sold?.toLocaleString('id-ID')}
                         </td>
+                        {compareEnabled && (
+                          <td className="right" style={{ color: '#c4b5fd' }}>
+                            {(item.compare_qty_sold || 0).toLocaleString('id-ID')}
+                          </td>
+                        )}
+                        {compareEnabled && (
+                          <td className="right" style={{ fontWeight: 700, color: (item.delta_qty || 0) >= 0 ? '#34d399' : '#f87171' }}>
+                            {(item.delta_qty || 0) > 0 ? '+' : ''}{(item.delta_qty || 0).toLocaleString('id-ID')}
+                          </td>
+                        )}
                         <td className="right" style={{ color: item.qty_refund > 0 ? '#f43f5e' : 'inherit' }}>
                           {item.qty_refund?.toLocaleString('id-ID')}
                         </td>
@@ -744,6 +1053,26 @@ export default function SalesReport() {
                         <td className="right" style={{ fontWeight: 700, color: '#34d399' }}>
                           {rupiah(item.total_sales)}
                         </td>
+                        {compareEnabled && (
+                          <td className="right" style={{ color: '#94a3b8' }}>
+                            {rupiah(item.compare_total_sales || 0)}
+                          </td>
+                        )}
+                        {compareEnabled && (
+                          <td style={{ textAlign: 'center' }}>
+                            <span style={{
+                              fontSize: 10.5,
+                              fontWeight: 800,
+                              padding: '2px 7px',
+                              borderRadius: 4,
+                              background: (item.growth_sales_pct || 0) >= 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                              color: (item.growth_sales_pct || 0) >= 0 ? '#34d399' : '#f87171',
+                            }}>
+                              {(item.growth_sales_pct || 0) >= 0 ? '▲ +' : '▼ '}
+                              {item.growth_sales_pct || 0}%
+                            </span>
+                          </td>
+                        )}
                         <td className="right" style={{ color: item.total_refund > 0 ? '#f43f5e' : 'inherit' }}>
                           {rupiah(item.total_refund)}
                         </td>
@@ -757,6 +1086,16 @@ export default function SalesReport() {
                     <td className="right" style={{ color: '#38bdf8' }}>
                       {activeSummary?.total_qty_sold?.toLocaleString('id-ID')}
                     </td>
+                    {compareEnabled && (
+                      <td className="right" style={{ color: '#c4b5fd' }}>
+                        {(activeSummary?.comparison?.qty?.previous || 0).toLocaleString('id-ID')}
+                      </td>
+                    )}
+                    {compareEnabled && (
+                      <td className="right" style={{ color: (activeSummary?.comparison?.qty?.delta || 0) >= 0 ? '#34d399' : '#f87171' }}>
+                        {(activeSummary?.comparison?.qty?.delta || 0) > 0 ? '+' : ''}{(activeSummary?.comparison?.qty?.delta || 0).toLocaleString('id-ID')}
+                      </td>
+                    )}
                     <td className="right">{activeSummary?.total_qty_refund?.toLocaleString('id-ID')}</td>
                     <td></td>
                     <td className="right">{rupiah(activeSummary?.total_modal || 0)}</td>
@@ -767,6 +1106,26 @@ export default function SalesReport() {
                     <td className="right" style={{ color: '#34d399' }}>
                       {rupiah(activeSummary?.total_sales || 0)}
                     </td>
+                    {compareEnabled && (
+                      <td className="right" style={{ color: '#94a3b8' }}>
+                        {rupiah(activeSummary?.comparison?.sales?.previous || 0)}
+                      </td>
+                    )}
+                    {compareEnabled && (
+                      <td style={{ textAlign: 'center' }}>
+                        <span style={{
+                          fontSize: 10.5,
+                          fontWeight: 800,
+                          padding: '2px 7px',
+                          borderRadius: 4,
+                          background: (activeSummary?.comparison?.sales?.growth_pct || 0) >= 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                          color: (activeSummary?.comparison?.sales?.growth_pct || 0) >= 0 ? '#34d399' : '#f87171',
+                        }}>
+                          {(activeSummary?.comparison?.sales?.growth_pct || 0) >= 0 ? '▲ +' : '▼ '}
+                          {activeSummary?.comparison?.sales?.growth_pct || 0}%
+                        </span>
+                      </td>
+                    )}
                     <td className="right">{rupiah(activeSummary?.total_refund || 0)}</td>
                   </tr>
                 </tfoot>
