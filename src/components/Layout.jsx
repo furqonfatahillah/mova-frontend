@@ -107,6 +107,7 @@ export default function Layout() {
               { to: '/menu', label: 'Master Menu & Harga', icon: UtensilsCrossed },
               { to: '/member', label: 'Master Member & Poin', icon: UserCheck },
               { to: '/outlet', label: 'Cabang Outlet', icon: Store },
+              { to: '/rekening', label: 'Rekening & Payment Gateway', icon: Landmark },
               { to: '/pos', label: 'POS / Transaksi', icon: ShoppingCart },
               { to: '/urgent-notes', label: 'Nota Urgent / Manual', icon: AlertOctagon },
               { to: '/shift', label: 'Kelola Shift', icon: Clock },
@@ -183,6 +184,7 @@ export default function Layout() {
             { to: '/member', label: 'Master Member & Poin', icon: UserCheck },
             { to: '/outlet', label: 'Tambah Cabang Outlet', icon: Store },
             { to: '/users', label: 'Kelola Manager & Pegawai', icon: Users, isUserMgmt: true },
+            { to: '/rekening', label: 'Rekening & Payment Gateway', icon: Landmark },
           ],
         },
         {
@@ -242,6 +244,7 @@ export default function Layout() {
           items: [
             { to: '/member', label: 'Master Member & Poin', icon: UserCheck },
             { to: '/users', label: 'Kelola Pegawai Cabang', icon: Users, isUserMgmt: true },
+            { to: '/rekening', label: 'Rekening Bank Cabang', icon: Landmark },
           ],
         },
         {

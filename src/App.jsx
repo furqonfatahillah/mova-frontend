@@ -38,6 +38,7 @@ const UrgentNotes = lazy(() => import('./pages/UrgentNotes'));
 const Receivables = lazy(() => import('./pages/Receivables'));
 const MasterCustomer = lazy(() => import('./pages/MasterCustomer'));
 const SalesReport = lazy(() => import('./pages/SalesReport'));
+const PaymentSettings = lazy(() => import('./pages/PaymentSettings'));
 
 function PrivateRoute({ children }) {
   const token = localStorage.getItem('pos_token');
@@ -106,6 +107,8 @@ export default function App() {
               <Route path="outlet"     element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><OutletManagement /></RoleRoute>} />
               <Route path="member"     element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'pegawai', 'platform_admin', 'owner_website', 'superadmin']}><MasterCustomer /></RoleRoute>} />
               <Route path="users"      element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><UserManagement /></RoleRoute>} />
+              <Route path="rekening"   element={<RoleRoute roles={['owner_bisnis', 'owner_outlet', 'platform_admin', 'owner_website', 'superadmin']}><PaymentSettings /></RoleRoute>} />
+              <Route path="payment-settings" element={<RoleRoute roles={['owner_bisnis', 'owner_outlet', 'platform_admin', 'owner_website', 'superadmin']}><PaymentSettings /></RoleRoute>} />
 
               {/* SaaS Platform (Superadmin / Website Owner ONLY & Tenant Coin Billing) */}
               <Route path="businesses" element={<RoleRoute roles={['platform_admin', 'superadmin', 'owner_website']}><BusinessManagement /></RoleRoute>} />
