@@ -155,7 +155,7 @@ export default function ForgotPassword() {
         {/* Header Logo */}
         <div className="auth-logo">
           <div className="auth-logo-icon">
-            <img src="/mova%20logo.svg" alt="MOVA POS Logo" />
+            <img src="/MOVA.svg" alt="MOVA POS Logo" />
           </div>
           <h1>MOVA POS</h1>
           <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>

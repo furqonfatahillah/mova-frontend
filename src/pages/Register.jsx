@@ -56,7 +56,7 @@ export default function Register() {
         setStaffForm(p => ({ ...p, business_id: data[0].id }));
         fetchOutletsForBusiness(data[0].id);
       }
-    } catch {}
+    } catch { }
   }
 
   async function fetchOutletsForBusiness(businessId) {
@@ -69,7 +69,7 @@ export default function Register() {
       } else {
         setStaffForm(p => ({ ...p, outlet_id: '' }));
       }
-    } catch {}
+    } catch { }
   }
 
   function handleBusinessChange(bId) {
@@ -229,7 +229,7 @@ export default function Register() {
       <div className="auth-card" style={{ maxWidth: 520 }}>
         <div className="auth-logo">
           <div className="auth-logo-icon">
-            <img src="/mova%20logo.svg" alt="MOVA POS Logo" />
+            <img src="/MOVA.svg" alt="MOVA POS Logo" />
           </div>
           <h1>Daftar MOVA POS</h1>
           <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 4 }}>
