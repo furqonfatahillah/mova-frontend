@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import api from '../api/client';
 import { PageHeader, LoadingState } from '../components/ui';
 import { useOutlet } from '../context/OutletContext';
@@ -29,8 +29,11 @@ import {
   Store,
   Info,
   X,
-  FileCheck,
-  Sliders
+  Smartphone,
+  Wallet,
+  Clock,
+  Send,
+  Users
 } from 'lucide-react';
 
 const POPULAR_BANKS = [
@@ -47,17 +50,28 @@ const POPULAR_BANKS = [
   { name: 'Bank Lainnya', code: 'OTHER', color: '#6366f1', gradient: 'linear-gradient(135deg, #3730a3, #6366f1)' },
 ];
 
+const POPULAR_EWALLETS = [
+  { name: 'GoPay (GoTo / GoBiz)', code: 'GOPAY', color: '#00a5cf', gradient: 'linear-gradient(135deg, #004d61, #00a5cf)' },
+  { name: 'OVO (OVO Merchant / Akun Premier)', code: 'OVO', color: '#4c2a86', gradient: 'linear-gradient(135deg, #2b1353, #4c2a86)' },
+  { name: 'DANA (DANA Bisnis / Premium)', code: 'DANA', color: '#118eea', gradient: 'linear-gradient(135deg, #0a4f82, #118eea)' },
+  { name: 'ShopeePay (Shopee Merchant)', code: 'SHOPEEPAY', color: '#ee4d2d', gradient: 'linear-gradient(135deg, #87230e, #ee4d2d)' },
+  { name: 'LinkAja (Telkomsel / BUMN)', code: 'LINKAJA', color: '#e31e24', gradient: 'linear-gradient(135deg, #7a0c10, #e31e24)' },
+];
+
 export default function PaymentSettings() {
-  const { outlets } = useOutlet();
+  const { outlets, isSuperadminPlatform, currentBusiness } = useOutlet();
   const [activeTab, setActiveTab] = useState('accounts'); // 'accounts', 'gateway', 'comparison'
+  const [accountTypeFilter, setAccountTypeFilter] = useState('ALL'); // 'ALL', 'BANK', 'EWALLET'
   const [loading, setLoading] = useState(false);
 
-  // Bank Accounts State
+  // Bank & E-Wallet Accounts State
   const [bankAccounts, setBankAccounts] = useState([]);
   const [copiedId, setCopiedId] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState(null);
+
   const [formAccount, setFormAccount] = useState({
+    account_type: 'BANK', // 'BANK' or 'EWALLET'
     bank_name: 'BCA (Bank Central Asia)',
     bank_code: 'BCA',
     account_number: '',
@@ -66,6 +80,7 @@ export default function PaymentSettings() {
     outlet_id: '',
     qr_image_url: '',
     is_primary: false,
+    payout_schedule: 'DAILY',
     notes: '',
   });
 
@@ -103,7 +118,7 @@ export default function PaymentSettings() {
       setBankAccounts(data.data || []);
     } catch (err) {
       console.error(err);
-      toast.error('Gagal memuat daftar rekening bank');
+      toast.error('Gagal memuat daftar rekening / e-wallet');
     } finally {
       setLoading(false);
     }
@@ -125,17 +140,19 @@ export default function PaymentSettings() {
     }
   }
 
-  function handleOpenCreateModal() {
+  function handleOpenCreateModal(type = 'BANK') {
     setEditingAccount(null);
     setFormAccount({
-      bank_name: 'BCA (Bank Central Asia)',
-      bank_code: 'BCA',
+      account_type: type,
+      bank_name: type === 'EWALLET' ? 'GoPay (GoTo / GoBiz)' : 'BCA (Bank Central Asia)',
+      bank_code: type === 'EWALLET' ? 'GOPAY' : 'BCA',
       account_number: '',
       account_holder: '',
       branch: '',
       outlet_id: '',
       qr_image_url: '',
       is_primary: bankAccounts.length === 0,
+      payout_schedule: 'DAILY',
       notes: '',
     });
     setModalOpen(true);
@@ -144,6 +161,7 @@ export default function PaymentSettings() {
   function handleOpenEditModal(acc) {
     setEditingAccount(acc);
     setFormAccount({
+      account_type: acc.account_type || (acc.bank_code === 'GOPAY' || acc.bank_code === 'OVO' || acc.bank_code === 'DANA' ? 'EWALLET' : 'BANK'),
       bank_name: acc.bank_name || 'BCA (Bank Central Asia)',
       bank_code: acc.bank_code || 'BCA',
       account_number: acc.account_number || '',
@@ -152,6 +170,7 @@ export default function PaymentSettings() {
       outlet_id: acc.outlet_id ? String(acc.outlet_id) : '',
       qr_image_url: acc.qr_image_url || '',
       is_primary: Boolean(acc.is_primary),
+      payout_schedule: acc.payout_schedule || 'DAILY',
       notes: acc.notes || '',
     });
     setModalOpen(true);
@@ -160,7 +179,7 @@ export default function PaymentSettings() {
   async function handleSaveAccount(e) {
     e.preventDefault();
     if (!formAccount.account_number.trim() || !formAccount.account_holder.trim()) {
-      toast.error('Nomor rekening dan nama pemilik wajib diisi');
+      toast.error('Nomor rekening / nomor HP e-wallet dan nama pemilik wajib diisi');
       return;
     }
 
@@ -172,10 +191,10 @@ export default function PaymentSettings() {
 
       if (editingAccount) {
         await api.put(`/bank-accounts/${editingAccount.id}`, payload);
-        toast.success('Data rekening berhasil diperbarui');
+        toast.success('Data rekening / e-wallet berhasil diperbarui');
       } else {
         await api.post('/bank-accounts', payload);
-        toast.success('Nomor rekening berhasil didaftarkan');
+        toast.success(formAccount.account_type === 'EWALLET' ? 'E-Wallet berhasil didaftarkan' : 'Nomor rekening berhasil didaftarkan');
       }
       setModalOpen(false);
       fetchBankAccounts();
@@ -186,21 +205,21 @@ export default function PaymentSettings() {
   }
 
   async function handleDeleteAccount(id, name) {
-    if (!window.confirm(`Yakin ingin menghapus rekening ${name}?`)) return;
+    if (!window.confirm(`Yakin ingin menghapus ${name}?`)) return;
     try {
       await api.delete(`/bank-accounts/${id}`);
-      toast.success('Nomor rekening berhasil dihapus');
+      toast.success('Data rekening berhasil dihapus');
       fetchBankAccounts();
     } catch (err) {
       console.error(err);
-      toast.error('Gagal menghapus nomor rekening');
+      toast.error('Gagal menghapus data');
     }
   }
 
   async function handleSetPrimary(id) {
     try {
       await api.patch(`/bank-accounts/${id}/set-primary`);
-      toast.success('Rekening berhasil dijadikan sebagai rekening utama');
+      toast.success('Ditetapkan sebagai rekening / e-wallet utama penerimaan dana');
       fetchBankAccounts();
     } catch (err) {
       console.error(err);
@@ -211,18 +230,18 @@ export default function PaymentSettings() {
   async function handleToggleActive(id) {
     try {
       await api.patch(`/bank-accounts/${id}/toggle-active`);
-      toast.success('Status aktif rekening diperbarui');
+      toast.success('Status aktif berhasil diperbarui');
       fetchBankAccounts();
     } catch (err) {
       console.error(err);
-      toast.error('Gagal memperbarui status aktif');
+      toast.error('Gagal memperbarui status');
     }
   }
 
   function handleCopyNumber(num, id) {
     navigator.clipboard.writeText(num);
     setCopiedId(id);
-    toast.success(`Nomor rekening ${num} disalin ke clipboard`);
+    toast.success(`Nomor ${num} disalin ke clipboard`);
     setTimeout(() => setCopiedId(null), 2000);
   }
 
@@ -273,23 +292,97 @@ export default function PaymentSettings() {
     }
   }
 
-  function getBankMeta(bankName) {
-    const found = POPULAR_BANKS.find((b) => bankName?.toUpperCase().includes(b.code));
+  function getAccountMeta(acc) {
+    const isEwallet = acc.account_type === 'EWALLET' || POPULAR_EWALLETS.some(ew => acc.bank_code === ew.code || acc.bank_name?.toUpperCase().includes(ew.code));
+    if (isEwallet) {
+      const found = POPULAR_EWALLETS.find((ew) => acc.bank_name?.toUpperCase().includes(ew.code) || acc.bank_code === ew.code);
+      return found || {
+        name: acc.bank_name,
+        code: 'EWALLET',
+        color: '#00a5cf',
+        gradient: 'linear-gradient(135deg, #004d61, #00a5cf)',
+      };
+    }
+    const found = POPULAR_BANKS.find((b) => acc.bank_name?.toUpperCase().includes(b.code) || acc.bank_code === b.code);
     return found || {
-      name: bankName,
+      name: acc.bank_name,
       code: 'BANK',
       color: '#6366f1',
       gradient: 'linear-gradient(135deg, #1e1b4b, #4338ca)',
     };
   }
 
+  const filteredAccounts = useMemo(() => {
+    if (accountTypeFilter === 'ALL') return bankAccounts;
+    return bankAccounts.filter((acc) => {
+      const isEw = acc.account_type === 'EWALLET' || POPULAR_EWALLETS.some(ew => acc.bank_code === ew.code || acc.bank_name?.toUpperCase().includes(ew.code));
+      return accountTypeFilter === 'EWALLET' ? isEw : !isEw;
+    });
+  }, [bankAccounts, accountTypeFilter]);
+
+  const bankCount = bankAccounts.filter(a => a.account_type !== 'EWALLET' && !POPULAR_EWALLETS.some(ew => a.bank_code === ew.code)).length;
+  const ewalletCount = bankAccounts.length - bankCount;
+
   return (
     <div>
       {/* Page Header */}
       <PageHeader
-        title="Rekening & Payment Gateway"
-        subtitle="Daftarkan nomor rekening bank usaha, QRIS statis outlet, dan integrasikan pembayaran QRIS & Transfer Bank otomatis via Midtrans / Xendit."
+        title="Rekening & E-Wallet Owner Bisnis"
+        subtitle="Daftarkan nomor rekening bank & e-wallet penerimaan dana untuk para owner bisnis penyewa, agar setiap transaksi penjualan langsung masuk ke rekening masing-masing owner."
       />
+
+      {/* Multi-Tenant SaaS Info Banner */}
+      <div
+        className="card mb-4"
+        style={{
+          padding: '16px 20px',
+          background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(139, 92, 246, 0.06))',
+          borderRadius: 14,
+          border: '1.5px solid rgba(139, 92, 246, 0.35)',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 14,
+        }}
+      >
+        <div
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 10,
+            background: 'rgba(139, 92, 246, 0.2)',
+            color: 'var(--accent-bright)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+            marginTop: 2,
+          }}
+        >
+          <Building2 size={20} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 14, fontWeight: 800, color: '#ffffff' }}>
+              SaaS Multi-Tenant: Alur Penyaluran Uang ke Owner Bisnis
+            </span>
+            <span
+              style={{
+                fontSize: 11,
+                padding: '2px 8px',
+                borderRadius: 6,
+                background: 'rgba(16, 185, 129, 0.2)',
+                color: '#34d399',
+                fontWeight: 700,
+              }}
+            >
+              Aktif: {currentBusiness?.name || 'Owner Bisnis'}
+            </span>
+          </div>
+          <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', margin: '6px 0 0', lineHeight: 1.6 }}>
+            Setiap owner bisnis penyewa platform MOVA POS dapat mendaftarkan nomor rekening bank (BCA, Mandiri, BRI, dll) atau akun E-Wallet (GoPay, OVO, DANA, ShopeePay). Ketika customer membayar transaksi di kasir via QRIS atau Transfer, uang akan <strong>langsung disalurkan otomatis ke rekening / e-wallet utama owner bisnis</strong> ini.
+          </p>
+        </div>
+      </div>
 
       {/* Navigation Sub-Tabs */}
       <div
@@ -320,7 +413,7 @@ export default function PaymentSettings() {
             transition: 'all 0.15s ease',
           }}
         >
-          <CreditCard size={16} /> Daftar Nomor Rekening & QRIS ({bankAccounts.length})
+          <CreditCard size={16} /> Rekening & E-Wallet ({bankAccounts.length})
         </button>
 
         <button
@@ -341,7 +434,7 @@ export default function PaymentSettings() {
             transition: 'all 0.15s ease',
           }}
         >
-          <Zap size={16} /> Payment Gateway (Midtrans / Xendit)
+          <Zap size={16} /> Integrasi Gateway (Midtrans / Xendit)
           {gatewayConfig.active_gateway !== 'none' && (
             <span
               style={{
@@ -382,11 +475,11 @@ export default function PaymentSettings() {
       </div>
 
       {/* ========================================================
-          TAB 1: DAFTAR REKENING BANK & QRIS TOKO
+          TAB 1: DAFTAR REKENING BANK & E-WALLET OWNER
           ======================================================== */}
       {activeTab === 'accounts' && (
         <div>
-          {/* Header Action Bar */}
+          {/* Header Action Bar & Filter Switcher */}
           <div
             style={{
               display: 'flex',
@@ -397,27 +490,92 @@ export default function PaymentSettings() {
               marginBottom: 18,
             }}
           >
-            <div>
-              <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: '#ffffff' }}>
-                Rekening Penerima Pembayaran Toko
-              </h3>
-              <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', margin: '4px 0 0' }}>
-                Rekening ini akan tampil di kasir POS saat memilih metode bayar Transfer Bank atau QRIS.
-              </p>
+            {/* Filter Buttons: Semua, Rekening Bank, E-Wallet */}
+            <div style={{ display: 'flex', gap: 6, background: 'rgba(0,0,0,0.25)', padding: 4, borderRadius: 10, border: '1px solid var(--border)' }}>
+              <button
+                type="button"
+                onClick={() => setAccountTypeFilter('ALL')}
+                style={{
+                  fontSize: 12,
+                  fontWeight: accountTypeFilter === 'ALL' ? 700 : 500,
+                  padding: '6px 12px',
+                  borderRadius: 7,
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: accountTypeFilter === 'ALL' ? 'var(--accent)' : 'transparent',
+                  color: accountTypeFilter === 'ALL' ? '#ffffff' : 'var(--text-secondary)',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                Semua ({bankAccounts.length})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAccountTypeFilter('BANK')}
+                style={{
+                  fontSize: 12,
+                  fontWeight: accountTypeFilter === 'BANK' ? 700 : 500,
+                  padding: '6px 12px',
+                  borderRadius: 7,
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  background: accountTypeFilter === 'BANK' ? 'var(--accent)' : 'transparent',
+                  color: accountTypeFilter === 'BANK' ? '#ffffff' : 'var(--text-secondary)',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <Landmark size={14} /> Rekening Bank ({bankCount})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAccountTypeFilter('EWALLET')}
+                style={{
+                  fontSize: 12,
+                  fontWeight: accountTypeFilter === 'EWALLET' ? 700 : 500,
+                  padding: '6px 12px',
+                  borderRadius: 7,
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  background: accountTypeFilter === 'EWALLET' ? 'var(--accent)' : 'transparent',
+                  color: accountTypeFilter === 'EWALLET' ? '#ffffff' : 'var(--text-secondary)',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <Smartphone size={14} /> E-Wallet ({ewalletCount})
+              </button>
             </div>
 
-            <button
-              className="btn btn-primary"
-              onClick={handleOpenCreateModal}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
-            >
-              <Plus size={16} /> Daftarkan Rekening Baru
-            </button>
+            {/* Action Dropdown / Buttons */}
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => handleOpenCreateModal('EWALLET')}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.3)' }}
+              >
+                <Smartphone size={15} /> + Tambah E-Wallet
+              </button>
+
+              <button
+                className="btn btn-primary"
+                onClick={() => handleOpenCreateModal('BANK')}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
+              >
+                <Plus size={16} /> + Daftarkan Rekening Bank
+              </button>
+            </div>
           </div>
 
           {loading ? (
             <LoadingState />
-          ) : bankAccounts.length === 0 ? (
+          ) : filteredAccounts.length === 0 ? (
             <div
               className="card text-center"
               style={{
@@ -439,28 +597,35 @@ export default function PaymentSettings() {
                   marginBottom: 14,
                 }}
               >
-                <Landmark size={28} />
+                <Wallet size={28} />
               </div>
               <h4 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: '#ffffff' }}>
-                Belum Ada Nomor Rekening Terdaftar
+                Belum Ada {accountTypeFilter === 'EWALLET' ? 'E-Wallet' : accountTypeFilter === 'BANK' ? 'Rekening Bank' : 'Rekening / E-Wallet'} Terdaftar
               </h4>
-              <p style={{ fontSize: 13, color: 'var(--text-secondary)', maxWidth: 440, margin: '8px auto 20px' }}>
-                Daftarkan nomor rekening bank (BCA, Mandiri, BRI, dll) atau upload QRIS toko Anda agar kasir dapat menerima pembayaran non-tunai dengan mudah.
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', maxWidth: 460, margin: '8px auto 20px' }}>
+                Daftarkan nomor rekening bank (BCA, Mandiri, BRI, dll) atau nomor HP E-Wallet (GoPay, OVO, DANA, ShopeePay) milik owner bisnis ini agar uang transaksi penjualan dapat langsung ditransfer otomatis.
               </p>
-              <button className="btn btn-primary" onClick={handleOpenCreateModal}>
-                <Plus size={16} /> Daftarkan Rekening Sekarang
-              </button>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+                <button className="btn btn-secondary" onClick={() => handleOpenCreateModal('EWALLET')}>
+                  <Smartphone size={15} /> Daftarkan E-Wallet
+                </button>
+                <button className="btn btn-primary" onClick={() => handleOpenCreateModal('BANK')}>
+                  <Plus size={16} /> Daftarkan Rekening Bank
+                </button>
+              </div>
             </div>
           ) : (
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(330px, 1fr))',
                 gap: 16,
               }}
             >
-              {bankAccounts.map((acc) => {
-                const meta = getBankMeta(acc.bank_name);
+              {filteredAccounts.map((acc) => {
+                const meta = getAccountMeta(acc);
+                const isEw = acc.account_type === 'EWALLET' || POPULAR_EWALLETS.some(ew => acc.bank_code === ew.code);
+
                 return (
                   <div
                     key={acc.id}
@@ -472,13 +637,13 @@ export default function PaymentSettings() {
                       borderRadius: 14,
                       border: acc.is_primary ? '1.5px solid #8b5cf6' : '1px solid var(--border)',
                       background: 'var(--bg-card)',
-                      boxShadow: acc.is_primary ? '0 4px 20px rgba(139, 92, 246, 0.2)' : 'none',
+                      boxShadow: acc.is_primary ? '0 4px 20px rgba(139, 92, 246, 0.25)' : 'none',
                     }}
                   >
-                    {/* Atmospheric Card Header with Bank Style Gradient */}
+                    {/* Modern Bank / E-Wallet Card Header */}
                     <div
                       style={{
-                        padding: '16px 18px',
+                        padding: '18px 20px',
                         background: meta.gradient,
                         position: 'relative',
                         color: '#ffffff',
@@ -486,10 +651,25 @@ export default function PaymentSettings() {
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div>
-                          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.8, fontWeight: 700 }}>
-                            {acc.outlet?.name ? `Cabang: ${acc.outlet.name}` : 'Semua Cabang (Global)'}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{
+                              fontSize: 10,
+                              fontWeight: 800,
+                              padding: '2px 6px',
+                              borderRadius: 4,
+                              background: 'rgba(0, 0, 0, 0.35)',
+                              color: '#ffffff',
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.06em',
+                            }}>
+                              {isEw ? '📱 E-WALLET' : '🏦 REKENING BANK'}
+                            </span>
+                            <span style={{ fontSize: 11, opacity: 0.85, fontWeight: 600 }}>
+                              {acc.outlet?.name ? `Cabang: ${acc.outlet.name}` : 'Semua Cabang'}
+                            </span>
                           </div>
-                          <div style={{ fontSize: 18, fontWeight: 800, marginTop: 4, letterSpacing: '-0.01em' }}>
+
+                          <div style={{ fontSize: 18, fontWeight: 800, marginTop: 6, letterSpacing: '-0.01em' }}>
                             {acc.bank_name}
                           </div>
                         </div>
@@ -509,38 +689,40 @@ export default function PaymentSettings() {
                               color: '#ffffff',
                             }}
                           >
-                            <Star size={12} fill="#ffffff" /> Utama
+                            <Star size={12} fill="#ffffff" /> Rekening Utama
                           </span>
                         )}
                       </div>
 
-                      {/* Chip & Wi-Fi Icon Visual Embellishment */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14, opacity: 0.85 }}>
+                      {/* Chip & Type Visual Embellishment */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, opacity: 0.9 }}>
                         <div
                           style={{
                             width: 32,
                             height: 24,
                             borderRadius: 4,
-                            background: 'rgba(255, 215, 0, 0.75)',
+                            background: isEw ? 'rgba(56, 189, 248, 0.4)' : 'rgba(255, 215, 0, 0.75)',
                             border: '1px solid rgba(255, 255, 255, 0.4)',
                           }}
                         />
-                        <div style={{ fontSize: 10, letterSpacing: '0.12em' }}>ELECTRONIC USE ONLY</div>
+                        <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                          Pencairan: {acc.payout_schedule === 'INSTANT' ? '⚡ Instan' : acc.payout_schedule === 'MANUAL' ? '📅 Manual' : '🌙 Harian (23:59)'}
+                        </div>
                       </div>
 
-                      {/* Account Number */}
+                      {/* Account Number / Phone Number */}
                       <div
                         style={{
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
                           marginTop: 12,
-                          background: 'rgba(0, 0, 0, 0.25)',
-                          padding: '6px 10px',
+                          background: 'rgba(0, 0, 0, 0.3)',
+                          padding: '7px 12px',
                           borderRadius: 8,
                         }}
                       >
-                        <span style={{ fontSize: 16, fontFamily: 'monospace', fontWeight: 700, letterSpacing: '0.08em' }}>
+                        <span style={{ fontSize: 16, fontFamily: 'monospace', fontWeight: 800, letterSpacing: '0.08em' }}>
                           {acc.account_number}
                         </span>
                         <button
@@ -558,7 +740,7 @@ export default function PaymentSettings() {
                             fontWeight: 600,
                             padding: '2px 6px',
                           }}
-                          title="Salin nomor rekening"
+                          title="Salin nomor"
                         >
                           {copiedId === acc.id ? <Check size={14} /> : <Copy size={14} />}
                           <span>{copiedId === acc.id ? 'Tersalin' : 'Salin'}</span>
@@ -567,7 +749,7 @@ export default function PaymentSettings() {
 
                       {/* Account Holder */}
                       <div style={{ fontSize: 13, fontWeight: 700, marginTop: 8, letterSpacing: '0.03em', textTransform: 'uppercase' }}>
-                        {acc.account_holder}
+                        a.n. {acc.account_holder}
                       </div>
                     </div>
 
@@ -575,9 +757,10 @@ export default function PaymentSettings() {
                     <div style={{ padding: '14px 18px' }}>
                       {acc.branch && (
                         <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                          KCP/Cabang: <strong>{acc.branch}</strong>
+                          KCP/Wilayah: <strong>{acc.branch}</strong>
                         </div>
                       )}
+
                       {acc.notes && (
                         <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 10, fontStyle: 'italic' }}>
                           "{acc.notes}"
@@ -595,7 +778,7 @@ export default function PaymentSettings() {
                             marginBottom: 10,
                           }}
                         >
-                          <QrCode size={14} /> Memiliki QRIS Stiker Terlampir
+                          <QrCode size={14} /> Memiliki QRIS Stiker Toko Terlampir
                         </div>
                       )}
 
@@ -616,7 +799,7 @@ export default function PaymentSettings() {
                               className="btn btn-secondary btn-sm"
                               onClick={() => handleSetPrimary(acc.id)}
                               style={{ fontSize: 11.5 }}
-                              title="Jadikan sebagai rekening utama toko"
+                              title="Jadikan sebagai rekening utama pencairan"
                             >
                               <Star size={12} /> Set Utama
                             </button>
@@ -639,7 +822,7 @@ export default function PaymentSettings() {
                             type="button"
                             className="btn btn-secondary btn-sm"
                             onClick={() => handleOpenEditModal(acc)}
-                            title="Edit rekening"
+                            title="Edit rekening / e-wallet"
                           >
                             <Edit2 size={13} />
                           </button>
@@ -647,7 +830,7 @@ export default function PaymentSettings() {
                             type="button"
                             className="btn btn-danger btn-sm"
                             onClick={() => handleDeleteAccount(acc.id, `${acc.bank_name} (${acc.account_number})`)}
-                            title="Hapus rekening"
+                            title="Hapus"
                           >
                             <Trash2 size={13} />
                           </button>
@@ -666,7 +849,7 @@ export default function PaymentSettings() {
           TAB 2: PAYMENT GATEWAY (MIDTRANS / XENDIT)
           ======================================================== */}
       {activeTab === 'gateway' && (
-        <div style={{ maxWidth: 840 }}>
+        <div style={{ maxWidth: 860 }}>
           {/* Diagnostic Result Banner if Connection Test was run */}
           {testResult && (
             <div
@@ -714,10 +897,10 @@ export default function PaymentSettings() {
             }}
           >
             <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: '#ffffff' }}>
-              Pilih Provider Payment Gateway
+              Pilih Provider Payment Gateway untuk Owner Bisnis
             </h3>
             <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', margin: '4px 0 16px' }}>
-              Integrasikan akun Midtrans atau Xendit agar POS kasir bisa memunculkan QRIS Dinamis otomatis (nominal pas & auto-lunas) serta Virtual Account bank.
+              Integrasikan akun Midtrans atau Xendit agar POS kasir bisa memunculkan QRIS Dinamis otomatis (nominal pas & auto-lunas) serta Virtual Account bank yang langsung disalurkan ke rekening/e-wallet owner.
             </p>
 
             {/* Provider Switcher Cards */}
@@ -804,10 +987,10 @@ export default function PaymentSettings() {
                 }}
               >
                 <div style={{ fontSize: 16, fontWeight: 800, color: '#94a3b8' }}>
-                  Manual (Tanpa Gateway)
+                  Manual (Direct Rekening & E-Wallet)
                 </div>
                 <p style={{ fontSize: 11.5, color: 'var(--text-secondary)', margin: '8px 0 0' }}>
-                  Hanya gunakan nomor rekening bank & QRIS statis stiker toko Anda. Tanpa potongan fee gateway, kasir cek manual.
+                  Hanya gunakan nomor rekening bank & QRIS statis stiker toko Anda. Tanpa potongan fee gateway, kasir cek mutasi manual.
                 </p>
               </div>
             </div>
@@ -1143,10 +1326,10 @@ export default function PaymentSettings() {
               <span style={{ fontSize: 24 }}>💡</span>
               <div>
                 <h3 style={{ fontSize: 17, fontWeight: 800, margin: 0, color: '#ffffff' }}>
-                  Rekomendasi Ahli untuk MOVA POS: Pilih Midtrans atau Xendit?
+                  Rekomendasi untuk Platform SaaS: Pilih Midtrans atau Xendit?
                 </h3>
                 <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '4px 0 0' }}>
-                  Keduanya adalah Payment Gateway berizin resmi Bank Indonesia terbaik dan terpercaya di Indonesia. Berikut panduan memilih sesuai kebutuhan spesifik usaha Anda:
+                  Kedua gateway berizin resmi Bank Indonesia ini sangat handal. Berikut panduan memilih sesuai model bisnis penyewaan software POS Anda:
                 </p>
               </div>
             </div>
@@ -1158,9 +1341,9 @@ export default function PaymentSettings() {
                   <span>🏆 PILIH MIDTRANS JIKA:</span>
                 </div>
                 <ul style={{ fontSize: 12.5, color: '#e2e8f0', margin: '8px 0 0', paddingLeft: 18, lineHeight: 1.6 }}>
-                  <li>Fokus utama adalah <strong>QRIS Kasir POS (Offline / Toko Fisik)</strong>. Midtrans bagian dari GoTo sehingga ekosistem QRIS GoPay/Shopee/Semua Bank sangat cepat.</li>
-                  <li>Ingin <strong>biaya Virtual Account lebih murah</strong> (Rp 4.000 / transaksi sukses flat).</li>
-                  <li>Ingin lingkungan <strong>Sandbox / testing paling mudah</strong> tanpa ribet syarat dokumen di awal masa uji coba.</li>
+                  <li>Fokus utama adalah <strong>QRIS Kasir POS (Offline / Toko Fisik)</strong>. Midtrans bagian dari GoTo sehingga ekosistem QRIS GoPay/Shopee/Semua Bank sangat cepat (1-2 detik auto lunas).</li>
+                  <li>Ingin <strong>biaya Virtual Account lebih hemat</strong> (Rp 4.000 / transaksi sukses flat).</li>
+                  <li>Setiap Owner Bisnis mendaftar akun Midtrans mereka sendiri (BYOK - Bring Your Own Keys) sehingga uang 100% langsung masuk ke rekening/e-wallet owner tanpa lewat rekening platform.</li>
                 </ul>
               </div>
 
@@ -1170,9 +1353,9 @@ export default function PaymentSettings() {
                   <span>🏆 PILIH XENDIT JIKA:</span>
                 </div>
                 <ul style={{ fontSize: 12.5, color: '#e2e8f0', margin: '8px 0 0', paddingLeft: 18, lineHeight: 1.6 }}>
-                  <li>Membutuhkan <strong>Disbursement / Auto-Payout otomatis</strong> (uang penjualan langsung ditransfer ke rekening pribadi owner setiap malam).</li>
-                  <li>Memiliki banyak cabang dan ingin uang penjualan cabang A masuk rekening A, cabang B masuk rekening B secara otomatis.</li>
-                  <li>Sering mengirim invoice tagihan piutang / kasbon lewat WhatsApp.</li>
+                  <li>Platform ingin <strong>Disbursement / Auto-Payout Otomatis</strong> ke rekening bank / e-wallet masing-masing owner bisnis setiap malam.</li>
+                  <li>Mendukung fitur <strong>XenPlatform (Split Payment)</strong>: jika platform ingin mengambil komisi fee SaaS per transaksi otomatis.</li>
+                  <li>Fitur tagihan WhatsApp invoice untuk pelanggan grosir/kasbon.</li>
                 </ul>
               </div>
             </div>
@@ -1211,71 +1394,29 @@ export default function PaymentSettings() {
                     <td><strong>Cepat (2-4 detik)</strong></td>
                   </tr>
                   <tr>
-                    <td style={{ fontWeight: 600 }}>Pencairan Dana (Settlement)</td>
-                    <td>H+1 / H+2 hari kerja (dapat ditarik ke rekening bank terdaftar)</td>
-                    <td><strong style={{ color: '#34d399' }}>Instan / Real-time</strong> (tersedia fitur auto-disbursement)</td>
+                    <td style={{ fontWeight: 600 }}>Penyaluran Dana ke Owner (Payout)</td>
+                    <td>H+1 / H+2 ke rekening bank owner terdaftar di Midtrans</td>
+                    <td><strong style={{ color: '#34d399' }}>Real-time / Instan</strong> (API Disbursement ke Bank &amp; E-Wallet)</td>
                   </tr>
                   <tr>
                     <td style={{ fontWeight: 600 }}>Kemudahan Pendaftaran Akun</td>
-                    <td>Sangat mudah untuk perorangan/UMKM (cukup KTP & Rekening Bank)</td>
+                    <td>Sangat mudah untuk perorangan/UMKM (cukup KTP &amp; Rekening Bank)</td>
                     <td>Mudah, namun untuk akun korporat membutuhkan dokumen legalitas lebih lengkap</td>
                   </tr>
                   <tr>
                     <td style={{ fontWeight: 600 }}>Simulator Sandbox Testing</td>
-                    <td><strong style={{ color: '#38bdf8' }}>Terbaik & Terlengkap</strong> (ada web simulator QRIS & VA langsung)</td>
+                    <td><strong style={{ color: '#38bdf8' }}>Terbaik &amp; Terlengkap</strong> (ada web simulator QRIS &amp; VA langsung)</td>
                     <td>Sangat baik melalui Dashboard test</td>
-                  </tr>
-                  <tr>
-                    <td style={{ fontWeight: 600 }}>Kesimpulan Terbaik</td>
-                    <td><strong style={{ color: '#38bdf8' }}>Paling Ideal untuk Kasir POS Offline & Toko</strong></td>
-                    <td><strong style={{ color: '#34d399' }}>Paling Ideal untuk Payout Otomatis & Tagihan WA</strong></td>
                   </tr>
                 </tbody>
               </table>
-            </div>
-          </div>
-
-          {/* Step-by-Step Setup Guide */}
-          <div className="card" style={{ padding: 22 }}>
-            <h4 style={{ margin: '0 0 14px', fontSize: 15, fontWeight: 700, color: '#ffffff' }}>
-              Cara Mendaftar & Mengambil API Key:
-            </h4>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-              {/* Midtrans steps */}
-              <div style={{ background: 'rgba(0,0,0,0.2)', padding: 16, borderRadius: 10, border: '1px solid var(--border)' }}>
-                <div style={{ fontWeight: 700, color: '#38bdf8', marginBottom: 8 }}>
-                  1. Panduan Midtrans
-                </div>
-                <ol style={{ fontSize: 12, color: 'var(--text-secondary)', paddingLeft: 18, margin: 0, lineHeight: 1.7 }}>
-                  <li>Buka <a href="https://midtrans.com" target="_blank" rel="noopener noreferrer" style={{ color: '#38bdf8' }}>midtrans.com</a> dan daftar akun gratis.</li>
-                  <li>Login ke Dashboard Midtrans. Di pojok kiri atas, pilih mode <strong>Sandbox</strong> (untuk test) atau <strong>Production</strong>.</li>
-                  <li>Buka menu <strong>Settings &gt; Access Keys</strong>.</li>
-                  <li>Salin <strong>Server Key</strong> dan <strong>Client Key</strong>.</li>
-                  <li>Tempelkan ke tab <em>Payment Gateway</em> di MOVA POS ini, lalu klik <strong>Uji Koneksi</strong>.</li>
-                </ol>
-              </div>
-
-              {/* Xendit steps */}
-              <div style={{ background: 'rgba(0,0,0,0.2)', padding: 16, borderRadius: 10, border: '1px solid var(--border)' }}>
-                <div style={{ fontWeight: 700, color: '#34d399', marginBottom: 8 }}>
-                  2. Panduan Xendit
-                </div>
-                <ol style={{ fontSize: 12, color: 'var(--text-secondary)', paddingLeft: 18, margin: 0, lineHeight: 1.7 }}>
-                  <li>Buka <a href="https://xendit.co" target="_blank" rel="noopener noreferrer" style={{ color: '#34d399' }}>xendit.co</a> dan buat akun bisnis Anda.</li>
-                  <li>Login ke Dashboard Xendit. Pilih mode <strong>Test Data</strong> atau <strong>Live Data</strong>.</li>
-                  <li>Buka menu <strong>Settings &gt; Developers &gt; API Keys</strong>.</li>
-                  <li>Klik <em>Generate Secret Key</em> dengan izin Read &amp; Write.</li>
-                  <li>Salin Secret Key ke tab <em>Payment Gateway</em> di MOVA POS ini, lalu klik <strong>Uji Koneksi</strong>.</li>
-                </ol>
-              </div>
             </div>
           </div>
         </div>
       )}
 
       {/* ========================================================
-          MODAL: DAFTAR / EDIT NOMOR REKENING BANK
+          MODAL: DAFTAR / EDIT REKENING BANK ATAU E-WALLET
           ======================================================== */}
       {modalOpen && (
         <div
@@ -1298,7 +1439,7 @@ export default function PaymentSettings() {
             className="card"
             style={{
               width: '100%',
-              maxWidth: 520,
+              maxWidth: 540,
               padding: 24,
               borderRadius: 16,
               background: 'var(--bg-surface-elevated)',
@@ -1322,10 +1463,12 @@ export default function PaymentSettings() {
                     justifyContent: 'center',
                   }}
                 >
-                  <Landmark size={18} />
+                  {formAccount.account_type === 'EWALLET' ? <Smartphone size={18} /> : <Landmark size={18} />}
                 </div>
                 <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: '#ffffff' }}>
-                  {editingAccount ? 'Edit Nomor Rekening' : 'Daftarkan Nomor Rekening Baru'}
+                  {editingAccount
+                    ? (formAccount.account_type === 'EWALLET' ? 'Edit Akun E-Wallet Owner' : 'Edit Rekening Bank Owner')
+                    : 'Daftarkan Akun Penerimaan Dana'}
                 </h3>
               </div>
               <button
@@ -1337,37 +1480,136 @@ export default function PaymentSettings() {
               </button>
             </div>
 
+            {/* Type Switcher inside Modal: Bank vs E-Wallet */}
+            {!editingAccount && (
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: 8,
+                  background: 'rgba(0, 0, 0, 0.25)',
+                  padding: 4,
+                  borderRadius: 10,
+                  marginBottom: 16,
+                  border: '1px solid var(--border)',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFormAccount({
+                      ...formAccount,
+                      account_type: 'BANK',
+                      bank_name: 'BCA (Bank Central Asia)',
+                      bank_code: 'BCA',
+                    });
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    padding: '8px',
+                    borderRadius: 8,
+                    fontSize: 12.5,
+                    fontWeight: formAccount.account_type === 'BANK' ? 700 : 500,
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: formAccount.account_type === 'BANK' ? 'var(--accent)' : 'transparent',
+                    color: formAccount.account_type === 'BANK' ? '#ffffff' : 'var(--text-secondary)',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <Landmark size={15} /> Rekening Bank
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFormAccount({
+                      ...formAccount,
+                      account_type: 'EWALLET',
+                      bank_name: 'GoPay (GoTo / GoBiz)',
+                      bank_code: 'GOPAY',
+                    });
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    padding: '8px',
+                    borderRadius: 8,
+                    fontSize: 12.5,
+                    fontWeight: formAccount.account_type === 'EWALLET' ? 700 : 500,
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: formAccount.account_type === 'EWALLET' ? 'var(--accent)' : 'transparent',
+                    color: formAccount.account_type === 'EWALLET' ? '#ffffff' : 'var(--text-secondary)',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <Smartphone size={15} /> E-Wallet (GoPay, OVO, DANA)
+                </button>
+              </div>
+            )}
+
             <form onSubmit={handleSaveAccount} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {/* Bank Selection */}
+              {/* Bank or E-Wallet Provider Selection */}
               <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label">Nama Bank *</label>
+                <label className="form-label">
+                  {formAccount.account_type === 'EWALLET' ? 'Penyedia E-Wallet *' : 'Nama Bank *'}
+                </label>
                 <select
                   className="form-control"
                   value={formAccount.bank_name}
                   onChange={(e) => {
-                    const sel = POPULAR_BANKS.find((b) => b.name === e.target.value);
-                    setFormAccount({
-                      ...formAccount,
-                      bank_name: e.target.value,
-                      bank_code: sel ? sel.code : 'OTHER',
-                    });
+                    if (formAccount.account_type === 'EWALLET') {
+                      const sel = POPULAR_EWALLETS.find((ew) => ew.name === e.target.value);
+                      setFormAccount({
+                        ...formAccount,
+                        bank_name: e.target.value,
+                        bank_code: sel ? sel.code : 'EWALLET',
+                      });
+                    } else {
+                      const sel = POPULAR_BANKS.find((b) => b.name === e.target.value);
+                      setFormAccount({
+                        ...formAccount,
+                        bank_name: e.target.value,
+                        bank_code: sel ? sel.code : 'OTHER',
+                      });
+                    }
                   }}
                 >
-                  {POPULAR_BANKS.map((b) => (
-                    <option key={b.code} value={b.name}>
-                      {b.name}
-                    </option>
-                  ))}
+                  {formAccount.account_type === 'EWALLET'
+                    ? POPULAR_EWALLETS.map((ew) => (
+                        <option key={ew.code} value={ew.name}>
+                          {ew.name}
+                        </option>
+                      ))
+                    : POPULAR_BANKS.map((b) => (
+                        <option key={b.code} value={b.name}>
+                          {b.name}
+                        </option>
+                      ))}
                 </select>
               </div>
 
-              {/* Account Number */}
+              {/* Account Number / Phone Number */}
               <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label">Nomor Rekening *</label>
+                <label className="form-label">
+                  {formAccount.account_type === 'EWALLET'
+                    ? 'Nomor Handphone Terdaftar di E-Wallet *'
+                    : 'Nomor Rekening Bank *'}
+                </label>
                 <input
                   type="text"
                   className="form-control"
-                  placeholder="Contoh: 005001005015564"
+                  placeholder={
+                    formAccount.account_type === 'EWALLET'
+                      ? 'Contoh: 081234567890 (Nomor GoPay / OVO / DANA)'
+                      : 'Contoh: 005001005015564'
+                  }
                   value={formAccount.account_number}
                   onChange={(e) => setFormAccount({ ...formAccount, account_number: e.target.value })}
                   required
@@ -1376,28 +1618,48 @@ export default function PaymentSettings() {
 
               {/* Account Holder */}
               <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label">Atas Nama Pemilik Rekening *</label>
+                <label className="form-label">
+                  {formAccount.account_type === 'EWALLET'
+                    ? 'Nama Akun / Nama Pemilik di E-Wallet *'
+                    : 'Atas Nama Pemilik Rekening *'}
+                </label>
                 <input
                   type="text"
                   className="form-control"
-                  placeholder="Contoh: PT MOVA BISNIS INDONESIA / NAMA OWNER"
+                  placeholder="Contoh: NAMA LENGKAP OWNER BISNIS"
                   value={formAccount.account_holder}
                   onChange={(e) => setFormAccount({ ...formAccount, account_holder: e.target.value })}
                   required
                 />
               </div>
 
-              {/* Branch */}
+              {/* Payout Schedule */}
               <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label">KCP / Kantor Cabang Bank (Opsional)</label>
-                <input
-                  type="text"
+                <label className="form-label">Jadwal Pencairan Dana (Payout Schedule)</label>
+                <select
                   className="form-control"
-                  placeholder="Contoh: KCP Sudirman / Cabang Makassar"
-                  value={formAccount.branch}
-                  onChange={(e) => setFormAccount({ ...formAccount, branch: e.target.value })}
-                />
+                  value={formAccount.payout_schedule}
+                  onChange={(e) => setFormAccount({ ...formAccount, payout_schedule: e.target.value })}
+                >
+                  <option value="DAILY">🌙 Harian Otomatis (Tutup Buku Setiap Malam 23:59)</option>
+                  <option value="INSTANT">⚡ Real-time (Langsung Masuk Sesaat Setelah Transaksi Kasir)</option>
+                  <option value="MANUAL">📅 Manual (Sesuai Pengajuan Tarik Dana Owner)</option>
+                </select>
               </div>
+
+              {/* Branch (Bank only) */}
+              {formAccount.account_type === 'BANK' && (
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label">KCP / Kantor Cabang Bank (Opsional)</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Contoh: KCP Sudirman / Cabang Makassar"
+                    value={formAccount.branch}
+                    onChange={(e) => setFormAccount({ ...formAccount, branch: e.target.value })}
+                  />
+                </div>
+              )}
 
               {/* Outlet Binding */}
               <div className="form-group" style={{ margin: 0 }}>
@@ -1414,18 +1676,15 @@ export default function PaymentSettings() {
                     </option>
                   ))}
                 </select>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                  Jika dipilih cabang tertentu, rekening ini hanya akan muncul saat kasir berada di cabang tersebut.
-                </span>
               </div>
 
               {/* QRIS URL / Image */}
               <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label">URL Foto / Gambar QRIS Statis Toko (Opsional)</label>
+                <label className="form-label">URL Foto / Gambar Stiker QRIS Toko (Opsional)</label>
                 <input
                   type="text"
                   className="form-control"
-                  placeholder="Contoh: https://... / URL foto QRIS stiker meja"
+                  placeholder="Contoh: https://... / URL gambar QRIS statis stiker"
                   value={formAccount.qr_image_url}
                   onChange={(e) => setFormAccount({ ...formAccount, qr_image_url: e.target.value })}
                 />
@@ -1437,7 +1696,7 @@ export default function PaymentSettings() {
                 <input
                   type="text"
                   className="form-control"
-                  placeholder="Contoh: Rekening penampungan kasir shift pagi"
+                  placeholder="Contoh: Rekening utama penerimaan kasir"
                   value={formAccount.notes}
                   onChange={(e) => setFormAccount({ ...formAccount, notes: e.target.value })}
                 />
@@ -1462,7 +1721,7 @@ export default function PaymentSettings() {
                   onChange={(e) => setFormAccount({ ...formAccount, is_primary: e.target.checked })}
                 />
                 <span style={{ fontSize: 12.5, fontWeight: 600, color: '#ffffff' }}>
-                  Jadikan sebagai Rekening Utama Penerima Pembayaran
+                  Jadikan sebagai Rekening / E-Wallet Utama Penerimaan Dana Transaksi
                 </span>
               </label>
 
@@ -1472,7 +1731,11 @@ export default function PaymentSettings() {
                   Batal
                 </button>
                 <button type="submit" className="btn btn-primary">
-                  {editingAccount ? 'Simpan Perubahan' : 'Daftarkan Rekening'}
+                  {editingAccount
+                    ? 'Simpan Perubahan'
+                    : formAccount.account_type === 'EWALLET'
+                    ? 'Daftarkan E-Wallet'
+                    : 'Daftarkan Rekening'}
                 </button>
               </div>
             </form>
