@@ -71,16 +71,25 @@ export default function CashFlow() {
       : undefined;
 
     if (type === 'SALES_INFLOW') {
-      setDetailModal({ open: true, type: 'SALES_INFLOW', title: 'Rincian Kas Masuk dari Penjualan Kasir (POS)', loading: true, items: [], extraData: statementData?.operating?.inflows });
+      setDetailModal({ open: true, type: 'SALES_INFLOW', title: 'Rincian Kas Masuk dari Penjualan Langsung Kasir (POS)', loading: true, items: [], extraData: statementData?.operating?.inflows });
       try {
         const res = await api.get('/transactions', {
-          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet, status: 'PAID', limit: 200 }
+          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet, status: 'PAID', exclude_kasbon: 1, limit: 200 }
         });
         setDetailModal(p => ({ ...p, loading: false, items: res.data?.data || res.data || [] }));
       } catch {
         toast.error('Gagal memuat rincian transaksi kasir');
         setDetailModal(p => ({ ...p, loading: false }));
       }
+    } else if (type === 'RECEIVABLE_INFLOW') {
+      setDetailModal({
+        open: true,
+        type: 'RECEIVABLE_INFLOW',
+        title: 'Rincian Kas Masuk dari Pembayaran / Pelunasan Kasbon Pelanggan',
+        loading: false,
+        items: statementData?.operating?.inflows?.receivable_payments || [],
+        extraData: statementData?.operating?.inflows?.receivable_breakdown,
+      });
     } else if (type === 'PURCHASES_OUTFLOW') {
       setDetailModal({ open: true, type: 'PURCHASES_OUTFLOW', title: 'Rincian Kas Keluar untuk Pembelian Stok Bahan Baku', loading: true, items: [], extraData: statementData?.operating?.top_purchases });
       try {
@@ -300,6 +309,9 @@ export default function CashFlow() {
     if (!detailModal.items || detailModal.type !== 'SALES_INFLOW') return [];
     const map = new Map();
     detailModal.items.forEach(t => {
+      const pm = (t.payment_method || t.payment_type || 'CASH').toUpperCase();
+      if (pm === 'KASBON' || pm === 'PIUTANG') return;
+
       const key = t.order_number || `TRX-${t.id}`;
       if (!map.has(key)) {
         map.set(key, {
@@ -696,16 +708,36 @@ export default function CashFlow() {
                   <tr
                     style={{ borderBottom: '1px dashed rgba(255, 255, 255, 0.06)', cursor: 'pointer' }}
                     onClick={(e) => { e.stopPropagation(); handleCardClick('SALES_INFLOW'); }}
-                    title="Klik untuk melihat rincian transaksi kas masuk penjualan kasir"
+                    title="Klik untuk melihat rincian transaksi kas masuk penjualan langsung kasir"
                   >
                     <td style={{ padding: '6px 0 6px 16px', color: '#cbd5e1' }}>
-                      Penerimaan Kas dari Penjualan Kasir (Tunai, QRIS, Transfer, EDC)
+                      Penerimaan Kas dari Penjualan Langsung Kasir (Tunai, QRIS, Transfer, EDC)
                       <span style={{ fontSize: 11, color: '#38bdf8', marginLeft: 8, background: 'rgba(56, 189, 248, 0.12)', padding: '2px 6px', borderRadius: 4 }}>
-                        🔍 Rincian Penjualan
+                        🔍 Rincian Penjualan Langsung
                       </span>
                     </td>
                     <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 600, color: '#34d399' }}>
-                      {rupiah(op.inflows?.cash_sales + op.inflows?.qris_sales + op.inflows?.transfer_sales + op.inflows?.debit_sales + (op.inflows?.other_sales || 0))}
+                      {rupiah(op.inflows?.direct_sales_total != null ? op.inflows?.direct_sales_total : (op.inflows?.cash_sales + op.inflows?.qris_sales + op.inflows?.transfer_sales + op.inflows?.debit_sales + (op.inflows?.other_sales || 0)))}
+                    </td>
+                  </tr>
+                  <tr
+                    style={{ borderBottom: '1px dashed rgba(255, 255, 255, 0.06)', cursor: 'pointer' }}
+                    onClick={(e) => { e.stopPropagation(); handleCardClick('RECEIVABLE_INFLOW'); }}
+                    title="Klik untuk melihat rincian uang kas masuk dari pembayaran / pelunasan kasbon pelanggan"
+                  >
+                    <td style={{ padding: '6px 0 6px 16px', color: '#cbd5e1' }}>
+                      Penerimaan Kas dari Pembayaran Kasbon Pelanggan (Pelunasan Piutang)
+                      <span style={{ fontSize: 11, color: '#a78bfa', marginLeft: 8, background: 'rgba(167, 139, 250, 0.12)', padding: '2px 6px', borderRadius: 4 }}>
+                        🔍 Rincian Kasbon Terbayar
+                      </span>
+                      {op.inflows?.unpaid_kasbon_omzet > 0 && (
+                        <span style={{ fontSize: 10.5, color: '#f59e0b', marginLeft: 8, background: 'rgba(245, 158, 11, 0.12)', padding: '1px 6px', borderRadius: 4 }}>
+                          Kasbon baru belum lunas ({rupiah(op.inflows?.unpaid_kasbon_omzet)}) tidak dihitung kas
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 600, color: '#34d399' }}>
+                      {rupiah(op.inflows?.receivable_collections || 0)}
                     </td>
                   </tr>
                   {op.inflows?.extra_income > 0 && (
@@ -1590,6 +1622,107 @@ export default function CashFlow() {
                               <tr>
                                 <td colSpan={7} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)' }}>
                                   Tidak ada transaksi kasir pada periode ini.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+
+                  {/* TYPE: RECEIVABLE_INFLOW */}
+                  {detailModal.type === 'RECEIVABLE_INFLOW' && (
+                    <>
+                      {/* Summary Cards */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
+                        <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                          <div style={{ fontSize: 11, color: '#a7f3d0' }}>Pembayaran Tunai</div>
+                          <div style={{ fontSize: 15, fontWeight: 800, color: '#34d399', marginTop: 2 }}>
+                            {rupiah(detailModal.extraData?.cash || 0)}
+                          </div>
+                        </div>
+                        <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(168, 85, 247, 0.2)' }}>
+                          <div style={{ fontSize: 11, color: '#e9d5ff' }}>Transfer Bank</div>
+                          <div style={{ fontSize: 15, fontWeight: 800, color: '#c084fc', marginTop: 2 }}>
+                            {rupiah(detailModal.extraData?.transfer || 0)}
+                          </div>
+                        </div>
+                        <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
+                          <div style={{ fontSize: 11, color: '#bae6fd' }}>QRIS / Debit</div>
+                          <div style={{ fontSize: 15, fontWeight: 800, color: '#38bdf8', marginTop: 2 }}>
+                            {rupiah((detailModal.extraData?.qris || 0) + (detailModal.extraData?.debit || 0))}
+                          </div>
+                        </div>
+                        <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.15)' }}>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Kas Masuk Kasbon</div>
+                          <div style={{ fontSize: 16, fontWeight: 900, color: '#34d399', marginTop: 2 }}>
+                            {rupiah(op.inflows?.receivable_collections || 0)}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', background: 'rgba(168, 85, 247, 0.08)', border: '1px solid rgba(168, 85, 247, 0.2)', padding: '10px 14px', borderRadius: 6 }}>
+                        💡 <strong>Prinsip Arus Kas Riil:</strong> Penjualan kasbon saat nota dibuat <em>TIDAK</em> masuk ke Arus Kas karena uang belum diterima. Uang hanya diakui masuk ke Arus Kas ketika pelanggan benar-benar membayar/mencicil kasbon tersebut di kasir.
+                      </div>
+
+                      <div className="table-responsive" style={{ maxHeight: 340, overflowY: 'auto' }}>
+                        <table className="table" style={{ fontSize: 12 }}>
+                          <thead>
+                            <tr>
+                              <th>No. Bukti Bayar</th>
+                              <th>No. Kasbon</th>
+                              <th>Tanggal Bayar</th>
+                              <th>Nama Pelanggan</th>
+                              <th>Metode Bayar</th>
+                              <th>Penerima (Kasir)</th>
+                              <th>Keterangan / Catatan</th>
+                              <th style={{ textAlign: 'right' }}>Nominal Kas Masuk</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {detailModal.items && detailModal.items.length > 0 ? (
+                              detailModal.items.map((item, idx) => (
+                                <tr key={item.id || idx}>
+                                  <td className="mono" style={{ color: '#38bdf8', fontWeight: 600 }}>
+                                    {item.payment_no}
+                                  </td>
+                                  <td className="mono" style={{ color: '#cbd5e1' }}>
+                                    {item.receivable_no || '-'}
+                                  </td>
+                                  <td>{item.payment_date}</td>
+                                  <td style={{ fontWeight: 600, color: '#f8fafc' }}>
+                                    {item.customer_name}
+                                  </td>
+                                  <td>
+                                    <span
+                                      style={{
+                                        padding: '2px 7px',
+                                        borderRadius: 4,
+                                        background: 'rgba(255, 255, 255, 0.08)',
+                                        fontWeight: 700,
+                                        fontSize: 11,
+                                        color: item.payment_method === 'CASH' ? '#34d399' : '#38bdf8'
+                                      }}
+                                    >
+                                      {item.payment_method}
+                                    </span>
+                                  </td>
+                                  <td style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                                    {item.receiver_name}
+                                  </td>
+                                  <td style={{ fontSize: 11.5, color: '#cbd5e1', maxWidth: 180 }}>
+                                    {item.notes || '-'}
+                                  </td>
+                                  <td style={{ textAlign: 'right', fontWeight: 700, color: '#34d399', fontSize: 13 }}>
+                                    {rupiah(item.amount)}
+                                  </td>
+                                </tr>
+                              ))
+                            ) : (
+                              <tr>
+                                <td colSpan={8} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)' }}>
+                                  Tidak ada catatan pembayaran kasbon pelanggan pada periode ini.
                                 </td>
                               </tr>
                             )}
