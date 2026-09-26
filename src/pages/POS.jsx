@@ -225,7 +225,7 @@ export default function POS() {
     setLoading(true);
     try {
       const [m, t, i, s, ob, disc, urg] = await Promise.all([
-        api.get('/menus'),
+        api.get('/menus', { params: { for_pos: true } }),
         api.get('/transactions', { params: { outlet_id: currentTargetOutlet, status: 'PAID', limit: 30 } }),
         api.get('/ingredients', { params: { outlet_id: currentTargetOutlet } }),
         api.get('/shifts/active', { params: { outlet_id: currentTargetOutlet } }),
@@ -233,7 +233,7 @@ export default function POS() {
         api.get('/discounts/available', { params: { outlet_id: currentTargetOutlet } }).catch(() => ({ data: [] })),
         api.get('/urgent-notes/summary', { params: { outlet_id: currentTargetOutlet } }).catch(() => ({ data: { pending_count: 0 } })),
       ]);
-      setMenus(m.data.filter(x => x.active));
+      setMenus(m.data);
       setTransactions(t.data.slice(0, 30));
       setIngredients(i.data);
       setActiveShift(s.data);
