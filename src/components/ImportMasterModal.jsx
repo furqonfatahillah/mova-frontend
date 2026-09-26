@@ -18,6 +18,72 @@ async function getXLSX() {
   return await import('xlsx');
 }
 
+function levenshtein(a, b) {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const matrix = [];
+  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        );
+      }
+    }
+  }
+  return matrix[b.length][a.length];
+}
+
+const UNIT_ALIAS_MAP = {
+  kg: 'kg', kgg: 'kg', kilo: 'kg', kilogram: 'kg', kilograms: 'kg', kgs: 'kg',
+  gram: 'gram', gr: 'gram', g: 'gram', gramm: 'gram', grm: 'gram', grams: 'gram',
+  liter: 'liter', ltr: 'liter', lt: 'liter', liters: 'liter', l: 'liter',
+  ml: 'ml', mll: 'ml', mililiter: 'ml', milliliter: 'ml', cc: 'ml',
+  pcs: 'pcs', pc: 'pcs', pcss: 'pcs', piece: 'pcs', pieces: 'pcs', buah: 'pcs', biji: 'pcs', butir: 'pcs', btr: 'pcs',
+  lembar: 'lembar', lbr: 'lembar', sheet: 'lembar', sheets: 'lembar',
+  slop: 'slop', slp: 'slop', slopp: 'slop',
+  pack: 'pack', pck: 'pack', pak: 'pack', paket: 'pack', pax: 'pack',
+  roll: 'roll', rol: 'roll', gulung: 'roll',
+  botol: 'botol', btl: 'botol', bottle: 'botol',
+  cup: 'cup', gelas: 'cup', cangkir: 'cup',
+  dus: 'dus', karton: 'dus', kardus: 'dus', ctn: 'dus', box: 'dus',
+  can: 'can', kaleng: 'can', klg: 'can',
+  sachet: 'sachet', sct: 'sachet', bungkus: 'sachet', bks: 'sachet',
+  porsi: 'porsi', portion: 'porsi', prs: 'porsi',
+  sdm: 'sdm', sdt: 'sdt',
+};
+
+const STANDARD_UNITS = ['kg', 'gram', 'liter', 'ml', 'pcs', 'lembar', 'slop', 'pack', 'roll', 'botol', 'cup', 'dus', 'can', 'sachet', 'porsi', 'sdm', 'sdt'];
+
+export function normalizeUnitClient(raw, fallback = 'pcs') {
+  const original = String(raw || '').trim();
+  if (!original) return { symbol: fallback, original: '', isFixed: false, isNew: false };
+  const clean = original.toLowerCase().replace(/[^a-z0-9_\-\s]/g, '').replace(/\s+/g, ' ').trim();
+  if (!clean) return { symbol: fallback, original, isFixed: false, isNew: false };
+
+  if (UNIT_ALIAS_MAP[clean]) {
+    const symbol = UNIT_ALIAS_MAP[clean];
+    return { symbol, original, isFixed: clean !== symbol, isNew: false };
+  }
+
+  // Fuzzy check Levenshtein distance <= 1 for close typos
+  for (const sym of STANDARD_UNITS) {
+    if (levenshtein(clean, sym) <= 1) {
+      return { symbol: sym, original, isFixed: true, isNew: false };
+    }
+  }
+
+  // New custom unit
+  return { symbol: clean, original, isFixed: false, isNew: true };
+}
+
 /**
  * Reusable Excel Import Modal Component for MOVA POS Master Data
  */
@@ -34,6 +100,7 @@ export default function ImportMasterModal({
   const [loadingFile, setLoadingFile] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [importResult, setImportResult] = useState(null);
+  const [previewFilter, setPreviewFilter] = useState('ALL');
 
   if (!isOpen) return null;
 
@@ -141,9 +208,20 @@ export default function ImportMasterModal({
           const category = getVal(row, ['kategori', 'category']) || 'BAHAN_BAKU';
           const typeRaw = getVal(row, ['tipe', 'tipebahan', 'type']);
           const type = (typeRaw && typeRaw.toUpperCase().includes('SEMI')) ? 'SEMI_FINISHED' : 'RAW';
-          const unitBeli = getVal(row, ['satuanbeli', 'unitbeli']) || 'kg';
-          const unitPakai = getVal(row, ['satuanpakai', 'unitpakai']) || 'gram';
-          const konversi = parseFloat(getVal(row, ['konversi', 'faktorkonversi'])) || 1;
+          const rawUnitBeli = getVal(row, ['satuanbeli', 'unitbeli']);
+          const rawUnitPakai = getVal(row, ['satuanpakai', 'unitpakai']);
+          const uBeli = normalizeUnitClient(rawUnitBeli, 'kg');
+          const uPakai = normalizeUnitClient(rawUnitPakai, 'gram');
+
+          let konversi = parseFloat(getVal(row, ['konversi', 'faktorkonversi'])) || 0;
+          if (konversi <= 0 || (konversi === 1 && uBeli.symbol !== uPakai.symbol)) {
+            if (uBeli.symbol === 'kg' && uPakai.symbol === 'gram') konversi = 1000;
+            else if (uBeli.symbol === 'liter' && uPakai.symbol === 'ml') konversi = 1000;
+            else if (uBeli.symbol === 'slop' && uPakai.symbol === 'pcs') konversi = 50;
+            else if (uBeli.symbol === 'pack' && (uPakai.symbol === 'pcs' || uPakai.symbol === 'lembar')) konversi = uPakai.symbol === 'lembar' ? 200 : 100;
+            else if (konversi <= 0) konversi = 1;
+          }
+
           const harga = parseFloat(getVal(row, ['hargabeli', 'harga', 'hargasatuan'])) || 0;
           const minStock = parseFloat(getVal(row, ['stokminimal', 'minstok'])) || 0;
           const initialStock = parseFloat(getVal(row, ['stokawal', 'stok'])) || 0;
@@ -152,15 +230,39 @@ export default function ImportMasterModal({
           if (!name) errors.push('Nama bahan wajib diisi.');
           if (harga < 0) errors.push('Harga beli tidak boleh negatif.');
 
-          mappedData = { code, name, category, type, unit_beli: unitBeli, unit_pakai: unitPakai, konversi, harga, minstok: minStock, initial_stock: initialStock, notes };
+          mappedData = {
+            code,
+            name,
+            category,
+            type,
+            unit_beli: uBeli.symbol,
+            unit_pakai: uPakai.symbol,
+            konversi,
+            harga,
+            minstok: minStock,
+            initial_stock: initialStock,
+            notes,
+            _uBeli: uBeli,
+            _uPakai: uPakai,
+          };
 
         } else if (currentMasterType === 'PERLENGKAPAN') {
           const name = getVal(row, ['namaperlengkapan', 'namabarang', 'nama', 'perlengkapan', 'item']);
           const code = getVal(row, ['kodeperlengkapan', 'kode', 'code']);
           const category = getVal(row, ['kategori', 'category']) || 'Perlengkapan';
-          const unitBeli = getVal(row, ['satuanbeli', 'unitbeli']) || 'Slop';
-          const unitPakai = getVal(row, ['satuanpakai', 'unitpakai']) || 'pcs';
-          const konversi = parseFloat(getVal(row, ['konversi', 'faktorkonversi'])) || 1;
+          const rawUnitBeli = getVal(row, ['satuanbeli', 'unitbeli']);
+          const rawUnitPakai = getVal(row, ['satuanpakai', 'unitpakai']);
+          const uBeli = normalizeUnitClient(rawUnitBeli, 'Slop');
+          const uPakai = normalizeUnitClient(rawUnitPakai, 'pcs');
+
+          let konversi = parseFloat(getVal(row, ['konversi', 'faktorkonversi'])) || 0;
+          if (konversi <= 0 || (konversi === 1 && uBeli.symbol !== uPakai.symbol)) {
+            if (uBeli.symbol === 'slop' && uPakai.symbol === 'pcs') konversi = 50;
+            else if (uBeli.symbol === 'pack' && (uPakai.symbol === 'pcs' || uPakai.symbol === 'lembar')) konversi = uPakai.symbol === 'lembar' ? 200 : 100;
+            else if (uBeli.symbol === 'kg' && uPakai.symbol === 'gram') konversi = 1000;
+            else if (konversi <= 0) konversi = 1;
+          }
+
           const harga = parseFloat(getVal(row, ['hargabeli', 'harga', 'hargasatuan'])) || 0;
           const minStock = parseFloat(getVal(row, ['stokminimal', 'minstok'])) || 0;
           const initialStock = parseFloat(getVal(row, ['stokawal', 'stok'])) || 0;
@@ -176,14 +278,16 @@ export default function ImportMasterModal({
             name,
             category,
             type: 'RAW',
-            unit_beli: unitBeli,
-            unit_pakai: unitPakai,
+            unit_beli: uBeli.symbol,
+            unit_pakai: uPakai.symbol,
             konversi,
             harga,
             minstok: minStock,
             initial_stock: initialStock,
             tolerance,
-            notes: notes || 'Imported Perlengkapan from Excel'
+            notes: notes || 'Imported Perlengkapan from Excel',
+            _uBeli: uBeli,
+            _uPakai: uPakai,
           };
 
         } else if (currentMasterType === 'MENU') {
@@ -285,6 +389,18 @@ export default function ImportMasterModal({
 
   const validCount = parsedRows.filter(r => r.isValid).length;
   const invalidCount = parsedRows.length - validCount;
+  const attentionCount = parsedRows.filter(r => !r.isValid || r.data._uBeli?.isFixed || r.data._uPakai?.isFixed || r.data._uBeli?.isNew || r.data._uPakai?.isNew).length;
+  const cleanValidCount = Math.max(0, validCount - attentionCount);
+
+  const displayedRows = parsedRows.filter(r => {
+    if (previewFilter === 'ATTENTION') {
+      return !r.isValid || r.data._uBeli?.isFixed || r.data._uPakai?.isFixed || r.data._uBeli?.isNew || r.data._uPakai?.isNew;
+    }
+    if (previewFilter === 'VALID') {
+      return r.isValid && !r.data._uBeli?.isFixed && !r.data._uPakai?.isFixed && !r.data._uBeli?.isNew && !r.data._uPakai?.isNew;
+    }
+    return true;
+  });
 
   return (
     <div className="modal-backdrop fade-in" style={{
@@ -459,6 +575,48 @@ export default function ImportMasterModal({
               </div>
             </div>
 
+            {/* Interactive Preview Filter Tabs */}
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className={`btn btn-sm ${previewFilter === 'ALL' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setPreviewFilter('ALL')}
+                style={{ fontSize: '11px', padding: '4px 10px', borderRadius: '6px' }}
+              >
+                Semua Baris ({parsedRows.length})
+              </button>
+              {attentionCount > 0 && (
+                <button
+                  type="button"
+                  className={`btn btn-sm ${previewFilter === 'ATTENTION' ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setPreviewFilter('ATTENTION')}
+                  style={{
+                    fontSize: '11px',
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    color: previewFilter === 'ATTENTION' ? '#fff' : '#f59e0b',
+                    borderColor: 'rgba(245, 158, 11, 0.5)',
+                    background: previewFilter === 'ATTENTION' ? undefined : 'rgba(245, 158, 11, 0.08)'
+                  }}
+                >
+                  ⚡ Perlu Perhatian / Auto-Fix ({attentionCount})
+                </button>
+              )}
+              <button
+                type="button"
+                className={`btn btn-sm ${previewFilter === 'VALID' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setPreviewFilter('VALID')}
+                style={{
+                  fontSize: '11px',
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  color: previewFilter === 'VALID' ? '#fff' : '#4ade80'
+                }}
+              >
+                ✓ Standar Bersih ({cleanValidCount})
+              </button>
+            </div>
+
             <div style={{ maxHeight: '220px', overflowY: 'auto', borderRadius: '10px', border: '1px solid var(--border)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                 <thead>
@@ -470,15 +628,43 @@ export default function ImportMasterModal({
                   </tr>
                 </thead>
                 <tbody>
-                  {parsedRows.map((row, idx) => (
+                  {displayedRows.map((row, idx) => (
                     <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: row.isValid ? undefined : 'rgba(239, 68, 68, 0.08)' }}>
                       <td style={{ padding: '8px 12px', color: 'var(--text-muted)' }}>{row.rowNumber}</td>
                       <td style={{ padding: '8px 12px', fontWeight: 700, color: '#ffffff' }}>
                         {row.data.name || row.data.customer_name || '—'}
                       </td>
                       <td style={{ padding: '8px 12px', color: 'var(--text-secondary)', fontSize: '11px' }}>
-                        {currentMasterType === 'INGREDIENT' && `${row.data.type} · Satuan: ${row.data.unit_beli}/${row.data.unit_pakai} · ${rupiah(row.data.harga)}`}
-                        {currentMasterType === 'PERLENGKAPAN' && `${row.data.category} · Satuan: ${row.data.unit_beli}/${row.data.unit_pakai} (1 ${row.data.unit_beli} = ${row.data.konversi} ${row.data.unit_pakai}) · ${rupiah(row.data.harga)}`}
+                        {currentMasterType === 'INGREDIENT' && (
+                          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+                            <span>{row.data.type} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · {rupiah(row.data.harga)}</span>
+                            {(row.data._uBeli?.isFixed || row.data._uPakai?.isFixed) && (
+                              <span style={{ background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }} title="Typo/singkatan otomatis diperbaiki ke format standar">
+                                ✓ Auto-Fix ({row.data._uBeli?.isFixed ? row.data._uBeli.original : ''}{row.data._uPakai?.isFixed ? ` / ${row.data._uPakai.original}` : ''})
+                              </span>
+                            )}
+                            {(row.data._uBeli?.isNew || row.data._uPakai?.isNew) && (
+                              <span style={{ background: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }} title="Satuan baru otomatis didaftarkan ke Master Satuan">
+                                ✨ Satuan Baru
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {currentMasterType === 'PERLENGKAPAN' && (
+                          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+                            <span>{row.data.category} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · {rupiah(row.data.harga)}</span>
+                            {(row.data._uBeli?.isFixed || row.data._uPakai?.isFixed) && (
+                              <span style={{ background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }} title="Typo/singkatan otomatis diperbaiki ke format standar">
+                                ✓ Auto-Fix ({row.data._uBeli?.isFixed ? row.data._uBeli.original : ''}{row.data._uPakai?.isFixed ? ` / ${row.data._uPakai.original}` : ''})
+                              </span>
+                            )}
+                            {(row.data._uBeli?.isNew || row.data._uPakai?.isNew) && (
+                              <span style={{ background: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }} title="Satuan baru otomatis didaftarkan ke Master Satuan">
+                                ✨ Satuan Baru
+                              </span>
+                            )}
+                          </div>
+                        )}
                         {currentMasterType === 'MENU' && `${row.data.category} · ${row.data.item_type} · ${rupiah(row.data.price)}`}
                         {currentMasterType === 'RECEIVABLE' && `Total: ${rupiah(row.data.total_amount)} · DP: ${rupiah(row.data.initial_paid)}`}
                         {currentMasterType === 'OUTLET' && `${row.data.type} · PIC: ${row.data.pic_name || '—'} · ${row.data.phone || ''}`}
