@@ -7,7 +7,6 @@ import {
   RefreshCw,
   CheckCircle2,
   AlertCircle,
-  HelpCircle,
   Calendar,
   Building2,
   TrendingUp,
@@ -16,6 +15,8 @@ import {
   ArrowRight,
   Info,
   Sparkles,
+  Layers,
+  Store,
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, LoadingState, PageHeader } from '../components/ui';
@@ -25,7 +26,7 @@ import { exportBalanceSheetToExcel, printBalanceSheetReport } from '../utils/exp
 import toast from 'react-hot-toast';
 
 export default function Neraca() {
-  const { activeOutletId, activeOutlet, outlets, currentBusiness } = useOutlet();
+  const { activeOutletId, activeOutlet, currentBusiness } = useOutlet();
 
   const [dateFrom, setDateFrom] = useState(() => getMonthStartStr());
   const [dateTo, setDateTo] = useState(() => getMonthEndStr());
@@ -34,7 +35,7 @@ export default function Neraca() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [neracaData, setNeracaData] = useState(null);
-  const [viewMode, setViewMode] = useState('stacked'); // 'stacked' (sesuai gambar) | 'two_column' (skontro)
+  const [viewMode, setViewMode] = useState('stacked'); // 'stacked' | 'two_column'
 
   // Handle Preset Period Changes
   const handlePeriodChange = (val) => {
@@ -130,293 +131,350 @@ export default function Neraca() {
   }, [neracaData, dateFrom, dateTo]);
 
   return (
-    <div className="space-y-6 pb-16 max-w-7xl mx-auto px-2 sm:px-4">
-      {/* Top Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-700/40 pb-5">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-              <Scale className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2">
-                Laporan Neraca (Balance Sheet)
-              </h1>
-              <p className="text-xs sm:text-sm text-slate-400 italic">
-                {periodSubtitle} — {neracaData?.period?.outlet_name || 'Semua Cabang'}
-              </p>
-            </div>
-          </div>
-        </div>
+    <div className="fade-in" style={{ paddingBottom: 60 }}>
+      {/* 1. Page Header & Actions */}
+      <div className="flex-between mb-4 flex-wrap gap-3">
+        <PageHeader
+          title="Laporan Neraca (Balance Sheet)"
+          subtitle="Posisi Keuangan Komprehensif: Aset (Aktiva), Liabilitas (Kewajiban), dan Modal (Ekuitas) sesuai Standar Akuntansi Keuangan."
+        />
 
-        {/* Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="bg-slate-800/80 p-0.5 rounded-lg border border-slate-700/60 hidden sm:flex">
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* View Mode Toggle Switch */}
+          <div
+            style={{
+              display: 'inline-flex',
+              background: 'rgba(15, 20, 41, 0.8)',
+              border: '1px solid var(--border)',
+              borderRadius: 8,
+              padding: 3,
+              gap: 4,
+            }}
+          >
             <button
+              type="button"
               onClick={() => setViewMode('stacked')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                viewMode === 'stacked'
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
+              className={`btn btn-sm ${viewMode === 'stacked' ? 'btn-primary' : 'btn-ghost'}`}
+              style={{ padding: '4px 10px', fontSize: 12 }}
             >
               Format Standar
             </button>
             <button
+              type="button"
               onClick={() => setViewMode('two_column')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                viewMode === 'two_column'
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
+              className={`btn btn-sm ${viewMode === 'two_column' ? 'btn-primary' : 'btn-ghost'}`}
+              style={{ padding: '4px 10px', fontSize: 12 }}
             >
               Format Skontro (2 Kolom)
             </button>
           </div>
 
           <button
+            className="btn btn-secondary btn-sm"
             onClick={fetchNeraca}
             disabled={loading}
-            className="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700/80 text-slate-300 hover:text-white border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition"
-            title="Refresh Data"
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-emerald-400' : ''}`} />
-            <span className="hidden sm:inline">Refresh</span>
+            <RefreshCw size={14} className={loading ? 'spin-anim' : ''} />
+            <span>Refresh</span>
           </button>
 
           <button
+            className="btn btn-secondary btn-sm"
             onClick={handlePrint}
             disabled={loading || !neracaData}
-            className="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700/80 text-slate-300 hover:text-white border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              color: '#38bdf8',
+              borderColor: 'rgba(56, 189, 248, 0.35)',
+              background: 'rgba(56, 189, 248, 0.08)',
+            }}
           >
-            <Printer className="w-3.5 h-3.5 text-cyan-400" />
+            <Printer size={14} />
             <span>Cetak / PDF</span>
           </button>
 
           <button
+            className="btn btn-primary btn-sm"
             onClick={handleExportExcel}
             disabled={loading || exporting || !neracaData}
-            className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-2 shadow-lg shadow-emerald-600/20 transition"
+            style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
           >
-            <FileSpreadsheet className="w-4 h-4" />
+            <FileSpreadsheet size={15} />
             <span>{exporting ? 'Mengekspor...' : 'Export Excel (.xlsx)'}</span>
           </button>
         </div>
       </div>
 
-      {/* Filter Period Toolbar */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm">
-        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-          <span className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
-            <Calendar className="w-3.5 h-3.5 text-emerald-400" />
-            Periode:
-          </span>
-          {[
-            { id: 'this_month', label: 'Bulan Ini' },
-            { id: 'last_month', label: 'Bulan Lalu' },
-            { id: 'this_year', label: 'Tahun Ini' },
-            { id: 'custom', label: 'Kustom' },
-          ].map((p) => (
-            <button
-              key={p.id}
-              onClick={() => handlePeriodChange(p.id)}
-              className={`px-3 py-1.5 text-xs rounded-lg font-medium transition ${
-                presetPeriod === p.id
-                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                  : 'bg-slate-800 text-slate-400 hover:bg-slate-700/70 border border-slate-700/60'
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
+      {/* 2. Filter & Period Toolbar */}
+      <div className="card mb-4" style={{ padding: '14px 18px' }}>
+        <div className="flex-between flex-wrap gap-3">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <Calendar size={14} color="var(--accent-bright)" />
+              Periode:
+            </span>
+            {[
+              { id: 'this_month', label: 'Bulan Ini' },
+              { id: 'last_month', label: 'Bulan Lalu' },
+              { id: 'this_year', label: 'Tahun Ini' },
+              { id: 'custom', label: 'Kustom' },
+            ].map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => handlePeriodChange(p.id)}
+                className={`btn btn-sm ${presetPeriod === p.id ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ padding: '4px 12px', fontSize: 12 }}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
 
-        {/* Date Inputs if Custom or Fine Tune */}
-        <div className="flex items-center gap-2 w-full md:w-auto justify-end">
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => {
-              setDateFrom(e.target.value);
-              setPresetPeriod('custom');
-            }}
-            className="bg-slate-800/90 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
-          />
-          <span className="text-slate-500 text-xs">s/d</span>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => {
-              setDateTo(e.target.value);
-              setPresetPeriod('custom');
-            }}
-            className="bg-slate-800/90 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
-          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              type="date"
+              className="form-control form-control-sm"
+              style={{ width: 140 }}
+              value={dateFrom}
+              onChange={(e) => {
+                setDateFrom(e.target.value);
+                setPresetPeriod('custom');
+              }}
+            />
+            <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>s/d</span>
+            <input
+              type="date"
+              className="form-control form-control-sm"
+              style={{ width: 140 }}
+              value={dateTo}
+              onChange={(e) => {
+                setDateTo(e.target.value);
+                setPresetPeriod('custom');
+              }}
+            />
+          </div>
         </div>
       </div>
 
       {loading ? (
         <LoadingState message="Menghitung posisi aset, liabilitas & modal neraca..." />
       ) : !neracaData ? (
-        <div className="p-12 text-center text-slate-400 bg-slate-900/60 rounded-xl border border-slate-800">
+        <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
           Tidak ada data neraca untuk periode ini.
         </div>
       ) : (
         <>
-          {/* Executive KPI Summary Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* 3. Executive KPI Summary Cards */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+              gap: 14,
+              marginBottom: 20,
+            }}
+          >
             {/* Total Aset */}
-            <div className="bg-gradient-to-br from-slate-900 via-slate-900/95 to-slate-800/80 border border-slate-800 rounded-xl p-4.5 shadow-sm relative overflow-hidden">
-              <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
-                <span className="font-medium flex items-center gap-1.5 text-slate-300">
-                  <Landmark className="w-4 h-4 text-emerald-400" />
+            <div
+              className="card"
+              style={{
+                padding: '16px 18px',
+                borderLeft: '4px solid #10b981',
+                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(20, 26, 52, 0.72) 100%)',
+              }}
+            >
+              <div className="flex-between mb-1">
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Landmark size={15} color="#10b981" />
                   Total Aset (Aktiva)
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
+                <span style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 6, background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', fontWeight: 700 }}>
                   Kekayaan Usaha
                 </span>
               </div>
-              <div className="text-xl sm:text-2xl font-bold text-emerald-400 tracking-tight">
+              <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: '#10b981', margin: '4px 0 8px 0' }}>
                 {rupiah(neracaData.total_assets?.amount || 0)}
               </div>
-              <div className="mt-2 text-[11px] text-slate-400 flex items-center justify-between border-t border-slate-800/70 pt-2">
+              <div className="flex-between" style={{ fontSize: 11.5, color: 'var(--text-muted)', borderTop: '1px solid rgba(165, 180, 252, 0.08)', paddingTop: 6 }}>
                 <span>Aset Lancar:</span>
-                <span className="text-slate-200 font-medium">
+                <span className="mono" style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
                   {rupiah(neracaData.current_assets?.subtotal || 0)}
                 </span>
               </div>
             </div>
 
             {/* Total Liabilitas */}
-            <div className="bg-gradient-to-br from-slate-900 via-slate-900/95 to-slate-800/80 border border-slate-800 rounded-xl p-4.5 shadow-sm relative overflow-hidden">
-              <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
-                <span className="font-medium flex items-center gap-1.5 text-slate-300">
-                  <CreditCard className="w-4 h-4 text-rose-400" />
+            <div
+              className="card"
+              style={{
+                padding: '16px 18px',
+                borderLeft: '4px solid #f43f5e',
+                background: 'linear-gradient(135deg, rgba(244, 63, 94, 0.08) 0%, rgba(20, 26, 52, 0.72) 100%)',
+              }}
+            >
+              <div className="flex-between mb-1">
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <CreditCard size={15} color="#f43f5e" />
                   Total Liabilitas (Hutang)
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 font-medium">
+                <span style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 6, background: 'rgba(244, 63, 94, 0.15)', color: '#f43f5e', fontWeight: 700 }}>
                   Kewajiban
                 </span>
               </div>
-              <div className="text-xl sm:text-2xl font-bold text-rose-400 tracking-tight">
+              <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: '#f43f5e', margin: '4px 0 8px 0' }}>
                 {rupiah(neracaData.liabilities?.subtotal || 0)}
               </div>
-              <div className="mt-2 text-[11px] text-slate-400 flex items-center justify-between border-t border-slate-800/70 pt-2">
+              <div className="flex-between" style={{ fontSize: 11.5, color: 'var(--text-muted)', borderTop: '1px solid rgba(165, 180, 252, 0.08)', paddingTop: 6 }}>
                 <span>Hutang Supplier:</span>
-                <span className="text-slate-200 font-medium">
-                  {rupiah(
-                    neracaData.liabilities?.accounts?.find((a) => a.code === '2-20100')?.amount || 0
-                  )}
+                <span className="mono" style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
+                  {rupiah(neracaData.liabilities?.accounts?.find((a) => a.code === '2-20100')?.amount || 0)}
                 </span>
               </div>
             </div>
 
-            {/* Total Modal */}
-            <div className="bg-gradient-to-br from-slate-900 via-slate-900/95 to-slate-800/80 border border-slate-800 rounded-xl p-4.5 shadow-sm relative overflow-hidden">
-              <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
-                <span className="font-medium flex items-center gap-1.5 text-slate-300">
-                  <TrendingUp className="w-4 h-4 text-cyan-400" />
+            {/* Total Modal & Ekuitas */}
+            <div
+              className="card"
+              style={{
+                padding: '16px 18px',
+                borderLeft: '4px solid #38bdf8',
+                background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.08) 0%, rgba(20, 26, 52, 0.72) 100%)',
+              }}
+            >
+              <div className="flex-between mb-1">
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <TrendingUp size={15} color="#38bdf8" />
                   Total Modal & Ekuitas
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-medium">
+                <span style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 6, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', fontWeight: 700 }}>
                   Kepemilikan
                 </span>
               </div>
-              <div className="text-xl sm:text-2xl font-bold text-cyan-400 tracking-tight">
+              <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: '#38bdf8', margin: '4px 0 8px 0' }}>
                 {rupiah(neracaData.equity?.subtotal || 0)}
               </div>
-              <div className="mt-2 text-[11px] text-slate-400 flex items-center justify-between border-t border-slate-800/70 pt-2">
+              <div className="flex-between" style={{ fontSize: 11.5, color: 'var(--text-muted)', borderTop: '1px solid rgba(165, 180, 252, 0.08)', paddingTop: 6 }}>
                 <span>Laba Tahun Ini:</span>
-                <span className="text-slate-200 font-medium">
-                  {rupiah(
-                    neracaData.equity?.accounts?.find((a) => a.code === '3-30003')?.amount || 0
-                  )}
+                <span className="mono" style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
+                  {rupiah(neracaData.equity?.accounts?.find((a) => a.code === '3-30003')?.amount || 0)}
                 </span>
               </div>
             </div>
 
-            {/* Status Keseimbangan */}
+            {/* Status Keseimbangan Neraca */}
             <div
-              className={`bg-gradient-to-br from-slate-900 via-slate-900/95 to-slate-800/80 border rounded-xl p-4.5 shadow-sm relative overflow-hidden ${
-                neracaData.is_balanced ? 'border-emerald-500/40' : 'border-amber-500/40'
-              }`}
+              className="card"
+              style={{
+                padding: '16px 18px',
+                borderLeft: `4px solid ${neracaData.is_balanced ? '#10b981' : '#f59e0b'}`,
+                background: neracaData.is_balanced
+                  ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(20, 26, 52, 0.72) 100%)'
+                  : 'linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(20, 26, 52, 0.72) 100%)',
+              }}
             >
-              <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
-                <span className="font-medium flex items-center gap-1.5 text-slate-300">
-                  <Scale className="w-4 h-4 text-emerald-400" />
+              <div className="flex-between mb-1">
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Scale size={15} color={neracaData.is_balanced ? '#10b981' : '#f59e0b'} />
                   Status Neraca
                 </span>
                 {neracaData.is_balanced ? (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3" />
-                    SEIMBANG
+                  <span style={{ fontSize: 10.5, padding: '2px 8px', borderRadius: 6, background: 'rgba(16, 185, 129, 0.2)', color: '#10b981', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <CheckCircle2 size={12} /> SEIMBANG
                   </span>
                 ) : (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 font-semibold flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3" />
-                    SELISIH
+                  <span style={{ fontSize: 10.5, padding: '2px 8px', borderRadius: 6, background: 'rgba(245, 158, 11, 0.2)', color: '#f59e0b', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <AlertCircle size={12} /> SELISIH
                   </span>
                 )}
               </div>
-              <div className="text-base sm:text-lg font-bold text-white tracking-tight">
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#ffffff', margin: '6px 0 8px 0' }}>
                 Aset = Kewajiban + Modal
               </div>
-              <div className="mt-2 text-[11px] text-slate-400 flex items-center justify-between border-t border-slate-800/70 pt-2">
+              <div className="flex-between" style={{ fontSize: 11.5, color: 'var(--text-muted)', borderTop: '1px solid rgba(165, 180, 252, 0.08)', paddingTop: 6 }}>
                 <span>Selisih Rekonsiliasi:</span>
-                <span
-                  className={`font-semibold ${
-                    neracaData.is_balanced ? 'text-emerald-400' : 'text-amber-400'
-                  }`}
-                >
+                <span className="mono" style={{ color: neracaData.is_balanced ? '#10b981' : '#f59e0b', fontWeight: 700 }}>
                   {rupiah(neracaData.difference || 0)}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* MAIN BALANCE SHEET STATEMENT */}
-          <div className="bg-slate-900/95 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
-            {/* Sheet Header (matches user layout) */}
-            <div className="p-6 text-center border-b border-slate-800 bg-slate-950/40">
-              <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-wider">
+          {/* 4. MAIN BALANCE SHEET STATEMENT CARD */}
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            {/* Statement Header */}
+            <div
+              style={{
+                padding: '24px 20px',
+                textAlign: 'center',
+                borderBottom: '1px solid var(--border)',
+                background: 'rgba(15, 20, 41, 0.65)',
+              }}
+            >
+              <h2 style={{ fontSize: 20, fontWeight: 800, letterSpacing: '0.05em', color: '#ffffff', margin: 0 }}>
                 LAPORAN NERACA
               </h2>
-              <p className="text-sm text-slate-400 italic mt-1 font-serif">{periodSubtitle}</p>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
+                {periodSubtitle}
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--accent-bright)', fontWeight: 600, marginTop: 2 }}>
+                {neracaData?.period?.outlet_name || 'Semua Cabang (Konsolidasi)'}
+              </div>
             </div>
 
             {viewMode === 'stacked' ? (
-              /* FORMAT STANDAR (EXACTLY MATCHING USER SCREENSHOT) */
-              <div className="p-4 sm:p-8 space-y-6 max-w-4xl mx-auto">
+              /* FORMAT STANDAR (STACKED ACCORDION / LEDGER) */
+              <div style={{ padding: '24px 28px', maxWidth: 860, margin: '0 auto' }}>
                 {/* 1. ASET LANCAR */}
-                <div>
-                  <h3 className="text-sm font-bold text-slate-200 mb-2.5 tracking-wide">
+                <div style={{ marginBottom: 26 }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--accent-bright)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     Aset Lancar
-                  </h3>
-                  <div className="divide-y divide-slate-800/50">
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
                     {(neracaData.current_assets?.accounts || []).map((acc, idx) => (
                       <div
                         key={idx}
-                        className="flex items-center justify-between py-2 text-xs sm:text-sm hover:bg-slate-800/30 px-3 rounded transition"
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '8px 12px',
+                          borderBottom: '1px solid rgba(165, 180, 252, 0.06)',
+                          fontSize: 13,
+                        }}
                       >
-                        <div className="flex items-center gap-4 sm:gap-8">
-                          <span className="w-20 font-mono text-slate-400 text-xs">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                          <span className="mono" style={{ width: 75, color: 'var(--text-muted)', fontSize: 12 }}>
                             {acc.code || ''}
                           </span>
-                          <span className="text-slate-200 font-medium">{acc.name}</span>
+                          <span style={{ color: '#ffffff', fontWeight: 500 }}>
+                            {acc.name}
+                          </span>
                         </div>
-                        <div
-                          className={`font-mono text-right font-medium ${
-                            acc.amount < 0 ? 'text-rose-400' : 'text-slate-100'
-                          }`}
-                        >
+                        <span className="mono" style={{ fontWeight: 600, color: acc.amount < 0 ? 'var(--danger)' : 'var(--text-primary)' }}>
                           {rupiah(acc.amount)}
-                        </div>
+                        </span>
                       </div>
                     ))}
                     {/* Subtotal Aset Lancar */}
-                    <div className="flex items-center justify-between pt-3 pb-1 px-3 font-bold text-xs sm:text-sm border-t border-slate-700/80">
-                      <span className="text-slate-100">Jumlah Aset Lancar</span>
-                      <span className="font-mono text-emerald-400">
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '10px 12px',
+                        borderTop: '1px solid var(--border-strong)',
+                        background: 'rgba(165, 180, 252, 0.04)',
+                        borderRadius: 6,
+                        marginTop: 4,
+                        fontWeight: 700,
+                        fontSize: 13.5,
+                      }}
+                    >
+                      <span style={{ color: '#ffffff' }}>Jumlah Aset Lancar</span>
+                      <span className="mono" style={{ color: '#10b981' }}>
                         {rupiah(neracaData.current_assets?.subtotal || 0)}
                       </span>
                     </div>
@@ -424,289 +482,372 @@ export default function Neraca() {
                 </div>
 
                 {/* 2. ASET TETAP */}
-                <div>
-                  <h3 className="text-sm font-bold text-slate-200 mb-2.5 tracking-wide">
+                <div style={{ marginBottom: 26 }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--accent-bright)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     Aset Tetap
-                  </h3>
-                  <div className="divide-y divide-slate-800/50">
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
                     {(neracaData.fixed_assets?.accounts || []).map((acc, idx) => (
                       <div
                         key={idx}
-                        className="flex items-center justify-between py-2 text-xs sm:text-sm hover:bg-slate-800/30 px-3 rounded transition"
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '8px 12px',
+                          borderBottom: '1px solid rgba(165, 180, 252, 0.06)',
+                          fontSize: 13,
+                        }}
                       >
-                        <div className="flex items-center gap-4 sm:gap-8">
-                          <span className="w-20 font-mono text-slate-400 text-xs">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                          <span className="mono" style={{ width: 75, color: 'var(--text-muted)', fontSize: 12 }}>
                             {acc.code || ''}
                           </span>
-                          <span className="text-slate-200 font-medium">{acc.name}</span>
+                          <span style={{ color: '#ffffff', fontWeight: 500 }}>
+                            {acc.name}
+                          </span>
                         </div>
-                        <div className="font-mono text-right font-medium text-slate-100">
+                        <span className="mono" style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
                           {rupiah(acc.amount)}
-                        </div>
+                        </span>
                       </div>
                     ))}
                     {/* Subtotal Aset Tetap */}
-                    <div className="flex items-center justify-between pt-3 pb-1 px-3 font-bold text-xs sm:text-sm border-t border-slate-700/80">
-                      <span className="text-slate-100">Jumlah Aset Tetap</span>
-                      <span className="font-mono text-emerald-400">
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '10px 12px',
+                        borderTop: '1px solid var(--border-strong)',
+                        background: 'rgba(165, 180, 252, 0.04)',
+                        borderRadius: 6,
+                        marginTop: 4,
+                        fontWeight: 700,
+                        fontSize: 13.5,
+                      }}
+                    >
+                      <span style={{ color: '#ffffff' }}>Jumlah Aset Tetap</span>
+                      <span className="mono" style={{ color: '#10b981' }}>
                         {rupiah(neracaData.fixed_assets?.subtotal || 0)}
                       </span>
                     </div>
                   </div>
                 </div>
 
-                {/* 3. LIABILITAS */}
-                <div>
-                  <h3 className="text-sm font-bold text-slate-200 mb-2.5 tracking-wide">
-                    Liabilitas
-                  </h3>
-                  <div className="divide-y divide-slate-800/50">
-                    {(neracaData.liabilities?.accounts || []).length > 0 &&
-                    neracaData.liabilities?.accounts.some((a) => a.amount !== 0) ? (
-                      neracaData.liabilities.accounts.map((acc, idx) => (
-                        <div
-                          key={idx}
-                          className="flex items-center justify-between py-2 text-xs sm:text-sm hover:bg-slate-800/30 px-3 rounded transition"
-                        >
-                          <div className="flex items-center gap-4 sm:gap-8">
-                            <span className="w-20 font-mono text-slate-400 text-xs">
-                              {acc.code || ''}
-                            </span>
-                            <span className="text-slate-200 font-medium">{acc.name}</span>
-                          </div>
-                          <div className="font-mono text-right font-medium text-rose-400">
-                            {rupiah(acc.amount)}
-                          </div>
+                {/* GRAND TOTAL ASET (AKTIVA) */}
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '14px 18px',
+                    borderRadius: 10,
+                    background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.16) 0%, rgba(20, 26, 52, 0.88) 100%)',
+                    border: '1px solid rgba(16, 185, 129, 0.35)',
+                    fontWeight: 800,
+                    fontSize: 15,
+                    marginBottom: 32,
+                  }}
+                >
+                  <span style={{ color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    JUMLAH ASET (AKTIVA)
+                  </span>
+                  <span className="mono" style={{ color: '#10b981', fontSize: 17 }}>
+                    {rupiah(neracaData.total_assets?.amount || 0)}
+                  </span>
+                </div>
+
+                {/* 3. LIABILITAS (KEWAJIBAN) */}
+                <div style={{ marginBottom: 26 }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--accent-bright)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Liabilitas (Hutang & Kewajiban)
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    {(neracaData.liabilities?.accounts || []).map((acc, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '8px 12px',
+                          borderBottom: '1px solid rgba(165, 180, 252, 0.06)',
+                          fontSize: 13,
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                          <span className="mono" style={{ width: 75, color: 'var(--text-muted)', fontSize: 12 }}>
+                            {acc.code || ''}
+                          </span>
+                          <span style={{ color: '#ffffff', fontWeight: 500 }}>
+                            {acc.name}
+                          </span>
                         </div>
-                      ))
-                    ) : (
-                      <div className="py-2 text-xs sm:text-sm text-slate-500 italic px-3">
-                        Tidak ada kewajiban / hutang aktif
+                        <span className="mono" style={{ fontWeight: 600, color: '#f43f5e' }}>
+                          {rupiah(acc.amount)}
+                        </span>
                       </div>
-                    )}
+                    ))}
                     {/* Subtotal Liabilitas */}
-                    <div className="flex items-center justify-between pt-3 pb-1 px-3 font-bold text-xs sm:text-sm border-t border-slate-700/80">
-                      <span className="text-slate-100">Jumlah Hutang</span>
-                      <span className="font-mono text-rose-400">
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '10px 12px',
+                        borderTop: '1px solid var(--border-strong)',
+                        background: 'rgba(165, 180, 252, 0.04)',
+                        borderRadius: 6,
+                        marginTop: 4,
+                        fontWeight: 700,
+                        fontSize: 13.5,
+                      }}
+                    >
+                      <span style={{ color: '#ffffff' }}>Jumlah Liabilitas</span>
+                      <span className="mono" style={{ color: '#f43f5e' }}>
                         {rupiah(neracaData.liabilities?.subtotal || 0)}
                       </span>
                     </div>
                   </div>
                 </div>
 
-                {/* 4. MODAL */}
-                <div>
-                  <h3 className="text-sm font-bold text-slate-200 mb-2.5 tracking-wide">Modal</h3>
-                  <div className="divide-y divide-slate-800/50">
+                {/* 4. MODAL & EKUITAS */}
+                <div style={{ marginBottom: 26 }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--accent-bright)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Modal & Ekuitas
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
                     {(neracaData.equity?.accounts || []).map((acc, idx) => (
                       <div
                         key={idx}
-                        className="flex items-center justify-between py-2 text-xs sm:text-sm hover:bg-slate-800/30 px-3 rounded transition"
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '8px 12px',
+                          borderBottom: '1px solid rgba(165, 180, 252, 0.06)',
+                          fontSize: 13,
+                        }}
                       >
-                        <div className="flex items-center gap-4 sm:gap-8">
-                          <span className="w-20 font-mono text-slate-400 text-xs">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                          <span className="mono" style={{ width: 75, color: 'var(--text-muted)', fontSize: 12 }}>
                             {acc.code || ''}
                           </span>
-                          <span className="text-slate-200 font-medium">{acc.name}</span>
+                          <span style={{ color: '#ffffff', fontWeight: 500 }}>
+                            {acc.name}
+                          </span>
                         </div>
-                        <div className="font-mono text-right font-medium text-cyan-400">
+                        <span className="mono" style={{ fontWeight: 600, color: '#38bdf8' }}>
                           {rupiah(acc.amount)}
-                        </div>
+                        </span>
                       </div>
                     ))}
                     {/* Subtotal Modal */}
-                    <div className="flex items-center justify-between pt-3 pb-1 px-3 font-bold text-xs sm:text-sm border-t border-slate-700/80">
-                      <span className="text-slate-100">Jumlah Modal</span>
-                      <span className="font-mono text-cyan-400">
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '10px 12px',
+                        borderTop: '1px solid var(--border-strong)',
+                        background: 'rgba(165, 180, 252, 0.04)',
+                        borderRadius: 6,
+                        marginTop: 4,
+                        fontWeight: 700,
+                        fontSize: 13.5,
+                      }}
+                    >
+                      <span style={{ color: '#ffffff' }}>Jumlah Modal & Ekuitas</span>
+                      <span className="mono" style={{ color: '#38bdf8' }}>
                         {rupiah(neracaData.equity?.subtotal || 0)}
                       </span>
                     </div>
                   </div>
                 </div>
 
-                {/* GRAND TOTALS (EXACT BOTTOM ROW IN SCREENSHOT) */}
-                <div className="mt-8 pt-6 border-t-2 border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-4 px-3 bg-slate-950/60 py-4 rounded-xl">
-                  <div className="flex items-center justify-between sm:justify-start gap-4 w-full sm:w-auto">
-                    <span className="text-sm sm:text-base font-extrabold text-white">
-                      Jumlah Aset
-                    </span>
-                    <span className="font-mono text-base sm:text-lg font-bold text-emerald-400">
-                      {rupiah(neracaData.total_assets?.amount || 0)}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between sm:justify-start gap-4 w-full sm:w-auto">
-                    <span className="text-sm sm:text-base font-extrabold text-white">
-                      Jumlah Kewajiban dan Modal
-                    </span>
-                    <span className="font-mono text-base sm:text-lg font-bold text-cyan-400">
-                      {rupiah(neracaData.total_liabilities_and_equity?.amount || 0)}
-                    </span>
-                  </div>
+                {/* GRAND TOTAL KEWAJIBAN & MODAL (PASSIVA) */}
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '14px 18px',
+                    borderRadius: 10,
+                    background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.16) 0%, rgba(20, 26, 52, 0.88) 100%)',
+                    border: '1px solid rgba(56, 189, 248, 0.35)',
+                    fontWeight: 800,
+                    fontSize: 15,
+                  }}
+                >
+                  <span style={{ color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    JUMLAH KEWAJIBAN DAN MODAL (PASSIVA)
+                  </span>
+                  <span className="mono" style={{ color: '#38bdf8', fontSize: 17 }}>
+                    {rupiah(neracaData.total_liabilities_and_equity?.amount || 0)}
+                  </span>
                 </div>
               </div>
             ) : (
-              /* FORMAT 2 KOLOM (SKONTRO: AKTIVA KIRI vs PASIVA KANAN) */
-              <div className="p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-2 gap-8 divide-y lg:divide-y-0 lg:divide-x divide-slate-800">
-                {/* KOLOM KIRI: AKTIVA / ASET */}
-                <div className="space-y-6">
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                    <span className="text-sm font-bold text-emerald-400 uppercase tracking-wider">
-                      AKTIVA (ASET)
-                    </span>
-                    <span className="font-mono text-xs text-slate-400">Kode & Nominal</span>
-                  </div>
-
-                  {/* Aset Lancar */}
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-300 mb-2">Aset Lancar</h4>
-                    <div className="space-y-1.5">
-                      {(neracaData.current_assets?.accounts || []).map((acc, idx) => (
-                        <div
-                          key={idx}
-                          className="flex items-center justify-between text-xs py-1.5 px-2 rounded hover:bg-slate-800/40"
-                        >
-                          <span className="text-slate-300">
-                            <span className="font-mono text-slate-500 mr-2">{acc.code}</span>
-                            {acc.name}
-                          </span>
-                          <span
-                            className={`font-mono ${
-                              acc.amount < 0 ? 'text-rose-400' : 'text-slate-100'
-                            }`}
-                          >
-                            {rupiah(acc.amount)}
-                          </span>
-                        </div>
-                      ))}
-                      <div className="flex items-center justify-between pt-2 border-t border-slate-800 font-semibold text-xs px-2">
-                        <span className="text-slate-400">Subtotal Aset Lancar</span>
-                        <span className="font-mono text-emerald-400">
-                          {rupiah(neracaData.current_assets?.subtotal || 0)}
-                        </span>
+              /* FORMAT SKONTRO (2 KOLOM SIDE-BY-SIDE) */
+              <div style={{ padding: '24px 24px' }}>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
+                    gap: 24,
+                  }}
+                >
+                  {/* LEFT COLUMN: AKTIVA (ASET) */}
+                  <div
+                    style={{
+                      background: 'rgba(15, 20, 41, 0.5)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 12,
+                      padding: '18px 20px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: '#10b981', borderBottom: '1px solid var(--border)', paddingBottom: 8, marginBottom: 14 }}>
+                        ASET (AKTIVA)
                       </div>
+
+                      {/* Aset Lancar */}
+                      <div style={{ marginBottom: 18 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                          1. Aset Lancar
+                        </div>
+                        {(neracaData.current_assets?.accounts || []).map((acc, idx) => (
+                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 8px', fontSize: 12.5 }}>
+                            <span style={{ color: '#cbd5e1' }}>{acc.code} {acc.name}</span>
+                            <span className="mono" style={{ color: '#ffffff' }}>{rupiah(acc.amount)}</span>
+                          </div>
+                        ))}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 8px', borderTop: '1px dashed var(--border)', fontWeight: 700, fontSize: 12.5, color: '#10b981' }}>
+                          <span>Subtotal Aset Lancar</span>
+                          <span className="mono">{rupiah(neracaData.current_assets?.subtotal || 0)}</span>
+                        </div>
+                      </div>
+
+                      {/* Aset Tetap */}
+                      <div style={{ marginBottom: 18 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                          2. Aset Tetap
+                        </div>
+                        {(neracaData.fixed_assets?.accounts || []).map((acc, idx) => (
+                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 8px', fontSize: 12.5 }}>
+                            <span style={{ color: '#cbd5e1' }}>{acc.code} {acc.name}</span>
+                            <span className="mono" style={{ color: '#ffffff' }}>{rupiah(acc.amount)}</span>
+                          </div>
+                        ))}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 8px', borderTop: '1px dashed var(--border)', fontWeight: 700, fontSize: 12.5, color: '#10b981' }}>
+                          <span>Subtotal Aset Tetap</span>
+                          <span className="mono">{rupiah(neracaData.fixed_assets?.subtotal || 0)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Total Aktiva Footer */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '12px 14px',
+                        background: 'rgba(16, 185, 129, 0.14)',
+                        border: '1px solid rgba(16, 185, 129, 0.35)',
+                        borderRadius: 8,
+                        fontWeight: 800,
+                        fontSize: 14,
+                        marginTop: 14,
+                      }}
+                    >
+                      <span style={{ color: '#ffffff' }}>TOTAL ASET (AKTIVA)</span>
+                      <span className="mono" style={{ color: '#10b981', fontSize: 15 }}>
+                        {rupiah(neracaData.total_assets?.amount || 0)}
+                      </span>
                     </div>
                   </div>
 
-                  {/* Aset Tetap */}
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-300 mb-2">Aset Tetap</h4>
-                    <div className="space-y-1.5">
-                      {(neracaData.fixed_assets?.accounts || []).map((acc, idx) => (
-                        <div
-                          key={idx}
-                          className="flex items-center justify-between text-xs py-1.5 px-2 rounded hover:bg-slate-800/40"
-                        >
-                          <span className="text-slate-300">
-                            <span className="font-mono text-slate-500 mr-2">{acc.code}</span>
-                            {acc.name}
-                          </span>
-                          <span className="font-mono text-slate-100">{rupiah(acc.amount)}</span>
+                  {/* RIGHT COLUMN: PASSIVA (KEWAJIBAN & MODAL) */}
+                  <div
+                    style={{
+                      background: 'rgba(15, 20, 41, 0.5)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 12,
+                      padding: '18px 20px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: '#38bdf8', borderBottom: '1px solid var(--border)', paddingBottom: 8, marginBottom: 14 }}>
+                        KEWAJIBAN & EKUITAS (PASSIVA)
+                      </div>
+
+                      {/* Liabilitas */}
+                      <div style={{ marginBottom: 18 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                          1. Liabilitas (Kewajiban)
                         </div>
-                      ))}
-                      <div className="flex items-center justify-between pt-2 border-t border-slate-800 font-semibold text-xs px-2">
-                        <span className="text-slate-400">Subtotal Aset Tetap</span>
-                        <span className="font-mono text-emerald-400">
-                          {rupiah(neracaData.fixed_assets?.subtotal || 0)}
-                        </span>
+                        {(neracaData.liabilities?.accounts || []).map((acc, idx) => (
+                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 8px', fontSize: 12.5 }}>
+                            <span style={{ color: '#cbd5e1' }}>{acc.code} {acc.name}</span>
+                            <span className="mono" style={{ color: '#f43f5e' }}>{rupiah(acc.amount)}</span>
+                          </div>
+                        ))}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 8px', borderTop: '1px dashed var(--border)', fontWeight: 700, fontSize: 12.5, color: '#f43f5e' }}>
+                          <span>Subtotal Liabilitas</span>
+                          <span className="mono">{rupiah(neracaData.liabilities?.subtotal || 0)}</span>
+                        </div>
+                      </div>
+
+                      {/* Modal */}
+                      <div style={{ marginBottom: 18 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                          2. Modal & Ekuitas
+                        </div>
+                        {(neracaData.equity?.accounts || []).map((acc, idx) => (
+                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 8px', fontSize: 12.5 }}>
+                            <span style={{ color: '#cbd5e1' }}>{acc.code} {acc.name}</span>
+                            <span className="mono" style={{ color: '#38bdf8' }}>{rupiah(acc.amount)}</span>
+                          </div>
+                        ))}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 8px', borderTop: '1px dashed var(--border)', fontWeight: 700, fontSize: 12.5, color: '#38bdf8' }}>
+                          <span>Subtotal Modal & Ekuitas</span>
+                          <span className="mono">{rupiah(neracaData.equity?.subtotal || 0)}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Total Aktiva */}
-                  <div className="p-3 bg-emerald-950/20 border border-emerald-500/30 rounded-lg flex items-center justify-between font-bold text-sm">
-                    <span className="text-white">TOTAL ASET (AKTIVA)</span>
-                    <span className="font-mono text-emerald-400">
-                      {rupiah(neracaData.total_assets?.amount || 0)}
-                    </span>
-                  </div>
-                </div>
-
-                {/* KOLOM KANAN: PASIVA (LIABILITAS + MODAL) */}
-                <div className="space-y-6 pt-6 lg:pt-0 lg:pl-8">
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                    <span className="text-sm font-bold text-cyan-400 uppercase tracking-wider">
-                      PASIVA (KEWAJIBAN & EKUITAS)
-                    </span>
-                    <span className="font-mono text-xs text-slate-400">Kode & Nominal</span>
-                  </div>
-
-                  {/* Liabilitas */}
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-300 mb-2">Liabilitas (Hutang)</h4>
-                    <div className="space-y-1.5">
-                      {(neracaData.liabilities?.accounts || []).map((acc, idx) => (
-                        <div
-                          key={idx}
-                          className="flex items-center justify-between text-xs py-1.5 px-2 rounded hover:bg-slate-800/40"
-                        >
-                          <span className="text-slate-300">
-                            <span className="font-mono text-slate-500 mr-2">{acc.code}</span>
-                            {acc.name}
-                          </span>
-                          <span className="font-mono text-rose-400">{rupiah(acc.amount)}</span>
-                        </div>
-                      ))}
-                      <div className="flex items-center justify-between pt-2 border-t border-slate-800 font-semibold text-xs px-2">
-                        <span className="text-slate-400">Subtotal Liabilitas</span>
-                        <span className="font-mono text-rose-400">
-                          {rupiah(neracaData.liabilities?.subtotal || 0)}
-                        </span>
-                      </div>
+                    {/* Total Passiva Footer */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '12px 14px',
+                        background: 'rgba(56, 189, 248, 0.14)',
+                        border: '1px solid rgba(56, 189, 248, 0.35)',
+                        borderRadius: 8,
+                        fontWeight: 800,
+                        fontSize: 14,
+                        marginTop: 14,
+                      }}
+                    >
+                      <span style={{ color: '#ffffff' }}>TOTAL KEWAJIBAN & MODAL</span>
+                      <span className="mono" style={{ color: '#38bdf8', fontSize: 15 }}>
+                        {rupiah(neracaData.total_liabilities_and_equity?.amount || 0)}
+                      </span>
                     </div>
-                  </div>
-
-                  {/* Modal */}
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-300 mb-2">Modal & Ekuitas</h4>
-                    <div className="space-y-1.5">
-                      {(neracaData.equity?.accounts || []).map((acc, idx) => (
-                        <div
-                          key={idx}
-                          className="flex items-center justify-between text-xs py-1.5 px-2 rounded hover:bg-slate-800/40"
-                        >
-                          <span className="text-slate-300">
-                            <span className="font-mono text-slate-500 mr-2">{acc.code}</span>
-                            {acc.name}
-                          </span>
-                          <span className="font-mono text-cyan-400">{rupiah(acc.amount)}</span>
-                        </div>
-                      ))}
-                      <div className="flex items-center justify-between pt-2 border-t border-slate-800 font-semibold text-xs px-2">
-                        <span className="text-slate-400">Subtotal Modal</span>
-                        <span className="font-mono text-cyan-400">
-                          {rupiah(neracaData.equity?.subtotal || 0)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Total Pasiva */}
-                  <div className="p-3 bg-cyan-950/20 border border-cyan-500/30 rounded-lg flex items-center justify-between font-bold text-sm">
-                    <span className="text-white">TOTAL KEWAJIBAN & MODAL</span>
-                    <span className="font-mono text-cyan-400">
-                      {rupiah(neracaData.total_liabilities_and_equity?.amount || 0)}
-                    </span>
                   </div>
                 </div>
               </div>
             )}
-          </div>
-
-          {/* Educational Accounting Guidance Box */}
-          <div className="bg-slate-900/60 border border-slate-800/70 rounded-xl p-4 flex items-start gap-3 text-xs text-slate-400">
-            <Info className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />
-            <div className="space-y-1">
-              <span className="font-semibold text-slate-200">
-                Prinsip Keseimbangan Akuntansi Standar F&B (Neraca):
-              </span>
-              <p className="leading-relaxed">
-                Neraca menyajikan posisi keuangan usaha pada titik waktu tertentu. Aset Lancar
-                mencakup kas fisik laci toko, saldo rekening/QRIS, piutang bon pelanggan, dan nilai
-                aset persediaan bahan baku di gudang. Modal bertambah dari laba bersih periode berjalan
-                yang otomatis terhubung dari laporan Laba Rugi (P&L).
-              </p>
-            </div>
           </div>
         </>
       )}
