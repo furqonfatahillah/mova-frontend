@@ -296,7 +296,7 @@ export default function ImportMasterModal({
           const outletName = getVal(row, ['cabangoutletopsional', 'cabangoutlet', 'cabang', 'outlet', 'namaoutlet', 'namacabang']) || '';
           const harga = parseFloat(getVal(row, ['hargabeli', 'harga', 'hargasatuan'])) || 0;
           const minStock = parseFloat(getVal(row, ['stokminimal', 'minstok'])) || 0;
-          const initialStock = parseFloat(getVal(row, ['stokawal', 'stok'])) || 0;
+          const initialStock = parseFloat(getVal(row, ['saldoawalsatuanpakai', 'saldoawal', 'stokawal', 'stok', 'initialstock', 'saldo'])) || 0;
           const notes = getVal(row, ['catatan', 'keterangan']);
 
           if (!name) errors.push('Nama bahan wajib diisi.');
@@ -347,7 +347,7 @@ export default function ImportMasterModal({
 
           const harga = parseFloat(getVal(row, ['hargabeli', 'harga', 'hargasatuan'])) || 0;
           const minStock = parseFloat(getVal(row, ['stokminimal', 'minstok'])) || 0;
-          const initialStock = parseFloat(getVal(row, ['stokawal', 'stok'])) || 0;
+          const initialStock = parseFloat(getVal(row, ['saldoawalsatuanpakai', 'saldoawal', 'stokawal', 'stok', 'initialstock', 'saldo'])) || 0;
           const tolerance = parseFloat(getVal(row, ['batastoleransi', 'toleransi', 'tolerance'])) || 5;
           const notes = getVal(row, ['catatan', 'spesifikasi', 'keterangan']);
 
