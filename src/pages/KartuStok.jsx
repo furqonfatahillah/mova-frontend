@@ -1498,8 +1498,7 @@ export default function KartuStok() {
                 <tbody>
                   {/* Row Opening Balance */}
                   {(() => {
-                    const firstRowCostBefore = filteredDetailRows?.[0]?.cost_before ? Number(filteredDetailRows[0].cost_before) : null;
-                    const initialOpeningCostPerPakai = firstRowCostBefore ?? ((Number(stockCard?.ingredient?.harga ?? selectedIng?.harga ?? 0)) / Math.max(Number(selectedIng?.konversi || 1), 1));
+                    const latestAvgPricePerPakai = (Number(stockCard?.ingredient?.harga ?? selectedIng?.harga ?? 0)) / Math.max(Number(selectedIng?.konversi || 1), 1);
                     return (
                       <tr style={{ background: 'var(--accent-dim)', fontStyle: 'italic' }}>
                         <td className="mono center">—</td>
@@ -1511,7 +1510,7 @@ export default function KartuStok() {
                         <td className="mono right" style={{ fontSize: 12.5 }}>
                           <div style={{ display: 'inline-flex', alignItems: 'baseline', gap: 3, justifyContent: 'flex-end' }}>
                             <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>
-                              {rupiah(initialOpeningCostPerPakai)}
+                              {rupiah(latestAvgPricePerPakai)}
                             </span>
                             <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>/{selectedIng?.unit_pakai || 'gram'}</span>
                           </div>
@@ -1522,7 +1521,7 @@ export default function KartuStok() {
                           {num(stockCard?.stok_awal)} {selectedIng?.unit_pakai}
                         </td>
                         <td className="mono right" style={{ fontWeight: 700, color: '#34d399', fontSize: 12.5 }}>
-                          {rupiah(Math.max(0, stockCard?.stok_awal || 0) * initialOpeningCostPerPakai)}
+                          {rupiah(Math.max(0, stockCard?.stok_awal || 0) * latestAvgPricePerPakai)}
                         </td>
                         <td style={{ color: 'var(--text-muted)', fontSize: 11 }}>Sistem</td>
                       </tr>
@@ -1532,13 +1531,14 @@ export default function KartuStok() {
                   {/* Mutation Rows */}
                   {filteredDetailRows.length > 0 ? (
                     filteredDetailRows.map((row, idx) => {
+                      const latestAvgPricePerPakai = (Number(stockCard?.ingredient?.harga ?? selectedIng?.harga ?? 0)) / Math.max(Number(selectedIng?.konversi || 1), 1);
                       const unitPriceVal = row.cost_after
                         ? Number(row.cost_after)
                         : (row.unit_price
                             ? (Number(row.unit_price) > 1000 && (selectedIng?.konversi || 1) > 1
                                 ? Number(row.unit_price) / Number(selectedIng.konversi)
                                 : Number(row.unit_price))
-                            : (Number(stockCard?.ingredient?.harga ?? selectedIng?.harga ?? 0) / Math.max(Number(selectedIng?.konversi || 1), 1)));
+                            : latestAvgPricePerPakai);
 
                       return (
                         <tr key={row.id || idx}>
@@ -1606,7 +1606,7 @@ export default function KartuStok() {
                             {num(row.balance)} {selectedIng?.unit_pakai}
                           </td>
                           <td className="mono right" style={{ fontWeight: 700, fontSize: 12.5, color: row.balance < 0 ? 'var(--danger)' : '#34d399' }}>
-                            {rupiah(Math.max(0, row.balance || 0) * unitPriceVal)}
+                            {rupiah(Math.max(0, row.balance || 0) * latestAvgPricePerPakai)}
                             {row.unit_price ? (
                               <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>
                                 PO: @{rupiah(row.unit_price)}
