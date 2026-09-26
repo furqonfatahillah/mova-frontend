@@ -1263,6 +1263,38 @@ export default function TransferBahan() {
     }
   }
 
+  // Delete & Rollback Transfer (Khusus Owner Bisnis - Menghitung Ulang Moving Average Real-Time)
+  async function handleDeleteTransfer(transfer) {
+    const isOwner = Boolean(isOwnerBisnis || isPlatformAdmin);
+    if (!isOwner) {
+      toast.error('Hanya Owner Bisnis yang berwenang menghapus data transfer.');
+      return;
+    }
+
+    const confirmMsg = `PERINGATAN KHUSUS OWNER BISNIS:\n\nHapus permanen dokumen transfer "${transfer.transfer_no}"?\n\n` +
+      `Sistem akan secara otomatis:\n` +
+      `1. Mengembalikan stok fisik ke cabang asal (${transfer.source_display_name || 'Cabang Pengirim'}).\n` +
+      `2. Menarik kembali stok yang sempat diterima di cabang tujuan (${transfer.destination_display_name || 'Cabang Penerima'}).\n` +
+      `3. Menghapus data mutasi stok & tagihan hutang supplier terkait.\n` +
+      `4. Mengkalkulasi ulang Moving Average (HPP avg) bahan baku secara real-time berdasarkan mutasi historis.\n\n` +
+      `Lanjutkan penghapusan data transfer terakhir ini?`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      const { data } = await api.delete(`/transfers/${transfer.id}`);
+      setTransfers(prev => prev.filter(t => t.id !== transfer.id));
+      if (selectedTransfer?.id === transfer.id) {
+        setSelectedTransfer(null);
+        setDetailModalOpen(false);
+      }
+      toast.success(data.message || `Transfer ${transfer.transfer_no} berhasil dihapus & HPP Moving Average dihitung ulang.`);
+      await loadAllData();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal menghapus data transfer.');
+    }
+  }
+
   function printDeliveryOrder() {
     printElement('printable-surat-jalan', `Surat Jalan Transfer - ${selectedTransfer?.transfer_no || ''}`);
   }
@@ -1637,6 +1669,17 @@ export default function TransferBahan() {
                               style={{ padding: '4px 8px', color: 'var(--danger)' }}
                             >
                               <X size={13} />
+                            </button>
+                          )}
+                          {(isOwnerBisnis || isPlatformAdmin) && (
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => handleDeleteTransfer(trf)}
+                              title="Hapus & Rollback Transfer Terakhir (Khusus Owner Bisnis)"
+                              style={{ padding: '4px 8px', color: '#f43f5e' }}
+                            >
+                              <Trash2 size={13} />
                             </button>
                           )}
                         </div>
@@ -3276,6 +3319,17 @@ export default function TransferBahan() {
                 >
                   Cetak Surat Jalan
                 </button>
+                {(isOwnerBisnis || isPlatformAdmin) && (
+                  <button
+                    type="button"
+                    className="btn btn-danger btn-sm"
+                    onClick={() => handleDeleteTransfer(selectedTransfer)}
+                    title="Hapus & Rollback Transfer Terakhir (Khusus Owner Bisnis)"
+                    style={{ fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                  >
+                    <Trash2 size={13} /> Hapus Transfer (Owner)
+                  </button>
+                )}
                 <button
                   className="btn btn-ghost btn-icon"
                   onClick={() => setDetailModalOpen(false)}

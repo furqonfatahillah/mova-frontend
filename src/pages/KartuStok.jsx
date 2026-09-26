@@ -513,6 +513,35 @@ export default function KartuStok() {
     setStockCard(null);
   }
 
+  // Delete & Rollback Transaksi Mutasi Terakhir (Khusus Owner Bisnis)
+  async function handleDeleteLastMovement(row) {
+    const isOwner = Boolean(isOwnerBisnis || isPlatformAdmin);
+    if (!isOwner) {
+      toast.error('Hanya Owner Bisnis yang berwenang menghapus transaksi mutasi stok.');
+      return;
+    }
+
+    const confirmMsg = `PERINGATAN KHUSUS OWNER BISNIS:\n\nHapus permanen transaksi mutasi terakhir "${row.ref || row.type}" (${row.date})?\n\n` +
+      `Sistem akan secara otomatis:\n` +
+      `1. Membatalkan mutasi stok dan mengembalikan saldo fisik.\n` +
+      `2. Mengkalkulasikan ulang Moving Average (HPP avg) bahan secara real-time berdasarkan riwayat mutasi yang tersisa.\n` +
+      `3. Menghapus tagihan hutang supplier (jika mutasi merupakan pembelian tempo).\n\n` +
+      `Lanjutkan penghapusan data mutasi terakhir ini?`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      const { data } = await api.delete(`/movements/${row.id}`);
+      toast.success(data.message || 'Transaksi mutasi berhasil dihapus dan Moving Average telah dihitung ulang.');
+      if (selectedIngId) {
+        await fetchStockCard();
+      }
+      await fetchSummary();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal menghapus transaksi mutasi.');
+    }
+  }
+
   // In-Transit: Open receive & approval modal
   function openReceiveModal(trf) {
     setReceiveTargetTransfer(trf);
@@ -1569,12 +1598,25 @@ export default function KartuStok() {
                             ) : null}
                           </td>
                           <td>
-                            <AuditInfo
-                              createdAt={row.created_at}
-                              createdBy={row.created_by_name || row.user}
-                              updatedAt={row.changed_at}
-                              updatedBy={row.changed_by_name}
-                            />
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                              <AuditInfo
+                                createdAt={row.created_at}
+                                createdBy={row.created_by_name || row.user}
+                                updatedAt={row.changed_at}
+                                updatedBy={row.changed_by_name}
+                              />
+                              {idx === filteredDetailRows.length - 1 && (isOwnerBisnis || isPlatformAdmin) && row.id && (
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  onClick={() => handleDeleteLastMovement(row)}
+                                  title="Hapus Data Mutasi Terakhir & Hitung Ulang Moving Average (Khusus Owner Bisnis)"
+                                  style={{ color: '#f43f5e', padding: '4px 6px', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );

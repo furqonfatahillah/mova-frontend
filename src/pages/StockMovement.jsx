@@ -315,6 +315,33 @@ export default function StockMovement({ defaultFilterType }) {
     } finally { setSaving(false); }
   }
 
+  // Delete & Rollback Transaksi Mutasi Terakhir (Khusus Owner Bisnis)
+  async function handleDeleteMovement(m) {
+    const isOwner = Boolean(isOwnerBisnis || isPlatformAdmin);
+    if (!isOwner) {
+      toast.error('Hanya Owner Bisnis yang berwenang menghapus mutasi stok.');
+      return;
+    }
+
+    const confirmMsg = `PERINGATAN KHUSUS OWNER BISNIS:\n\nHapus permanen transaksi mutasi terakhir "${m.ingredient?.name || 'Bahan'}" (${m.date} - ${m.type})?\n\n` +
+      `Sistem akan secara otomatis:\n` +
+      `1. Membatalkan mutasi stok dan memulihkan saldo fisik.\n` +
+      `2. Mengkalkulasikan ulang Moving Average (HPP avg) bahan secara real-time berdasarkan riwayat mutasi yang tersisa.\n` +
+      `3. Menghapus tagihan hutang supplier terkait (jika merupakan pembelian tempo).\n\n` +
+      `Lanjutkan penghapusan data mutasi terakhir ini?`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      const { data } = await api.delete(`/movements/${m.id}`);
+      toast.success(data.message || 'Transaksi mutasi berhasil dihapus dan Moving Average telah dihitung ulang.');
+      await fetchAll();
+      await fetchSuppliers();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal menghapus mutasi.');
+    }
+  }
+
   function typeInfo(type) {
     const t = MOVEMENT_TYPES.find(x => x.value === type);
     const isOut = OUT_TYPES.includes(type);
@@ -324,6 +351,17 @@ export default function StockMovement({ defaultFilterType }) {
       label: t?.label || type,
     };
   }
+
+  const latestMovementIds = useMemo(() => {
+    const map = new Map();
+    for (const m of movements) {
+      const key = `${m.ingredient_id}-${m.outlet_id}`;
+      if (!map.has(key)) {
+        map.set(key, m.id);
+      }
+    }
+    return new Set(map.values());
+  }, [movements]);
 
   if (loading) return <LoadingState />;
 
@@ -392,6 +430,7 @@ export default function StockMovement({ defaultFilterType }) {
                   <th className="right" style={{ minWidth: 150 }}>Harga Beli & Moving Avg</th>
                   <th style={{ minWidth: 160 }}>Petugas / Audit</th>
                   <th>Catatan</th>
+                  {(isOwnerBisnis || isPlatformAdmin) && <th style={{ width: 60 }} className="center">Aksi</th>}
                 </tr>
               </thead>
               <tbody>
@@ -401,6 +440,7 @@ export default function StockMovement({ defaultFilterType }) {
                   const isPurchase = m.type === 'PURCHASE';
                   const wr = isWaste ? getWasteReason(m.waste_reason) : null;
                   const conv = Number(m.ingredient?.konversi) || 1;
+                  const isLatestForIngredient = latestMovementIds.has(m.id);
 
                   return (
                     <tr key={m.id} style={isWaste ? { background: 'rgba(244, 63, 94, 0.03)' } : {}}>
@@ -466,6 +506,29 @@ export default function StockMovement({ defaultFilterType }) {
                         />
                       </td>
                       <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{m.note || '—'}</td>
+
+                      {(isOwnerBisnis || isPlatformAdmin) && (
+                        <td className="center">
+                          {isLatestForIngredient ? (
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => handleDeleteMovement(m)}
+                              title="Hapus Data Mutasi Terakhir & Hitung Ulang Moving Average (Khusus Owner Bisnis)"
+                              style={{ color: '#f43f5e', padding: '4px 6px' }}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          ) : (
+                            <span
+                              style={{ color: 'var(--text-muted)', fontSize: 11, cursor: 'not-allowed' }}
+                              title="Hanya mutasi paling terakhir per bahan yang dapat dihapus agar kalkulasi Moving Average valid"
+                            >
+                              —
+                            </span>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
