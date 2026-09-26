@@ -14,6 +14,7 @@ import {
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 import ImportMasterModal from '../components/ImportMasterModal';
+import { confirmDialog } from '../utils/swal';
 
 const KATEGORI_PERLENGKAPAN_OPTIONS = [
   'Perlengkapan',
@@ -351,7 +352,14 @@ export default function MasterPerlengkapan() {
   }
 
   async function handleDelete(item) {
-    if (!window.confirm(`Hapus perlengkapan "${item.name}" (${item.code})? Data stok terkait akan ikut terhapus.`)) return;
+    const confirmed = await confirmDialog({
+      title: 'Hapus Perlengkapan?',
+      text: `Hapus perlengkapan "${item.name}" (${item.code})? Data stok terkait akan ikut terhapus.`,
+      confirmText: 'Ya, Hapus Perlengkapan',
+      cancelText: 'Batal',
+      isDanger: true,
+    });
+    if (!confirmed) return;
     try {
       await api.delete(`/ingredients/${item.id}`);
       setItems(prev => prev.filter(i => i.id !== item.id));
@@ -387,9 +395,13 @@ export default function MasterPerlengkapan() {
   async function handleBulkDelete() {
     if (selectedIds.length === 0) return;
     const count = selectedIds.length;
-    const confirmed = window.confirm(
-      `Hapus ${count} perlengkapan terpilih secara permanen?\n\nPERINGATAN: Tindakan ini tidak dapat dibatalkan. Semua data stok dan mutasi terkait akan ikut dibersihkan.`
-    );
+    const confirmed = await confirmDialog({
+      title: `Hapus ${count} Perlengkapan Terpilih?`,
+      text: `Hapus ${count} perlengkapan terpilih secara permanen?\n\nPERINGATAN: Tindakan ini tidak dapat dibatalkan. Semua data stok dan mutasi terkait akan ikut dibersihkan.`,
+      confirmText: `Ya, Hapus ${count} Item`,
+      cancelText: 'Batal',
+      isDanger: true,
+    });
     if (!confirmed) return;
 
     setBulkDeleting(true);

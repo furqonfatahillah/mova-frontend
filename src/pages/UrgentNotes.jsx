@@ -10,6 +10,7 @@ import { num, LoadingState, PageHeader, PeriodPicker } from '../components/ui';
 import { getMonthStartStr, getTodayStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
+import { confirmDialog } from '../utils/swal';
 
 function formatDateTime(str) {
   if (!str) return '-';
@@ -254,7 +255,14 @@ export default function UrgentNotes() {
 
   // Batch Resolve for a specific ingredient
   async function handleBatchResolveIngredient(ingredientId, ingName) {
-    if (!window.confirm(`Lunasi semua kekurangan bahan "${ingName}" yang berstatus tergantung?`)) return;
+    const confirmed = await confirmDialog({
+      title: 'Pelunasan Kekurangan Bahan?',
+      text: `Lunasi semua kekurangan bahan "${ingName}" yang berstatus tergantung?`,
+      confirmText: 'Ya, Lunasi Semua',
+      cancelText: 'Batal',
+      icon: 'question',
+    });
+    if (!confirmed) return;
     try {
       const res = await api.post('/urgent-notes/batch-resolve', {
         ingredient_id: ingredientId,

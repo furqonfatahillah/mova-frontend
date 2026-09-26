@@ -14,6 +14,7 @@ import { getItemClassification } from './KartuStok';
 import { printElement } from '../utils/print';
 import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
 import { useOutlet } from '../context/OutletContext';
+import { confirmDialog, ownerConfirmDialog } from '../utils/swal';
 
 export default function TransferBahan() {
   const {
@@ -1259,9 +1260,14 @@ export default function TransferBahan() {
   // Cancel Transfer
   async function handleCancelTransfer(transfer) {
     if (transfer.status === 'CANCELLED') return;
-    if (!window.confirm(`Apakah Anda yakin ingin membatalkan dokumen transfer "${transfer.transfer_no}"? Saldo stok bahan dan produk retail akan otomatis dikembalikan.`)) {
-      return;
-    }
+    const confirmed = await confirmDialog({
+      title: 'Batalkan Dokumen Transfer?',
+      text: `Apakah Anda yakin ingin membatalkan dokumen transfer "${transfer.transfer_no}"? Saldo stok bahan dan produk retail akan otomatis dikembalikan.`,
+      confirmText: 'Ya, Batalkan Transfer',
+      cancelText: 'Kembali',
+      isDanger: true,
+    });
+    if (!confirmed) return;
 
     try {
       const { data } = await api.post(`/transfers/${transfer.id}/cancel`);
@@ -1283,15 +1289,20 @@ export default function TransferBahan() {
       return;
     }
 
-    const confirmMsg = `PERINGATAN KHUSUS OWNER BISNIS:\n\nHapus permanen dokumen transfer "${transfer.transfer_no}"?\n\n` +
-      `Sistem akan secara otomatis:\n` +
-      `1. Mengembalikan stok fisik ke cabang asal (${transfer.source_display_name || 'Cabang Pengirim'}).\n` +
-      `2. Menarik kembali stok yang sempat diterima di cabang tujuan (${transfer.destination_display_name || 'Cabang Penerima'}).\n` +
-      `3. Menghapus data mutasi stok & tagihan hutang supplier terkait.\n` +
-      `4. Mengkalkulasi ulang Moving Average (HPP avg) bahan baku secara real-time berdasarkan mutasi historis.\n\n` +
-      `Lanjutkan penghapusan data transfer terakhir ini?`;
+    const confirmed = await ownerConfirmDialog({
+      title: 'PERINGATAN KHUSUS OWNER BISNIS',
+      targetName: `Hapus permanen dokumen transfer "${transfer.transfer_no}"?`,
+      bullets: [
+        `Mengembalikan stok fisik ke cabang asal (${transfer.source_display_name || 'Cabang Pengirim'}).`,
+        `Menarik kembali stok yang sempat diterima di cabang tujuan (${transfer.destination_display_name || 'Cabang Penerima'}).`,
+        'Menghapus data mutasi stok & tagihan hutang supplier terkait.',
+        'Mengkalkulasi ulang Moving Average (HPP avg) bahan baku secara real-time berdasarkan mutasi historis.'
+      ],
+      confirmText: 'Ya, Hapus & Rollback Transfer',
+      cancelText: 'Batal',
+    });
 
-    if (!window.confirm(confirmMsg)) return;
+    if (!confirmed) return;
 
     try {
       const { data } = await api.delete(`/transfers/${transfer.id}`);

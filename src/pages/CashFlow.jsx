@@ -11,6 +11,7 @@ import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 import { printElement } from '../utils/print';
+import { confirmDialog } from '../utils/swal';
 
 export const ACTIVITY_TYPES = [
   { value: 'OPERATING', label: 'Operasi (Operating)', color: '#10b981' },
@@ -283,7 +284,14 @@ export default function CashFlow() {
   }
 
   async function handleDeleteTransaction(id, name) {
-    if (!window.confirm(`Yakin ingin menghapus mutasi kas "${name}"?`)) return;
+    const confirmed = await confirmDialog({
+      title: 'Hapus Catatan Kas?',
+      text: `Yakin ingin menghapus mutasi kas "${name}"?`,
+      confirmText: 'Ya, Hapus Mutasi',
+      cancelText: 'Batal',
+      isDanger: true,
+    });
+    if (!confirmed) return;
     try {
       await api.delete(`/cash-transactions/${id}`);
       toast.success('Catatan kas berhasil dihapus');

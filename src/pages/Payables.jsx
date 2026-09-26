@@ -18,6 +18,7 @@ import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
 import { useOutlet } from '../context/OutletContext';
 import { exportSupplierPayablesToExcel, printSupplierPayablesReport } from '../utils/exportReport';
 import toast from 'react-hot-toast';
+import { confirmDialog } from '../utils/swal';
 
 export default function Payables() {
   const {
@@ -380,9 +381,14 @@ export default function Payables() {
 
   // Delete / Void a payment
   async function handleDeletePayment(payableId, paymentId) {
-    if (!window.confirm('Yakin ingin membatalkan/menghapus riwayat pembayaran ini? Saldo hutang akan dikembalikan seperti semula.')) {
-      return;
-    }
+    const confirmed = await confirmDialog({
+      title: 'Batalkan Riwayat Pembayaran?',
+      text: 'Yakin ingin membatalkan/menghapus riwayat pembayaran ini? Saldo hutang akan dikembalikan seperti semula.',
+      confirmText: 'Ya, Batalkan Pembayaran',
+      cancelText: 'Kembali',
+      isDanger: true,
+    });
+    if (!confirmed) return;
 
     try {
       await api.delete(`/payables/${payableId}/payments/${paymentId}`);

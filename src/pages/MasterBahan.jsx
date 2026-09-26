@@ -10,6 +10,7 @@ import {
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 import ImportMasterModal from '../components/ImportMasterModal';
+import { confirmDialog } from '../utils/swal';
 
 const emptyForm = {
   code: '', name: '', category: 'Perlengkapan', type: 'RAW', unit_beli: 'Slop',
@@ -210,7 +211,14 @@ export default function MasterBahan() {
   }
 
   async function handleDelete(ing) {
-    if (!window.confirm(`Hapus master bahan "${ing.name}" (${ing.code})?\n\nPERINGATAN: Semua riwayat stok, resep, dan mutasi terkait bahan ini akan ikut dibersihkan.`)) return;
+    const confirmed = await confirmDialog({
+      title: 'Hapus Master Bahan?',
+      text: `Hapus master bahan "${ing.name}" (${ing.code})?\n\nPERINGATAN: Semua riwayat stok, resep, dan mutasi terkait bahan ini akan ikut dibersihkan.`,
+      confirmText: 'Ya, Hapus Bahan',
+      cancelText: 'Batal',
+      isDanger: true,
+    });
+    if (!confirmed) return;
     try {
       await api.delete(`/ingredients/${ing.id}`);
       setIngredients(prev => prev.filter(i => i.id !== ing.id));
@@ -246,9 +254,13 @@ export default function MasterBahan() {
   async function handleBulkDelete() {
     if (selectedIds.length === 0) return;
     const count = selectedIds.length;
-    const confirmed = window.confirm(
-      `Hapus ${count} bahan terpilih secara permanen?\n\nPERINGATAN: Tindakan ini tidak dapat dibatalkan. Semua riwayat stok, resep, dan mutasi terkait bahan-bahan ini akan ikut dibersihkan.`
-    );
+    const confirmed = await confirmDialog({
+      title: `Hapus ${count} Bahan Terpilih?`,
+      text: `Hapus ${count} bahan terpilih secara permanen?\n\nPERINGATAN: Tindakan ini tidak dapat dibatalkan. Semua riwayat stok, resep, dan mutasi terkait bahan-bahan ini akan ikut dibersihkan.`,
+      confirmText: `Ya, Hapus ${count} Bahan`,
+      cancelText: 'Batal',
+      isDanger: true,
+    });
     if (!confirmed) return;
 
     setBulkDeleting(true);

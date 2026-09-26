@@ -18,6 +18,7 @@ import { printElement } from '../utils/print';
 import { getTodayStr, getMonthStartStr, formatLocalDisplay } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
+import { confirmDialog } from '../utils/swal';
 
 export default function POS() {
   const [menus, setMenus] = useState([]);
@@ -1326,9 +1327,16 @@ export default function POS() {
   }
 
   // Clear entire cart
-  function clearCart() {
+  async function clearCart() {
     if (cart.length === 0) return;
-    if (window.confirm('Kosongkan semua pesanan di keranjang?')) {
+    const confirmed = await confirmDialog({
+      title: 'Kosongkan Keranjang?',
+      text: 'Kosongkan semua pesanan di keranjang belanja?',
+      confirmText: 'Ya, Kosongkan',
+      cancelText: 'Batal',
+      isDanger: true,
+    });
+    if (confirmed) {
       setCart([]);
       setCustomerName('');
       setOrderNotes('');

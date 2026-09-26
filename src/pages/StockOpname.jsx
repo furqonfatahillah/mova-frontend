@@ -11,6 +11,7 @@ import { getTodayStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 import { printElement } from '../utils/print';
+import { confirmDialog } from '../utils/swal';
 
 export default function StockOpname() {
   const [activeTab, setActiveTab] = useState('INPUT'); // 'INPUT' | 'HISTORY'
@@ -258,9 +259,14 @@ export default function StockOpname() {
   }
 
   async function handleReleaseSession(opnameNo) {
-    if (!window.confirm(`Apakah Anda yakin ingin merilis (Release) & menyetujui Sesi Opname "${opnameNo}"?\nDokumen akan dikunci.`)) {
-      return;
-    }
+    const confirmed = await confirmDialog({
+      title: 'Release & Kunci Sesi Opname?',
+      text: `Apakah Anda yakin ingin merilis (Release) & menyetujui Sesi Opname "${opnameNo}"?\nDokumen akan dikunci dan mutasi penyesuaian stok akan diproses.`,
+      confirmText: 'Ya, Release Dokumen',
+      cancelText: 'Kembali',
+      icon: 'question',
+    });
+    if (!confirmed) return;
     try {
       const { data } = await api.post(`/opnames/sessions/${opnameNo}/release`, {
         approver: sessionForm.approver || undefined,

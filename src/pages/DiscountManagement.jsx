@@ -8,6 +8,7 @@ import api from '../api/client';
 import { rupiah, num, LoadingState, PageHeader, AuditInfo } from '../components/ui';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
+import { confirmDialog } from '../utils/swal';
 
 const emptyForm = {
   name: '',
@@ -165,11 +166,17 @@ export default function DiscountManagement() {
   // Delete / deactivate discount
   async function handleDelete(item) {
     const isUsed = Number(item.used_count) > 0;
-    const msg = isUsed
-      ? `Promo "${item.name}" sudah digunakan ${item.used_count}x. Yakin ingin menonaktifkannya?`
-      : `Yakin ingin menghapus promo "${item.name}" secara permanen?`;
+    const confirmed = await confirmDialog({
+      title: isUsed ? 'Nonaktifkan Promo?' : 'Hapus Promo?',
+      text: isUsed
+        ? `Promo "${item.name}" sudah digunakan ${item.used_count}x. Yakin ingin menonaktifkannya?`
+        : `Yakin ingin menghapus promo "${item.name}" secara permanen?`,
+      confirmText: isUsed ? 'Ya, Nonaktifkan' : 'Ya, Hapus Promo',
+      cancelText: 'Batal',
+      isDanger: true,
+    });
 
-    if (!window.confirm(msg)) return;
+    if (!confirmed) return;
 
     try {
       const res = await api.delete(`/discounts/${item.id}`);

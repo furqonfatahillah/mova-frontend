@@ -10,6 +10,7 @@ import { num, rupiah, LoadingState, PageHeader, AuditInfo, PeriodPicker, Searcha
 import { getTodayStr, getMonthStartStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
+import { confirmDialog } from '../utils/swal';
 
 export const WASTE_CATEGORIES = [
   { value: 'EXPIRED', label: 'Basi / Kedaluwarsa', color: '#f43f5e', bg: 'rgba(244, 63, 94, 0.15)', border: 'rgba(244, 63, 94, 0.35)', icon: Flame },
@@ -255,10 +256,14 @@ export default function WasteTracking() {
   }
 
   async function handleDeleteWaste(log) {
-    const confirmDelete = window.confirm(
-      `Apakah Anda yakin ingin membatalkan catatan waste "${log.waste_no}" (${log.ingredient_name} - ${rupiah(log.loss_cost)})?\n\nPergerakan stok akan dibalikkan dan stok fisik akan dikembalikan!`
-    );
-    if (!confirmDelete) return;
+    const confirmed = await confirmDialog({
+      title: 'Batalkan Catatan Waste?',
+      text: `Apakah Anda yakin ingin membatalkan catatan waste "${log.waste_no}" (${log.ingredient_name} - ${rupiah(log.loss_cost)})?\n\nPergerakan stok akan dibalikkan dan stok fisik akan dikembalikan!`,
+      confirmText: 'Ya, Batalkan Waste',
+      cancelText: 'Kembali',
+      isDanger: true,
+    });
+    if (!confirmed) return;
 
     try {
       await api.delete(`/waste-logs/${log.id}`);

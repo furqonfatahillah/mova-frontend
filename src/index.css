@@ -3366,3 +3366,122 @@ textarea.form-control {
 .spin-anim {
   animation: spinClockwise 0.6s linear;
 }
+
+/* =====================================================
+   SWEETALERT2 — MOVA POS DARK THEME CUSTOM STYLING
+   ===================================================== */
+.swal2-container {
+  z-index: 10000 !important;
+}
+
+.mova-swal-popup {
+  background: #131836 !important;
+  border: 1px solid rgba(165, 180, 252, 0.18) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 24px 60px -10px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(139, 92, 246, 0.2) !important;
+  padding: 24px 28px !important;
+  font-family: var(--font-sans, 'Plus Jakarta Sans', system-ui, sans-serif) !important;
+}
+
+.mova-swal-popup-danger {
+  border-color: rgba(244, 63, 94, 0.35) !important;
+  box-shadow: 0 24px 60px -10px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(244, 63, 94, 0.28) !important;
+}
+
+.mova-swal-title {
+  color: #ffffff !important;
+  font-size: 18px !important;
+  font-weight: 700 !important;
+  padding: 0 0 10px 0 !important;
+  line-height: 1.4 !important;
+}
+
+.mova-swal-html {
+  color: #cbd5e1 !important;
+  font-size: 13.5px !important;
+  line-height: 1.55 !important;
+  margin: 0 !important;
+}
+
+.mova-swal-actions {
+  display: flex !important;
+  gap: 12px !important;
+  margin-top: 22px !important;
+  width: 100% !important;
+  justify-content: flex-end !important;
+}
+
+.mova-swal-btn {
+  padding: 10px 20px !important;
+  border-radius: 10px !important;
+  font-size: 13.5px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.18s ease !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  outline: none !important;
+  border: none !important;
+}
+
+.mova-swal-btn-confirm {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35) !important;
+}
+
+.mova-swal-btn-confirm:hover {
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45) !important;
+}
+
+.mova-swal-btn-danger {
+  background: linear-gradient(135deg, #e11d48 0%, #f43f5e 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 14px rgba(244, 63, 94, 0.35) !important;
+}
+
+.mova-swal-btn-danger:hover {
+  background: linear-gradient(135deg, #be123c 0%, #e11d48 100%) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 6px 20px rgba(244, 63, 94, 0.45) !important;
+}
+
+.mova-swal-btn-cancel {
+  background: #1e2548 !important;
+  color: #94a3b8 !important;
+  border: 1px solid rgba(165, 180, 252, 0.15) !important;
+}
+
+.mova-swal-btn-cancel:hover {
+  background: #27305a !important;
+  color: #ffffff !important;
+  border-color: rgba(165, 180, 252, 0.3) !important;
+}
+
+.mova-swal-icon {
+  margin: 12px auto 16px auto !important;
+  transform: scale(0.9) !important;
+}
+
+.swal2-icon.swal2-warning {
+  border-color: #f59e0b !important;
+  color: #f59e0b !important;
+}
+
+.swal2-icon.swal2-error {
+  border-color: #f43f5e !important;
+  color: #f43f5e !important;
+}
+
+.swal2-icon.swal2-success {
+  border-color: #10b981 !important;
+  color: #10b981 !important;
+}
+
+.swal2-icon.swal2-info {
+  border-color: #38bdf8 !important;
+  color: #38bdf8 !important;
+}

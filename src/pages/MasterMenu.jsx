@@ -14,6 +14,7 @@ import {
 import { getTodayStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import ImportMasterModal from '../components/ImportMasterModal';
+import { confirmDialog } from '../utils/swal';
 
 export default function MasterMenu() {
   const { outlets = [], activeOutletId, dateRange } = useOutlet?.() || {};
@@ -510,7 +511,14 @@ export default function MasterMenu() {
   }
 
   async function handleDeleteMenu(menu) {
-    if (!window.confirm(`Apakah Anda yakin ingin menghapus menu "${menu.name}"?`)) return;
+    const confirmed = await confirmDialog({
+      title: 'Hapus Menu?',
+      text: `Apakah Anda yakin ingin menghapus menu "${menu.name}"?`,
+      confirmText: 'Ya, Hapus Menu',
+      cancelText: 'Batal',
+      isDanger: true,
+    });
+    if (!confirmed) return;
     try {
       await api.delete(`/menus/${menu.id}`);
       toast.success(`Menu "${menu.name}" dihapus`);
@@ -560,9 +568,13 @@ export default function MasterMenu() {
   async function handleBulkDeleteMenus() {
     if (selectedMenuIds.length === 0) return;
     const count = selectedMenuIds.length;
-    const confirmed = window.confirm(
-      `Hapus ${count} menu terpilih secara permanen?\n\nPERINGATAN: Tindakan ini tidak dapat dibatalkan. Resep (BOM) dan data terkait akan ikut dihapus.`
-    );
+    const confirmed = await confirmDialog({
+      title: `Hapus ${count} Menu Terpilih?`,
+      text: `Hapus ${count} menu terpilih secara permanen?\n\nPERINGATAN: Tindakan ini tidak dapat dibatalkan. Resep (BOM) dan data terkait akan ikut dihapus.`,
+      confirmText: `Ya, Hapus ${count} Menu`,
+      cancelText: 'Batal',
+      isDanger: true,
+    });
     if (!confirmed) return;
 
     setBulkDeletingMenus(true);
@@ -768,7 +780,14 @@ export default function MasterMenu() {
   }
 
   async function handleDeleteModifierGroup(group) {
-    if (!window.confirm(`Hapus kelompok modifier "${group.name}"? Pilihan ini tidak akan muncul lagi di menu.`)) return;
+    const confirmed = await confirmDialog({
+      title: 'Hapus Kelompok Modifier?',
+      text: `Hapus kelompok modifier "${group.name}"? Pilihan ini tidak akan muncul lagi di menu.`,
+      confirmText: 'Ya, Hapus Kelompok',
+      cancelText: 'Batal',
+      isDanger: true,
+    });
+    if (!confirmed) return;
     try {
       await api.delete(`/modifier-groups/${group.id}`);
       toast.success(`Kelompok modifier "${group.name}" berhasil dihapus.`);

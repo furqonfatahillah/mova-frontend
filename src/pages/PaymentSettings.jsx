@@ -3,6 +3,7 @@ import api from '../api/client';
 import { PageHeader, LoadingState } from '../components/ui';
 import { useOutlet } from '../context/OutletContext';
 import toast from 'react-hot-toast';
+import { confirmDialog } from '../utils/swal';
 import {
   CreditCard,
   Landmark,
@@ -205,7 +206,14 @@ export default function PaymentSettings() {
   }
 
   async function handleDeleteAccount(id, name) {
-    if (!window.confirm(`Yakin ingin menghapus ${name}?`)) return;
+    const confirmed = await confirmDialog({
+      title: 'Hapus Rekening / E-Wallet?',
+      text: `Yakin ingin menghapus ${name}?`,
+      confirmText: 'Ya, Hapus Rekening',
+      cancelText: 'Batal',
+      isDanger: true,
+    });
+    if (!confirmed) return;
     try {
       await api.delete(`/bank-accounts/${id}`);
       toast.success('Data rekening berhasil dihapus');

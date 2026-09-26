@@ -7,6 +7,7 @@ import api from '../api/client';
 import toast from 'react-hot-toast';
 import { PageHeader, LoadingState, AuditInfo, MiniCard } from '../components/ui';
 import ImportMasterModal from '../components/ImportMasterModal';
+import { confirmDialog } from '../utils/swal';
 
 const emptyForm = {
   code: '',
@@ -107,9 +108,14 @@ export default function OutletManagement() {
       return;
     }
 
-    if (!window.confirm(`Apakah Anda yakin ingin menghapus/menonaktifkan cabang "${outlet.name}"?`)) {
-      return;
-    }
+    const confirmed = await confirmDialog({
+      title: 'Hapus / Nonaktifkan Cabang?',
+      text: `Apakah Anda yakin ingin menghapus/menonaktifkan cabang "${outlet.name}"?`,
+      confirmText: 'Ya, Proses Cabang',
+      cancelText: 'Batal',
+      isDanger: true,
+    });
+    if (!confirmed) return;
 
     try {
       const { data } = await api.delete(`/outlets/${outlet.id}`);

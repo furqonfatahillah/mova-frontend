@@ -18,6 +18,7 @@ import { exportReceivablesToExcel } from '../utils/exportReport';
 import { printElement } from '../utils/print';
 import toast from 'react-hot-toast';
 import ImportMasterModal from '../components/ImportMasterModal';
+import { confirmDialog } from '../utils/swal';
 
 export default function Receivables() {
   const {
@@ -495,9 +496,14 @@ export default function Receivables() {
 
   // Handle Delete Receivable
   async function handleDelete(item) {
-    if (!window.confirm(`Yakin ingin menghapus tagihan kasbon ${item.receivable_no} (${item.customer_name})?`)) {
-      return;
-    }
+    const confirmed = await confirmDialog({
+      title: 'Hapus Tagihan Kasbon?',
+      text: `Yakin ingin menghapus tagihan kasbon ${item.receivable_no} (${item.customer_name})?`,
+      confirmText: 'Ya, Hapus Kasbon',
+      cancelText: 'Batal',
+      isDanger: true,
+    });
+    if (!confirmed) return;
     try {
       await api.delete(`/receivables/${item.id}`);
       toast.success('Data kasbon berhasil dihapus');
@@ -510,9 +516,14 @@ export default function Receivables() {
 
   // Handle Delete Payment
   async function handleDeletePayment(receivableId, paymentId) {
-    if (!window.confirm('Yakin ingin membatalkan dan menghapus catatan pembayaran ini?')) {
-      return;
-    }
+    const confirmed = await confirmDialog({
+      title: 'Batalkan Pembayaran?',
+      text: 'Yakin ingin membatalkan dan menghapus catatan pembayaran ini? Sisa kasbon akan dikembalikan.',
+      confirmText: 'Ya, Batalkan Pembayaran',
+      cancelText: 'Kembali',
+      isDanger: true,
+    });
+    if (!confirmed) return;
     try {
       const res = await api.delete(`/receivables/${receivableId}/payments/${paymentId}`);
       toast.success('Pembayaran dibatalkan, sisa kasbon disesuaikan');

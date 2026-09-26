@@ -9,6 +9,7 @@ import { rupiah, LoadingState, PageHeader, PeriodPicker } from '../components/ui
 import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
+import { confirmDialog } from '../utils/swal';
 
 export const EXPENSE_CATEGORIES = [
   { value: 'SALARY',      label: 'Gaji & Upah Karyawan',          color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' },
@@ -155,7 +156,14 @@ export default function OpexManagement() {
   }
 
   async function handleDelete(id, name) {
-    if (!window.confirm(`Yakin ingin menghapus catatan biaya "${name}"?`)) return;
+    const confirmed = await confirmDialog({
+      title: 'Hapus Biaya Operasional?',
+      text: `Yakin ingin menghapus catatan biaya "${name}"?`,
+      confirmText: 'Ya, Hapus Biaya',
+      cancelText: 'Batal',
+      isDanger: true,
+    });
+    if (!confirmed) return;
     try {
       await api.delete(`/expenses/${id}`);
       toast.success('Catatan biaya operasional berhasil dihapus');

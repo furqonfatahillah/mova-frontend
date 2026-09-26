@@ -10,6 +10,7 @@ import { rupiah, num, PageHeader, LoadingState, MiniCard, PeriodPicker } from '.
 import { getMonthStartStr, getTodayStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
+import { confirmDialog } from '../utils/swal';
 
 export default function ShiftManagement() {
   const {
@@ -304,7 +305,14 @@ export default function ShiftManagement() {
   }
 
   async function handleDeleteSchedule(sch) {
-    if (!window.confirm(`Apakah Anda yakin ingin menghapus jadwal master '${sch.shift_name}'?`)) return;
+    const confirmed = await confirmDialog({
+      title: 'Hapus Master Jadwal Shift?',
+      text: `Apakah Anda yakin ingin menghapus jadwal master '${sch.shift_name}'?`,
+      confirmText: 'Ya, Hapus Jadwal',
+      cancelText: 'Batal',
+      isDanger: true,
+    });
+    if (!confirmed) return;
     try {
       await api.delete(`/shift-schedules/${sch.id}`);
       toast.success(`Jadwal shift '${sch.shift_name}' berhasil dihapus`);

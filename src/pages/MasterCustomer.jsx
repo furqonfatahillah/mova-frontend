@@ -9,6 +9,7 @@ import api from '../api/client';
 import { rupiah, num, LoadingState, PageHeader, AuditInfo } from '../components/ui';
 import { formatLocalDisplay } from '../utils/date';
 import toast from 'react-hot-toast';
+import { confirmDialog } from '../utils/swal';
 
 const emptyForm = {
   name: '',
@@ -129,9 +130,14 @@ export default function MasterCustomer() {
   const handleBulkDelete = async () => {
     if (selectedIds.length === 0) return;
     const count = selectedIds.length;
-    if (!window.confirm(`Yakin ingin memproses / menghapus ${count} member terpilih secara massal? Member yang memiliki transaksi akan otomatis dinonaktifkan.`)) {
-      return;
-    }
+    const confirmed = await confirmDialog({
+      title: `Proses ${count} Member Terpilih?`,
+      text: `Yakin ingin memproses / menghapus ${count} member terpilih secara massal? Member yang memiliki transaksi akan otomatis dinonaktifkan.`,
+      confirmText: `Ya, Proses ${count} Member`,
+      cancelText: 'Batal',
+      isDanger: true,
+    });
+    if (!confirmed) return;
 
     setBulkDeleting(true);
     try {
@@ -219,11 +225,17 @@ export default function MasterCustomer() {
 
   async function handleDelete(cust) {
     const isDeactivation = (cust.total_visits > 0);
-    const confirmMsg = isDeactivation
-      ? `Member "${cust.name}" sudah memiliki riwayat kunjungan. Member akan dinonaktifkan. Lanjutkan?`
-      : `Hapus member "${cust.name}" secara permanen?`;
+    const confirmed = await confirmDialog({
+      title: isDeactivation ? 'Nonaktifkan Member?' : 'Hapus Member?',
+      text: isDeactivation
+        ? `Member "${cust.name}" sudah memiliki riwayat kunjungan. Member akan dinonaktifkan dari sistem. Lanjutkan?`
+        : `Hapus member "${cust.name}" secara permanen?`,
+      confirmText: isDeactivation ? 'Ya, Nonaktifkan' : 'Ya, Hapus Member',
+      cancelText: 'Batal',
+      isDanger: true,
+    });
 
-    if (!window.confirm(confirmMsg)) return;
+    if (!confirmed) return;
 
     try {
       const res = await api.delete(`/customers/${cust.id}`);

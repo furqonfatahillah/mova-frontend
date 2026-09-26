@@ -7,6 +7,7 @@ import api from '../api/client';
 import toast from 'react-hot-toast';
 import { PageHeader, LoadingState, MiniCard, formatDateTime } from '../components/ui';
 import { useOutlet } from '../context/OutletContext';
+import { confirmDialog } from '../utils/swal';
 
 export default function UserManagement() {
   const currentUser = JSON.parse(localStorage.getItem('pos_user') || '{}');
@@ -208,7 +209,14 @@ export default function UserManagement() {
   }
 
   async function handleReject(user) {
-    if (!window.confirm(`Tolak permohonan registrasi akun "${user.name}" (${user.email})?`)) return;
+    const confirmed = await confirmDialog({
+      title: 'Tolak Permohonan Akun?',
+      text: `Tolak permohonan registrasi akun "${user.name}" (${user.email})?`,
+      confirmText: 'Ya, Tolak Akun',
+      cancelText: 'Batal',
+      isDanger: true,
+    });
+    if (!confirmed) return;
     try {
       const { data } = await api.post(`/users/${user.id}/reject`);
       toast.success(data.message || 'Permohonan ditolak');
@@ -219,7 +227,14 @@ export default function UserManagement() {
   }
 
   async function handleSuspend(user) {
-    if (!window.confirm(`Nonaktifkan (suspend) akun "${user.name}"? Pengguna tidak akan dapat login.`)) return;
+    const confirmed = await confirmDialog({
+      title: 'Nonaktifkan Akun Pengguna?',
+      text: `Nonaktifkan (suspend) akun "${user.name}"? Pengguna tidak akan dapat login ke sistem.`,
+      confirmText: 'Ya, Nonaktifkan',
+      cancelText: 'Batal',
+      isDanger: true,
+    });
+    if (!confirmed) return;
     try {
       const { data } = await api.post(`/users/${user.id}/suspend`);
       toast.success(data.message || 'Akun dinonaktifkan');
@@ -230,7 +245,14 @@ export default function UserManagement() {
   }
 
   async function handleDelete(user) {
-    if (!window.confirm(`Hapus permanen pengguna "${user.name}"? Tindakan ini tidak dapat dibatalkan.`)) return;
+    const confirmed = await confirmDialog({
+      title: 'Hapus Permanen Pengguna?',
+      text: `Hapus permanen pengguna "${user.name}"? Tindakan ini tidak dapat dibatalkan.`,
+      confirmText: 'Ya, Hapus Permanen',
+      cancelText: 'Batal',
+      isDanger: true,
+    });
+    if (!confirmed) return;
     try {
       const { data } = await api.delete(`/users/${user.id}`);
       toast.success(data.message || 'Pengguna dihapus');

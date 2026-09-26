@@ -9,6 +9,7 @@ import { rupiah, num, fmtQtyVal, LoadingState, PageHeader, AuditInfo, UnitSelect
 import { getTodayStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
+import { confirmDialog } from '../utils/swal';
 
 export default function BatchPrep() {
   const {
@@ -179,8 +180,14 @@ export default function BatchPrep() {
 
   async function handleDeleteBatch(batch) {
     if (!batch) return;
-    const confirmMsg = `Batalkan produksi ${batch.batch_no}?\n\n• Semua pemotongan bahan mentah akan DIBATALKAN & stok dikembalikan ke gudang.\n• Penambahan stok olahan ${batch.ingredient?.name || ''} (+${batch.actual_output_qty} ${batch.output_unit}) akan DITARIK kembali.\n\nLanjutkan pembatalan?`;
-    if (!window.confirm(confirmMsg)) return;
+    const confirmed = await confirmDialog({
+      title: `Batalkan Produksi ${batch.batch_no}?`,
+      text: `Batalkan produksi ${batch.batch_no}?\n\n• Semua pemotongan bahan mentah akan DIBATALKAN & stok dikembalikan ke gudang.\n• Penambahan stok olahan ${batch.ingredient?.name || ''} (+${batch.actual_output_qty} ${batch.output_unit}) akan DITARIK kembali.\n\nLanjutkan pembatalan?`,
+      confirmText: 'Ya, Batalkan Produksi',
+      cancelText: 'Kembali',
+      isDanger: true,
+    });
+    if (!confirmed) return;
 
     setDeletingBatchId(batch.id);
     try {

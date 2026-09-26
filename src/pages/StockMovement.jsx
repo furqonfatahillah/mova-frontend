@@ -6,6 +6,7 @@ import { num, rupiah, fmtQtyVal, LoadingState, PageHeader, AuditInfo, PeriodPick
 import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
+import { ownerConfirmDialog } from '../utils/swal';
 
 export const WASTE_REASONS = [
   { value: 'SPOILED',         label: 'Basi / Kedaluwarsa',        badgeColor: '#f43f5e', bg: 'rgba(244, 63, 94, 0.15)' },
@@ -323,14 +324,19 @@ export default function StockMovement({ defaultFilterType }) {
       return;
     }
 
-    const confirmMsg = `PERINGATAN KHUSUS OWNER BISNIS:\n\nHapus permanen transaksi mutasi terakhir "${m.ingredient?.name || 'Bahan'}" (${m.date} - ${m.type})?\n\n` +
-      `Sistem akan secara otomatis:\n` +
-      `1. Membatalkan mutasi stok dan memulihkan saldo fisik.\n` +
-      `2. Mengkalkulasikan ulang Moving Average (HPP avg) bahan secara real-time berdasarkan riwayat mutasi yang tersisa.\n` +
-      `3. Menghapus tagihan hutang supplier terkait (jika merupakan pembelian tempo).\n\n` +
-      `Lanjutkan penghapusan data mutasi terakhir ini?`;
+    const confirmed = await ownerConfirmDialog({
+      title: 'PERINGATAN KHUSUS OWNER BISNIS',
+      targetName: `Hapus permanen transaksi mutasi terakhir "${m.ingredient?.name || 'Bahan'}" (${m.date} - ${m.type})?`,
+      bullets: [
+        'Membatalkan mutasi stok dan memulihkan saldo fisik.',
+        'Mengkalkulasikan ulang Moving Average (HPP avg) bahan secara real-time berdasarkan riwayat mutasi yang tersisa.',
+        'Menghapus tagihan hutang supplier terkait (jika merupakan pembelian tempo).'
+      ],
+      confirmText: 'Ya, Hapus & Rollback Mutasi',
+      cancelText: 'Batal'
+    });
 
-    if (!window.confirm(confirmMsg)) return;
+    if (!confirmed) return;
 
     try {
       const { data } = await api.delete(`/movements/${m.id}`);
