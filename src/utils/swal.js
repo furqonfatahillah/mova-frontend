@@ -1,24 +1,30 @@
-import Swal from 'sweetalert2';
+// Lazy-load SweetAlert2 — only downloaded when first dialog is triggered (~40KB saved from initial load)
+let _swalDark = null;
 
-// Base dark theme configuration matching MOVA POS Design System
-const swalDark = Swal.mixin({
-  background: '#131836',
-  color: '#f8fafc',
-  backdrop: 'rgba(5, 8, 22, 0.8)',
-  customClass: {
-    popup: 'mova-swal-popup',
-    title: 'mova-swal-title',
-    htmlContainer: 'mova-swal-html',
-    confirmButton: 'mova-swal-btn mova-swal-btn-confirm',
-    cancelButton: 'mova-swal-btn mova-swal-btn-cancel',
-    denyButton: 'mova-swal-btn mova-swal-btn-danger',
-    actions: 'mova-swal-actions',
-    icon: 'mova-swal-icon',
-  },
-  buttonsStyling: false,
-  reverseButtons: true,
-  focusConfirm: false,
-});
+async function getSwal() {
+  if (!_swalDark) {
+    const { default: Swal } = await import('sweetalert2');
+    _swalDark = Swal.mixin({
+      background: '#131836',
+      color: '#f8fafc',
+      backdrop: 'rgba(5, 8, 22, 0.8)',
+      customClass: {
+        popup: 'mova-swal-popup',
+        title: 'mova-swal-title',
+        htmlContainer: 'mova-swal-html',
+        confirmButton: 'mova-swal-btn mova-swal-btn-confirm',
+        cancelButton: 'mova-swal-btn mova-swal-btn-cancel',
+        denyButton: 'mova-swal-btn mova-swal-btn-danger',
+        actions: 'mova-swal-actions',
+        icon: 'mova-swal-icon',
+      },
+      buttonsStyling: false,
+      reverseButtons: true,
+      focusConfirm: false,
+    });
+  }
+  return _swalDark;
+}
 
 /**
  * General Confirmation Dialog
@@ -41,6 +47,8 @@ export async function confirmDialog({
   cancelText = 'Batal',
   isDanger = false,
 } = {}) {
+  const swalDark = await getSwal();
+
   // If text contains newlines, format it into clean HTML paragraphs
   let formattedHtml = html;
   if (!formattedHtml && text && text.includes('\n')) {
@@ -90,6 +98,8 @@ export async function ownerConfirmDialog({
   confirmText = 'Ya, Hapus Permanen',
   cancelText = 'Batal',
 } = {}) {
+  const swalDark = await getSwal();
+
   const bulletsHtml = bullets && bullets.length > 0
     ? `<div style="text-align: left; background: rgba(15, 20, 41, 0.7); border: 1px solid rgba(165, 180, 252, 0.15); border-radius: 10px; padding: 14px 16px; margin: 14px 0 16px 0;">
         <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #f59e0b; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
@@ -101,7 +111,7 @@ export async function ownerConfirmDialog({
       </div>`
     : '';
 
-  const html = `
+  const htmlContent = `
     <div style="font-size: 13.5px; color: #e2e8f0; line-height: 1.5;">
       ${targetName ? `<div style="margin-bottom: 10px; font-weight: 600; color: #ffffff;">${targetName}</div>` : ''}
       ${subtitle ? `<p style="margin-bottom: 8px; color: #94a3b8;">${subtitle}</p>` : ''}
@@ -116,7 +126,7 @@ export async function ownerConfirmDialog({
     title: `<div style="display: flex; align-items: center; justify-content: center; gap: 8px; color: #f59e0b; font-size: 16px; font-weight: 800; letter-spacing: 0.04em;">
       <span>🛡️</span> ${title}
     </div>`,
-    html,
+    html: htmlContent,
     icon: 'warning',
     showCancelButton: true,
     confirmButtonText: confirmText,
@@ -139,6 +149,7 @@ export async function ownerConfirmDialog({
  * Success Alert Dialog
  */
 export async function alertSuccess({ title = 'Berhasil!', text = '', html = null, timer = 2500 } = {}) {
+  const swalDark = await getSwal();
   return swalDark.fire({
     title,
     text: html ? undefined : text,
@@ -154,6 +165,7 @@ export async function alertSuccess({ title = 'Berhasil!', text = '', html = null
  * Error Alert Dialog
  */
 export async function alertError({ title = 'Terjadi Kesalahan', text = '', html = null } = {}) {
+  const swalDark = await getSwal();
   return swalDark.fire({
     title,
     text: html ? undefined : text,
@@ -172,7 +184,7 @@ export async function alertError({ title = 'Terjadi Kesalahan', text = '', html 
 }
 
 export default {
-  fire: swalDark.fire.bind(swalDark),
+  fire: async (...args) => { const s = await getSwal(); return s.fire(...args); },
   confirm: confirmDialog,
   ownerConfirm: ownerConfirmDialog,
   success: alertSuccess,

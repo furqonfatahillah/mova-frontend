@@ -9,10 +9,18 @@ const api = axios.create({
     Accept: 'application/json',
   },
   withCredentials: true,
+  // Timeout to prevent hanging requests
+  timeout: 30000,
 });
 
-// In-flight request deduplicator to prevent parallel duplicate GET network calls
+// ============================================================================
+// IN-FLIGHT DEDUPLICATION + SHORT-LIVED RESPONSE CACHE
+// Prevents duplicate GET requests AND caches responses for 3 seconds
+// to avoid redundant network calls when switching tabs/components quickly
+// ============================================================================
 const inFlightRequests = new Map();
+const responseCache = new Map();
+const CACHE_TTL_MS = 3000; // 3 seconds — enough for tab switches, not stale for real data
 
 // Attach token and active outlet automatically
 api.interceptors.request.use((config) => {
@@ -45,29 +53,65 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Wrap api.get with in-flight deduplication
+// Build a cache key from URL + params + context
+function buildCacheKey(url, config = {}) {
+  return `${url}:${JSON.stringify(config.params || {})}:${localStorage.getItem('pos_active_outlet_id') || ''}:${localStorage.getItem('pos_active_business_id') || ''}`;
+}
+
+// Wrap api.get with deduplication + short-lived caching
 const originalGet = api.get.bind(api);
 api.get = function (url, config = {}) {
-  // If skipDedupe is specified or method is not GET, bypass
-  if (config.skipDedupe) {
+  // Bypass deduplication/cache if explicitly requested
+  if (config.skipDedupe || config.skipCache) {
     return originalGet(url, config);
   }
 
-  const key = `${url}:${JSON.stringify(config.params || {})}:${localStorage.getItem('pos_active_outlet_id') || ''}:${localStorage.getItem('pos_active_business_id') || ''}`;
+  const key = buildCacheKey(url, config);
 
+  // Return cached response if still fresh
+  const cached = responseCache.get(key);
+  if (cached && (Date.now() - cached.ts) < CACHE_TTL_MS) {
+    return Promise.resolve(cached.response);
+  }
+
+  // Return in-flight promise if same request is already pending
   if (inFlightRequests.has(key)) {
     return inFlightRequests.get(key);
   }
 
   const promise = originalGet(url, config)
+    .then(response => {
+      // Cache the successful response
+      responseCache.set(key, { response, ts: Date.now() });
+      return response;
+    })
     .finally(() => {
-      // Clear after short microtask to allow all concurrent components to share the same response
-      setTimeout(() => inFlightRequests.delete(key), 120);
+      // Clear in-flight tracker after microtask
+      setTimeout(() => inFlightRequests.delete(key), 50);
     });
 
   inFlightRequests.set(key, promise);
   return promise;
 };
+
+// Invalidate cache for a specific endpoint pattern (call after mutations)
+api.invalidateCache = function (urlPattern) {
+  if (!urlPattern) {
+    responseCache.clear();
+    return;
+  }
+  for (const key of responseCache.keys()) {
+    if (key.includes(urlPattern)) {
+      responseCache.delete(key);
+    }
+  }
+};
+
+// Clear cache on outlet/business change
+if (typeof window !== 'undefined') {
+  window.addEventListener('pos:outlet_changed', () => responseCache.clear());
+  window.addEventListener('pos:business_changed', () => responseCache.clear());
+}
 
 // Handle 401 globally (only redirect if not already on /login)
 api.interceptors.response.use(
@@ -76,6 +120,7 @@ api.interceptors.response.use(
     if (err.response?.status === 401 && !window.location.pathname.includes('/login')) {
       localStorage.removeItem('pos_token');
       localStorage.removeItem('pos_user');
+      responseCache.clear();
       window.location.href = '/login';
     }
     return Promise.reject(err);

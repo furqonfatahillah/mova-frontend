@@ -226,7 +226,7 @@ export default function POS() {
     try {
       const [m, t, i, s, ob, disc, urg] = await Promise.all([
         api.get('/menus'),
-        api.get('/transactions', { params: { outlet_id: currentTargetOutlet, status: 'PAID' } }),
+        api.get('/transactions', { params: { outlet_id: currentTargetOutlet, status: 'PAID', limit: 30 } }),
         api.get('/ingredients', { params: { outlet_id: currentTargetOutlet } }),
         api.get('/shifts/active', { params: { outlet_id: currentTargetOutlet } }),
         api.get('/transactions/open-bills', { params: { outlet_id: currentTargetOutlet } }),
