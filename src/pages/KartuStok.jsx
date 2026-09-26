@@ -175,6 +175,7 @@ export default function KartuStok() {
     ]
   });
   const [saving, setSaving] = useState(false);
+  const [recalculating, setRecalculating] = useState(false);
 
   // Initial fetch ingredients & suppliers for master list
   useEffect(() => {
@@ -576,6 +577,48 @@ export default function KartuStok() {
     setStockCard(null);
   }
 
+  // Sinkronisasi & Rekalkulasi Seluruh Moving Average & Transfer Antar-Cabang (Khusus Owner Bisnis)
+  async function handleRecalculateAll() {
+    const isOwner = Boolean(isOwnerBisnis || isPlatformAdmin);
+    if (!isOwner) {
+      toast.error('Hanya Owner Bisnis yang berwenang melakukan sinkronisasi & rekalkulasi.');
+      return;
+    }
+
+    const targetLabel = selectedIng
+      ? `bahan "${selectedIng.name}" di seluruh cabang`
+      : 'seluruh bahan & mutasi transfer di semua cabang';
+
+    const confirmed = await ownerConfirmDialog({
+      title: 'SINKRONISASI & REKALKULASI HPP SEMUA CABANG',
+      targetName: `Sinkronkan & hitung ulang HPP dan transfer untuk ${targetLabel}?`,
+      bullets: [
+        'Mengkalkulasikan ulang Moving Average (HPP) dari awal secara kronologis di cabang pusat.',
+        'Mengalirkan (cascade) harga transfer keluar ke seluruh mutasi transfer masuk di cabang penerima.',
+        'Menghitung ulang HPP dan saldo stok di seluruh cabang penerima transfer secara otomatis.'
+      ],
+      confirmText: 'Ya, Sinkronkan Sekarang',
+      cancelText: 'Batal'
+    });
+
+    if (!confirmed) return;
+
+    setRecalculating(true);
+    try {
+      const { data } = await api.post('/stock-card/recalculate-all', {
+        ingredient_id: selectedIngId || undefined
+      });
+      toast.success(data.message || 'Berhasil menghitung ulang dan menyinkronkan seluruh cabang!');
+      if (selectedIngId) await fetchStockCard();
+      await fetchSummary();
+      await fetchIngredients();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal melakukan rekalkulasi');
+    } finally {
+      setRecalculating(false);
+    }
+  }
+
   // Open Edit Modal untuk Mutasi Tertentu (Khusus Owner Bisnis)
   function handleOpenEditMovement(row) {
     const isOwner = Boolean(isOwnerBisnis || isPlatformAdmin);
@@ -912,6 +955,18 @@ export default function KartuStok() {
             {selectedIngId && (
               <button className="btn btn-secondary" onClick={backToSummaryList} title="Kembali ke Daftar Bahan">
                 <ArrowLeft size={14} /> Daftar Bahan
+              </button>
+            )}
+            {(isOwnerBisnis || isPlatformAdmin) && (
+              <button
+                className="btn btn-secondary"
+                onClick={handleRecalculateAll}
+                disabled={recalculating}
+                title="Sinkronkan & Hitung Ulang Akumulasi Moving Average Seluruh Cabang"
+                style={{ color: '#818cf8', borderColor: 'rgba(99, 102, 241, 0.4)' }}
+              >
+                <RefreshCw size={14} className={recalculating ? 'spin' : ''} />
+                {recalculating ? 'Menyinkronkan...' : 'Sinkronkan HPP Cabang'}
               </button>
             )}
             <button className="btn btn-secondary" onClick={handlePrint} title="Cetak Laporan">
