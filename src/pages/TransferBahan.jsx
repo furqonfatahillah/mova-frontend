@@ -10,6 +10,7 @@ import {
 import api from '../api/client';
 import toast from 'react-hot-toast';
 import { PageHeader, LoadingState, AuditInfo, MiniCard, num, rupiah, PeriodPicker, SearchableSelect } from '../components/ui';
+import { getItemClassification } from './KartuStok';
 import { printElement } from '../utils/print';
 import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
 import { useOutlet } from '../context/OutletContext';
@@ -166,6 +167,7 @@ export default function TransferBahan() {
   // Auto-init create modal when URL params are present
   function initCreateModalFromParams(destId, ingId, menuId, itemType, outList, ingList, menuList) {
     const isProduct = itemType === 'PRODUCT' || Boolean(menuId);
+    const isPerl = itemType === 'PERLENGKAPAN';
     const destOutlet = outList.find(o => String(o.id) === String(destId));
     const altSource = outList.find(o => String(o.id) !== String(destId)) || outList[0];
 
@@ -179,13 +181,13 @@ export default function TransferBahan() {
       unit: 'pcs',
       notes: 'Permintaan dari Kasir POS'
     } : {
-      item_type: 'INGREDIENT',
+      item_type: isPerl ? 'PERLENGKAPAN' : 'INGREDIENT',
       ingredient_id: ingId || (ingList[0]?.id || ''),
       menu_id: '',
       input_qty: '5',
-      input_unit: ingList[0]?.unit_beli || ingList[0]?.unit_pakai || 'gram',
+      input_unit: ingList[0]?.unit_beli || ingList[0]?.unit_pakai || (isPerl ? 'pcs' : 'gram'),
       qty: 5,
-      unit: ingList[0]?.unit_pakai || 'gram',
+      unit: ingList[0]?.unit_pakai || (isPerl ? 'pcs' : 'gram'),
       notes: 'Permintaan dari Kasir POS'
     };
 
@@ -210,34 +212,56 @@ export default function TransferBahan() {
     return menus.filter(m => m.item_type === 'DIRECT' || m.track_stock || m.is_direct);
   }, [menus]);
 
-  // Searchable select options for ingredients and products in transfer modal
+  // Searchable select options for ingredients, supplies (perlengkapan), and products in transfer modal
+  const transferPerlengkapanOptions = useMemo(() => {
+    if (!ingredients || !ingredients.length) return [];
+    const items = [];
+
+    ingredients.forEach(i => {
+      const cls = getItemClassification(i);
+      if (cls === 'PERLENGKAPAN') {
+        items.push({
+          value: i.id,
+          label: i.name,
+          code: i.code,
+          category: i.category || 'Perlengkapan',
+          sublabel: `${i.unit_pakai || 'Unit'} • Stok: ${num(i.current_stock ?? 0)}`,
+          badge: 'Perlengkapan',
+          raw: i,
+        });
+      }
+    });
+
+    if (items.length === 0) return [];
+    return [{ group: '📦 Perlengkapan & Kemasan (Cup, Sedotan, Tissue, Box, dll)', items }];
+  }, [ingredients]);
+
   const transferIngredientOptions = useMemo(() => {
     if (!ingredients || !ingredients.length) return [];
     const mentah = [];
-    const perlengkapan = [];
     const olahan = [];
 
     ingredients.forEach(i => {
-      const isPerlengkapan = (i.category || '').toLowerCase().includes('perlengkapan') || (i.category || '').toLowerCase().includes('kemasan');
-      const isOlahan = i.type === 'SEMI_FINISHED' || (i.category || '').toLowerCase().includes('olahan');
+      const cls = getItemClassification(i);
+      if (cls === 'PERLENGKAPAN') return; // Exclude perlengkapan from bahan baku dropdown
+
+      const isOlahan = cls === 'SEMI_FINISHED';
       const opt = {
         value: i.id,
         label: i.name,
         code: i.code,
         category: i.category,
         sublabel: `${i.unit_pakai || 'Unit'} • Stok: ${num(i.current_stock ?? 0)}`,
-        badge: isPerlengkapan ? 'Perlengkapan' : (isOlahan ? 'Setengah Jadi' : 'Bahan'),
+        badge: isOlahan ? 'Setengah Jadi' : 'Bahan Mentah',
         raw: i,
       };
-      if (isPerlengkapan) perlengkapan.push(opt);
-      else if (isOlahan) olahan.push(opt);
+      if (isOlahan) olahan.push(opt);
       else mentah.push(opt);
     });
 
     const groups = [];
-    if (mentah.length > 0) groups.push({ group: 'Bahan Baku Mentah', items: mentah });
-    if (perlengkapan.length > 0) groups.push({ group: 'Perlengkapan & Kemasan', items: perlengkapan });
-    if (olahan.length > 0) groups.push({ group: 'Bahan Setengah Jadi', items: olahan });
+    if (mentah.length > 0) groups.push({ group: '🧪 Bahan Baku Mentah', items: mentah });
+    if (olahan.length > 0) groups.push({ group: '🥣 Bahan Setengah Jadi (Olahan)', items: olahan });
     return groups;
   }, [ingredients]);
 
@@ -342,8 +366,30 @@ export default function TransferBahan() {
           }
         ]
       }));
+    } else if (type === 'PERLENGKAPAN') {
+      const firstPerl = ingredients.find(i => getItemClassification(i) === 'PERLENGKAPAN') || ingredients[0];
+      const defaultUnit = firstPerl?.unit_beli || firstPerl?.unit_pakai || 'pcs';
+      const defaultPrice = firstPerl?.cost || firstPerl?.harga_beli || '';
+      setFormData(p => ({
+        ...p,
+        items: [
+          ...p.items,
+          {
+            item_type: 'PERLENGKAPAN',
+            ingredient_id: firstPerl ? firstPerl.id : '',
+            menu_id: '',
+            input_qty: '',
+            input_unit: defaultUnit,
+            qty: '',
+            unit: firstPerl ? firstPerl.unit_pakai : 'pcs',
+            unit_price: defaultPrice,
+            total_price: 0,
+            notes: ''
+          }
+        ]
+      }));
     } else {
-      const firstIng = ingredients[0];
+      const firstIng = ingredients.find(i => getItemClassification(i) !== 'PERLENGKAPAN') || ingredients[0];
       const defaultUnit = firstIng?.unit_beli || firstIng?.unit_pakai || 'gram';
       const defaultPrice = firstIng?.cost || firstIng?.harga_beli || '';
       setFormData(p => ({
@@ -395,13 +441,31 @@ export default function TransferBahan() {
           current.unit = firstMenu?.unit || 'pcs';
           current.qty = current.input_qty || '';
           current.unit_price = firstMenu?.cost_price || firstMenu?.price || '';
+        } else if (value === 'PERLENGKAPAN') {
+          const firstPerl = ingredients.find(i => getItemClassification(i) === 'PERLENGKAPAN') || ingredients[0];
+          const newUnit = firstPerl?.unit_beli || firstPerl?.unit_pakai || 'pcs';
+          current.ingredient_id = firstPerl ? firstPerl.id : '';
+          current.menu_id = '';
+          current.input_unit = newUnit;
+          current.unit = firstPerl ? firstPerl.unit_pakai : 'pcs';
+          const ub = (firstPerl?.unit_beli || '').trim();
+          const factor = Number(firstPerl?.konversi) || 1;
+          const isConvertible = firstPerl && ub && firstPerl.unit_pakai && ub.toLowerCase() !== firstPerl.unit_pakai.toLowerCase() && factor > 1;
+          const isBeli = isConvertible && newUnit.toLowerCase() === ub.toLowerCase();
+          current.qty = isBeli ? (Number(current.input_qty || 0) * factor) : Number(current.input_qty || 0);
+          current.unit_price = firstPerl?.cost || firstPerl?.harga_beli || '';
         } else {
-          const firstIng = ingredients[0];
+          const firstIng = ingredients.find(i => getItemClassification(i) !== 'PERLENGKAPAN') || ingredients[0];
+          const newUnit = firstIng?.unit_beli || firstIng?.unit_pakai || 'gram';
           current.ingredient_id = firstIng ? firstIng.id : '';
           current.menu_id = '';
-          current.input_unit = firstIng?.unit_beli || firstIng?.unit_pakai || 'gram';
+          current.input_unit = newUnit;
           current.unit = firstIng ? firstIng.unit_pakai : 'gram';
-          current.qty = current.input_qty || '';
+          const ub = (firstIng?.unit_beli || '').trim();
+          const factor = Number(firstIng?.konversi) || 1;
+          const isConvertible = firstIng && ub && firstIng.unit_pakai && ub.toLowerCase() !== firstIng.unit_pakai.toLowerCase() && factor > 1;
+          const isBeli = isConvertible && newUnit.toLowerCase() === ub.toLowerCase();
+          current.qty = isBeli ? (Number(current.input_qty || 0) * factor) : Number(current.input_qty || 0);
           current.unit_price = firstIng?.cost || firstIng?.harga_beli || '';
         }
       } else if (field === 'menu_id') {
@@ -417,10 +481,10 @@ export default function TransferBahan() {
       } else if (field === 'ingredient_id') {
         const ingId = Number(value);
         const selected = ingredients.find(i => i.id === ingId);
-        const newUnit = selected?.unit_beli || selected?.unit_pakai || 'gram';
+        const newUnit = selected?.unit_beli || selected?.unit_pakai || (current.item_type === 'PERLENGKAPAN' ? 'pcs' : 'gram');
         current.ingredient_id = ingId;
         current.input_unit = newUnit;
-        current.unit = selected ? selected.unit_pakai : 'gram';
+        current.unit = selected ? selected.unit_pakai : (current.item_type === 'PERLENGKAPAN' ? 'pcs' : 'gram');
 
         const ub = (selected?.unit_beli || '').trim();
         const factor = Number(selected?.konversi) || 1;
@@ -444,7 +508,7 @@ export default function TransferBahan() {
         }
       } else if (field === 'input_unit') {
         current.input_unit = value;
-        if (current.item_type === 'INGREDIENT') {
+        if (current.item_type !== 'PRODUCT') {
           const selected = ingredients.find(i => i.id === Number(current.ingredient_id));
           const ub = (selected?.unit_beli || '').trim();
           const factor = Number(selected?.konversi) || 1;
@@ -672,7 +736,7 @@ export default function TransferBahan() {
         return;
       }
       if (!isProd && !it.ingredient_id) {
-        toast.error('Pilih bahan baku pada semua baris bahan!');
+        toast.error(`Pilih ${it.item_type === 'PERLENGKAPAN' ? 'perlengkapan' : 'bahan baku'} pada semua baris!`);
         return;
       }
       const valQty = Number(it.input_qty ?? it.qty);
@@ -744,12 +808,12 @@ export default function TransferBahan() {
             const baseQ = isBeli ? inputQ * factor : inputQ;
 
             return {
-              item_type: 'INGREDIENT',
+              item_type: it.item_type === 'PERLENGKAPAN' ? 'PERLENGKAPAN' : 'INGREDIENT',
               ingredient_id: Number(it.ingredient_id),
               input_qty: inputQ,
-              input_unit: it.input_unit || up || 'gram',
+              input_unit: it.input_unit || up || (it.item_type === 'PERLENGKAPAN' ? 'pcs' : 'gram'),
               qty: baseQ,
-              unit: up || it.unit || 'gram',
+              unit: up || it.unit || (it.item_type === 'PERLENGKAPAN' ? 'pcs' : 'gram'),
               unit_price: uPrice,
               total_price: tPrice,
               notes: it.notes || null,
@@ -787,13 +851,14 @@ export default function TransferBahan() {
 
     const mappedItems = (trf.items || []).map(it => {
       const isProd = it.item_type === 'PRODUCT';
-      const name = isProd ? (it.menu?.name || it.item_name || 'Produk') : (it.ingredient?.name || it.item_name || 'Bahan');
+      const isPerl = it.item_type === 'PERLENGKAPAN';
+      const name = isProd ? (it.menu?.name || it.item_name || 'Produk') : (it.ingredient?.name || it.item_name || (isPerl ? 'Perlengkapan' : 'Bahan'));
       const origQty = Number(it.input_qty || it.qty || 0);
       return {
         id: it.id,
         name,
         is_product: isProd,
-        unit: it.input_unit || it.unit || 'satuan',
+        unit: it.input_unit || it.unit || (isProd || isPerl ? 'pcs' : 'gram'),
         input_qty: origQty,
         received_qty: origQty,
         difference: 0,
@@ -892,12 +957,13 @@ export default function TransferBahan() {
 
     const initialItems = (trf.items || []).map(it => {
       const isProd = it.item_type === 'PRODUCT';
-      const name = isProd ? (it.menu?.name || it.item_name || 'Produk') : (it.ingredient?.name || it.item_name || 'Bahan');
+      const isPerl = it.item_type === 'PERLENGKAPAN';
+      const name = isProd ? (it.menu?.name || it.item_name || 'Produk') : (it.ingredient?.name || it.item_name || (isPerl ? 'Perlengkapan' : 'Bahan'));
       const origQty = Number(it.input_qty || it.qty || 0);
       return {
         id: it.id,
         name,
-        unit: it.input_unit || it.unit || 'satuan',
+        unit: it.input_unit || it.unit || (isProd || isPerl ? 'pcs' : 'gram'),
         input_qty: origQty,
         returned_qty: Number(it.returned_qty || 0) > 0 ? Number(it.returned_qty) : origQty,
         reason: it.return_reason || ''
@@ -972,12 +1038,13 @@ export default function TransferBahan() {
       .filter(it => Number(it.returned_qty) > 0)
       .map(it => {
         const isProd = it.item_type === 'PRODUCT';
-        const name = isProd ? (it.menu?.name || it.item_name || 'Produk') : (it.ingredient?.name || it.item_name || 'Bahan');
+        const isPerl = it.item_type === 'PERLENGKAPAN';
+        const name = isProd ? (it.menu?.name || it.item_name || 'Produk') : (it.ingredient?.name || it.item_name || (isPerl ? 'Perlengkapan' : 'Bahan'));
         const retQty = Number(it.returned_qty || 0);
         return {
           id: it.id,
           name,
-          unit: it.input_unit || it.unit || 'satuan',
+          unit: it.input_unit || it.unit || (isProd || isPerl ? 'pcs' : 'gram'),
           input_qty: Number(it.input_qty || it.qty || 0),
           received_qty: Number(it.received_qty || 0),
           returned_qty: retQty,
@@ -1292,8 +1359,9 @@ export default function TransferBahan() {
                           <span style={{ color: 'var(--text-secondary)' }}>
                             {trf.items?.map(it => {
                               const isProd = it.item_type === 'PRODUCT';
-                              const name = isProd ? (it.menu?.name || it.item_name || 'Produk') : (it.ingredient?.name || it.item_name || 'Bahan');
-                              const badge = isProd ? '📦 ' : '🧪 ';
+                              const isPerl = it.item_type === 'PERLENGKAPAN';
+                              const name = isProd ? (it.menu?.name || it.item_name || 'Produk') : (it.ingredient?.name || it.item_name || (isPerl ? 'Perlengkapan' : 'Bahan'));
+                              const badge = isProd ? '🏷️ ' : (isPerl ? '📦 ' : '🧪 ');
                               const hasRet = Number(it.returned_qty) > 0;
                               return (
                                 <span key={it.id || name}>
@@ -2641,7 +2709,7 @@ export default function TransferBahan() {
               {/* DAFTAR BARANG YANG DITRANSFER */}
               <div className="card mb-4" style={{ background: 'var(--bg-card-subtle)', padding: 14 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <span style={{ fontWeight: 700, fontSize: 13.5 }}>Rincian Barang & Bahan Baku:</span>
+                  <span style={{ fontWeight: 700, fontSize: 13.5 }}>Rincian Barang, Bahan & Perlengkapan:</span>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button
                       type="button"
@@ -2650,6 +2718,14 @@ export default function TransferBahan() {
                       style={{ fontSize: 11.5, padding: '3px 8px' }}
                     >
                       + Tambah Bahan Baku
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => handleAddItem('PERLENGKAPAN')}
+                      style={{ fontSize: 11.5, padding: '3px 8px', color: '#f59e0b' }}
+                    >
+                      + Tambah Perlengkapan
                     </button>
                     {directMenus.length > 0 && (
                       <button
@@ -2701,6 +2777,7 @@ export default function TransferBahan() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {formData.items.map((item, idx) => {
                     const isProd = item.item_type === 'PRODUCT';
+                    const isPerl = item.item_type === 'PERLENGKAPAN';
                     const stockInfo = getSourceStockInfo(item);
                     const isItemInDeficit = deficitItems.some(d =>
                       (item.item_type === 'PRODUCT' && d.type === 'PRODUCT' && d.id === Number(item.menu_id)) ||
@@ -2724,7 +2801,7 @@ export default function TransferBahan() {
                           border: isItemInDeficit ? '1px solid rgba(239, 68, 68, 0.45)' : '1px solid var(--border-soft)'
                         }}
                       >
-                        <div style={{ display: 'grid', gridTemplateColumns: '100px 1.4fr 85px 85px 115px 105px 1fr 32px', gap: 8, alignItems: 'center' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '120px 1.4fr 85px 85px 115px 105px 1fr 32px', gap: 8, alignItems: 'center' }}>
                           {/* Item Type */}
                           <select
                             className="form-control"
@@ -2733,7 +2810,8 @@ export default function TransferBahan() {
                             onChange={e => handleItemChange(idx, 'item_type', e.target.value)}
                           >
                             <option value="INGREDIENT" style={{ background: '#11162d', color: '#ffffff' }}>🧪 Bahan</option>
-                            <option value="PRODUCT" style={{ background: '#11162d', color: '#ffffff' }}>📦 Produk</option>
+                            <option value="PERLENGKAPAN" style={{ background: '#11162d', color: '#ffffff' }}>📦 Perlengkapan</option>
+                            <option value="PRODUCT" style={{ background: '#11162d', color: '#ffffff' }}>🏷️ Produk</option>
                           </select>
 
                           {/* Item Selector */}
@@ -2743,7 +2821,16 @@ export default function TransferBahan() {
                               value={item.menu_id}
                               onChange={val => handleItemChange(idx, 'menu_id', val)}
                               placeholder="-- Pilih Produk Retail --"
-                              searchPlaceholder="Cari produk retail..."
+                              searchPlaceholder="Cari nama atau kode produk..."
+                              size="sm"
+                            />
+                          ) : item.item_type === 'PERLENGKAPAN' ? (
+                            <SearchableSelect
+                              options={transferPerlengkapanOptions}
+                              value={item.ingredient_id}
+                              onChange={val => handleItemChange(idx, 'ingredient_id', val)}
+                              placeholder="-- Pilih Perlengkapan / Kemasan --"
+                              searchPlaceholder="Cari nama atau kode perlengkapan..."
                               size="sm"
                             />
                           ) : (
@@ -2751,7 +2838,7 @@ export default function TransferBahan() {
                               options={transferIngredientOptions}
                               value={item.ingredient_id}
                               onChange={val => handleItemChange(idx, 'ingredient_id', val)}
-                              placeholder="-- Pilih Bahan Baku / Perlengkapan --"
+                              placeholder="-- Pilih Bahan Baku --"
                               searchPlaceholder="Cari nama atau kode bahan..."
                               size="sm"
                             />
@@ -2803,7 +2890,7 @@ export default function TransferBahan() {
                                 color: 'var(--text-secondary)'
                               }}
                             >
-                              {item.input_unit || item.unit || (isProd ? 'pcs' : 'gram')}
+                              {item.input_unit || item.unit || (isProd ? 'pcs' : (isPerl ? 'pcs' : 'gram'))}
                             </div>
                           )}
 
@@ -3237,8 +3324,9 @@ export default function TransferBahan() {
                 <tbody>
                   {selectedTransfer.items?.map((it, idx) => {
                     const isProd = it.item_type === 'PRODUCT';
-                    const code = isProd ? (it.menu?.code || 'PRD') : (it.ingredient?.code || 'BB');
-                    const name = isProd ? (it.menu?.name || it.item_name) : (it.ingredient?.name || it.item_name);
+                    const isPerl = it.item_type === 'PERLENGKAPAN';
+                    const code = isProd ? (it.menu?.code || 'PRD') : (it.ingredient?.code || (isPerl ? 'PK' : 'BB'));
+                    const name = isProd ? (it.menu?.name || it.item_name) : (it.ingredient?.name || it.item_name || (isPerl ? 'Perlengkapan' : 'Bahan'));
                     const hasConv = !isProd && it.input_unit && it.unit && it.input_unit !== it.unit;
                     const retQty = Number(it.returned_qty || 0);
 
@@ -3251,10 +3339,10 @@ export default function TransferBahan() {
                             fontWeight: 700,
                             padding: '2px 6px',
                             borderRadius: 4,
-                            background: isProd ? '#dbeafe' : '#f1f5f9',
-                            color: isProd ? '#1e40af' : '#475569'
+                            background: isProd ? '#dbeafe' : (isPerl ? '#fef3c7' : '#f1f5f9'),
+                            color: isProd ? '#1e40af' : (isPerl ? '#92400e' : '#475569')
                           }}>
-                            {isProd ? 'Retail' : 'Bahan'}
+                            {isProd ? 'Retail' : (isPerl ? 'Perlengkapan' : 'Bahan')}
                           </span>
                         </td>
                         <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 600, color: '#4f46e5' }}>
