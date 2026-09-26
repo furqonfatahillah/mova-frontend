@@ -1456,8 +1456,8 @@ export default function KartuStok() {
                   Gudang: <strong style={{ color: 'var(--accent-bright)' }}>{stockCard?.outlet_name || currentOutlet?.name}</strong> ·
                   Satuan Pakai: <span className="mono" style={{ color: 'var(--accent)' }}>{selectedIng?.unit_pakai}</span> ·
                   Konversi: 1 {selectedIng?.unit_beli} = {num(selectedIng?.konversi)} {selectedIng?.unit_pakai} ·
-                  Harga Beli: <span className="mono" style={{ color: 'var(--text-primary)' }}>{rupiah(selectedIng?.harga)}/{selectedIng?.unit_beli}</span> ·
-                  Harga Pakai: <span className="mono" style={{ color: 'var(--accent-bright)', fontWeight: 600 }}>{rupiah(selectedIng?.harga / (selectedIng?.konversi || 1))}/{selectedIng?.unit_pakai}</span>
+                  Harga Beli: <span className="mono" style={{ color: 'var(--text-primary)' }}>{rupiah(stockCard?.ingredient?.harga ?? selectedIng?.harga)}/{selectedIng?.unit_beli}</span> ·
+                  Harga Pakai: <span className="mono" style={{ color: 'var(--accent-bright)', fontWeight: 600 }}>{rupiah((stockCard?.ingredient?.harga ?? selectedIng?.harga) / (selectedIng?.konversi || 1))}/{selectedIng?.unit_pakai}</span>
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
@@ -1487,31 +1487,37 @@ export default function KartuStok() {
                 </thead>
                 <tbody>
                   {/* Row Opening Balance */}
-                  <tr style={{ background: 'var(--accent-dim)', fontStyle: 'italic' }}>
-                    <td className="mono center">—</td>
-                    <td className="mono" style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{period.from}</td>
-                    <td><span style={{ fontSize: 11, color: 'var(--accent-bright)', fontWeight: 600 }}>{stockCard?.outlet_name || currentOutlet?.name}</span></td>
-                    <td className="mono" style={{ color: 'var(--text-muted)' }}>SALDO-AWAL</td>
-                    <td style={{ fontWeight: 600, color: 'var(--accent)' }}>Saldo Awal per {period.from}</td>
-                    <td><span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Saldo Awal</span></td>
-                    <td className="mono right" style={{ fontSize: 12.5 }}>
-                      <div style={{ display: 'inline-flex', alignItems: 'baseline', gap: 3, justifyContent: 'flex-end' }}>
-                        <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>
-                          {rupiah(selectedIng?.harga / Math.max(Number(selectedIng?.konversi || 1), 1))}
-                        </span>
-                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>/{selectedIng?.unit_pakai || 'gram'}</span>
-                      </div>
-                    </td>
-                    <td className="mono right">—</td>
-                    <td className="mono right">—</td>
-                    <td className="mono right" style={{ fontWeight: 700, color: 'var(--accent)', fontSize: 13.5 }}>
-                      {num(stockCard?.stok_awal)} {selectedIng?.unit_pakai}
-                    </td>
-                    <td className="mono right" style={{ fontWeight: 700, color: '#34d399', fontSize: 12.5 }}>
-                      {rupiah(Math.max(0, stockCard?.stok_awal || 0) * (selectedIng?.harga / (selectedIng?.konversi || 1)))}
-                    </td>
-                    <td style={{ color: 'var(--text-muted)', fontSize: 11 }}>Sistem</td>
-                  </tr>
+                  {(() => {
+                    const firstRowCostBefore = filteredDetailRows?.[0]?.cost_before ? Number(filteredDetailRows[0].cost_before) : null;
+                    const initialOpeningCostPerPakai = firstRowCostBefore ?? ((Number(stockCard?.ingredient?.harga ?? selectedIng?.harga ?? 0)) / Math.max(Number(selectedIng?.konversi || 1), 1));
+                    return (
+                      <tr style={{ background: 'var(--accent-dim)', fontStyle: 'italic' }}>
+                        <td className="mono center">—</td>
+                        <td className="mono" style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{period.from}</td>
+                        <td><span style={{ fontSize: 11, color: 'var(--accent-bright)', fontWeight: 600 }}>{stockCard?.outlet_name || currentOutlet?.name}</span></td>
+                        <td className="mono" style={{ color: 'var(--text-muted)' }}>SALDO-AWAL</td>
+                        <td style={{ fontWeight: 600, color: 'var(--accent)' }}>Saldo Awal per {period.from}</td>
+                        <td><span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Saldo Awal</span></td>
+                        <td className="mono right" style={{ fontSize: 12.5 }}>
+                          <div style={{ display: 'inline-flex', alignItems: 'baseline', gap: 3, justifyContent: 'flex-end' }}>
+                            <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>
+                              {rupiah(initialOpeningCostPerPakai)}
+                            </span>
+                            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>/{selectedIng?.unit_pakai || 'gram'}</span>
+                          </div>
+                        </td>
+                        <td className="mono right">—</td>
+                        <td className="mono right">—</td>
+                        <td className="mono right" style={{ fontWeight: 700, color: 'var(--accent)', fontSize: 13.5 }}>
+                          {num(stockCard?.stok_awal)} {selectedIng?.unit_pakai}
+                        </td>
+                        <td className="mono right" style={{ fontWeight: 700, color: '#34d399', fontSize: 12.5 }}>
+                          {rupiah(Math.max(0, stockCard?.stok_awal || 0) * initialOpeningCostPerPakai)}
+                        </td>
+                        <td style={{ color: 'var(--text-muted)', fontSize: 11 }}>Sistem</td>
+                      </tr>
+                    );
+                  })()}
 
                   {/* Mutation Rows */}
                   {filteredDetailRows.length > 0 ? (
@@ -1522,7 +1528,7 @@ export default function KartuStok() {
                             ? (Number(row.unit_price) > 1000 && (selectedIng?.konversi || 1) > 1
                                 ? Number(row.unit_price) / Number(selectedIng.konversi)
                                 : Number(row.unit_price))
-                            : (Number(selectedIng?.harga || 0) / Number(selectedIng?.konversi || 1)));
+                            : (Number(stockCard?.ingredient?.harga ?? selectedIng?.harga ?? 0) / Math.max(Number(selectedIng?.konversi || 1), 1)));
 
                       return (
                         <tr key={row.id || idx}>
@@ -1590,7 +1596,7 @@ export default function KartuStok() {
                             {num(row.balance)} {selectedIng?.unit_pakai}
                           </td>
                           <td className="mono right" style={{ fontWeight: 700, fontSize: 12.5, color: row.balance < 0 ? 'var(--danger)' : '#34d399' }}>
-                            {rupiah(Math.max(0, row.balance || 0) * (selectedIng?.harga / (selectedIng?.konversi || 1)))}
+                            {rupiah(Math.max(0, row.balance || 0) * unitPriceVal)}
                             {row.unit_price ? (
                               <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>
                                 PO: @{rupiah(row.unit_price)}

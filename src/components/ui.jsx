@@ -1,9 +1,23 @@
 import DateRangePicker from './DateRangePicker';
 
-export function rupiah(n) {
-  const v = Math.round(n || 0);
-  const neg = v < 0;
-  const s = Math.abs(v).toLocaleString('id-ID');
+export function rupiah(n, maxDecimals = 2, minDecimals = null) {
+  if (n === undefined || n === null || isNaN(n)) return 'Rp0';
+  const numVal = Number(n);
+  const neg = numVal < 0;
+  const absVal = Math.abs(numVal);
+  
+  // Deteksi apakah angka memiliki nilai pecahan desimal
+  const hasFraction = (absVal % 1) !== 0;
+  
+  // Format desimal sampai 2 angka di belakang koma (misal: Rp12,50 atau Rp12,35)
+  // Untuk bilangan bulat murni: tetap bersih tanpa ,00 (misal: Rp50.000)
+  const minDigits = minDecimals !== null ? minDecimals : (hasFraction ? 2 : 0);
+  const maxDigits = maxDecimals !== null ? maxDecimals : 2;
+
+  const s = absVal.toLocaleString('id-ID', {
+    minimumFractionDigits: minDigits,
+    maximumFractionDigits: maxDigits,
+  });
   return (neg ? '-Rp' : 'Rp') + s;
 }
 
@@ -24,7 +38,7 @@ export function fmtQtyVal(qty, unit = 'gram', costPerUnitOrTotal = 0, opts = {})
   } else if (opts && typeof opts === 'object' && opts.isTotalVal) {
     totalVal = Number(costPerUnitOrTotal || 0);
   } else {
-    totalVal = Math.round(q * Number(costPerUnitOrTotal || 0));
+    totalVal = q * Number(costPerUnitOrTotal || 0);
   }
 
   const u = unit || 'gram';
