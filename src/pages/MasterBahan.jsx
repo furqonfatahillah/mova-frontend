@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Edit2, Check, X, Store, Sparkles, Info, Calculator, ChefHat, Flame, Trash2, FileSpreadsheet, AlertTriangle } from 'lucide-react';
+import { Plus, Edit2, Check, X, Store, Sparkles, Info, Calculator, ChefHat, Flame, Trash2, FileSpreadsheet, AlertTriangle, Search, Building2 } from 'lucide-react';
 import api from '../api/client';
 import {
   rupiah, num, fmtQtyVal, LoadingState, PageHeader, AuditInfo,
@@ -16,6 +16,7 @@ const emptyForm = {
   code: '', name: '', category: 'Perlengkapan', type: 'RAW', unit_beli: 'Slop',
   unit_pakai: 'pcs', konversi: 50, harga: 0,
   stok_awal: 0, stok_min: 0, tolerance: 5, yield_qty: 1, yield_unit: 'potong', active: true,
+  outlet_id: 'ALL',
 };
 
 function FormCell({ data, setData, field, type = 'text', style = {}, availableCategories = KATEGORI_BAHAN_OPTIONS }) {
@@ -112,7 +113,18 @@ export default function MasterBahan() {
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const [dbCategories, setDbCategories] = useState([]);
-  const { activeOutletId, activeOutlet } = useOutlet();
+  const { activeOutletId, activeOutlet, outlets = [], canSwitchOutlet, currentUser, userOutletName } = useOutlet();
+
+  // Branch filter and search term states
+  const [selectedOutletFilter, setSelectedOutletFilter] = useState(() => activeOutletId || 'ALL');
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Synchronize when global outlet selector changes
+  useEffect(() => {
+    if (activeOutletId) {
+      setSelectedOutletFilter(activeOutletId);
+    }
+  }, [activeOutletId]);
 
   const availableCategories = useMemo(() => {
     const fromDb = dbCategories.map(c => c.name).filter(Boolean);
@@ -126,6 +138,18 @@ export default function MasterBahan() {
 
   const displayedIngredients = useMemo(() => {
     return ingredients.filter(i => {
+      // 1. Keyword search filter
+      if (searchTerm.trim()) {
+        const query = searchTerm.toLowerCase().trim();
+        const codeMatch = (i.code || '').toLowerCase().includes(query);
+        const nameMatch = (i.name || '').toLowerCase().includes(query);
+        const catMatch = (i.category || '').toLowerCase().includes(query);
+        if (!codeMatch && !nameMatch && !catMatch) {
+          return false;
+        }
+      }
+
+      // 2. Type and Stock filters
       const cat = (i.category || '').toLowerCase();
       const code = (i.code || '').toUpperCase();
       const isPerl = cat.includes('perlengkapan') ||
@@ -139,13 +163,15 @@ export default function MasterBahan() {
       if (typeFilter === 'LOW_STOCK') return Number(i.current_stock ?? 0) <= Number(i.current_stok_min ?? i.stok_min ?? 0);
       return true;
     });
-  }, [ingredients, typeFilter]);
+  }, [ingredients, typeFilter, searchTerm]);
 
-  useEffect(() => { fetchIngredients(); }, [activeOutletId]);
+  useEffect(() => {
+    fetchIngredients(selectedOutletFilter);
+  }, [selectedOutletFilter]);
 
-  async function fetchIngredients() {
+  async function fetchIngredients(outletFilter = selectedOutletFilter) {
     try {
-      const targetOutlet = activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all' ? activeOutletId : undefined;
+      const targetOutlet = outletFilter && outletFilter !== 'ALL' && outletFilter !== 'all' ? outletFilter : undefined;
       const [ingRes, catRes] = await Promise.all([
         api.get('/ingredients', { params: { outlet_id: targetOutlet } }),
         api.get('/categories?type=INGREDIENT').catch(() => ({ data: [] })),
@@ -193,16 +219,19 @@ export default function MasterBahan() {
         type: addForm.type || 'RAW',
         harga: Number(addForm.harga || 0),
         konversi: Number(addForm.konversi || 1),
+        stok_awal: Number(addForm.stok_awal || 0),
         stok_min: Number(addForm.stok_min || 0),
         tolerance: Number(addForm.tolerance || 0),
         yield_qty: addForm.type === 'SEMI_FINISHED' ? Number(addForm.yield_qty || 1) : null,
         yield_unit: addForm.type === 'SEMI_FINISHED' ? addForm.yield_unit : null,
+        outlet_id: addForm.outlet_id || (selectedOutletFilter !== 'ALL' ? selectedOutletFilter : 'ALL'),
       };
       const { data } = await api.post('/ingredients', payload);
       setIngredients(prev => [...prev, data]);
       setShowAdd(false);
       setAddForm(emptyForm);
       toast.success('Bahan ditambahkan');
+      fetchIngredients(selectedOutletFilter);
     } catch (err) {
       const errors = err.response?.data?.errors;
       if (errors) Object.values(errors).flat().forEach(m => toast.error(m));
@@ -426,6 +455,122 @@ export default function MasterBahan() {
         </div>
       </div>
 
+      {/* Search & Outlet Toolbar */}
+      <div
+        className="card mb-3"
+        style={{
+          padding: '12px 16px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 12,
+          background: 'rgba(17, 24, 39, 0.6)',
+          borderColor: 'var(--border-soft)',
+        }}
+      >
+        {/* Search Bar */}
+        <div style={{ position: 'relative', flex: '1 1 280px', minWidth: 240, maxWidth: 450 }}>
+          <Search
+            size={16}
+            style={{
+              position: 'absolute',
+              left: 12,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              color: 'var(--text-muted)',
+              pointerEvents: 'none',
+            }}
+          />
+          <input
+            type="text"
+            className="form-control"
+            placeholder="Cari kode, nama bahan, atau kategori..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            style={{
+              paddingLeft: 36,
+              paddingRight: searchTerm ? 32 : 12,
+              height: 38,
+              fontSize: 13,
+            }}
+          />
+          {searchTerm && (
+            <button
+              type="button"
+              onClick={() => setSearchTerm('')}
+              style={{
+                position: 'absolute',
+                right: 10,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                padding: 2,
+              }}
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
+        {/* Outlet Filter Selector */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Building2 size={16} style={{ color: 'var(--accent-bright)' }} />
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)' }}>
+              Filter Cabang:
+            </span>
+          </div>
+          {canSwitchOutlet ? (
+            <select
+              className="form-control"
+              style={{
+                height: 38,
+                fontSize: 12.5,
+                minWidth: 220,
+                padding: '0 12px',
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)',
+                borderColor: 'var(--border-strong)',
+                fontWeight: 600,
+              }}
+              value={selectedOutletFilter}
+              onChange={e => setSelectedOutletFilter(e.target.value)}
+            >
+              <option value="ALL">🏢 Semua Cabang (Konsolidasi Total)</option>
+              {outlets.map(o => (
+                <option key={o.id} value={o.id}>
+                  {o.is_main ? '⭐ (Pusat) ' : '🏪 '} {o.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div
+              className="pill pill-primary"
+              style={{
+                padding: '6px 12px',
+                fontSize: 12.5,
+                fontWeight: 600,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              <span>🔒 {userOutletName || 'Cabang Penempatan'}</span>
+            </div>
+          )}
+
+          {searchTerm && (
+            <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 4 }}>
+              Ditemukan: <strong>{displayedIngredients.length}</strong> bahan
+            </span>
+          )}
+        </div>
+      </div>
+
       {/* Filter Tabs */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
         <button
@@ -540,6 +685,7 @@ export default function MasterBahan() {
               <th>Kode</th>
               <th>Tipe</th>
               <th>Nama</th>
+              <th style={{ minWidth: 125 }}>Cabang / Penempatan</th>
               <th style={{ minWidth: 100 }}>Kategori</th>
               <th style={{ minWidth: 90 }}>Satuan Beli</th>
               <th style={{ minWidth: 90 }}>Satuan Pakai</th>
@@ -595,35 +741,60 @@ export default function MasterBahan() {
                     </div>
                   )}
                 </td>
+                {/* Cabang Penempatan Dropdown */}
+                <td>
+                  <select
+                    className="form-control"
+                    style={{
+                      padding: '5px 8px',
+                      fontSize: 11.5,
+                      minWidth: 125,
+                      background: 'var(--bg-card)',
+                      color: 'var(--text-primary)',
+                      borderColor: 'var(--border-strong)',
+                    }}
+                    value={addForm.outlet_id ?? (selectedOutletFilter !== 'ALL' ? selectedOutletFilter : 'ALL')}
+                    onChange={e => setAddForm(p => ({ ...p, outlet_id: e.target.value }))}
+                  >
+                    <option value="ALL">🏢 Semua Cabang (Global)</option>
+                    {outlets.map(o => (
+                      <option key={o.id} value={o.id}>
+                        {o.is_main ? '⭐ ' : '🏪 '} {o.name}
+                      </option>
+                    ))}
+                  </select>
+                </td>
                 <td><FormCell data={addForm} setData={setAddForm} availableCategories={availableCategories} field="category" style={{ width: 95 }} /></td>
                 <td><FormCell data={addForm} setData={setAddForm} availableCategories={availableCategories} field="unit_beli" style={{ width: 85 }} /></td>
                 <td><FormCell data={addForm} setData={setAddForm} availableCategories={availableCategories} field="unit_pakai" style={{ width: 85 }} /></td>
                 <td><FormCell data={addForm} setData={setAddForm} availableCategories={availableCategories} field="konversi" type="number" style={{ width: 75 }} /></td>
-                <td className="mono right">
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>0</span>
-                    <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Otomatis dari Kartu Stok</span>
-                  </div>
+                <td>
+                  <FormCell data={addForm} setData={setAddForm} availableCategories={availableCategories} field="harga" type="number" style={{ width: 100, textAlign: 'right' }} />
                 </td>
                 <td className="mono right">
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>0</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-bright)' }}>
+                      {rupiah(Number(addForm.harga || 0) / Math.max(Number(addForm.konversi || 1), 0.001))}
+                    </span>
                     <span style={{ fontSize: 10, color: 'var(--accent-bright)', fontWeight: 500 }}>
-                      Otomatis /{addForm.unit_pakai}
+                      /{addForm.unit_pakai || 'satuan'}
                     </span>
                   </div>
                 </td>
                 <td className="mono right text-muted" title="Harga PO Terakhir">—</td>
-                <td className="mono right text-muted" title="Stok Cabang">—</td>
+                <td>
+                  {/* Stok Awal Input */}
+                  <FormCell data={addForm} setData={setAddForm} availableCategories={availableCategories} field="stok_awal" type="number" style={{ width: 85, textAlign: 'right' }} />
+                </td>
                 <td><FormCell data={addForm} setData={setAddForm} availableCategories={availableCategories} field="stok_min" type="number" style={{ width: 75 }} /></td>
                 <td><FormCell data={addForm} setData={setAddForm} availableCategories={availableCategories} field="tolerance" type="number" style={{ width: 55 }} /></td>
                 <td><span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Data Baru</span></td>
                 <td className="center">
                   <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
-                    <button className="btn btn-primary btn-sm" onClick={saveNew} disabled={saving}>
+                    <button className="btn btn-primary btn-sm" onClick={saveNew} disabled={saving} title="Simpan Bahan Baru">
                       <Check size={12} />
                     </button>
-                    <button className="btn btn-secondary btn-sm" onClick={() => setShowAdd(false)}>
+                    <button className="btn btn-secondary btn-sm" onClick={() => setShowAdd(false)} title="Batal">
                       <X size={12} />
                     </button>
                   </div>
@@ -668,6 +839,48 @@ export default function MasterBahan() {
                           </div>
                         )}
                       </div>
+                    )}
+                  </td>
+                  {/* Kolom Cabang / Penempatan */}
+                  <td>
+                    {selectedOutletFilter !== 'ALL' ? (
+                      <span
+                        className="pill pill-primary mono"
+                        style={{
+                          fontSize: 11,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          padding: '3px 8px',
+                          background: 'rgba(99, 102, 241, 0.15)',
+                          borderColor: 'rgba(99, 102, 241, 0.35)',
+                          color: 'var(--accent-bright)'
+                        }}
+                      >
+                        <Building2 size={12} />
+                        {outlets.find(o => String(o.id) === String(selectedOutletFilter))?.name || userOutletName || 'Cabang Aktif'}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setBreakdownModal(ing)}
+                        className="pill pill-muted"
+                        style={{
+                          cursor: 'pointer',
+                          fontSize: 11,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          padding: '3px 8px',
+                          border: '1px solid var(--border-soft)',
+                          background: 'rgba(255, 255, 255, 0.04)',
+                          color: 'var(--text-secondary)'
+                        }}
+                        title="Klik untuk melihat sebaran per cabang"
+                      >
+                        <Building2 size={12} style={{ color: 'var(--accent-bright)' }} />
+                        <span>Semua Cabang ({ing.outlet_stocks?.length || outlets.length})</span>
+                      </button>
                     )}
                   </td>
                   <td>
