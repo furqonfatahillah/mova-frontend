@@ -65,14 +65,19 @@ export default function WasteTracking() {
 
   // Opsi SearchableSelect untuk bahan dan menu di modal waste
   const wasteIngredientOptions = useMemo(() => {
-    return (ingredients || []).map(ing => ({
-      value: String(ing.id),
-      label: ing.name,
-      code: ing.code,
-      badge: ing.type === 'SEMI_FINISHED' ? 'Olahan' : 'Mentah',
-      sublabel: `Stok: ${num(ing.current_stock ?? 0)} ${ing.unit_pakai}`,
-    }));
-  }, [ingredients]);
+    const targetOutletId = Number(form.outlet_id || currentTargetOutlet);
+    return (ingredients || []).map(ing => {
+      const outStock = targetOutletId ? ing.outlet_stocks?.find(os => Number(os.outlet_id) === targetOutletId) : null;
+      const curStock = outStock ? (outStock.stock ?? outStock.current ?? 0) : (ing.current_stock ?? 0);
+      return {
+        value: String(ing.id),
+        label: ing.name,
+        code: ing.code,
+        badge: ing.type === 'SEMI_FINISHED' ? 'Olahan' : 'Mentah',
+        sublabel: `Stok: ${num(curStock)} ${ing.unit_pakai}`,
+      };
+    });
+  }, [ingredients, form.outlet_id, currentTargetOutlet]);
 
   const wasteMenuOptions = useMemo(() => {
     return (menus || []).map(m => ({

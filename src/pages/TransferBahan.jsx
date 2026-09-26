@@ -216,16 +216,19 @@ export default function TransferBahan() {
   const transferPerlengkapanOptions = useMemo(() => {
     if (!ingredients || !ingredients.length) return [];
     const items = [];
+    const sourceOutletId = Number(formData.source_outlet_id);
 
     ingredients.forEach(i => {
       const cls = getItemClassification(i);
       if (cls === 'PERLENGKAPAN') {
+        const outStock = sourceOutletId ? i.outlet_stocks?.find(os => Number(os.outlet_id) === sourceOutletId) : null;
+        const curStock = outStock ? (outStock.stock ?? outStock.current ?? 0) : (i.current_stock ?? 0);
         items.push({
           value: i.id,
           label: i.name,
           code: i.code,
           category: i.category || 'Perlengkapan',
-          sublabel: `${i.unit_pakai || 'Unit'} • Stok: ${num(i.current_stock ?? 0)}`,
+          sublabel: `${i.unit_pakai || 'Unit'} • Stok: ${num(curStock)}`,
           badge: 'Perlengkapan',
           raw: i,
         });
@@ -234,24 +237,28 @@ export default function TransferBahan() {
 
     if (items.length === 0) return [];
     return [{ group: '📦 Perlengkapan & Kemasan (Cup, Sedotan, Tissue, Box, dll)', items }];
-  }, [ingredients]);
+  }, [ingredients, formData.source_outlet_id]);
 
   const transferIngredientOptions = useMemo(() => {
     if (!ingredients || !ingredients.length) return [];
     const mentah = [];
     const olahan = [];
+    const sourceOutletId = Number(formData.source_outlet_id);
 
     ingredients.forEach(i => {
       const cls = getItemClassification(i);
       if (cls === 'PERLENGKAPAN') return; // Exclude perlengkapan from bahan baku dropdown
 
       const isOlahan = cls === 'SEMI_FINISHED';
+      const outStock = sourceOutletId ? i.outlet_stocks?.find(os => Number(os.outlet_id) === sourceOutletId) : null;
+      const curStock = outStock ? (outStock.stock ?? outStock.current ?? 0) : (i.current_stock ?? 0);
+
       const opt = {
         value: i.id,
         label: i.name,
         code: i.code,
         category: i.category,
-        sublabel: `${i.unit_pakai || 'Unit'} • Stok: ${num(i.current_stock ?? 0)}`,
+        sublabel: `${i.unit_pakai || 'Unit'} • Stok: ${num(curStock)}`,
         badge: isOlahan ? 'Setengah Jadi' : 'Bahan Mentah',
         raw: i,
       };
@@ -263,18 +270,23 @@ export default function TransferBahan() {
     if (mentah.length > 0) groups.push({ group: '🧪 Bahan Baku Mentah', items: mentah });
     if (olahan.length > 0) groups.push({ group: '🥣 Bahan Setengah Jadi (Olahan)', items: olahan });
     return groups;
-  }, [ingredients]);
+  }, [ingredients, formData.source_outlet_id]);
 
   const transferProductOptions = useMemo(() => {
-    return (directMenus || []).map(m => ({
-      value: m.id,
-      label: m.name,
-      code: m.code || 'PRD',
-      sublabel: `Stok: ${num(m.current_stock ?? 0)}`,
-      badge: 'Produk Retail',
-      raw: m,
-    }));
-  }, [directMenus]);
+    const sourceOutletId = Number(formData.source_outlet_id);
+    return (directMenus || []).map(m => {
+      const om = sourceOutletId ? m.outlet_menus?.find(x => Number(x.outlet_id) === sourceOutletId) : null;
+      const curStock = om ? Number(om.stock) : Number(m.stock || m.current_stock || 0);
+      return {
+        value: m.id,
+        label: m.name,
+        code: m.code || 'PRD',
+        sublabel: `Stok: ${num(curStock)}`,
+        badge: 'Produk Retail',
+        raw: m,
+      };
+    });
+  }, [directMenus, formData.source_outlet_id]);
 
   // Dapatkan harga rata-rata bergerak (Moving Average) real-time dari gudang / cabang asal
   function getItemAvgPriceFromSource(item, sourceOutletId = formData.source_outlet_id) {

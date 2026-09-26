@@ -184,7 +184,9 @@ export default function KartuStok() {
 
   async function fetchIngredients() {
     try {
-      const { data } = await api.get('/ingredients');
+      const { data } = await api.get('/ingredients', {
+        params: { outlet_id: selectedOutletId && selectedOutletId !== 'ALL' ? selectedOutletId : undefined }
+      });
       setIngredients(data);
     } catch {
       toast.error('Gagal memuat master bahan baku');
@@ -200,11 +202,12 @@ export default function KartuStok() {
     }
   }
 
-  // Fetch summary items & in-transit items when selectedOutletId or period changes
+  // Fetch summary items, in-transit items & ingredients when selectedOutletId or period changes
   useEffect(() => {
     if (selectedOutletId) {
       fetchSummary();
       fetchInTransitTransfers();
+      fetchIngredients();
     }
   }, [selectedOutletId, period]);
 
@@ -492,6 +495,7 @@ export default function KartuStok() {
       setModalOpen(false);
       fetchSummary();
       fetchSuppliers();
+      fetchIngredients();
       if (selectedIngId) fetchStockCard();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Gagal menyimpan mutasi stok');
@@ -537,6 +541,7 @@ export default function KartuStok() {
         await fetchStockCard();
       }
       await fetchSummary();
+      await fetchIngredients();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Gagal menghapus transaksi mutasi.');
     }
@@ -638,9 +643,10 @@ export default function KartuStok() {
       toast.success(data.message || 'Transfer berhasil di-approve! Stok telah resmi masuk ke kartu stok gudang.');
       setReceiveModalOpen(false);
 
-      // Re-fetch in-transit and summary data immediately
+      // Re-fetch in-transit, summary and ingredients data immediately
       fetchInTransitTransfers();
       fetchSummary();
+      fetchIngredients();
       if (selectedIngId) fetchStockCard();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Gagal memproses approval receive');
@@ -670,11 +676,15 @@ export default function KartuStok() {
     const perlengkapan = [];
     const olahan = [];
     const mentah = [];
+    const targetOutletId = Number(mutationForm.outlet_id || selectedOutletId);
 
     for (const i of ingredients) {
       const cls = getItemClassification(i);
       const isPerlengkapan = cls === 'PERLENGKAPAN';
       const isOlahan = cls === 'SEMI_FINISHED';
+
+      const outStock = targetOutletId ? i.outlet_stocks?.find(os => Number(os.outlet_id) === targetOutletId) : null;
+      const curStock = outStock ? (outStock.stock ?? outStock.current ?? 0) : (i.current_stock ?? 0);
 
       const item = {
         value: i.id,
@@ -682,7 +692,7 @@ export default function KartuStok() {
         code: i.code,
         category: i.category,
         badge: isPerlengkapan ? 'Perlengkapan' : (isOlahan ? 'Setengah Jadi' : 'Bahan'),
-        sublabel: `${i.unit_pakai} • Stok: ${num(i.current_stock ?? 0)}`,
+        sublabel: `${i.unit_pakai} • Stok: ${num(curStock)}`,
         raw: i,
       };
 
@@ -700,7 +710,7 @@ export default function KartuStok() {
     if (perlengkapan.length > 0) groups.push({ group: 'Perlengkapan & Kemasan (Cup, Pipet, Tissue)', items: perlengkapan });
     if (olahan.length > 0) groups.push({ group: 'Bahan Setengah Jadi (Prep / Olahan)', items: olahan });
     return groups;
-  }, [ingredients]);
+  }, [ingredients, mutationForm.outlet_id, selectedOutletId]);
 
   // Hitung jumlah item persediaan per klasifikasi (Semua, Bahan, Perlengkapan, Bahan Setengah Jadi)
   const categoryCounts = useMemo(() => {
