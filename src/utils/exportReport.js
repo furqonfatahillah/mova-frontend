@@ -1372,4 +1372,339 @@ export function printSupplierPayablesReport({
   printWindow.document.close();
 }
 
+/**
+ * 14. Export Laporan Neraca (Balance Sheet) to Excel matching exact screenshot layout
+ */
+export async function exportBalanceSheetToExcel({
+  data = {},
+  period = {},
+  businessName = 'MOVA POS',
+  outletName = 'Semua Cabang',
+}) {
+  const ExcelJSMod = await import('exceljs');
+  const ExcelJS = ExcelJSMod.default || ExcelJSMod;
+  const wb = new ExcelJS.Workbook();
+  wb.creator = businessName;
+  wb.created = new Date();
+
+  const ws = wb.addWorksheet('Laporan Neraca', {
+    views: [{ showGridLines: true }],
+  });
+
+  const periodText = period.from_formatted && period.to_formatted
+    ? `Per ${period.from_formatted} s/d ${period.to_formatted}`
+    : (period.from && period.to ? `Per ${period.from} s/d ${period.to}` : 'Semua Periode');
+
+  // Title Row (Row 1)
+  ws.mergeCells('B1:D1');
+  const titleCell = ws.getCell('B1');
+  titleCell.value = 'LAPORAN NERACA';
+  titleCell.font = { name: 'Arial', size: 13, bold: true };
+  titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+  ws.getRow(1).height = 22;
+
+  // Subtitle Period (Row 2)
+  ws.mergeCells('B2:E2');
+  const subCell = ws.getCell('B2');
+  subCell.value = periodText;
+  subCell.font = { name: 'Arial', size: 10, italic: true };
+  subCell.alignment = { horizontal: 'left', vertical: 'middle' };
+  ws.getRow(2).height = 18;
+
+  let r = 3;
+
+  // Function to add a section header: "Aset Lancar", "Aset Tetap", "Liabilitas", "Modal"
+  const addSectionHeader = (title) => {
+    const row = ws.getRow(r++);
+    row.getCell(2).value = title;
+    row.getCell(2).font = { name: 'Arial', size: 10, bold: true };
+    row.height = 18;
+  };
+
+  // Function to add an account row: e.g. Code in Col B, Name in Col C, Amount in Col D
+  const addAccountRow = (code, name, amount) => {
+    const row = ws.getRow(r++);
+    row.getCell(2).value = code || '';
+    row.getCell(2).font = { name: 'Arial', size: 10 };
+    row.getCell(2).alignment = { horizontal: 'left', vertical: 'middle' };
+
+    row.getCell(3).value = name || '';
+    row.getCell(3).font = { name: 'Arial', size: 10 };
+    row.getCell(3).alignment = { horizontal: 'left', vertical: 'middle' };
+
+    row.getCell(4).value = Number(amount) || 0;
+    row.getCell(4).font = { name: 'Arial', size: 10 };
+    row.getCell(4).alignment = { horizontal: 'right', vertical: 'middle' };
+    row.getCell(4).numFmt = '#,##0';
+    row.height = 18;
+  };
+
+  // Function to add a subtotal row: e.g. "Jumlah Aset Lancar" in Col B, Amount in Col D
+  const addSubtotalRow = (title, amount) => {
+    const row = ws.getRow(r++);
+    row.getCell(2).value = title;
+    row.getCell(2).font = { name: 'Arial', size: 10, bold: true };
+    ws.mergeCells(`B${r - 1}:C${r - 1}`);
+
+    row.getCell(4).value = Number(amount) || 0;
+    row.getCell(4).font = { name: 'Arial', size: 10, bold: true };
+    row.getCell(4).alignment = { horizontal: 'right', vertical: 'middle' };
+    row.getCell(4).numFmt = '#,##0';
+    row.height = 18;
+  };
+
+  // 1. Aset Lancar
+  addSectionHeader('Aset Lancar');
+  const currentAssets = data.current_assets?.accounts || [];
+  currentAssets.forEach((acc) => {
+    addAccountRow(acc.code, acc.name, acc.amount);
+  });
+  addSubtotalRow('Jumlah Aset Lancar', data.current_assets?.subtotal ?? 0);
+
+  // 2. Aset Tetap
+  addSectionHeader('Aset Tetap');
+  const fixedAssets = data.fixed_assets?.accounts || [];
+  if (fixedAssets.length > 0) {
+    fixedAssets.forEach((acc) => {
+      addAccountRow(acc.code, acc.name, acc.amount);
+    });
+  } else {
+    addAccountRow('', 'Depresiasi & Amortisasi', 0);
+  }
+  addSubtotalRow('Jumlah Aset Tetap', data.fixed_assets?.subtotal ?? 0);
+
+  // 3. Liabilitas
+  addSectionHeader('Liabilitas');
+  const liabilities = data.liabilities?.accounts || [];
+  if (liabilities.length > 0 && liabilities.some((a) => a.amount !== 0)) {
+    liabilities.forEach((acc) => {
+      addAccountRow(acc.code, acc.name, acc.amount);
+    });
+  }
+  addSubtotalRow('Jumlah Hutang', data.liabilities?.subtotal ?? 0);
+
+  // 4. Modal
+  addSectionHeader('Modal');
+  const equity = data.equity?.accounts || [];
+  equity.forEach((acc) => {
+    addAccountRow(acc.code, acc.name, acc.amount);
+  });
+  addSubtotalRow('Jumlah Modal', data.equity?.subtotal ?? 0);
+
+  // Blank row separator
+  r++;
+
+  // Summary Row at the bottom:
+  // Left: "Jumlah Aset" (Col B:C) and Amount (Col D)
+  // Right: "Jumlah Kewajiban dan Modal" (Col F) and Amount (Col G)
+  const summaryRow = ws.getRow(r);
+  summaryRow.height = 22;
+
+  // Left Total Asset
+  summaryRow.getCell(2).value = 'Jumlah Aset';
+  summaryRow.getCell(2).font = { name: 'Arial', size: 11, bold: true };
+  ws.mergeCells(`B${r}:C${r}`);
+
+  summaryRow.getCell(4).value = Number(data.total_assets?.amount ?? 0);
+  summaryRow.getCell(4).font = { name: 'Arial', size: 11, bold: true };
+  summaryRow.getCell(4).alignment = { horizontal: 'right', vertical: 'middle' };
+  summaryRow.getCell(4).numFmt = '#,##0';
+
+  // Right Total Liabilities & Equity
+  summaryRow.getCell(6).value = 'Jumlah Kewajiban dan Modal';
+  summaryRow.getCell(6).font = { name: 'Arial', size: 11, bold: true };
+  summaryRow.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
+
+  summaryRow.getCell(7).value = Number(data.total_liabilities_and_equity?.amount ?? 0);
+  summaryRow.getCell(7).font = { name: 'Arial', size: 11, bold: true };
+  summaryRow.getCell(7).alignment = { horizontal: 'right', vertical: 'middle' };
+  summaryRow.getCell(7).numFmt = '#,##0';
+
+  // Set column widths matching user layout
+  ws.getColumn(1).width = 4;   // Left margin
+  ws.getColumn(2).width = 14;  // Account Code
+  ws.getColumn(3).width = 32;  // Account Name
+  ws.getColumn(4).width = 18;  // Amount
+  ws.getColumn(5).width = 6;   // Spacer
+  ws.getColumn(6).width = 30;  // Right label
+  ws.getColumn(7).width = 18;  // Right amount
+
+  const filename = `Laporan_Neraca_${period.from || 'all'}_sd_${period.to || 'all'}.xlsx`;
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
+
+  return filename;
+}
+
+/**
+ * 15. Print / PDF Export for Laporan Neraca (Balance Sheet)
+ */
+export function printBalanceSheetReport({
+  data = {},
+  period = {},
+  businessName = 'MOVA POS',
+  outletName = 'Semua Cabang',
+}) {
+  const periodText = period.from_formatted && period.to_formatted
+    ? `Per ${period.from_formatted} s/d ${period.to_formatted}`
+    : (period.from && period.to ? `Per ${period.from} s/d ${period.to}` : 'Semua Periode');
+
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    alert('Pop-up browser diblokir. Harap izinkan pop-up untuk mencetak laporan.');
+    return;
+  }
+
+  const numFmt = (val) =>
+    Number(val || 0).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+  const renderAccountRows = (accounts = []) => {
+    return accounts
+      .map(
+        (a) => `
+      <tr>
+        <td style="width: 120px; padding: 4px 8px; color: #475569;">${a.code || ''}</td>
+        <td style="padding: 4px 8px;">${a.name || ''}</td>
+        <td style="text-align: right; padding: 4px 8px; font-variant-numeric: tabular-nums;">${numFmt(a.amount)}</td>
+      </tr>
+    `
+      )
+      .join('');
+  };
+
+  const html = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>LAPORAN NERACA</title>
+    <style>
+      @page { size: portrait; margin: 15mm; }
+      body { font-family: Arial, sans-serif; font-size: 11.5px; color: #111; margin: 0; padding: 15px; }
+      .header { text-align: center; margin-bottom: 25px; }
+      .title { font-size: 16px; font-weight: bold; letter-spacing: 0.5px; }
+      .subtitle { font-size: 12px; font-style: italic; margin-top: 4px; color: #333; }
+      .meta { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 15px; border-bottom: 1px solid #ddd; padding-bottom: 6px; }
+      table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+      .section-title { font-size: 12px; font-weight: bold; padding: 8px 8px 4px 8px; }
+      .subtotal-row { font-weight: bold; border-top: 1px solid #ccc; border-bottom: 1px solid #ccc; background-color: #f8fafc; }
+      .subtotal-row td { padding: 6px 8px; }
+      .grand-total-box { margin-top: 25px; display: flex; justify-content: space-between; border-top: 2px solid #111; padding-top: 10px; font-weight: bold; font-size: 13px; }
+      @media print {
+        body { padding: 0; }
+        .subtotal-row { background-color: #eee !important; -webkit-print-color-adjust: exact; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div class="title">LAPORAN NERACA</div>
+      <div class="subtitle">${periodText}</div>
+    </div>
+    <div class="meta">
+      <div><strong>Bisnis:</strong> ${businessName} | <strong>Cabang:</strong> ${outletName}</div>
+      <div><strong>Dicetak:</strong> ${new Date().toLocaleString('id-ID')}</div>
+    </div>
+
+    <!-- ASET LANCAR -->
+    <table>
+      <thead>
+        <tr>
+          <th colspan="3" class="section-title" style="text-align: left;">Aset Lancar</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${renderAccountRows(data.current_assets?.accounts)}
+      </tbody>
+      <tfoot>
+        <tr class="subtotal-row">
+          <td colspan="2">Jumlah Aset Lancar</td>
+          <td style="text-align: right;">${numFmt(data.current_assets?.subtotal)}</td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <!-- ASET TETAP -->
+    <table>
+      <thead>
+        <tr>
+          <th colspan="3" class="section-title" style="text-align: left;">Aset Tetap</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${data.fixed_assets?.accounts?.length ? renderAccountRows(data.fixed_assets?.accounts) : '<tr><td style="color:#64748b;">-</td><td>Depresiasi & Amortisasi</td><td style="text-align:right;">0</td></tr>'}
+      </tbody>
+      <tfoot>
+        <tr class="subtotal-row">
+          <td colspan="2">Jumlah Aset Tetap</td>
+          <td style="text-align: right;">${numFmt(data.fixed_assets?.subtotal)}</td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <!-- LIABILITAS -->
+    <table>
+      <thead>
+        <tr>
+          <th colspan="3" class="section-title" style="text-align: left;">Liabilitas</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${data.liabilities?.accounts?.length ? renderAccountRows(data.liabilities?.accounts) : ''}
+      </tbody>
+      <tfoot>
+        <tr class="subtotal-row">
+          <td colspan="2">Jumlah Hutang</td>
+          <td style="text-align: right;">${numFmt(data.liabilities?.subtotal)}</td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <!-- MODAL -->
+    <table>
+      <thead>
+        <tr>
+          <th colspan="3" class="section-title" style="text-align: left;">Modal</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${renderAccountRows(data.equity?.accounts)}
+      </tbody>
+      <tfoot>
+        <tr class="subtotal-row">
+          <td colspan="2">Jumlah Modal</td>
+          <td style="text-align: right;">${numFmt(data.equity?.subtotal)}</td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <!-- GRAND TOTAL -->
+    <div class="grand-total-box">
+      <div>Jumlah Aset: <span style="margin-left: 20px;">Rp ${numFmt(data.total_assets?.amount)}</span></div>
+      <div>Jumlah Kewajiban dan Modal: <span style="margin-left: 20px;">Rp ${numFmt(data.total_liabilities_and_equity?.amount)}</span></div>
+    </div>
+
+    <script>
+      window.onload = function() {
+        window.print();
+      };
+    </script>
+  </body>
+  </html>
+  `;
+
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+}
+
 

@@ -5,7 +5,7 @@ import {
   ArrowUpDown, ClipboardList, BarChart2, TrendingUp, DollarSign,
   AlertTriangle, LogOut, ScrollText, Menu, X, Clock,
   Store, Send, Users, UserCheck, Building2, ChefHat, Trash2, Percent, Landmark, Wallet, Coins, Gift, Copy, Check, Receipt, Headset,
-  AlertOctagon, CreditCard, Boxes, FileSpreadsheet, BookOpen, ChevronDown, ChevronRight, ShoppingBag
+  AlertOctagon, CreditCard, Boxes, FileSpreadsheet, BookOpen, ChevronDown, ChevronRight, ShoppingBag, Scale
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
@@ -135,6 +135,7 @@ export default function Layout() {
                 children: [
                   { to: '/profit-loss', label: 'Laba Rugi (P&L)', icon: TrendingUp },
                   { to: '/cash-flow', label: 'Arus Kas (Cash Flow)', icon: Wallet },
+                  { to: '/neraca', label: 'Laporan Neraca', icon: Scale },
                 ],
               },
               {
@@ -245,6 +246,7 @@ export default function Layout() {
               children: [
                 { to: '/profit-loss', label: 'Laba Rugi (P&L)', icon: TrendingUp },
                 { to: '/cash-flow', label: 'Arus Kas (Cash Flow)', icon: Wallet },
+                { to: '/neraca', label: 'Laporan Neraca', icon: Scale },
               ],
             },
             {
