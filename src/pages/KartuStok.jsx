@@ -1442,19 +1442,18 @@ export default function KartuStok() {
               <table>
                 <thead>
                   <tr>
-                    <th style={{ width: 40 }}>No</th>
-                    <th style={{ width: 105 }}>Tanggal</th>
-                    <th style={{ width: 130 }}>Gudang / Cabang</th>
-                    <th style={{ width: 140 }}>No. Referensi</th>
-                    <th>Keterangan / Aktivitas</th>
-                    <th style={{ width: 135 }}>Tipe Mutasi</th>
-                    <th style={{ width: 85 }}>Satuan</th>
-                    <th className="right" style={{ width: 125 }}>Harga Satuan</th>
-                    <th className="right" style={{ width: 110 }}>Masuk (+)</th>
-                    <th className="right" style={{ width: 110 }}>Keluar (-)</th>
-                    <th className="right" style={{ width: 130 }}>Saldo Berjalan</th>
-                    <th className="right" style={{ width: 135 }}>Nilai Saldo (Rp)</th>
-                    <th style={{ minWidth: 140 }}>Petugas / Audit</th>
+                    <th style={{ width: 40 }}>NO</th>
+                    <th style={{ width: 105 }}>TANGGAL</th>
+                    <th style={{ width: 130 }}>GUDANG / CABANG</th>
+                    <th style={{ width: 140 }}>NO. REFERENSI</th>
+                    <th>KETERANGAN / AKTIVITAS</th>
+                    <th style={{ width: 135 }}>TIPE MUTASI</th>
+                    <th className="right" style={{ width: 140 }}>HARGA SATUAN</th>
+                    <th className="right" style={{ width: 110 }}>MASUK (+)</th>
+                    <th className="right" style={{ width: 110 }}>KELUAR (-)</th>
+                    <th className="right" style={{ width: 130 }}>SALDO BERJALAN</th>
+                    <th className="right" style={{ width: 135 }}>NILAI SALDO (RP)</th>
+                    <th style={{ minWidth: 140 }}>PETUGAS / AUDIT</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1466,9 +1465,13 @@ export default function KartuStok() {
                     <td className="mono" style={{ color: 'var(--text-muted)' }}>SALDO-AWAL</td>
                     <td style={{ fontWeight: 600, color: 'var(--accent)' }}>Saldo Awal per {period.from}</td>
                     <td><span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Saldo Awal</span></td>
-                    <td className="mono" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{selectedIng?.unit_pakai}</td>
-                    <td className="mono right" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                      {rupiah(selectedIng?.harga / (selectedIng?.konversi || 1))}
+                    <td className="mono right" style={{ fontSize: 12.5 }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'baseline', gap: 3, justifyContent: 'flex-end' }}>
+                        <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>
+                          {rupiah(selectedIng?.harga / Math.max(Number(selectedIng?.konversi || 1), 1))}
+                        </span>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>/{selectedIng?.unit_pakai || 'gram'}</span>
+                      </div>
                     </td>
                     <td className="mono right">—</td>
                     <td className="mono right">—</td>
@@ -1510,15 +1513,15 @@ export default function KartuStok() {
                               <button
                                 className="btn btn-sm"
                                 style={{
-                                  padding: '3px 8px',
-                                  fontSize: 11,
-                                  color: 'var(--accent-bright)',
-                                  border: '1px solid var(--border-accent)',
-                                  background: 'var(--accent-dim)',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: 5,
-                                  cursor: 'pointer'
+                                   padding: '3px 8px',
+                                   fontSize: 11,
+                                   color: 'var(--accent-bright)',
+                                   border: '1px solid var(--border-accent)',
+                                   background: 'var(--accent-dim)',
+                                   display: 'inline-flex',
+                                   alignItems: 'center',
+                                   gap: 5,
+                                   cursor: 'pointer'
                                 }}
                                 onClick={() => handleOpenShiftDetail(row.shift_id)}
                                 title="Klik untuk melihat rincian transaksi POS di shift ini"
@@ -1535,18 +1538,16 @@ export default function KartuStok() {
                           <td>
                             {getTypeBadge(row.type)}
                           </td>
-                          <td className="mono" style={{ fontSize: 12 }}>
-                            <span className="pill pill-muted" style={{ fontSize: 11, padding: '2px 6px' }}>
-                              {selectedIng?.unit_pakai}
-                            </span>
-                          </td>
-                          <td className="mono right" style={{ fontSize: 12 }}>
-                            <div style={{ fontWeight: 600, color: row.cost_after ? 'var(--accent-bright)' : 'inherit' }}>
-                              {rupiah(unitPriceVal)}
+                          <td className="mono right" style={{ fontSize: 12.5 }}>
+                            <div style={{ display: 'inline-flex', alignItems: 'baseline', gap: 3, justifyContent: 'flex-end' }}>
+                              <span style={{ fontWeight: 700, color: row.cost_after ? 'var(--accent-bright)' : '#ffffff' }}>
+                                {rupiah(unitPriceVal)}
+                              </span>
+                              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>/{selectedIng?.unit_pakai || 'gram'}</span>
                             </div>
                             {row.unit_price && Number(selectedIng?.konversi || 1) > 1 && (
-                              <div style={{ fontSize: 9.5, color: '#34d399' }}>
-                                @{rupiah(row.unit_price)}/{selectedIng?.unit_beli}
+                              <div style={{ fontSize: 9.5, color: '#34d399', marginTop: 1 }}>
+                                PO: @{rupiah(row.unit_price)}/{selectedIng?.unit_beli}
                               </div>
                             )}
                           </td>
@@ -1580,7 +1581,7 @@ export default function KartuStok() {
                     })
                   ) : (
                     <tr>
-                      <td colSpan={13} style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--text-muted)' }}>
+                      <td colSpan={12} style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--text-muted)' }}>
                         Tidak ada transaksi mutasi stok yang sesuai dengan filter.
                       </td>
                     </tr>
@@ -1590,7 +1591,7 @@ export default function KartuStok() {
                 {stockCard && (
                   <tfoot>
                     <tr style={{ background: 'rgba(255,255,255,0.03)', fontWeight: 700, borderTop: '2px solid var(--border-strong)' }}>
-                      <td colSpan={8} style={{ textTransform: 'uppercase', letterSpacing: '0.04em', fontSize: 11, color: 'var(--text-secondary)' }}>
+                      <td colSpan={7} style={{ textTransform: 'uppercase', letterSpacing: '0.04em', fontSize: 11, color: 'var(--text-secondary)' }}>
                         Total Periode ({period.from} s/d {period.to})
                       </td>
                       <td className="mono right" style={{ color: 'var(--ok)', fontSize: 13 }}>
