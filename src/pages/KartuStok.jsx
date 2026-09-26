@@ -4,7 +4,7 @@ import {
   AlertTriangle, Calendar, Printer, X, Check, RefreshCw, Eye, Store,
   ArrowLeft, Building2, ChevronRight, Calculator,
   Truck, PackageCheck, CheckCircle2, ShieldCheck, Clock, ArrowRight, RotateCcw, AlertCircle,
-  ShoppingBag, FileSpreadsheet
+  ShoppingBag, FileSpreadsheet, Trash2
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, num, LoadingState, PageHeader, AuditInfo, PeriodPicker, SearchableSelect } from '../components/ui';
@@ -2816,24 +2816,14 @@ export default function KartuStok() {
                           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10, marginBottom: 8 }}>
                             <div>
                               <label className="form-label" style={{ fontSize: 11, color: 'var(--text-muted)' }}>Pilih Bahan / Perlengkapan *</label>
-                              <select
-                                className="form-control"
+                              <SearchableSelect
+                                options={mutationIngredientGroups}
                                 value={it.ingredient_id}
-                                onChange={e => handleMutationItemChange(idx, 'ingredient_id', e.target.value)}
-                                required
-                                style={{ fontSize: 12.5 }}
-                              >
-                                <option value="">-- Pilih Bahan --</option>
-                                {mutationIngredientGroups.map(grp => (
-                                  <optgroup key={grp.group} label={grp.group}>
-                                    {grp.items.map(item => (
-                                      <option key={item.value} value={item.value}>
-                                        {item.label} ({item.code || '-'}) • {item.sublabel}
-                                      </option>
-                                    ))}
-                                  </optgroup>
-                                ))}
-                              </select>
+                                onChange={val => handleMutationItemChange(idx, 'ingredient_id', val)}
+                                placeholder="-- Pilih Bahan / Perlengkapan --"
+                                searchPlaceholder="Cari nama atau kode bahan..."
+                                size="sm"
+                              />
                             </div>
 
                             <div>

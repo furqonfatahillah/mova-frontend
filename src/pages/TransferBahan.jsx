@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
-import { PageHeader, LoadingState, AuditInfo, MiniCard, num, rupiah, PeriodPicker } from '../components/ui';
+import { PageHeader, LoadingState, AuditInfo, MiniCard, num, rupiah, PeriodPicker, SearchableSelect } from '../components/ui';
 import { printElement } from '../utils/print';
 import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
 import { useOutlet } from '../context/OutletContext';
@@ -209,6 +209,48 @@ export default function TransferBahan() {
   const directMenus = useMemo(() => {
     return menus.filter(m => m.item_type === 'DIRECT' || m.track_stock || m.is_direct);
   }, [menus]);
+
+  // Searchable select options for ingredients and products in transfer modal
+  const transferIngredientOptions = useMemo(() => {
+    if (!ingredients || !ingredients.length) return [];
+    const mentah = [];
+    const perlengkapan = [];
+    const olahan = [];
+
+    ingredients.forEach(i => {
+      const isPerlengkapan = (i.category || '').toLowerCase().includes('perlengkapan') || (i.category || '').toLowerCase().includes('kemasan');
+      const isOlahan = i.type === 'SEMI_FINISHED' || (i.category || '').toLowerCase().includes('olahan');
+      const opt = {
+        value: i.id,
+        label: i.name,
+        code: i.code,
+        category: i.category,
+        sublabel: `${i.unit_pakai || 'Unit'} • Stok: ${num(i.current_stock ?? 0)}`,
+        badge: isPerlengkapan ? 'Perlengkapan' : (isOlahan ? 'Setengah Jadi' : 'Bahan'),
+        raw: i,
+      };
+      if (isPerlengkapan) perlengkapan.push(opt);
+      else if (isOlahan) olahan.push(opt);
+      else mentah.push(opt);
+    });
+
+    const groups = [];
+    if (mentah.length > 0) groups.push({ group: 'Bahan Baku Mentah', items: mentah });
+    if (perlengkapan.length > 0) groups.push({ group: 'Perlengkapan & Kemasan', items: perlengkapan });
+    if (olahan.length > 0) groups.push({ group: 'Bahan Setengah Jadi', items: olahan });
+    return groups;
+  }, [ingredients]);
+
+  const transferProductOptions = useMemo(() => {
+    return (directMenus || []).map(m => ({
+      value: m.id,
+      label: m.name,
+      code: m.code || 'PRD',
+      sublabel: `Stok: ${num(m.current_stock ?? 0)}`,
+      badge: 'Produk Retail',
+      raw: m,
+    }));
+  }, [directMenus]);
 
   // Open Create Modal cleanly
   function openCreateModal() {
@@ -2696,35 +2738,23 @@ export default function TransferBahan() {
 
                           {/* Item Selector */}
                           {isProd ? (
-                            <select
-                              className="form-control"
-                              style={{ padding: '6px 8px', fontSize: 12.5 }}
+                            <SearchableSelect
+                              options={transferProductOptions}
                               value={item.menu_id}
-                              onChange={e => handleItemChange(idx, 'menu_id', e.target.value)}
-                              required
-                            >
-                              <option value="">-- Pilih Produk Retail --</option>
-                              {directMenus.map(m => (
-                                <option key={m.id} value={m.id} style={{ background: '#11162d', color: '#ffffff' }}>
-                                  {m.name} ({m.code || 'PRD'})
-                                </option>
-                              ))}
-                            </select>
+                              onChange={val => handleItemChange(idx, 'menu_id', val)}
+                              placeholder="-- Pilih Produk Retail --"
+                              searchPlaceholder="Cari produk retail..."
+                              size="sm"
+                            />
                           ) : (
-                            <select
-                              className="form-control"
-                              style={{ padding: '6px 8px', fontSize: 12.5 }}
+                            <SearchableSelect
+                              options={transferIngredientOptions}
                               value={item.ingredient_id}
-                              onChange={e => handleItemChange(idx, 'ingredient_id', e.target.value)}
-                              required
-                            >
-                              <option value="">-- Pilih Bahan Baku --</option>
-                              {ingredients.map(i => (
-                                <option key={i.id} value={i.id} style={{ background: '#11162d', color: '#ffffff' }}>
-                                  {i.name} ({i.code || 'BB'})
-                                </option>
-                              ))}
-                            </select>
+                              onChange={val => handleItemChange(idx, 'ingredient_id', val)}
+                              placeholder="-- Pilih Bahan Baku / Perlengkapan --"
+                              searchPlaceholder="Cari nama atau kode bahan..."
+                              size="sm"
+                            />
                           )}
 
                           {/* Quantity Input */}
