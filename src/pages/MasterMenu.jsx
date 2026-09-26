@@ -523,6 +523,14 @@ export default function MasterMenu() {
     }
   }
 
+  // Filtered menus
+  const filteredMenus = useMemo(() => {
+    return menus.filter(m => {
+      if (selectedType === 'ALL') return true;
+      return (m.item_type || 'RECIPE') === selectedType;
+    });
+  }, [menus, selectedType]);
+
   // Bulk selection state & handlers for menus
   const [selectedMenuIds, setSelectedMenuIds] = useState([]);
   const [bulkDeletingMenus, setBulkDeletingMenus] = useState(false);
@@ -898,13 +906,6 @@ export default function MasterMenu() {
       setSaving(false);
     }
   }
-
-  const filteredMenus = useMemo(() => {
-    return menus.filter(m => {
-      if (selectedType === 'ALL') return true;
-      return (m.item_type || 'RECIPE') === selectedType;
-    });
-  }, [menus, selectedType]);
 
   if (loading) return <LoadingState />;
 
