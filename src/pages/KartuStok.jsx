@@ -1212,8 +1212,11 @@ export default function KartuStok() {
                    itemCategory === 'BAHAN' ? 'Daftar Bahan Baku Mentah' :
                    'Daftar Persediaan & Bahan'} di {currentOutlet?.name || 'Gudang'}
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-                  Periode: <strong>{period.from}</strong> s/d <strong>{period.to}</strong> · Klik nama item untuk membuka kartu stok & buku besar mutasi lengkap.
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span>Periode: <strong>{period.from}</strong> s/d <strong>{period.to}</strong> · Klik nama item untuk membuka kartu stok & buku besar mutasi lengkap.</span>
+                  <span className="pill pill-accent" style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 4 }} title="Saldo Awal stok fisik otomatis tersimpan dan terakumulasi dari Master Bahan & Master Perlengkapan">
+                    ✓ Saldo Awal Terintegrasi dari Master Bahan & Perlengkapan
+                  </span>
                 </div>
               </div>
               <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
@@ -2851,61 +2854,118 @@ export default function KartuStok() {
                       padding: 12,
                       marginBottom: 14
                     }}>
-                      <label className="form-label" style={{ fontWeight: 700, fontSize: 12, color: mutationForm.payment_type === 'HUTANG' ? '#f87171' : '#34d399', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                        <ShoppingBag size={14} />
-                        Metode Pembayaran Belanja Bahan:
-                      </label>
+                      {(() => {
+                        const curTargetOtId = mutationForm.outlet_id || selectedOutletId;
+                        const curOtObj = outlets.find(o => String(o.id) === String(curTargetOtId));
+                        const isHoldingOutlet = curOtObj ? Boolean(curOtObj.is_main) : true;
 
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: mutationForm.payment_type === 'HUTANG' ? 12 : 0 }}>
-                        {[
-                          { value: 'CASH', label: 'Tunai / Kasir', sub: 'Kas Langsung' },
-                          { value: 'BANK', label: 'Transfer Bank', sub: 'Rekening Bank' },
-                          { value: 'QRIS', label: 'QRIS', sub: 'Scan QRIS' },
-                          { value: 'HUTANG', label: 'Hutang / Tempo', sub: 'Buku Hutang Supplier' },
-                        ].map(m => {
-                          const isSel = mutationForm.payment_type === m.value;
-                          return (
-                            <button
-                              key={m.value}
-                              type="button"
-                              className="btn"
-                              onClick={() => {
-                                if (m.value === 'HUTANG') {
-                                  const defaultDue = new Date();
-                                  defaultDue.setDate(defaultDue.getDate() + 30);
-                                  const dueStr = defaultDue.toISOString().slice(0, 10);
-                                  setMutationForm(f => ({ ...f, payment_type: 'HUTANG', due_date: f.due_date || dueStr }));
-                                } else {
-                                  setMutationForm(f => ({ ...f, payment_type: m.value }));
-                                }
-                              }}
-                              style={{
-                                padding: '8px 6px',
-                                fontSize: 12,
-                                fontWeight: 700,
-                                borderRadius: 8,
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                gap: 3,
-                                background: isSel
-                                  ? (m.value === 'HUTANG' ? 'rgba(239, 68, 68, 0.25)' : 'rgba(16, 185, 129, 0.25)')
-                                  : 'rgba(255,255,255,0.03)',
-                                border: isSel
-                                  ? (m.value === 'HUTANG' ? '1.5px solid #ef4444' : '1.5px solid #10b981')
-                                  : '1px solid var(--border)',
-                                color: isSel
-                                  ? (m.value === 'HUTANG' ? '#f87171' : '#34d399')
-                                  : 'var(--text-secondary)',
-                                cursor: 'pointer'
-                              }}
-                            >
-                              <span>{m.label}</span>
-                              <span style={{ fontSize: 9.5, fontWeight: 500, opacity: 0.85 }}>{m.sub}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
+                        return (
+                          <>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                              <label className="form-label" style={{ fontWeight: 700, fontSize: 12, color: mutationForm.payment_type === 'HUTANG' ? '#f87171' : '#34d399', display: 'flex', alignItems: 'center', gap: 6, margin: 0 }}>
+                                <ShoppingBag size={14} />
+                                Metode Pembayaran Belanja Bahan:
+                              </label>
+                              <span className={`pill ${isHoldingOutlet ? 'pill-primary' : 'pill-warning'}`} style={{ fontSize: 10, fontWeight: 700 }}>
+                                {isHoldingOutlet ? '👑 Holding (Hutang, Kas, Bank)' : '📍 Outlet Cabang (Kas Only)'}
+                              </span>
+                            </div>
+
+                            {!isHoldingOutlet ? (
+                              <div style={{ marginBottom: 10 }}>
+                                <div style={{
+                                  padding: '8px 10px',
+                                  background: 'rgba(245, 158, 11, 0.1)',
+                                  border: '1px solid rgba(245, 158, 11, 0.25)',
+                                  borderRadius: 8,
+                                  fontSize: 11,
+                                  color: '#fbbf24',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                  marginBottom: 8
+                                }}>
+                                  <CheckCircle2 size={13} />
+                                  <span>Pembelian cabang dibatasi <strong>KAS ONLY</strong> (Petty Cash Cabang).</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="btn"
+                                  disabled
+                                  style={{
+                                    width: '100%',
+                                    padding: '8px 10px',
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    borderRadius: 8,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: 5,
+                                    background: 'rgba(16, 185, 129, 0.2)',
+                                    border: '1.5px solid #10b981',
+                                    color: '#34d399'
+                                  }}
+                                >
+                                  <CheckCircle2 size={13} />
+                                  <span>Kas / Tunai Cabang (Petty Cash)</span>
+                                </button>
+                              </div>
+                            ) : (
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: mutationForm.payment_type === 'HUTANG' ? 12 : 0 }}>
+                                {[
+                                  { value: 'CASH', label: 'Tunai / Kasir', sub: 'Kas Langsung' },
+                                  { value: 'BANK', label: 'Transfer Bank', sub: 'Rekening Bank' },
+                                  { value: 'QRIS', label: 'QRIS', sub: 'Scan QRIS' },
+                                  { value: 'HUTANG', label: 'Hutang / Tempo', sub: 'Buku Hutang Supplier' },
+                                ].map(m => {
+                                  const isSel = mutationForm.payment_type === m.value;
+                                  return (
+                                    <button
+                                      key={m.value}
+                                      type="button"
+                                      className="btn"
+                                      onClick={() => {
+                                        if (m.value === 'HUTANG') {
+                                          const defaultDue = new Date();
+                                          defaultDue.setDate(defaultDue.getDate() + 30);
+                                          const dueStr = defaultDue.toISOString().slice(0, 10);
+                                          setMutationForm(f => ({ ...f, payment_type: 'HUTANG', due_date: f.due_date || dueStr }));
+                                        } else {
+                                          setMutationForm(f => ({ ...f, payment_type: m.value }));
+                                        }
+                                      }}
+                                      style={{
+                                        padding: '8px 6px',
+                                        fontSize: 12,
+                                        fontWeight: 700,
+                                        borderRadius: 8,
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        alignItems: 'center',
+                                        gap: 3,
+                                        background: isSel
+                                          ? (m.value === 'HUTANG' ? 'rgba(239, 68, 68, 0.25)' : 'rgba(16, 185, 129, 0.25)')
+                                          : 'rgba(255,255,255,0.03)',
+                                        border: isSel
+                                          ? (m.value === 'HUTANG' ? '1.5px solid #ef4444' : '1.5px solid #10b981')
+                                          : '1px solid var(--border)',
+                                        color: isSel
+                                          ? (m.value === 'HUTANG' ? '#f87171' : '#34d399')
+                                          : 'var(--text-secondary)',
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      <span>{m.label}</span>
+                                      <span style={{ fontSize: 9.5, fontWeight: 500, opacity: 0.85 }}>{m.sub}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
 
                       {mutationForm.payment_type === 'HUTANG' && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingTop: 10, borderTop: '1px dashed rgba(239,68,68,0.3)' }}>

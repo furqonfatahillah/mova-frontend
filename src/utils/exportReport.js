@@ -1097,11 +1097,13 @@ export async function exportPromosToExcel({ items = [], summary = {}, period, ou
  */
 export async function exportSupplierPayablesToExcel({
   rows = [],
+  items = [],
   period = {},
   outletName = 'Semua Cabang',
-  businessName = 'MOVA POS',
+  businessName = 'URBAE CAFFEINE',
   summary = {},
 }) {
+  const dataList = items.length > 0 ? items : rows;
   const ExcelJSMod = await import('exceljs');
   const ExcelJS = ExcelJSMod.default || ExcelJSMod;
   const wb = new ExcelJS.Workbook();
@@ -1118,9 +1120,11 @@ export async function exportSupplierPayablesToExcel({
   ws.getCell('B2').alignment = { horizontal: 'center', vertical: 'middle' };
   ws.mergeCells('B2:K2');
 
-  const periodText = period.from_formatted && period.to_formatted
-    ? `Per ${period.from_formatted} s/d ${period.to_formatted}`
-    : (period.from && period.to ? `Per ${period.from} s/d ${period.to}` : 'Semua Periode');
+  const periodText = typeof period === 'string'
+    ? period
+    : (period.from_formatted && period.to_formatted
+        ? `Per ${period.from_formatted} s/d ${period.to_formatted}`
+        : (period.from && period.to ? `Per ${period.from} s/d ${period.to}` : 'Semua Periode'));
 
   // Row 3: Period subtitle in italics
   ws.getCell('B3').value = periodText;
@@ -1159,7 +1163,7 @@ export async function exportSupplierPayablesToExcel({
   });
 
   let currentRowIdx = 6;
-  rows.forEach((r, idx) => {
+  dataList.forEach((r, idx) => {
     const row = ws.getRow(currentRowIdx++);
     row.values = [
       idx + 1,
@@ -1705,6 +1709,199 @@ export function printBalanceSheetReport({
   printWindow.document.open();
   printWindow.document.write(html);
   printWindow.document.close();
+}
+
+/**
+ * 14. Export Laporan Transaksi Pembelian to Excel (Matches Exact Format)
+ */
+export async function exportPurchaseTransactionsToExcel({ businessName = 'URBAE CAFFEINE', period = '', items = [], summary = {} }) {
+  const XLSX = await getXLSX();
+  const wb = XLSX.utils.book_new();
+  const numFmt = val => (val || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const rows = [
+    [businessName],
+    ['Laporan Transaksi Pembelian'],
+    [period || 'Per Periode Terpilih'],
+    [],
+    [
+      'No.', 'Tgl', 'Tgl.Dibuat', 'Dibuat Oleh', 'No.Ref', 'Warehouse', 'Supplier', 'Status Terima',
+      'Kode Produk', 'Produk', 'Harga Beli', '', '', '', '', '', '',
+      'Disc Tambahan', 'PPN', 'Pengiriman', 'Pembelian', 'Dibayar', 'Utang'
+    ],
+    [
+      '', '', '', '', '', '', '', '',
+      '', '', 'QTY', 'Satuan', 'QTY Terkecil', 'Satuan Terkecil', 'Harga', 'Disc', 'Subtotal',
+      '', '', '', '', '', ''
+    ]
+  ];
+
+  items.forEach((item, index) => {
+    rows.push([
+      item.no || (index + 1),
+      item.tgl || '',
+      item.tgl_dibuat || '',
+      item.dibuat_oleh || '',
+      item.no_ref || '',
+      item.warehouse || '',
+      item.supplier || '',
+      item.status_terima || 'Diterima',
+      item.kode_produk || '',
+      item.produk || '',
+      item.qty ?? 0,
+      item.satuan || '',
+      item.qty_terkecil ?? 0,
+      item.satuan_terkecil || '',
+      numFmt(item.harga),
+      numFmt(item.disc || 0),
+      numFmt(item.subtotal || item.pembelian),
+      numFmt(item.disc_tambahan || 0),
+      numFmt(item.ppn || 0),
+      numFmt(item.pengiriman || 0),
+      numFmt(item.pembelian),
+      numFmt(item.dibayar),
+      numFmt(item.utang)
+    ]);
+  });
+
+  // Total row
+  rows.push([
+    'Total', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
+    numFmt(summary.total_disc_tambahan || 0),
+    numFmt(summary.total_ppn || 0),
+    numFmt(summary.total_pengiriman || 0),
+    numFmt(summary.total_pembelian || 0),
+    numFmt(summary.total_dibayar || 0),
+    numFmt(summary.total_utang || 0)
+  ]);
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = fitColumns(rows);
+  XLSX.utils.book_append_sheet(wb, ws, 'Transaksi Pembelian');
+  XLSX.writeFile(wb, `Laporan_Transaksi_Pembelian_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+/**
+ * 15. Export Laporan Pembelian per Produk to Excel
+ */
+export async function exportPurchasesByProductToExcel({ businessName = 'URBAE CAFFEINE', period = '', items = [], summary = {} }) {
+  const XLSX = await getXLSX();
+  const wb = XLSX.utils.book_new();
+  const numFmt = val => (val || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const rows = [
+    [businessName],
+    ['LAPORAN PEMBELIAN PER PRODUK'],
+    [period || 'Per Periode Terpilih'],
+    [],
+    ['No.', 'Kode Produk', 'Nama Produk', 'Qty Beli', 'Qty Refund', 'Satuan', 'Harga', 'Disc', 'Total Nilai Beli', 'Total Nilai Refund']
+  ];
+
+  items.forEach((it, idx) => {
+    rows.push([
+      it.no || (idx + 1),
+      it.kode_produk || '',
+      it.nama_produk || '',
+      it.qty_beli ?? 0,
+      it.qty_refund ?? 0,
+      it.satuan || '',
+      numFmt(it.harga),
+      numFmt(it.disc || 0),
+      numFmt(it.total_nilai_beli),
+      numFmt(it.total_nilai_refund || 0)
+    ]);
+  });
+
+  rows.push([
+    'Total', '', '', '', '', '', '', '',
+    numFmt(summary.total_nilai_beli || 0),
+    numFmt(summary.total_nilai_refund || 0)
+  ]);
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = fitColumns(rows);
+  XLSX.utils.book_append_sheet(wb, ws, 'Pembelian per Produk');
+  XLSX.writeFile(wb, `Laporan_Pembelian_Per_Produk_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+/**
+ * 16. Export Laporan Daftar Pembelian per Supplier to Excel
+ */
+export async function exportPurchasesBySupplierToExcel({ businessName = 'URBAE CAFFEINE', period = '', items = [], summary = {} }) {
+  const XLSX = await getXLSX();
+  const wb = XLSX.utils.book_new();
+  const numFmt = val => (val || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const rows = [
+    [businessName],
+    ['LAPORAN DAFTAR PEMBELIAN PER SUPPLIER'],
+    [period || 'Per Periode Terpilih'],
+    [],
+    ['No.', 'Supplier/Kode Produk', 'Tgl.Dibuat', 'Dibuat Oleh', 'No.Ref', 'Pembelian', 'Disc', 'Pajak', 'Pengiriman', 'Total']
+  ];
+
+  items.forEach((it, idx) => {
+    rows.push([
+      it.no || (idx + 1),
+      it.supplier || it.supplier_kode_produk || '',
+      it.tgl_dibuat || '',
+      it.dibuat_oleh || '',
+      it.no_ref || '',
+      numFmt(it.pembelian),
+      numFmt(it.disc || 0),
+      numFmt(it.pajak || 0),
+      numFmt(it.pengiriman || 0),
+      numFmt(it.total)
+    ]);
+  });
+
+  rows.push([
+    'Total Pembelian Dari', '', '', '', '', '', '',
+    numFmt(summary.total_pembelian || 0),
+    '', ''
+  ]);
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = fitColumns(rows);
+  XLSX.utils.book_append_sheet(wb, ws, 'Pembelian per Supplier');
+  XLSX.writeFile(wb, `Laporan_Pembelian_Per_Supplier_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+/**
+ * 17. Export Laporan Pengiriman Pembelian to Excel
+ */
+export async function exportPurchaseShipmentsToExcel({ businessName = 'URBAE CAFFEINE', period = '', items = [], summary = {} }) {
+  const XLSX = await getXLSX();
+  const wb = XLSX.utils.book_new();
+  const numFmt = val => (val || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const rows = [
+    [businessName],
+    ['LAPORAN PENGIRIMAN PEMBELIAN'],
+    [period || 'Per Periode Terpilih'],
+    [],
+    ['No.', 'Supplier/Tanggal', 'Tgl. Dibuat', 'Dibuat Oleh', 'No.Ref', 'Kode Produk', 'Nama Produk', 'Qty', 'Satuan', 'Jumlah']
+  ];
+
+  items.forEach((it, idx) => {
+    rows.push([
+      it.no || (idx + 1),
+      it.supplier_tanggal || it.supplier_name || '',
+      it.tgl_dibuat || '',
+      it.dibuat_oleh || '',
+      it.no_ref || '',
+      it.kode_produk || '',
+      it.nama_produk || '',
+      it.qty ?? 0,
+      it.satuan || '',
+      numFmt(it.jumlah)
+    ]);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = fitColumns(rows);
+  XLSX.utils.book_append_sheet(wb, ws, 'Pengiriman Pembelian');
+  XLSX.writeFile(wb, `Laporan_Pengiriman_Pembelian_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
 

@@ -11,7 +11,6 @@ import {
   downloadMenuTemplate,
   downloadReceivableTemplate,
   downloadOutletTemplate,
-  downloadSaldoAwalTemplate
 } from '../utils/exportTemplates';
 import toast from 'react-hot-toast';
 
@@ -211,7 +210,7 @@ export default function ImportMasterModal({
       const sheet = workbook.Sheets[sheetName];
       // Convert sheet to 2D array to dynamically find the exact table header row
       const sheetRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-      
+
       const HEADER_KEYWORDS = [
         'nama bahan', 'nama perlengkapan', 'nama menu', 'nama pelanggan', 'nama debitur', 'nama outlet',
         'kode bahan', 'kode perlengkapan', 'kode menu', 'kode outlet',
@@ -294,6 +293,7 @@ export default function ImportMasterModal({
             else if (konversi <= 0) konversi = 1;
           }
 
+          const outletName = getVal(row, ['cabangoutletopsional', 'cabangoutlet', 'cabang', 'outlet', 'namaoutlet', 'namacabang']) || '';
           const harga = parseFloat(getVal(row, ['hargabeli', 'harga', 'hargasatuan'])) || 0;
           const minStock = parseFloat(getVal(row, ['stokminimal', 'minstok'])) || 0;
           const initialStock = parseFloat(getVal(row, ['stokawal', 'stok'])) || 0;
@@ -305,6 +305,7 @@ export default function ImportMasterModal({
           mappedData = {
             code,
             name,
+            outlet_name: outletName,
             category,
             type,
             unit_beli: uBeli.symbol,
@@ -329,6 +330,7 @@ export default function ImportMasterModal({
             name = String(row[keys[1]] || '').trim();
           }
 
+          const outletName = getVal(row, ['cabangoutletopsional', 'cabangoutlet', 'cabang', 'outlet', 'namaoutlet', 'namacabang']) || '';
           const category = getVal(row, ['kategori', 'category']) || 'Perlengkapan';
           const rawUnitBeli = getVal(row, ['satuanbeli', 'unitbeli']);
           const rawUnitPakai = getVal(row, ['satuanpakai', 'unitpakai']);
@@ -356,6 +358,7 @@ export default function ImportMasterModal({
           mappedData = {
             code,
             name,
+            outlet_name: outletName,
             category,
             type: 'RAW',
             unit_beli: uBeli.symbol,
@@ -424,45 +427,6 @@ export default function ImportMasterModal({
           if (!name) errors.push('Nama outlet wajib diisi.');
 
           mappedData = { code, name, type, pic_name: picName, phone, address, is_main: isMain };
-        } else if (currentMasterType === 'SALDO_AWAL') {
-          let code = getVal(row, ['kodebahanitem', 'kodebahan', 'kodeitem', 'kode', 'code', 'sku']);
-          let name = getVal(row, ['namabahanitem', 'namabahan', 'namaitem', 'namabarang', 'nama', 'itemname']);
-
-          if (!code && keys[0] && keys[0].toLowerCase().includes('kode')) {
-            code = String(row[keys[0]] || '').trim();
-          }
-          if (!name && keys[1] && keys[1].toLowerCase().includes('nama')) {
-            name = String(row[keys[1]] || '').trim();
-          }
-
-          const outletName = getVal(row, ['namaoutletcabang', 'namaoutlet', 'outlet', 'cabang', 'namacabang', 'gudang']) || '';
-          const initialStock = parseFloat(getVal(row, ['saldoawalfisik', 'saldoawal', 'stokawal', 'stok', 'qty'])) || 0;
-          const rawUnit = getVal(row, ['satuan', 'unit']);
-          const uNorm = normalizeUnitClient(rawUnit, 'pcs');
-          const unitTypeRaw = getVal(row, ['tipesatuan', 'tipesatuanbeli', 'tipe', 'unittype']);
-          const unitType = (unitTypeRaw && unitTypeRaw.toUpperCase().includes('BELI')) ? 'BELI' : 'PAKAI';
-          const harga = parseFloat(getVal(row, ['hargamodalbeli', 'hargamodal', 'hargabeli', 'harga', 'price'])) || 0;
-          const minStock = parseFloat(getVal(row, ['stokminimalparlevel', 'stokminimal', 'minstok'])) || 0;
-          const date = getVal(row, ['tanggalcutoff', 'tanggal', 'date']) || '2026-09-01';
-          const notes = getVal(row, ['catatanketerangan', 'catatan', 'keterangan']);
-
-          if (!name) errors.push('Nama bahan/item wajib diisi.');
-          if (initialStock < 0) errors.push('Saldo awal tidak boleh bernilai negatif.');
-          if (harga < 0) errors.push('Harga modal tidak boleh bernilai negatif.');
-
-          mappedData = {
-            code,
-            name,
-            outlet_name: outletName,
-            initial_stock: initialStock,
-            unit: uNorm.symbol,
-            unit_type: unitType,
-            harga,
-            stok_min: minStock,
-            date,
-            notes,
-            _uBeli: uNorm,
-          };
         }
 
         return {
@@ -795,6 +759,11 @@ export default function ImportMasterModal({
                       <td style={{ padding: '8px 12px', color: 'var(--text-secondary)', fontSize: '11px' }}>
                         {currentMasterType === 'INGREDIENT' && (
                           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+                            {row.data.outlet_name && (
+                              <span style={{ background: 'rgba(139, 92, 246, 0.2)', color: 'var(--accent-bright)', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>
+                                Cabang: {row.data.outlet_name}
+                              </span>
+                            )}
                             <span>
                               {row.data.type} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · Harga: <strong>{rupiah(row.data.harga)}</strong> · Stok Awal: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit_pakai}</strong> (Nilai: <span style={{ color: '#34d399' }}>{rupiah(row.data.initial_stock * (row.data.harga / Math.max(row.data.konversi || 1, 1)))}</span>)
                             </span>
@@ -812,6 +781,11 @@ export default function ImportMasterModal({
                         )}
                         {currentMasterType === 'PERLENGKAPAN' && (
                           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+                            {row.data.outlet_name && (
+                              <span style={{ background: 'rgba(139, 92, 246, 0.2)', color: 'var(--accent-bright)', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>
+                                Cabang: {row.data.outlet_name}
+                              </span>
+                            )}
                             <span>
                               {row.data.category} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · Harga: <strong>{rupiah(row.data.harga)}</strong> · Stok Awal: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit_pakai}</strong> (Nilai: <span style={{ color: '#34d399' }}>{rupiah(row.data.initial_stock * (row.data.harga / Math.max(row.data.konversi || 1, 1)))}</span>)
                             </span>
@@ -822,23 +796,6 @@ export default function ImportMasterModal({
                             )}
                             {(row.data._uBeli?.isNew || row.data._uPakai?.isNew) && (
                               <span style={{ background: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }} title="Satuan baru otomatis didaftarkan ke Master Satuan">
-                                ✨ Satuan Baru
-                              </span>
-                            )}
-                          </div>
-                        )}
-                        {currentMasterType === 'SALDO_AWAL' && (
-                          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
-                            <span>
-                              Cabang: <strong>{row.data.outlet_name || '(Pusat / Sesuai User)'}</strong> · Saldo Awal: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit} ({row.data.unit_type})</strong> · Modal: {rupiah(row.data.harga)} · Cut-off: {row.data.date}
-                            </span>
-                            {row.data._uBeli?.isFixed && (
-                              <span style={{ background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }} title="Typo/singkatan otomatis diperbaiki ke format standar">
-                                ✓ Auto-Fix ({row.data._uBeli.original})
-                              </span>
-                            )}
-                            {row.data._uBeli?.isNew && (
-                              <span style={{ background: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>
                                 ✨ Satuan Baru
                               </span>
                             )}

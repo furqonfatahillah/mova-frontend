@@ -92,6 +92,22 @@ export default function StockMovement({ defaultFilterType }) {
   });
   const [saving, setSaving] = useState(false);
 
+  const selectedOutletForForm = useMemo(() => {
+    const otId = form.outlet_id || activeOutletId;
+    return outlets.find(o => String(o.id) === String(otId));
+  }, [form.outlet_id, activeOutletId, outlets]);
+
+  const isFormHolding = useMemo(() => {
+    if (!selectedOutletForForm) return true;
+    return Boolean(selectedOutletForForm.is_main);
+  }, [selectedOutletForForm]);
+
+  useEffect(() => {
+    if (!isFormHolding && form.payment_type !== 'CASH') {
+      setForm(f => ({ ...f, payment_type: 'CASH' }));
+    }
+  }, [isFormHolding, form.payment_type]);
+
   useEffect(() => {
     fetchAll();
     fetchSuppliers();
@@ -768,70 +784,140 @@ export default function StockMovement({ defaultFilterType }) {
                     </div>
                   )}
 
-                  {/* Pilihan Metode Bayar: LUNAS vs HUTANG */}
+                  {/* Pilihan Metode Bayar: Holding (Hutang, Kas, Bank) vs Outlet (Kas Only) */}
                   <div style={{
                     marginTop: 14,
                     padding: 12,
                     borderRadius: 10,
-                    background: form.payment_type === 'HUTANG' ? 'rgba(239, 68, 68, 0.08)' : 'rgba(16, 185, 129, 0.06)',
-                    border: `1px solid ${form.payment_type === 'HUTANG' ? 'rgba(239, 68, 68, 0.35)' : 'rgba(16, 185, 129, 0.3)'}`
+                    background: form.payment_type === 'HUTANG' ? 'rgba(239, 68, 68, 0.08)' : form.payment_type === 'BANK' ? 'rgba(59, 130, 246, 0.08)' : 'rgba(16, 185, 129, 0.06)',
+                    border: `1px solid ${form.payment_type === 'HUTANG' ? 'rgba(239, 68, 68, 0.35)' : form.payment_type === 'BANK' ? 'rgba(59, 130, 246, 0.35)' : 'rgba(16, 185, 129, 0.3)'}`
                   }}>
-                    <label className="form-label" style={{ fontWeight: 700, fontSize: 12, color: form.payment_type === 'HUTANG' ? '#f87171' : '#34d399', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                      <ShoppingBag size={14} /> Tipe Pembayaran Pembelian:
-                    </label>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                      <button
-                        type="button"
-                        className="btn"
-                        onClick={() => setForm(f => ({ ...f, payment_type: 'CASH' }))}
-                        style={{
-                          padding: '6px 8px',
-                          fontSize: 11.5,
-                          fontWeight: 700,
-                          borderRadius: 8,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: 5,
-                          background: form.payment_type !== 'HUTANG' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.03)',
-                          border: form.payment_type !== 'HUTANG' ? '1.5px solid #10b981' : '1px solid var(--border)',
-                          color: form.payment_type !== 'HUTANG' ? '#34d399' : 'var(--text-secondary)',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <CheckCircle2 size={13} />
-                        <span>Lunas Tunai</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        className="btn"
-                        onClick={() => {
-                          const defaultDue = new Date();
-                          defaultDue.setDate(defaultDue.getDate() + 30);
-                          const dueStr = defaultDue.toISOString().slice(0, 10);
-                          setForm(f => ({ ...f, payment_type: 'HUTANG', due_date: f.due_date || dueStr }));
-                        }}
-                        style={{
-                          padding: '6px 8px',
-                          fontSize: 11.5,
-                          fontWeight: 700,
-                          borderRadius: 8,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: 5,
-                          background: form.payment_type === 'HUTANG' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.03)',
-                          border: form.payment_type === 'HUTANG' ? '1.5px solid #ef4444' : '1px solid var(--border)',
-                          color: form.payment_type === 'HUTANG' ? '#f87171' : 'var(--text-secondary)',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <Clock size={13} />
-                        <span>Hutang Supplier (Tempo)</span>
-                      </button>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <label className="form-label" style={{ fontWeight: 700, fontSize: 12, color: form.payment_type === 'HUTANG' ? '#f87171' : form.payment_type === 'BANK' ? '#60a5fa' : '#34d399', display: 'flex', alignItems: 'center', gap: 6, margin: 0 }}>
+                        <ShoppingBag size={14} /> Tipe Pembayaran Pembelian:
+                      </label>
+                      <span className={`pill ${isFormHolding ? 'pill-primary' : 'pill-warning'}`} style={{ fontSize: 10, fontWeight: 700 }}>
+                        {isFormHolding ? '👑 Holding (Hutang, Kas, Bank)' : '📍 Outlet Cabang (Kas Only)'}
+                      </span>
                     </div>
+
+                    {!isFormHolding ? (
+                      <div>
+                        <div style={{
+                          padding: '8px 10px',
+                          background: 'rgba(245, 158, 11, 0.1)',
+                          border: '1px solid rgba(245, 158, 11, 0.25)',
+                          borderRadius: 8,
+                          fontSize: 11,
+                          color: '#fbbf24',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          marginBottom: 8
+                        }}>
+                          <CheckCircle2 size={13} />
+                          <span>Pembelian cabang menggunakan <strong>KAS ONLY</strong> (Petty Cash Cabang).</span>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn"
+                          disabled
+                          style={{
+                            width: '100%',
+                            padding: '7px 10px',
+                            fontSize: 12,
+                            fontWeight: 700,
+                            borderRadius: 8,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 5,
+                            background: 'rgba(16, 185, 129, 0.2)',
+                            border: '1.5px solid #10b981',
+                            color: '#34d399'
+                          }}
+                        >
+                          <CheckCircle2 size={13} />
+                          <span>Kas / Tunai Cabang (Petty Cash)</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={() => setForm(f => ({ ...f, payment_type: 'CASH' }))}
+                          style={{
+                            padding: '6px 8px',
+                            fontSize: 11.5,
+                            fontWeight: 700,
+                            borderRadius: 8,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 5,
+                            background: form.payment_type === 'CASH' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.03)',
+                            border: form.payment_type === 'CASH' ? '1.5px solid #10b981' : '1px solid var(--border)',
+                            color: form.payment_type === 'CASH' ? '#34d399' : 'var(--text-secondary)',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <CheckCircle2 size={13} />
+                          <span>Kas Tunai</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={() => setForm(f => ({ ...f, payment_type: 'BANK' }))}
+                          style={{
+                            padding: '6px 8px',
+                            fontSize: 11.5,
+                            fontWeight: 700,
+                            borderRadius: 8,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 5,
+                            background: form.payment_type === 'BANK' ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.03)',
+                            border: form.payment_type === 'BANK' ? '1.5px solid #3b82f6' : '1px solid var(--border)',
+                            color: form.payment_type === 'BANK' ? '#60a5fa' : 'var(--text-secondary)',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <CreditCard size={13} />
+                          <span>Bank Holding</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={() => {
+                            const defaultDue = new Date();
+                            defaultDue.setDate(defaultDue.getDate() + 30);
+                            const dueStr = defaultDue.toISOString().slice(0, 10);
+                            setForm(f => ({ ...f, payment_type: 'HUTANG', due_date: f.due_date || dueStr }));
+                          }}
+                          style={{
+                            padding: '6px 8px',
+                            fontSize: 11.5,
+                            fontWeight: 700,
+                            borderRadius: 8,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 5,
+                            background: form.payment_type === 'HUTANG' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.03)',
+                            border: form.payment_type === 'HUTANG' ? '1.5px solid #ef4444' : '1px solid var(--border)',
+                            color: form.payment_type === 'HUTANG' ? '#f87171' : 'var(--text-secondary)',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <Clock size={13} />
+                          <span>Hutang (Tempo)</span>
+                        </button>
+                      </div>
+                    )}
 
                     {form.payment_type === 'HUTANG' && (
                       <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed rgba(239,68,68,0.3)', display: 'flex', flexDirection: 'column', gap: 8 }}>

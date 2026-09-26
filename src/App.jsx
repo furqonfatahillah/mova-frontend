@@ -38,6 +38,7 @@ const UrgentNotes = lazy(() => import('./pages/UrgentNotes'));
 const Receivables = lazy(() => import('./pages/Receivables'));
 const MasterCustomer = lazy(() => import('./pages/MasterCustomer'));
 const SalesReport = lazy(() => import('./pages/SalesReport'));
+const PurchaseReport = lazy(() => import('./pages/PurchaseReport'));
 const PaymentSettings = lazy(() => import('./pages/PaymentSettings'));
 const Payables = lazy(() => import('./pages/Payables'));
 const Neraca = lazy(() => import('./pages/Neraca'));
@@ -144,7 +145,7 @@ export default function App() {
               <Route path="profitability"  element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><Profitability /></RoleRoute>} />
               <Route path="root-cause"     element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><RootCause /></RoleRoute>} />
               <Route path="laporan-penjualan" element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><SalesReport /></RoleRoute>} />
-              <Route path="laporan-pembelian" element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><StockMovement defaultFilterType="PURCHASE" /></RoleRoute>} />
+              <Route path="laporan-pembelian" element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><PurchaseReport /></RoleRoute>} />
             </Route>
           </Routes>
         </Suspense>
