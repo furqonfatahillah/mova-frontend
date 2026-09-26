@@ -97,7 +97,7 @@ export async function downloadIngredientTemplate() {
   // Instructions
   ws.mergeCells('A2:K2');
   const noteCell = ws.getCell('A2');
-  noteCell.value = 'Petunjuk: Kolom bertanda (*) wajib diisi. Gunakan pilihan dropdown pada kolom bertanda (▼) agar satuan & tipe sesuai standar sistem.';
+  noteCell.value = 'Petunjuk: Kolom bertanda (*) wajib diisi. Stok Awal dan Harga Beli otomatis tersimpan sebagai Saldo Awal di Kartu Stok & Laporan Persediaan (tidak perlu import ulang di Kartu Stok).';
   noteCell.font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF475569' } };
   ws.getRow(2).height = 20;
 
@@ -113,18 +113,18 @@ export async function downloadIngredientTemplate() {
     'Satuan Pakai (▼)*',
     'Faktor Konversi*',
     'Harga Beli Per Satuan Beli (Rp)*',
-    'Stok Minimal',
-    'Stok Awal',
+    'Stok Awal (Satuan Pakai)',
+    'Stok Minimal (Satuan Pakai)',
     'Catatan',
   ]);
   applyHeaderStyle(headerRow, 'FF1E293B');
 
   // Rows 5+: Sample Data
   const sampleData = [
-    ['BHN-001', 'Tepung Terigu Segitiga', 'BAHAN_BAKU', 'RAW', 'kg', 'gram', 1000, 14000, 2, 10, 'Kemasan 1 kg'],
-    ['BHN-002', 'Minyak Goreng Bimoli', 'BAHAN_BAKU', 'RAW', 'liter', 'ml', 1000, 20000, 5, 20, 'Kemasan 1 liter'],
-    ['BHN-003', 'Kopi Arabika Gayo', 'KOPI', 'RAW', 'kg', 'gram', 1000, 120000, 1, 5, 'Roast Bean Medium'],
-    ['BHN-004', 'Saus Keju Special (Olahan)', 'SAUS', 'SEMI_FINISHED', 'liter', 'ml', 1000, 45000, 1, 2, 'Buatan Dapur'],
+    ['BHN-001', 'Tepung Terigu Segitiga', 'BAHAN_BAKU', 'RAW', 'kg', 'gram', 1000, 14000, 10000, 2000, 'Kemasan 1 kg (Stok Awal 10.000 gram)'],
+    ['BHN-002', 'Minyak Goreng Bimoli', 'BAHAN_BAKU', 'RAW', 'liter', 'ml', 1000, 20000, 20000, 5000, 'Kemasan 1 liter (Stok Awal 20.000 ml)'],
+    ['BHN-003', 'Kopi Arabika Gayo', 'KOPI', 'RAW', 'kg', 'gram', 1000, 120000, 5000, 1000, 'Roast Bean Medium (Stok Awal 5.000 gram)'],
+    ['BHN-004', 'Saus Keju Special (Olahan)', 'SAUS', 'SEMI_FINISHED', 'liter', 'ml', 1000, 45000, 2000, 1000, 'Buatan Dapur (Stok Awal 2.000 ml)'],
   ];
 
   sampleData.forEach((r) => ws.addRow(r));
@@ -221,7 +221,7 @@ export async function downloadPerlengkapanTemplate() {
 
   ws.mergeCells('A2:K2');
   const noteCell = ws.getCell('A2');
-  noteCell.value = 'Petunjuk: Baris bertanda (*) wajib diisi. Gunakan pilihan dropdown pada kolom bertanda (▼) untuk memilih satuan standar.';
+  noteCell.value = 'Petunjuk: Baris bertanda (*) wajib diisi. Stok Awal dan Harga Beli otomatis menjadi Saldo Awal di Kartu Stok & Laporan Persediaan.';
   noteCell.font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF475569' } };
   ws.getRow(2).height = 20;
 
@@ -235,8 +235,8 @@ export async function downloadPerlengkapanTemplate() {
     'Satuan Pakai (▼)*',
     'Faktor Konversi*',
     'Harga Beli Per Satuan Beli (Rp)*',
-    'Stok Minimal',
-    'Stok Awal',
+    'Stok Awal (Satuan Pakai)',
+    'Stok Minimal (Satuan Pakai)',
     'Batas Toleransi (%)',
     'Catatan / Spesifikasi',
   ]);

@@ -109,18 +109,18 @@ export default function ImportMasterModal({
 
   const MASTER_CONFIG = {
     INGREDIENT: {
-      title: 'Master Bahan (Ingredients)',
+      title: 'Master Bahan (Ingredients & Saldo Awal)',
       downloadFn: downloadIngredientTemplate,
       endpoint: '/ingredients/bulk-import',
-      columns: ['Nama Bahan*', 'Tipe*', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*'],
-      sampleHint: 'Contoh: Tepung Terigu, Satuan Beli: kg, Satuan Pakai: gram, Konversi: 1000, Harga: 14000',
+      columns: ['Nama Bahan*', 'Tipe*', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Stok Awal (Saldo Awal)', 'Stok Minimal'],
+      sampleHint: 'Contoh: Tepung Terigu, Satuan Beli: kg, Satuan Pakai: gram, Konversi: 1000, Harga: 14000, Stok Awal: 10000 gram, Min: 2000 gram',
     },
     PERLENGKAPAN: {
-      title: 'Master Perlengkapan & Packaging',
+      title: 'Master Perlengkapan & Packaging (Beserta Saldo Awal)',
       downloadFn: downloadPerlengkapanTemplate,
       endpoint: '/perlengkapans/bulk-import',
-      columns: ['Nama Perlengkapan*', 'Kategori', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*'],
-      sampleHint: 'Contoh: Cup Dingin 16oz Sablon, Satuan Beli: Slop, Satuan Pakai: pcs, Konversi: 50, Harga: 25000',
+      columns: ['Nama Perlengkapan*', 'Kategori', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Stok Awal (Saldo Awal)', 'Stok Minimal'],
+      sampleHint: 'Contoh: Cup Dingin 16oz Sablon, Satuan Beli: Slop, Satuan Pakai: pcs, Konversi: 50, Harga: 25000, Stok Awal: 500 pcs, Min: 100 pcs',
     },
     MENU: {
       title: 'Master Menu & F&B',
@@ -135,13 +135,6 @@ export default function ImportMasterModal({
       endpoint: '/receivables/bulk-import',
       columns: ['Nama Pelanggan*', 'Total Tagihan*', 'Uang Muka (DP)', 'Tgl Terbit*', 'Tgl Jatuh Tempo*'],
       sampleHint: 'Contoh: Bpk H. Paksi, Total Tagihan: 250000, DP: 50000, Terbit: 2026-09-24',
-    },
-    SALDO_AWAL: {
-      title: 'Saldo Awal Stok (Transisi Aplikasi & Kartu Stok)',
-      downloadFn: downloadSaldoAwalTemplate,
-      endpoint: '/stock-card/bulk-import-initial',
-      columns: ['Kode Item', 'Nama Bahan/Item*', 'Outlet/Cabang*', 'Saldo Awal Fisik*', 'Satuan*', 'Tipe Satuan*', 'Harga Modal*'],
-      sampleHint: 'Contoh: Biji Kopi Arabika, Outlet: Cabang Utama, Saldo Awal: 25 kg (BELI), Harga: 180000, Tgl: 2026-09-01',
     },
     OUTLET: {
       title: 'Master Gudang & Outlet Cabang',
@@ -584,9 +577,8 @@ export default function ImportMasterModal({
         {/* Master Type Selector Pills */}
         <div style={{ display: 'flex', gap: '8px', marginBottom: '18px', flexWrap: 'wrap' }}>
           {[
-            { key: 'INGREDIENT', label: 'Master Bahan' },
-            { key: 'PERLENGKAPAN', label: 'Master Perlengkapan' },
-            { key: 'SALDO_AWAL', label: 'Saldo Awal (Kartu Stok)' },
+            { key: 'INGREDIENT', label: 'Master Bahan & Saldo Awal' },
+            { key: 'PERLENGKAPAN', label: 'Master Perlengkapan & Saldo Awal' },
             { key: 'MENU', label: 'Master Menu' },
             { key: 'RECEIVABLE', label: 'Kasbon / Piutang' },
             { key: 'OUTLET', label: 'Outlet & Gudang' },
@@ -803,7 +795,9 @@ export default function ImportMasterModal({
                       <td style={{ padding: '8px 12px', color: 'var(--text-secondary)', fontSize: '11px' }}>
                         {currentMasterType === 'INGREDIENT' && (
                           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
-                            <span>{row.data.type} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · {rupiah(row.data.harga)}</span>
+                            <span>
+                              {row.data.type} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · Harga: <strong>{rupiah(row.data.harga)}</strong> · Stok Awal: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit_pakai}</strong> (Nilai: <span style={{ color: '#34d399' }}>{rupiah(row.data.initial_stock * (row.data.harga / Math.max(row.data.konversi || 1, 1)))}</span>)
+                            </span>
                             {(row.data._uBeli?.isFixed || row.data._uPakai?.isFixed) && (
                               <span style={{ background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }} title="Typo/singkatan otomatis diperbaiki ke format standar">
                                 ✓ Auto-Fix ({row.data._uBeli?.isFixed ? row.data._uBeli.original : ''}{row.data._uPakai?.isFixed ? ` / ${row.data._uPakai.original}` : ''})
@@ -818,7 +812,9 @@ export default function ImportMasterModal({
                         )}
                         {currentMasterType === 'PERLENGKAPAN' && (
                           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
-                            <span>{row.data.category} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · {rupiah(row.data.harga)}</span>
+                            <span>
+                              {row.data.category} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · Harga: <strong>{rupiah(row.data.harga)}</strong> · Stok Awal: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit_pakai}</strong> (Nilai: <span style={{ color: '#34d399' }}>{rupiah(row.data.initial_stock * (row.data.harga / Math.max(row.data.konversi || 1, 1)))}</span>)
+                            </span>
                             {(row.data._uBeli?.isFixed || row.data._uPakai?.isFixed) && (
                               <span style={{ background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }} title="Typo/singkatan otomatis diperbaiki ke format standar">
                                 ✓ Auto-Fix ({row.data._uBeli?.isFixed ? row.data._uBeli.original : ''}{row.data._uPakai?.isFixed ? ` / ${row.data._uPakai.original}` : ''})

@@ -11,7 +11,6 @@ import { rupiah, num, LoadingState, PageHeader, AuditInfo, PeriodPicker, Searcha
 import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
-import ImportMasterModal from '../components/ImportMasterModal';
 import { ownerConfirmDialog } from '../utils/swal';
 
 const MUTATION_TYPES = [
@@ -142,8 +141,6 @@ export default function KartuStok() {
   const [typeFilter, setTypeFilter] = useState('ALL'); // 'ALL' | 'IN' | 'OUT' | type
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Import Saldo Awal Modal
-  const [showImportModal, setShowImportModal] = useState(false);
 
   // Modal Add Mutation
   const [modalOpen, setModalOpen] = useState(false);
@@ -832,15 +829,6 @@ export default function KartuStok() {
                 <ArrowLeft size={14} /> Daftar Bahan
               </button>
             )}
-            <button
-              className="btn btn-secondary"
-              onClick={() => setShowImportModal(true)}
-              title="Import Saldo Awal Fisik untuk Transisi/Migrasi Aplikasi"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600 }}
-            >
-              <FileSpreadsheet size={15} color="var(--primary)" />
-              <span>Import Saldo Awal</span>
-            </button>
             <button className="btn btn-secondary" onClick={handlePrint} title="Cetak Laporan">
               <Printer size={14} /> Cetak
             </button>
@@ -3235,17 +3223,6 @@ export default function KartuStok() {
         </div>
       )}
 
-      {/* Modal Import Saldo Awal (Transisi Aplikasi & Kartu Stok) */}
-      <ImportMasterModal
-        isOpen={showImportModal}
-        onClose={() => setShowImportModal(false)}
-        targetMaster="SALDO_AWAL"
-        onSuccess={() => {
-          fetchSummary();
-          fetchIngredients();
-          if (selectedIngId) fetchStockCard();
-        }}
-      />
     </div>
   );
 }
