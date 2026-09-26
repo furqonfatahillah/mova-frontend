@@ -64,6 +64,25 @@ export default function WasteTracking() {
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  const [form, setForm] = useState({
+    date: getTodayStr(),
+    outlet_id: '',
+    item_type: 'INGREDIENT', // 'INGREDIENT' or 'MENU'
+    ingredient_id: '',
+    menu_id: '',
+    unit_type: 'PAKAI', // 'BELI' or 'PAKAI'
+    qty: '',
+    reason_category: 'EXPIRED',
+    action_taken: 'Dibuang ke tempat sampah organik',
+    notes: '',
+  });
+
+  const currentTargetOutlet = !canSwitchOutlet
+    ? String(currentUser?.outlet_id || activeOutletId || '1')
+    : (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all'
+      ? String(activeOutletId)
+      : (outlets[0]?.id?.toString() || '1'));
+
   // Opsi SearchableSelect untuk bahan dan menu di modal waste
   const wasteIngredientOptions = useMemo(() => {
     const targetOutletId = Number(form.outlet_id || currentTargetOutlet);
@@ -89,25 +108,6 @@ export default function WasteTracking() {
       sublabel: rupiah(m.cost_price || m.price),
     }));
   }, [menus]);
-
-  const [form, setForm] = useState({
-    date: getTodayStr(),
-    outlet_id: '',
-    item_type: 'INGREDIENT', // 'INGREDIENT' or 'MENU'
-    ingredient_id: '',
-    menu_id: '',
-    unit_type: 'PAKAI', // 'BELI' or 'PAKAI'
-    qty: '',
-    reason_category: 'EXPIRED',
-    action_taken: 'Dibuang ke tempat sampah organik',
-    notes: '',
-  });
-
-  const currentTargetOutlet = !canSwitchOutlet
-    ? String(currentUser?.outlet_id || activeOutletId || '1')
-    : (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all'
-      ? String(activeOutletId)
-      : (outlets[0]?.id?.toString() || '1'));
 
   useEffect(() => {
     if (!canSwitchOutlet && currentUser?.outlet_id) {
