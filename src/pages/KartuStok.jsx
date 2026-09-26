@@ -4,7 +4,7 @@ import {
   AlertTriangle, Calendar, Printer, X, Check, RefreshCw, Eye, Store,
   ArrowLeft, Building2, ChevronRight, Calculator,
   Truck, PackageCheck, CheckCircle2, ShieldCheck, Clock, ArrowRight, RotateCcw, AlertCircle,
-  ShoppingBag, FileSpreadsheet, Trash2
+  ShoppingBag, FileSpreadsheet, Trash2, Edit2
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, num, LoadingState, PageHeader, AuditInfo, PeriodPicker, SearchableSelect } from '../components/ui';
@@ -142,8 +142,10 @@ export default function KartuStok() {
   const [searchTerm, setSearchTerm] = useState('');
 
 
-  // Modal Add Mutation
+  // Modal Add / Edit Mutation
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingMovementId, setEditingMovementId] = useState(null);
+  const [editingMovementRef, setEditingMovementRef] = useState('');
   const [supplierList, setSupplierList] = useState([]);
   const [mutationForm, setMutationForm] = useState({
     outlet_id: '',
@@ -408,6 +410,65 @@ export default function KartuStok() {
       return;
     }
 
+    // JIKA SEDANG EDIT DATA MUTASI EKSISTING (PUT)
+    if (editingMovementId) {
+      const isOwner = Boolean(isOwnerBisnis || isPlatformAdmin);
+      if (!isOwner) {
+        toast.error('Hanya Owner Bisnis yang berwenang mengubah data mutasi stok.');
+        return;
+      }
+
+      const confirmed = await ownerConfirmDialog({
+        title: 'KONFIRMASI EDIT MUTASI & AKUMULASI ULANG',
+        targetName: `Perbarui transaksi mutasi "${editingMovementRef || 'MVT'}" (${mutationForm.date})?`,
+        bullets: [
+          'Memperbarui data tanggal, qty, harga, dan rincian transaksi mutasi ini.',
+          'Mengkalkulasikan dan mengakumulasi ulang seluruh saldo stok & Moving Average (HPP) untuk SEMUA transaksi setelah tanggal ini secara kronologis.',
+          'Jika mutasi merupakan transfer antar-cabang, cabang pasangan (penerima/pengirim) juga akan otomatis disinkronkan dan dihitung ulang.'
+        ],
+        confirmText: 'Ya, Simpan & Akumulasi Ulang',
+        cancelText: 'Batal'
+      });
+
+      if (!confirmed) return;
+
+      setSaving(true);
+      try {
+        const it = mutationForm.items[0];
+        const payload = {
+          date: mutationForm.date,
+          qty: Number(it.qty),
+          unit_type: mutationForm.type === 'PURCHASE' ? (it.unit_type || 'PAKAI') : 'PAKAI',
+          unit_price: mutationForm.type === 'PURCHASE' && it.unit_price !== '' ? Number(it.unit_price) : undefined,
+          total_price: mutationForm.type === 'PURCHASE' && it.total_price !== '' ? Number(it.total_price) : undefined,
+          type: mutationForm.type,
+          waste_reason: mutationForm.type === 'WASTE' ? (it.waste_reason || 'SPOILED') : undefined,
+          note: it.note || mutationForm.note || undefined,
+          payment_type: mutationForm.type === 'PURCHASE' ? (mutationForm.payment_type || 'CASH') : undefined,
+          supplier_name: (mutationForm.type === 'PURCHASE' && mutationForm.payment_type === 'HUTANG') ? mutationForm.supplier_name : undefined,
+          purchase_no: (mutationForm.type === 'PURCHASE' && mutationForm.purchase_no) ? mutationForm.purchase_no : undefined,
+          due_date: (mutationForm.type === 'PURCHASE' && mutationForm.payment_type === 'HUTANG') ? (mutationForm.due_date || undefined) : undefined,
+          initial_paid: (mutationForm.type === 'PURCHASE' && mutationForm.payment_type === 'HUTANG' && mutationForm.initial_paid !== '') ? Number(mutationForm.initial_paid) : undefined,
+          payment_method: (mutationForm.type === 'PURCHASE' && mutationForm.payment_type === 'HUTANG') ? (mutationForm.payment_method || 'CASH') : undefined,
+        };
+
+        const res = await api.put(`/movements/${editingMovementId}`, payload);
+        toast.success(res.data.message || 'Data mutasi berhasil diperbarui dan akumulasi stok telah dihitung ulang.');
+        setModalOpen(false);
+        setEditingMovementId(null);
+        setEditingMovementRef('');
+        if (selectedIngId) await fetchStockCard();
+        await fetchSummary();
+        await fetchIngredients();
+        await fetchSuppliers();
+      } catch (err) {
+        toast.error(err.response?.data?.message || 'Gagal memperbarui data mutasi stok');
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
     setSaving(true);
     try {
       const targetOutlet = mutationForm.outlet_id || selectedOutletId || 1;
@@ -515,39 +576,63 @@ export default function KartuStok() {
     setStockCard(null);
   }
 
-  // Delete & Rollback Transaksi Mutasi Terakhir (Khusus Owner Bisnis)
-  async function handleDeleteLastMovement(row) {
+  // Open Edit Modal untuk Mutasi Tertentu (Khusus Owner Bisnis)
+  function handleOpenEditMovement(row) {
     const isOwner = Boolean(isOwnerBisnis || isPlatformAdmin);
     if (!isOwner) {
-      toast.error('Hanya Owner Bisnis yang berwenang menghapus transaksi mutasi stok.');
+      toast.error('Hanya Owner Bisnis yang berwenang mengubah transaksi mutasi stok.');
       return;
     }
 
-    const confirmed = await ownerConfirmDialog({
-      title: 'PERINGATAN KHUSUS OWNER BISNIS',
-      targetName: `Hapus permanen transaksi mutasi terakhir "${row.ref || row.type}" (${row.date})?`,
-      bullets: [
-        'Membatalkan mutasi stok dan mengembalikan saldo fisik.',
-        'Mengkalkulasikan ulang Moving Average (HPP avg) bahan secara real-time berdasarkan riwayat mutasi yang tersisa.',
-        'Menghapus tagihan hutang supplier (jika mutasi merupakan pembelian tempo).'
-      ],
-      confirmText: 'Ya, Hapus & Rollback Mutasi',
-      cancelText: 'Batal'
+    const ing = selectedIng || ingredients.find(i => Number(i.id) === Number(row.ingredient_id || selectedIngId)) || ingredients[0];
+    const konversi = Number(ing?.konversi) || 1;
+    const rawQty = Number(row.qty_in > 0 ? row.qty_in : (row.qty_out > 0 ? row.qty_out : 0));
+
+    let unitType = 'PAKAI';
+    let qtyVal = rawQty;
+    let unitPriceVal = row.unit_price !== null && row.unit_price !== undefined ? row.unit_price : '';
+    let totalPriceVal = row.total_price !== null && row.total_price !== undefined ? row.total_price : '';
+
+    if (row.type === 'PURCHASE' && konversi > 1) {
+      const unitBeliQty = Number((rawQty / konversi).toFixed(4));
+      if (unitPriceVal && totalPriceVal && Math.abs(Number(totalPriceVal) - (unitBeliQty * Number(unitPriceVal))) < 1) {
+        unitType = 'BELI';
+        qtyVal = unitBeliQty;
+      }
+    }
+
+    setEditingMovementId(row.id);
+    setEditingMovementRef(row.ref || `MVT-${row.id}`);
+
+    setMutationForm({
+      outlet_id: String(row.outlet_id || selectedOutletId || '1'),
+      date: row.date || getTodayStr(),
+      type: row.type || 'PURCHASE',
+      payment_type: row.payment_type || 'CASH',
+      supplier_name: row.supplier_name || '',
+      purchase_no: row.purchase_no || '',
+      due_date: '',
+      initial_paid: '',
+      payment_method: 'CASH',
+      note: row.note || '',
+      is_in_transit: false,
+      transit_source_name: 'Shopee',
+      transit_expedition: 'Shopee Xpress',
+      transit_tracking_no: '',
+      items: [
+        {
+          ingredient_id: ing?.id || '',
+          unit_type: unitType,
+          qty: qtyVal || '',
+          unit_price: unitPriceVal,
+          total_price: totalPriceVal,
+          note: row.note || '',
+          waste_reason: row.waste_reason || 'SPOILED',
+        }
+      ]
     });
 
-    if (!confirmed) return;
-
-    try {
-      const { data } = await api.delete(`/movements/${row.id}`);
-      toast.success(data.message || 'Transaksi mutasi berhasil dihapus dan Moving Average telah dihitung ulang.');
-      if (selectedIngId) {
-        await fetchStockCard();
-      }
-      await fetchSummary();
-      await fetchIngredients();
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Gagal menghapus transaksi mutasi.');
-    }
+    setModalOpen(true);
   }
 
   // In-Transit: Open receive & approval modal
@@ -835,6 +920,8 @@ export default function KartuStok() {
             <button
               className="btn btn-primary"
               onClick={() => {
+                setEditingMovementId(null);
+                setEditingMovementRef('');
                 const targetIngId = selectedIngId || (ingredients[0]?.id || '');
                 const targetIng = ingredients.find(i => String(i.id) === String(targetIngId));
                 const targetPrice = targetIng
@@ -1486,7 +1573,7 @@ export default function KartuStok() {
                     <th className="right" style={{ width: 110 }}>KELUAR (-)</th>
                     <th className="right" style={{ width: 130 }}>SALDO BERJALAN</th>
                     <th className="right" style={{ width: 135 }}>NILAI SALDO (RP)</th>
-                    <th style={{ minWidth: 140 }}>PETUGAS / AUDIT</th>
+                    <th style={{ minWidth: 160 }}>PETUGAS / AKSI</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1622,15 +1709,25 @@ export default function KartuStok() {
                                 updatedAt={row.changed_at}
                                 updatedBy={row.changed_by_name}
                               />
-                              {idx === filteredDetailRows.length - 1 && (isOwnerBisnis || isPlatformAdmin) && row.id && (
+                              {(isOwnerBisnis || isPlatformAdmin) && row.id && (
                                 <button
                                   type="button"
                                   className="btn btn-ghost btn-sm"
-                                  onClick={() => handleDeleteLastMovement(row)}
-                                  title="Hapus Data Mutasi Terakhir & Hitung Ulang Moving Average (Khusus Owner Bisnis)"
-                                  style={{ color: '#f43f5e', padding: '4px 6px', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                                  onClick={() => handleOpenEditMovement(row)}
+                                  title="Edit Data Mutasi & Hitung Ulang Akumulasi Seluruh Data Setelahnya (Khusus Owner Bisnis)"
+                                  style={{
+                                    color: 'var(--accent-bright)',
+                                    padding: '4px 8px',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    borderRadius: 6,
+                                    background: 'rgba(99, 102, 241, 0.12)',
+                                    border: '1px solid rgba(99, 102, 241, 0.28)'
+                                  }}
                                 >
-                                  <Trash2 size={13} />
+                                  <Edit2 size={12} />
+                                  <span style={{ fontSize: 11, fontWeight: 700 }}>Edit</span>
                                 </button>
                               )}
                             </div>
@@ -2483,9 +2580,9 @@ export default function KartuStok() {
         );
       })()}
 
-      {/* Modal Catat Mutasi Manual (Mendukung Pencatatan Banyak Bahan Sekaligus & Beragam Metode Bayar) */}
+      {/* Modal Catat / Edit Mutasi (Mendukung Pencatatan Banyak Bahan Sekaligus & Beragam Metode Bayar) */}
       {modalOpen && (
-        <div className="modal-overlay" onClick={() => setModalOpen(false)}>
+        <div className="modal-overlay" onClick={() => { setModalOpen(false); setEditingMovementId(null); setEditingMovementRef(''); }}>
           <div
             className="modal-content"
             style={{ maxWidth: 880, width: '100%', maxHeight: '94vh', overflowY: 'auto' }}
@@ -2493,17 +2590,23 @@ export default function KartuStok() {
           >
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <ScrollText size={18} color="var(--primary)" />
+                {editingMovementId ? (
+                  <Edit2 size={18} color="var(--accent-bright)" />
+                ) : (
+                  <ScrollText size={18} color="var(--primary)" />
+                )}
                 <div>
                   <div className="modal-title" style={{ fontSize: 16, fontWeight: 700 }}>
-                    Catat Mutasi Stok & Pembelian Bahan
+                    {editingMovementId ? `Edit Transaksi Mutasi (${editingMovementRef})` : 'Catat Mutasi Stok & Pembelian Bahan'}
                   </div>
                   <span style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
-                    Bisa mencatat banyak bahan sekaligus dalam satu nota belanja / mutasi stok.
+                    {editingMovementId
+                      ? 'Mengubah transaksi ini akan menghitung ulang HPP Moving Average & saldo stok pada seluruh transaksi sesudahnya secara kronologis.'
+                      : 'Bisa mencatat banyak bahan sekaligus dalam satu nota belanja / mutasi stok.'}
                   </span>
                 </div>
               </div>
-              <button className="btn btn-ghost btn-sm" style={{ padding: 4 }} onClick={() => setModalOpen(false)}>
+              <button className="btn btn-ghost btn-sm" style={{ padding: 4 }} onClick={() => { setModalOpen(false); setEditingMovementId(null); setEditingMovementRef(''); }}>
                 <X size={18} />
               </button>
             </div>
@@ -2860,14 +2963,16 @@ export default function KartuStok() {
                         {mutationForm.items.length} Bahan
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-xs"
-                      onClick={handleAddMutationItem}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, padding: '4px 10px', color: 'var(--primary)', borderColor: 'var(--primary)' }}
-                    >
-                      <Plus size={13} /> + Tambah Baris Bahan
-                    </button>
+                    {!editingMovementId && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-xs"
+                        onClick={handleAddMutationItem}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, padding: '4px 10px', color: 'var(--primary)', borderColor: 'var(--primary)' }}
+                      >
+                        <Plus size={13} /> + Tambah Baris Bahan
+                      </button>
+                    )}
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -2892,7 +2997,7 @@ export default function KartuStok() {
                             <span style={{ fontSize: 11.5, fontWeight: 700, color: '#93c5fd' }}>
                               Item #{idx + 1}
                             </span>
-                            {mutationForm.items.length > 1 && (
+                            {!editingMovementId && mutationForm.items.length > 1 && (
                               <button
                                 type="button"
                                 className="btn btn-ghost btn-xs"
@@ -3080,7 +3185,12 @@ export default function KartuStok() {
               </div>
 
               <div className="modal-footer">
-                <button type="button" className="btn btn-ghost" onClick={() => setModalOpen(false)} disabled={saving}>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => { setModalOpen(false); setEditingMovementId(null); setEditingMovementRef(''); }}
+                  disabled={saving}
+                >
                   Batal
                 </button>
                 <button
@@ -3089,17 +3199,21 @@ export default function KartuStok() {
                   disabled={saving}
                   style={{
                     fontWeight: 800,
-                    background: (mutationForm.type === 'PURCHASE' && mutationForm.is_in_transit)
-                      ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
-                      : 'var(--primary)',
+                    background: editingMovementId
+                      ? 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)'
+                      : ((mutationForm.type === 'PURCHASE' && mutationForm.is_in_transit)
+                        ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
+                        : 'var(--primary)'),
                     color: '#ffffff'
                   }}
                 >
                   <Check size={14} /> {saving
-                    ? 'Menyimpan...'
-                    : (mutationForm.type === 'PURCHASE' && mutationForm.is_in_transit)
-                      ? `Simpan ${mutationForm.items.length} Item ke Dalam Perjalanan`
-                      : `Simpan Mutasi (${mutationForm.items.length} Bahan)`}
+                    ? 'Menyimpan & Menghitung Ulang...'
+                    : editingMovementId
+                      ? 'Simpan Perubahan & Akumulasi Ulang'
+                      : (mutationForm.type === 'PURCHASE' && mutationForm.is_in_transit)
+                        ? `Simpan ${mutationForm.items.length} Item ke Dalam Perjalanan`
+                        : `Simpan Mutasi (${mutationForm.items.length} Bahan)`}
                 </button>
               </div>
             </form>
