@@ -2526,12 +2526,34 @@ export default function TransferBahan() {
         <div className="modal-backdrop" onClick={() => setCreateModalOpen(false)}>
           <div
             className="modal-content card"
-            style={{ maxWidth: 840, width: '100%', margin: '20px', maxHeight: '94vh', overflowY: 'auto' }}
+            style={{
+              maxWidth: 880,
+              width: '100%',
+              margin: '20px',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              padding: 0,
+              overflow: 'hidden',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.6)'
+            }}
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex-between mb-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Send size={18} color="var(--accent-bright)" />
+            {/* Modal Header (Fixed at top) */}
+            <div className="flex-between" style={{ borderBottom: '1px solid var(--border)', padding: '16px 20px', background: 'var(--bg-card)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 10,
+                  background: 'rgba(99, 102, 241, 0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--accent-bright)'
+                }}>
+                  <Send size={18} />
+                </div>
                 <div>
                   <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>
                     Form Transfer Barang Antar Cabang
@@ -2550,15 +2572,17 @@ export default function TransferBahan() {
               </button>
             </div>
 
-            <form onSubmit={handleCreateTransfer}>
-              {/* COMPANY SCOPE & BRANCH-TO-BRANCH SELECTOR WITH 1-CLICK SWAP */}
-              <div style={{
-                background: 'rgba(99, 102, 241, 0.04)',
-                border: '1px solid rgba(99, 102, 241, 0.18)',
-                borderRadius: 12,
-                padding: 14,
-                marginBottom: 14
-              }}>
+            <form onSubmit={handleCreateTransfer} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+              {/* Scrollable Modal Body */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {/* COMPANY SCOPE & BRANCH-TO-BRANCH SELECTOR WITH 1-CLICK SWAP */}
+                <div style={{
+                  background: 'rgba(99, 102, 241, 0.04)',
+                  border: '1px solid rgba(99, 102, 241, 0.18)',
+                  borderRadius: 12,
+                  padding: 14,
+                  marginBottom: 4
+                }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: 'var(--accent-bright)' }}>
                     <Store size={14} />
@@ -3215,7 +3239,7 @@ export default function TransferBahan() {
               </div>
 
               {/* General Note */}
-              <div className="form-group mb-4">
+              <div className="form-group mb-2">
                 <label className="form-label">Keterangan / Alasan Transfer (Opsional)</label>
                 <input
                   type="text"
@@ -3225,33 +3249,56 @@ export default function TransferBahan() {
                   onChange={e => setFormData(p => ({ ...p, notes: e.target.value }))}
                 />
               </div>
+            </div>
 
-              <div className="flex-between">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setCreateModalOpen(false)}
-                  disabled={saving}
-                >
-                  Batal
-                </button>
+            {/* Modal Footer (Always Visible at Bottom) */}
+            <div style={{
+              padding: '14px 20px',
+              borderTop: '1px solid var(--border)',
+              background: 'var(--bg-card)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 12,
+              boxShadow: '0 -4px 16px rgba(0,0,0,0.3)',
+              zIndex: 10
+            }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setCreateModalOpen(false)}
+                disabled={saving}
+              >
+                Batal
+              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                {transferGrandTotal > 0 && (
+                  <div style={{ textAlign: 'right' }}>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Nilai: </span>
+                    <strong className="mono" style={{ color: '#34d399', fontSize: 15 }}>{rupiah(transferGrandTotal)}</strong>
+                  </div>
+                )}
                 <button
                   type="submit"
                   className="btn btn-primary"
                   disabled={saving || deficitItems.length > 0}
                   style={{
                     fontWeight: 800,
+                    padding: '9px 24px',
+                    fontSize: 13,
                     opacity: (saving || deficitItems.length > 0) ? 0.65 : 1,
                     cursor: deficitItems.length > 0 ? 'not-allowed' : 'pointer',
-                    background: deficitItems.length > 0 ? '#475569' : undefined,
-                    borderColor: deficitItems.length > 0 ? '#475569' : undefined
+                    background: deficitItems.length > 0 ? '#475569' : 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                    borderColor: deficitItems.length > 0 ? '#475569' : undefined,
+                    boxShadow: deficitItems.length > 0 ? 'none' : '0 4px 14px rgba(99, 102, 241, 0.4)'
                   }}
                   title={deficitItems.length > 0 ? 'Stok bahan atau produk di cabang asal tidak mencukupi' : 'Kirim transfer'}
                 >
-                  {saving ? 'Mengirim & Memproses...' : (deficitItems.length > 0 ? '⛔ Stok Cabang Asal Kurang' : 'Kirim & Cetak Surat Jalan')}
+                  {saving ? 'Mengirim & Memproses...' : (deficitItems.length > 0 ? '⛔ Stok Cabang Asal Kurang' : '🚀 Kirim & Cetak Surat Jalan')}
                 </button>
               </div>
-            </form>
+            </div>
+          </form>
           </div>
         </div>
       )}
