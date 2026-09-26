@@ -57,6 +57,10 @@ export default function MasterCustomer() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailTab, setDetailTab] = useState('orders'); // 'orders' | 'points'
 
+  // Bulk Selection State
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
   useEffect(() => {
     fetchCustomers();
   }, [sortBy, sortDir]);
@@ -98,6 +102,49 @@ export default function MasterCustomer() {
       return matchSearch && matchStatus;
     });
   }, [customers, searchQuery, filterStatus]);
+
+  // Bulk Selection Helpers
+  const isAllSelected = useMemo(() => {
+    return filteredCustomers.length > 0 && filteredCustomers.every(c => selectedIds.includes(c.id));
+  }, [filteredCustomers, selectedIds]);
+
+  const isSomeSelected = useMemo(() => {
+    return filteredCustomers.some(c => selectedIds.includes(c.id)) && !isAllSelected;
+  }, [filteredCustomers, selectedIds, isAllSelected]);
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filteredCustomers.map(c => c.id));
+    }
+  };
+
+  const toggleSelectItem = (id) => {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    const count = selectedIds.length;
+    if (!window.confirm(`Yakin ingin memproses / menghapus ${count} member terpilih secara massal? Member yang memiliki transaksi akan otomatis dinonaktifkan.`)) {
+      return;
+    }
+
+    setBulkDeleting(true);
+    try {
+      const res = await api.post('/customers/bulk-delete', { ids: selectedIds });
+      toast.success(res.data.message || `${count} member berhasil diproses.`);
+      setSelectedIds([]);
+      fetchCustomers();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal menghapus data member terpilih.');
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
 
   function handleOpenAdd() {
     setEditingCustomer(null);
@@ -434,6 +481,55 @@ export default function MasterCustomer() {
         </div>
       </div>
 
+      {/* Bulk Action Sticky Bar */}
+      {selectedIds.length > 0 && (
+        <div
+          className="fade-in"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '12px 18px',
+            borderRadius: 12,
+            background: 'linear-gradient(135deg, rgba(30, 27, 75, 0.95) 0%, rgba(23, 37, 84, 0.95) 100%)',
+            border: '1px solid rgba(99, 102, 241, 0.4)',
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4), 0 0 16px rgba(99, 102, 241, 0.25)',
+            marginBottom: 14,
+            flexWrap: 'wrap',
+            gap: 10,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span className="pill pill-primary" style={{ fontWeight: 800, fontSize: 13, padding: '4px 12px' }}>
+              ✓ {selectedIds.length} Member Dipilih
+            </span>
+            <span style={{ fontSize: 12.5, color: '#e2e8f0' }}>
+              Pilih member yang ingin dihapus / dinonaktifkan secara massal
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => setSelectedIds([])}
+              style={{ fontSize: 12 }}
+            >
+              Batal Pilih
+            </button>
+            <button
+              type="button"
+              className="btn btn-danger btn-sm"
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 12.5, background: '#e11d48', borderColor: '#f43f5e', color: '#ffffff' }}
+            >
+              <Trash2 size={14} />
+              {bulkDeleting ? 'Memproses...' : `Hapus / Nonaktifkan ${selectedIds.length} Member`}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Main Table */}
       {loading ? (
         <LoadingState text="Memuat master data member..." />
@@ -477,6 +573,16 @@ export default function MasterCustomer() {
           <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'rgba(255, 255, 255, 0.04)', borderBottom: '1px solid var(--border)' }}>
+                <th style={{ width: 40, textAlign: 'center', padding: '12px 8px' }}>
+                  <input
+                    type="checkbox"
+                    checked={isAllSelected}
+                    ref={el => { if (el) el.indeterminate = isSomeSelected; }}
+                    onChange={toggleSelectAll}
+                    style={{ cursor: 'pointer', width: 16, height: 16, accentColor: 'var(--primary)' }}
+                    title={isAllSelected ? 'Batalkan pilih semua' : 'Pilih semua'}
+                  />
+                </th>
                 <th style={{ padding: '12px 16px', fontSize: 11.5, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Member</th>
                 <th style={{ padding: '12px 16px', fontSize: 11.5, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Kontak (WA / Email)</th>
                 <th style={{ padding: '12px 16px', fontSize: 11.5, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', textAlign: 'center' }}>Saldo Poin</th>
@@ -490,6 +596,7 @@ export default function MasterCustomer() {
               {filteredCustomers.map(cust => {
                 const waClean = cust.phone.replace(/[^0-9]/g, '');
                 const waFormatted = waClean.startsWith('0') ? '62' + waClean.slice(1) : waClean;
+                const isSelected = selectedIds.includes(cust.id);
 
                 return (
                   <tr
@@ -497,9 +604,18 @@ export default function MasterCustomer() {
                     style={{
                       borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
                       transition: 'background 0.2s',
+                      background: isSelected ? 'rgba(99, 102, 241, 0.08)' : undefined,
                     }}
                     className="table-row-hover"
                   >
+                    <td style={{ textAlign: 'center', padding: '14px 8px' }}>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelectItem(cust.id)}
+                        style={{ cursor: 'pointer', width: 16, height: 16, accentColor: 'var(--primary)' }}
+                      />
+                    </td>
                     {/* Member Info */}
                     <td style={{ padding: '14px 16px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Edit2, Check, X, Store, Sparkles, Info, Calculator, ChefHat, Flame, Trash2, FileSpreadsheet } from 'lucide-react';
+import { Plus, Edit2, Check, X, Store, Sparkles, Info, Calculator, ChefHat, Flame, Trash2, FileSpreadsheet, AlertTriangle } from 'lucide-react';
 import api from '../api/client';
 import {
   rupiah, num, fmtQtyVal, LoadingState, PageHeader, AuditInfo,
@@ -106,6 +106,10 @@ export default function MasterBahan() {
   const [savingSubRecipe, setSavingSubRecipe] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
 
+  // Bulk selection state
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
   const [dbCategories, setDbCategories] = useState([]);
   const { activeOutletId, activeOutlet } = useOutlet();
 
@@ -203,6 +207,61 @@ export default function MasterBahan() {
       if (errors) Object.values(errors).flat().forEach(m => toast.error(m));
       else toast.error('Gagal menambah bahan');
     } finally { setSaving(false); }
+  }
+
+  async function handleDelete(ing) {
+    if (!window.confirm(`Hapus master bahan "${ing.name}" (${ing.code})?\n\nPERINGATAN: Semua riwayat stok, resep, dan mutasi terkait bahan ini akan ikut dibersihkan.`)) return;
+    try {
+      await api.delete(`/ingredients/${ing.id}`);
+      setIngredients(prev => prev.filter(i => i.id !== ing.id));
+      setSelectedIds(prev => prev.filter(id => id !== ing.id));
+      toast.success(`Bahan "${ing.name}" berhasil dihapus.`);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal menghapus bahan.');
+    }
+  }
+
+  const isAllSelected = useMemo(() => {
+    return displayedIngredients.length > 0 && displayedIngredients.every(i => selectedIds.includes(i.id));
+  }, [displayedIngredients, selectedIds]);
+
+  const isSomeSelected = useMemo(() => {
+    return displayedIngredients.some(i => selectedIds.includes(i.id)) && !isAllSelected;
+  }, [displayedIngredients, selectedIds, isAllSelected]);
+
+  function toggleSelectAll() {
+    if (isAllSelected) {
+      const currentIds = displayedIngredients.map(i => i.id);
+      setSelectedIds(prev => prev.filter(id => !currentIds.includes(id)));
+    } else {
+      const newIds = displayedIngredients.map(i => i.id);
+      setSelectedIds(prev => Array.from(new Set([...prev, ...newIds])));
+    }
+  }
+
+  function toggleSelectItem(id) {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  }
+
+  async function handleBulkDelete() {
+    if (selectedIds.length === 0) return;
+    const count = selectedIds.length;
+    const confirmed = window.confirm(
+      `Hapus ${count} bahan terpilih secara permanen?\n\nPERINGATAN: Tindakan ini tidak dapat dibatalkan. Semua riwayat stok, resep, dan mutasi terkait bahan-bahan ini akan ikut dibersihkan.`
+    );
+    if (!confirmed) return;
+
+    setBulkDeleting(true);
+    try {
+      const res = await api.post('/ingredients/bulk-delete', { ids: selectedIds });
+      toast.success(res.data?.message || `Berhasil menghapus ${count} bahan terpilih.`);
+      setIngredients(prev => prev.filter(i => !selectedIds.includes(i.id)));
+      setSelectedIds([]);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal menghapus bahan terpilih.');
+    } finally {
+      setBulkDeleting(false);
+    }
   }
 
   function openSubRecipeEditor(ing) {
@@ -403,10 +462,69 @@ export default function MasterBahan() {
         </button>
       </div>
 
+      {/* Bulk Action Sticky Bar */}
+      {selectedIds.length > 0 && (
+        <div
+          className="fade-in"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '12px 18px',
+            borderRadius: 12,
+            background: 'linear-gradient(135deg, rgba(30, 27, 75, 0.95) 0%, rgba(23, 37, 84, 0.95) 100%)',
+            border: '1px solid rgba(99, 102, 241, 0.4)',
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4), 0 0 16px rgba(99, 102, 241, 0.25)',
+            marginBottom: 14,
+            flexWrap: 'wrap',
+            gap: 10,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span className="pill pill-primary" style={{ fontWeight: 800, fontSize: 13, padding: '4px 12px' }}>
+              ✓ {selectedIds.length} Bahan Dipilih
+            </span>
+            <span style={{ fontSize: 12.5, color: '#e2e8f0' }}>
+              Pilih item yang ingin dihapus sekaligus secara massal
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => setSelectedIds([])}
+              style={{ fontSize: 12 }}
+            >
+              Batal Pilih
+            </button>
+            <button
+              type="button"
+              className="btn btn-danger btn-sm"
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 12.5, background: '#e11d48', borderColor: '#f43f5e', color: '#ffffff' }}
+            >
+              <Trash2 size={14} />
+              {bulkDeleting ? 'Menghapus...' : `Hapus ${selectedIds.length} Bahan Sekaligus`}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="table-wrap">
         <table>
           <thead>
             <tr>
+              <th style={{ width: 40, textAlign: 'center', padding: '8px 4px' }}>
+                <input
+                  type="checkbox"
+                  checked={isAllSelected}
+                  ref={el => { if (el) el.indeterminate = isSomeSelected; }}
+                  onChange={toggleSelectAll}
+                  style={{ cursor: 'pointer', width: 16, height: 16, accentColor: 'var(--primary)' }}
+                  title="Pilih Semua Item"
+                />
+              </th>
               <th>Kode</th>
               <th>Tipe</th>
               <th>Nama</th>
@@ -428,6 +546,7 @@ export default function MasterBahan() {
             {/* Add row */}
             {showAdd && (
               <tr style={{ background: 'var(--accent-dim)' }}>
+                <td style={{ textAlign: 'center', color: 'var(--text-muted)' }}>—</td>
                 <td><FormCell data={addForm} setData={setAddForm} availableCategories={availableCategories} field="code" style={{ width: 80 }} /></td>
                 <td>
                   <select
@@ -501,9 +620,18 @@ export default function MasterBahan() {
             )}
             {displayedIngredients.map(ing => {
               const isEd = editing === ing.id;
+              const isSelected = selectedIds.includes(ing.id);
               const hargaPakai = ing.harga / (ing.konversi || 1);
               return (
-                <tr key={ing.id} className={isEd ? 'selected' : ''}>
+                <tr key={ing.id} className={isEd ? 'selected' : (isSelected ? 'selected-row' : '')} style={isSelected ? { background: 'rgba(99, 102, 241, 0.08)' } : {}}>
+                  <td style={{ textAlign: 'center', padding: '8px 4px' }}>
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleSelectItem(ing.id)}
+                      style={{ cursor: 'pointer', width: 16, height: 16, accentColor: 'var(--primary)' }}
+                    />
+                  </td>
                   <td className="mono" style={{ color: 'var(--accent)', fontSize: 12 }}>{ing.code}</td>
                   <td>
                     {ing.type === 'SEMI_FINISHED' ? (
@@ -670,12 +798,25 @@ export default function MasterBahan() {
                           className="btn btn-ghost btn-sm"
                           title="Catat Bahan Rusak / Basi (Waste)"
                           onClick={() => navigate('/waste', { state: { preselectIngredientId: ing.id } })}
+                          style={{ padding: '4px 7px', color: '#f59e0b' }}
+                        >
+                          <AlertTriangle size={13} />
+                        </button>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          title="Edit Bahan"
+                          onClick={() => startEdit(ing)}
+                          style={{ padding: '4px 7px' }}
+                        >
+                          <Edit2 size={13} />
+                        </button>
+                        <button
+                          className="btn btn-ghost btn-sm text-danger"
+                          title="Hapus Master Bahan"
+                          onClick={() => handleDelete(ing)}
                           style={{ padding: '4px 7px', color: '#f43f5e' }}
                         >
-                          <Trash2 size={12} />
-                        </button>
-                        <button className="btn btn-ghost btn-sm" onClick={() => startEdit(ing)}>
-                          <Edit2 size={12} />
+                          <Trash2 size={13} />
                         </button>
                       </div>
                     )}

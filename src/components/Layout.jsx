@@ -5,7 +5,7 @@ import {
   ArrowUpDown, ClipboardList, BarChart2, TrendingUp, DollarSign,
   AlertTriangle, LogOut, ScrollText, Menu, X, Clock,
   Store, Send, Users, UserCheck, Building2, ChefHat, Trash2, Percent, Landmark, Wallet, Coins, Gift, Copy, Check, Receipt, Headset,
-  AlertOctagon, CreditCard, Boxes, FileSpreadsheet
+  AlertOctagon, CreditCard, Boxes, FileSpreadsheet, BookOpen
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
@@ -121,7 +121,8 @@ export default function Layout() {
               { to: '/opex', label: 'Biaya Operasional (OPEX)', icon: Receipt },
               { to: '/profit-loss', label: 'Laba Rugi (P&L)', icon: Landmark },
               { to: '/cash-flow', label: 'Arus Kas (Cash Flow)', icon: Wallet },
-              { to: '/piutang', label: 'Buku Piutang / Kasbon Customer', icon: CreditCard },
+              {to: '/piutang', label: 'Buku Piutang / Kasbon Customer', icon: CreditCard },
+              { to: '/hutang', label: 'Buku Hutang Supplier', icon: BookOpen },
               { to: '/variance/bahan', label: 'Variance Bahan', icon: BarChart2 },
               { to: '/variance/menu', label: 'Variance Menu', icon: TrendingUp },
               { to: '/profitability', label: 'Profitability', icon: DollarSign },
@@ -209,6 +210,7 @@ export default function Layout() {
             { to: '/profit-loss', label: 'Laba Rugi (P&L)', icon: Landmark },
             { to: '/cash-flow', label: 'Arus Kas (Cash Flow)', icon: Wallet },
             { to: '/piutang', label: 'Buku Piutang / Kasbon Customer', icon: CreditCard },
+            { to: '/hutang', label: 'Buku Hutang Supplier', icon: BookOpen },
             { to: '/variance/bahan', label: 'Analisis Varian Bahan', icon: BarChart2 },
             { to: '/variance/menu', label: 'Analisis Varian Menu', icon: TrendingUp },
             { to: '/profitability', label: 'Profitability (Menu Eng.)', icon: DollarSign },
@@ -257,6 +259,7 @@ export default function Layout() {
             { to: '/waste', label: 'Waste Log', icon: Trash2 },
             { to: '/opex', label: 'Biaya Operasional Cabang', icon: Receipt },
             { to: '/piutang', label: 'Buku Piutang / Kasbon Customer', icon: CreditCard },
+            { to: '/hutang', label: 'Buku Hutang Supplier', icon: BookOpen },
           ],
         },
         {

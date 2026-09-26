@@ -1,5 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Plus, Trash2, Filter, Store, TrendingUp, TrendingDown, Sparkles, Calculator, X } from 'lucide-react';
+import { Plus, Trash2, Filter, Store, TrendingUp, TrendingDown, Sparkles, Calculator, X, ShoppingBag, CheckCircle2, Clock } from 'lucide-react';
 import api from '../api/client';
 import { num, rupiah, fmtQtyVal, LoadingState, PageHeader, AuditInfo, PeriodPicker } from '../components/ui';
 import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
@@ -67,10 +66,17 @@ export default function StockMovement() {
     return 'ALL';
   }, [canSwitchOutlet, currentUser?.outlet_id, activeOutletId]);
 
+  const [supplierList, setSupplierList] = useState([]);
   const [form, setForm] = useState({
     ingredient_id: '',
     outlet_id: activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all' ? activeOutletId : '1',
     type: 'PURCHASE',
+    payment_type: 'CASH',
+    supplier_name: '',
+    purchase_no: '',
+    due_date: '',
+    initial_paid: '',
+    payment_method: 'CASH',
     waste_reason: 'SPOILED',
     unit_type: 'BELI', // 'BELI' or 'PAKAI'
     unit_price: '',
@@ -81,7 +87,17 @@ export default function StockMovement() {
   });
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { fetchAll(); }, [filterIng, filterType, filterOutlet, period]);
+  useEffect(() => {
+    fetchAll();
+    fetchSuppliers();
+  }, [filterIng, filterType, filterOutlet, period]);
+
+  async function fetchSuppliers() {
+    try {
+      const { data } = await api.get('/payables/suppliers');
+      setSupplierList(data || []);
+    } catch {}
+  }
 
   async function fetchAll() {
     try {
@@ -240,6 +256,10 @@ export default function StockMovement() {
   async function handleSubmit(e) {
     e.preventDefault();
     if (!form.qty) { toast.error('Qty tidak boleh kosong'); return; }
+    if (form.type === 'PURCHASE' && form.payment_type === 'HUTANG' && !form.supplier_name?.trim()) {
+      toast.error('Harap masukkan nama supplier untuk transaksi hutang/tempo');
+      return;
+    }
     setSaving(true);
     try {
       const targetOutlet = form.outlet_id || (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all' ? Number(activeOutletId) : 1);
@@ -251,6 +271,12 @@ export default function StockMovement() {
         unit_type: form.unit_type,
         unit_price: form.type === 'PURCHASE' && form.unit_price !== '' ? Number(form.unit_price) : null,
         total_price: form.type === 'PURCHASE' && form.total_price !== '' ? Number(form.total_price) : null,
+        payment_type: form.type === 'PURCHASE' ? (form.payment_type || 'CASH') : undefined,
+        supplier_name: (form.type === 'PURCHASE' && form.payment_type === 'HUTANG') ? form.supplier_name : undefined,
+        purchase_no: (form.type === 'PURCHASE' && form.purchase_no) ? form.purchase_no : undefined,
+        due_date: (form.type === 'PURCHASE' && form.payment_type === 'HUTANG') ? (form.due_date || undefined) : undefined,
+        initial_paid: (form.type === 'PURCHASE' && form.payment_type === 'HUTANG' && form.initial_paid !== '') ? Number(form.initial_paid) : undefined,
+        payment_method: (form.type === 'PURCHASE' && form.payment_type === 'HUTANG') ? (form.payment_method || 'CASH') : undefined,
         note: form.note,
         outlet_id: targetOutlet,
         waste_reason: form.type === 'WASTE' ? form.waste_reason : null,
@@ -258,15 +284,28 @@ export default function StockMovement() {
 
       const { data } = await api.post('/movements', payload);
       setMovements(prev => [data, ...prev]);
-      setForm(f => ({ ...f, qty: '', total_price: '', note: '' }));
+      setForm(f => ({
+        ...f,
+        qty: '',
+        total_price: '',
+        note: '',
+        payment_type: 'CASH',
+        supplier_name: '',
+        purchase_no: '',
+        due_date: '',
+        initial_paid: '',
+      }));
       setIsModalOpen(false);
       toast.success(
         form.type === 'PURCHASE'
-          ? `Pembelian berhasil! Harga rata-rata bergerak terupdate: ${rupiah(data.cost_after * conversion)}/${selectedIng?.unit_beli}`
+          ? (form.payment_type === 'HUTANG'
+              ? `Pembelian tempo berhasil dicatat & masuk ke Buku Hutang Supplier!`
+              : `Pembelian berhasil! Harga rata-rata bergerak terupdate: ${rupiah(data.cost_after * conversion)}/${selectedIng?.unit_beli}`)
           : form.type === 'WASTE' ? 'Catatan kerusakan bahan (waste) disimpan' : 'Pergerakan stok dicatat'
       );
       // Refresh ingredients to get updated harga and stock
       fetchAll();
+      fetchSuppliers();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Gagal menyimpan');
     } finally { setSaving(false); }
@@ -650,6 +689,134 @@ export default function StockMovement() {
                       </div>
                     </div>
                   )}
+
+                  {/* Pilihan Metode Bayar: LUNAS vs HUTANG */}
+                  <div style={{
+                    marginTop: 14,
+                    padding: 12,
+                    borderRadius: 10,
+                    background: form.payment_type === 'HUTANG' ? 'rgba(239, 68, 68, 0.08)' : 'rgba(16, 185, 129, 0.06)',
+                    border: `1px solid ${form.payment_type === 'HUTANG' ? 'rgba(239, 68, 68, 0.35)' : 'rgba(16, 185, 129, 0.3)'}`
+                  }}>
+                    <label className="form-label" style={{ fontWeight: 700, fontSize: 12, color: form.payment_type === 'HUTANG' ? '#f87171' : '#34d399', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                      <ShoppingBag size={14} /> Tipe Pembayaran Pembelian:
+                    </label>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => setForm(f => ({ ...f, payment_type: 'CASH' }))}
+                        style={{
+                          padding: '6px 8px',
+                          fontSize: 11.5,
+                          fontWeight: 700,
+                          borderRadius: 8,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 5,
+                          background: form.payment_type !== 'HUTANG' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.03)',
+                          border: form.payment_type !== 'HUTANG' ? '1.5px solid #10b981' : '1px solid var(--border)',
+                          color: form.payment_type !== 'HUTANG' ? '#34d399' : 'var(--text-secondary)',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <CheckCircle2 size={13} />
+                        <span>Lunas Tunai</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => {
+                          const defaultDue = new Date();
+                          defaultDue.setDate(defaultDue.getDate() + 30);
+                          const dueStr = defaultDue.toISOString().slice(0, 10);
+                          setForm(f => ({ ...f, payment_type: 'HUTANG', due_date: f.due_date || dueStr }));
+                        }}
+                        style={{
+                          padding: '6px 8px',
+                          fontSize: 11.5,
+                          fontWeight: 700,
+                          borderRadius: 8,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 5,
+                          background: form.payment_type === 'HUTANG' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.03)',
+                          border: form.payment_type === 'HUTANG' ? '1.5px solid #ef4444' : '1px solid var(--border)',
+                          color: form.payment_type === 'HUTANG' ? '#f87171' : 'var(--text-secondary)',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <Clock size={13} />
+                        <span>Hutang Supplier (Tempo)</span>
+                      </button>
+                    </div>
+
+                    {form.payment_type === 'HUTANG' && (
+                      <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed rgba(239,68,68,0.3)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                          <div>
+                            <label className="form-label" style={{ fontSize: 11, color: '#fca5a5' }}>Nama Supplier *</label>
+                            <input
+                              type="text"
+                              list="mvt-supplier-options"
+                              className="form-control"
+                              style={{ fontSize: 12 }}
+                              placeholder="Pilih/ketik..."
+                              value={form.supplier_name || ''}
+                              onChange={e => setForm(f => ({ ...f, supplier_name: e.target.value }))}
+                              required={form.payment_type === 'HUTANG'}
+                            />
+                            <datalist id="mvt-supplier-options">
+                              {supplierList.map((s, idx) => (
+                                <option key={idx} value={s.name} />
+                              ))}
+                            </datalist>
+                          </div>
+                          <div>
+                            <label className="form-label" style={{ fontSize: 11, color: 'var(--text-muted)' }}>No. Faktur / Bon</label>
+                            <input
+                              type="text"
+                              className="form-control mono"
+                              style={{ fontSize: 12 }}
+                              placeholder="INV-..."
+                              value={form.purchase_no || ''}
+                              onChange={e => setForm(f => ({ ...f, purchase_no: e.target.value }))}
+                            />
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                          <div>
+                            <label className="form-label" style={{ fontSize: 11, color: '#fca5a5' }}>Jatuh Tempo *</label>
+                            <input
+                              type="date"
+                              className="form-control mono"
+                              style={{ fontSize: 12 }}
+                              value={form.due_date || ''}
+                              onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))}
+                              required={form.payment_type === 'HUTANG'}
+                            />
+                          </div>
+                          <div>
+                            <label className="form-label" style={{ fontSize: 11, color: 'var(--text-muted)' }}>DP (Uang Muka)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              className="form-control mono"
+                              style={{ fontSize: 12 }}
+                              placeholder="Rp 0"
+                              value={form.initial_paid || ''}
+                              onChange={e => setForm(f => ({ ...f, initial_paid: e.target.value }))}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 

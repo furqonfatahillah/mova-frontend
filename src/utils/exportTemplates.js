@@ -101,11 +101,9 @@ export async function downloadIngredientTemplate() {
   noteCell.font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF475569' } };
   ws.getRow(2).height = 20;
 
-  ws.addRow([]); // Row 3 empty
-  ws.addRow(['=== DATA BAHAN BAKU & RESEP ===']); // Row 4 section title
-  ws.getRow(4).font = { bold: true, color: { argb: 'FF64748B' } };
+  ws.addRow([]); // Row 3 empty spacer
 
-  // Row 5: Headers
+  // Row 4: Headers
   const headerRow = ws.addRow([
     'Kode Bahan',
     'Nama Bahan*',
@@ -121,7 +119,7 @@ export async function downloadIngredientTemplate() {
   ]);
   applyHeaderStyle(headerRow, 'FF1E293B');
 
-  // Rows 6+: Sample Data
+  // Rows 5+: Sample Data
   const sampleData = [
     ['BHN-001', 'Tepung Terigu Segitiga', 'BAHAN_BAKU', 'RAW', 'kg', 'gram', 1000, 14000, 2, 10, 'Kemasan 1 kg'],
     ['BHN-002', 'Minyak Goreng Bimoli', 'BAHAN_BAKU', 'RAW', 'liter', 'ml', 1000, 20000, 5, 20, 'Kemasan 1 liter'],
@@ -131,14 +129,14 @@ export async function downloadIngredientTemplate() {
 
   sampleData.forEach((r) => ws.addRow(r));
 
-  // Enable Auto-Filter on Row 5
-  ws.autoFilter = { from: 'A5', to: 'K5' };
+  // Enable Auto-Filter on Row 4
+  ws.autoFilter = { from: 'A4', to: 'K4' };
 
-  // Apply Dropdown List Validations from row 6 to 500
+  // Apply Dropdown List Validations from row 5 to 300
   const SATUAN_BELI_LIST = '"kg,gram,liter,ml,Slop,Pack,Roll,Dus,Botol,pcs,Kaleng,Sachet"';
   const SATUAN_PAKAI_LIST = '"gram,ml,pcs,lembar,buah,porsi,sdm,sdt,roll"';
 
-  for (let r = 6; r <= 300; r++) {
+  for (let r = 5; r <= 300; r++) {
     // Column D: Tipe Bahan (RAW / SEMI_FINISHED)
     ws.getCell(`D${r}`).dataValidation = {
       type: 'list',
@@ -227,9 +225,7 @@ export async function downloadPerlengkapanTemplate() {
   noteCell.font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF475569' } };
   ws.getRow(2).height = 20;
 
-  ws.addRow([]);
-  ws.addRow(['=== DAFTAR PERLENGKAPAN & PACKAGING ===']);
-  ws.getRow(4).font = { bold: true, color: { argb: 'FF64748B' } };
+  ws.addRow([]); // Row 3 empty spacer
 
   const headerRow = ws.addRow([
     'Kode Perlengkapan',
@@ -255,9 +251,9 @@ export async function downloadPerlengkapanTemplate() {
   ];
   sampleData.forEach((r) => ws.addRow(r));
 
-  ws.autoFilter = { from: 'A5', to: 'K5' };
+  ws.autoFilter = { from: 'A4', to: 'K4' };
 
-  for (let r = 6; r <= 300; r++) {
+  for (let r = 5; r <= 300; r++) {
     ws.getCell(`D${r}`).dataValidation = {
       type: 'list',
       allowBlank: false,
@@ -311,9 +307,7 @@ export async function downloadMenuTemplate() {
   noteCell.font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF475569' } };
   ws.getRow(2).height = 20;
 
-  ws.addRow([]);
-  ws.addRow(['=== DAFTAR MENU & KATALOG PRODUK ===']);
-  ws.getRow(4).font = { bold: true, color: { argb: 'FF64748B' } };
+  ws.addRow([]); // Row 3 empty spacer
 
   const headerRow = ws.addRow([
     'Kode Menu',
@@ -336,9 +330,9 @@ export async function downloadMenuTemplate() {
   ];
   sampleData.forEach((r) => ws.addRow(r));
 
-  ws.autoFilter = { from: 'A5', to: 'I5' };
+  ws.autoFilter = { from: 'A4', to: 'I4' };
 
-  for (let r = 6; r <= 300; r++) {
+  for (let r = 5; r <= 300; r++) {
     ws.getCell(`E${r}`).dataValidation = {
       type: 'list',
       allowBlank: false,
@@ -388,9 +382,7 @@ export async function downloadReceivableTemplate() {
   noteCell.font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF475569' } };
   ws.getRow(2).height = 20;
 
-  ws.addRow([]);
-  ws.addRow(['=== DAFTAR TAGIHAN PIUTANG PELANGGAN ===']);
-  ws.getRow(4).font = { bold: true, color: { argb: 'FF64748B' } };
+  ws.addRow([]); // Row 3 empty spacer
 
   const headerRow = ws.addRow([
     'Nama Pelanggan / Debitur*',
@@ -410,7 +402,7 @@ export async function downloadReceivableTemplate() {
   ];
   sampleData.forEach((r) => ws.addRow(r));
 
-  ws.autoFilter = { from: 'A5', to: 'H5' };
+  ws.autoFilter = { from: 'A4', to: 'H4' };
   autoFitColumns(ws);
 
   await saveWorkbook(wb, `Template_Import_Master_Piutang_${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -445,9 +437,7 @@ export async function downloadOutletTemplate() {
   noteCell.font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF475569' } };
   ws.getRow(2).height = 20;
 
-  ws.addRow([]);
-  ws.addRow(['=== DAFTAR OUTLET CABANG & GUDANG ===']);
-  ws.getRow(4).font = { bold: true, color: { argb: 'FF64748B' } };
+  ws.addRow([]); // Row 3 empty spacer
 
   const headerRow = ws.addRow([
     'Kode Outlet / Gudang',
@@ -467,9 +457,9 @@ export async function downloadOutletTemplate() {
   ];
   sampleData.forEach((r) => ws.addRow(r));
 
-  ws.autoFilter = { from: 'A5', to: 'G5' };
+  ws.autoFilter = { from: 'A4', to: 'G4' };
 
-  for (let r = 6; r <= 300; r++) {
+  for (let r = 5; r <= 300; r++) {
     ws.getCell(`C${r}`).dataValidation = {
       type: 'list',
       allowBlank: false,
@@ -493,3 +483,112 @@ export async function downloadOutletTemplate() {
 
   await saveWorkbook(wb, `Template_Import_Master_Outlet_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
+
+/**
+ * 6. Download Template Excel Saldo Awal Stok Persediaan (Transisi Aplikasi & Kartu Stok)
+ * Features:
+ * - Dropdown Data Validation for Satuan Standar
+ * - Dropdown Data Validation for Tipe Satuan (PAKAI / BELI)
+ * - Auto-Filter on header row
+ * - Reference Sheet for Panduan Transisi & Rekonsiliasi Saldo Awal
+ */
+export async function downloadSaldoAwalTemplate() {
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'MOVA POS System';
+  wb.created = new Date();
+
+  // --- SHEET 1: Saldo Awal Stok ---
+  const ws = wb.addWorksheet('Saldo Awal Stok', { views: [{ showGridLines: true }] });
+
+  ws.mergeCells('A1:J1');
+  const titleCell = ws.getCell('A1');
+  titleCell.value = 'TEMPLATE IMPORT SALDO AWAL STOK (TRANSISI APLIKASI & KARTU STOK) — MOVA POS';
+  titleCell.font = { name: 'Segoe UI', size: 13, bold: true, color: { argb: 'FF1E293B' } };
+  titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
+  titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+  ws.getRow(1).height = 28;
+
+  ws.mergeCells('A2:J2');
+  const noteCell = ws.getCell('A2');
+  noteCell.value = 'Petunjuk: Gunakan data opname fisik cut-off saat migrasi aplikasi. Kolom bertanda (*) wajib diisi. Saldo ini akan masuk sebagai Saldo Awal di Kartu Stok tanpa dobel pencatatan.';
+  noteCell.font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF475569' } };
+  ws.getRow(2).height = 20;
+
+  ws.addRow([]); // Row 3 spacer
+
+  const headerRow = ws.addRow([
+    'Kode Bahan / Item',
+    'Nama Bahan / Item*',
+    'Nama Outlet / Cabang*',
+    'Saldo Awal Fisik*',
+    'Satuan (▼)*',
+    'Tipe Satuan (▼)*',
+    'Harga Modal / Beli (Rp)*',
+    'Stok Minimal (Par Level)',
+    'Tanggal Cut-off*',
+    'Catatan / Keterangan',
+  ]);
+  applyHeaderStyle(headerRow, 'FF1D4ED8'); // Blue Dark
+
+  const sampleData = [
+    ['BHN-001', 'Biji Kopi Arabika House Blend', 'Maroa - Cabang Utama (Pusat)', 25, 'kg', 'BELI', 180000, 5, '2026-09-01', 'Opname Fisik Cut-Off Migrasi'],
+    ['BHN-002', 'Susu UHT Full Cream Greenfields', 'Maroa - Cabang Utama (Pusat)', 48, 'liter', 'BELI', 22000, 10, '2026-09-01', 'Saldo Awal Stok Susu'],
+    ['BHN-003', 'Sirup Karamel Monin', 'Maroa - Branch Panakkukang', 6, 'botol', 'BELI', 145000, 2, '2026-09-01', 'Saldo Awal Cabang Panakkukang'],
+    ['PLK-001', 'Cup Dingin 16oz Sablon MOVA', 'Maroa - Cabang Utama (Pusat)', 20, 'slop', 'BELI', 25000, 5, '2026-09-01', 'Saldo Awal Kemasan'],
+    ['PLK-002', 'Sedotan Bubble Steril 12mm', 'Maroa - Cabang Utama (Pusat)', 15, 'pack', 'BELI', 18000, 3, '2026-09-01', 'Saldo Awal Sedotan'],
+  ];
+  sampleData.forEach((r) => ws.addRow(r));
+
+  ws.autoFilter = { from: 'A4', to: 'J4' };
+
+  const SATUAN_LIST = '"kg,gram,liter,ml,pcs,Slop,Pack,Roll,Dus,Botol,Kaleng,Sachet,lembar,porsi"';
+
+  for (let r = 5; r <= 300; r++) {
+    // Column E: Satuan
+    ws.getCell(`E${r}`).dataValidation = {
+      type: 'list',
+      allowBlank: false,
+      formulae: [SATUAN_LIST],
+      showErrorMessage: true,
+      errorTitle: 'Pilihan Satuan',
+      error: 'Pilih satuan standar dari menu dropdown.',
+    };
+
+    // Column F: Tipe Satuan
+    ws.getCell(`F${r}`).dataValidation = {
+      type: 'list',
+      allowBlank: false,
+      formulae: ['"BELI,PAKAI"'],
+      showErrorMessage: true,
+      errorTitle: 'Tipe Satuan',
+      error: 'Pilih BELI (jika saldo dihitung per satuan beli seperti kg/slop) atau PAKAI (jika per gram/pcs).',
+    };
+  }
+
+  autoFitColumns(ws);
+
+  // --- SHEET 2: Panduan Transisi & Rekonsiliasi ---
+  const wsGuide = wb.addWorksheet('PANDUAN_TRANSISI_STOK', { views: [{ showGridLines: true }] });
+  wsGuide.addRow(['PANDUAN MIGRASI & PENGISIAN SALDO AWAL STOK KARTU STOK']);
+  wsGuide.getRow(1).font = { size: 12, bold: true, color: { argb: 'FF1E293B' } };
+  wsGuide.addRow(['Sheet ini menjelaskan aturan import saldo awal stok untuk proses transisi aplikasi:']);
+  wsGuide.addRow([]);
+
+  const guideHeader = wsGuide.addRow(['Parameter', 'Ketentuan / Format', 'Penjelasan Teknis']);
+  applyHeaderStyle(guideHeader, 'FF0F766E');
+
+  const guideRows = [
+    ['Kode Bahan / Item', 'Bisa diisi atau dikosongkan', 'Jika diisi kode yang sudah ada, saldo awal item tsb akan diupdate. Jika dikosongkan, sistem auto-generate kode unik.'],
+    ['Nama Outlet / Cabang', 'Nama cabang yang dituju (misal: "Cabang Utama")', 'Saldo awal akan dialokasikan khusus untuk outlet tersebut secara terisolasi (multi-outlet).'],
+    ['Saldo Awal Fisik', 'Angka riil hasil stok opname fisik', 'Jumlah stok fisik terakhir sebelum mulai aktif transaksi di sistem baru.'],
+    ['Tipe Satuan (BELI vs PAKAI)', 'Pilih "BELI" atau "PAKAI"', 'Jika "BELI" (misal 25 kg), sistem otomatis mengalikan dengan konversi (25.000 gram) untuk unit pakai.'],
+    ['Harga Modal / Beli', 'Nominal Rupiah (Rp)', 'Nilai HPP/harga beli untuk menghitung total nilai aset persediaan di neraca & kartu stok.'],
+    ['Tanggal Cut-off', 'Format YYYY-MM-DD (Contoh: 2026-09-01)', 'Tanggal acuan saldo awal mulai berlaku di Kartu Stok.'],
+  ];
+  guideRows.forEach((r) => wsGuide.addRow(r));
+  autoFitColumns(wsGuide);
+
+  await saveWorkbook(wb, `Template_Import_Saldo_Awal_Stok_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+

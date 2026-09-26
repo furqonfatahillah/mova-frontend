@@ -516,9 +516,61 @@ export default function MasterMenu() {
       toast.success(`Menu "${menu.name}" dihapus`);
       setSelected(null);
       setDraft(null);
+      setSelectedMenuIds(prev => prev.filter(id => id !== menu.id));
       await fetchAll();
     } catch {
       toast.error('Gagal menghapus menu');
+    }
+  }
+
+  // Bulk selection state & handlers for menus
+  const [selectedMenuIds, setSelectedMenuIds] = useState([]);
+  const [bulkDeletingMenus, setBulkDeletingMenus] = useState(false);
+
+  const isAllMenusSelected = useMemo(() => {
+    return filteredMenus.length > 0 && filteredMenus.every(m => selectedMenuIds.includes(m.id));
+  }, [filteredMenus, selectedMenuIds]);
+
+  const isSomeMenusSelected = useMemo(() => {
+    return filteredMenus.some(m => selectedMenuIds.includes(m.id)) && !isAllMenusSelected;
+  }, [filteredMenus, selectedMenuIds, isAllMenusSelected]);
+
+  function toggleSelectAllMenus() {
+    if (isAllMenusSelected) {
+      const currentIds = filteredMenus.map(m => m.id);
+      setSelectedMenuIds(prev => prev.filter(id => !currentIds.includes(id)));
+    } else {
+      const newIds = filteredMenus.map(m => m.id);
+      setSelectedMenuIds(prev => Array.from(new Set([...prev, ...newIds])));
+    }
+  }
+
+  function toggleSelectMenu(id) {
+    setSelectedMenuIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  }
+
+  async function handleBulkDeleteMenus() {
+    if (selectedMenuIds.length === 0) return;
+    const count = selectedMenuIds.length;
+    const confirmed = window.confirm(
+      `Hapus ${count} menu terpilih secara permanen?\n\nPERINGATAN: Tindakan ini tidak dapat dibatalkan. Resep (BOM) dan data terkait akan ikut dihapus.`
+    );
+    if (!confirmed) return;
+
+    setBulkDeletingMenus(true);
+    try {
+      const res = await api.post('/menus/bulk-delete', { ids: selectedMenuIds });
+      toast.success(res.data?.message || `Berhasil menghapus ${count} menu.`);
+      if (selected && selectedMenuIds.includes(selected.id)) {
+        setSelected(null);
+        setDraft(null);
+      }
+      setSelectedMenuIds([]);
+      await fetchAll();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal menghapus menu terpilih.');
+    } finally {
+      setBulkDeletingMenus(false);
     }
   }
 
@@ -913,9 +965,19 @@ export default function MasterMenu() {
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, padding: '0 4px' }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Daftar Produk ({filteredMenus.length})
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input
+                type="checkbox"
+                checked={isAllMenusSelected}
+                ref={el => { if (el) el.indeterminate = isSomeMenusSelected; }}
+                onChange={toggleSelectAllMenus}
+                style={{ cursor: 'pointer', width: 15, height: 15, accentColor: 'var(--primary)' }}
+                title="Pilih Semua Menu"
+              />
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Daftar Produk ({filteredMenus.length})
+              </span>
+            </div>
             <button
               className="btn btn-ghost btn-sm"
               style={{ fontSize: 11, padding: '3px 8px' }}
@@ -925,20 +987,70 @@ export default function MasterMenu() {
             </button>
           </div>
 
+          {/* Bulk Delete Bar for Menus */}
+          {selectedMenuIds.length > 0 && (
+            <div
+              className="fade-in"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '8px 12px',
+                borderRadius: 8,
+                background: 'rgba(225, 29, 72, 0.15)',
+                border: '1px solid rgba(225, 29, 72, 0.4)',
+                marginBottom: 10,
+              }}
+            >
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#f43f5e' }}>
+                ✓ {selectedMenuIds.length} dipilih
+              </span>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setSelectedMenuIds([])}
+                  style={{ fontSize: 11, padding: '2px 6px' }}
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger btn-sm"
+                  onClick={handleBulkDeleteMenus}
+                  disabled={bulkDeletingMenus}
+                  style={{ fontSize: 11, padding: '3px 8px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4, background: '#e11d48', borderColor: '#f43f5e', color: '#fff' }}
+                >
+                  <Trash2 size={12} />
+                  {bulkDeletingMenus ? '...' : `Hapus (${selectedMenuIds.length})`}
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="recipe-list">
             {filteredMenus.map(m => {
               const mIsDirect = m.item_type === 'DIRECT';
               const mIsService = m.item_type === 'SERVICE';
               const mStock = m.current_stock ?? m.stock ?? 0;
+              const isMenuSelected = selectedMenuIds.includes(m.id);
 
               return (
                 <button
                   key={m.id}
                   className={`recipe-item${selected?.id === m.id ? ' active' : ''}`}
                   onClick={() => { setSelected(m); setDraft(null); }}
+                  style={isMenuSelected ? { borderColor: 'rgba(225, 29, 72, 0.5)', background: 'rgba(225, 29, 72, 0.06)' } : {}}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div className="recipe-item-name" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <input
+                        type="checkbox"
+                        checked={isMenuSelected}
+                        onClick={e => e.stopPropagation()}
+                        onChange={() => toggleSelectMenu(m.id)}
+                        style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--primary)', flexShrink: 0 }}
+                      />
                       {mIsDirect && <Package size={13} color="#60a5fa" />}
                       {mIsService && <Scissors size={13} color="#c084fc" />}
                       {m.item_type === 'BUNDLE' && <Layers size={13} color="#f43f5e" />}

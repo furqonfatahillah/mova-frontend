@@ -1091,4 +1091,285 @@ export async function exportPromosToExcel({ items = [], summary = {}, period, ou
   return filename;
 }
 
+/**
+ * 12. Export Laporan Hutang Supplier to Excel (Layout EXACTLY matching user's uploaded template)
+ * Columns: No. | Supplier/Tanggal | Tgl. Dibuat | Dibuat Oleh | No.Pembelian | No.Bayar | Jatuh Tempo | Hutang | Dibayar | Sisa Hutang | Total Hutang
+ */
+export async function exportSupplierPayablesToExcel({
+  rows = [],
+  period = {},
+  outletName = 'Semua Cabang',
+  businessName = 'MOVA POS',
+  summary = {},
+}) {
+  const ExcelJSMod = await import('exceljs');
+  const ExcelJS = ExcelJSMod.default || ExcelJSMod;
+  const wb = new ExcelJS.Workbook();
+  wb.creator = businessName;
+  wb.created = new Date();
+
+  const ws = wb.addWorksheet('Laporan Hutang Supplier', {
+    views: [{ showGridLines: true }],
+  });
+
+  // Row 2: Title centered across columns
+  ws.getCell('B2').value = 'LAPORAN HUTANG SUPPLIER';
+  ws.getCell('B2').font = { name: 'Arial', size: 14, bold: true };
+  ws.getCell('B2').alignment = { horizontal: 'center', vertical: 'middle' };
+  ws.mergeCells('B2:K2');
+
+  const periodText = period.from_formatted && period.to_formatted
+    ? `Per ${period.from_formatted} s/d ${period.to_formatted}`
+    : (period.from && period.to ? `Per ${period.from} s/d ${period.to}` : 'Semua Periode');
+
+  // Row 3: Period subtitle in italics
+  ws.getCell('B3').value = periodText;
+  ws.getCell('B3').font = { name: 'Arial', size: 11, italic: true };
+  ws.getCell('B3').alignment = { horizontal: 'center', vertical: 'middle' };
+  ws.mergeCells('B3:K3');
+
+  // Row 5: Table Header matching user's screenshot
+  const headerRow = ws.getRow(5);
+  headerRow.values = [
+    'No.',
+    'Supplier/Tanggal',
+    'Tgl. Dibuat',
+    'Dibuat Oleh',
+    'No.Pembelian',
+    'No.Bayar',
+    'Jatuh Tempo',
+    'Hutang',
+    'Dibayar',
+    'Sisa Hutang',
+    'Total Hutang',
+  ];
+  headerRow.height = 24;
+
+  const thinBorder = {
+    top: { style: 'thin', color: { argb: 'FF000000' } },
+    left: { style: 'thin', color: { argb: 'FF000000' } },
+    bottom: { style: 'thin', color: { argb: 'FF000000' } },
+    right: { style: 'thin', color: { argb: 'FF000000' } },
+  };
+
+  headerRow.eachCell((cell) => {
+    cell.font = { name: 'Arial', size: 10, bold: true };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border = thinBorder;
+  });
+
+  let currentRowIdx = 6;
+  rows.forEach((r, idx) => {
+    const row = ws.getRow(currentRowIdx++);
+    row.values = [
+      idx + 1,
+      r.supplier_tanggal || (r.supplier_name ? `${r.supplier_name} - ${r.tgl_dibuat_fmt || r.tgl_dibuat}` : '-'),
+      r.tgl_dibuat_fmt || r.tgl_dibuat || '-',
+      r.dibuat_oleh || 'Admin',
+      r.no_pembelian || '-',
+      r.no_bayar || '-',
+      r.jatuh_tempo_fmt || r.jatuh_tempo || '-',
+      Number(r.hutang) || 0,
+      Number(r.dibayar) || 0,
+      Number(r.sisa_hutang) || 0,
+      Number(r.total_hutang) || 0,
+    ];
+    row.height = 20;
+
+    row.eachCell((cell, colNumber) => {
+      cell.border = thinBorder;
+      cell.font = { name: 'Arial', size: 10 };
+      if (colNumber === 1) {
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      } else if ([3, 5, 6, 7].includes(colNumber)) {
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      } else if (colNumber >= 8) {
+        cell.alignment = { horizontal: 'right', vertical: 'middle' };
+        cell.numFmt = '#,##0.00';
+      } else {
+        cell.alignment = { horizontal: 'left', vertical: 'middle' };
+      }
+    });
+  });
+
+  // Footer Total Row (Row currentRowIdx):
+  // Exactly matching the screenshot:
+  // "Total Utang" label spanning / in cell H, followed by Dibayar (cell I), Sisa Hutang (cell J), Total Hutang (cell K)
+  const footerRow = ws.getRow(currentRowIdx);
+  footerRow.height = 22;
+
+  for (let c = 1; c <= 11; c++) {
+    footerRow.getCell(c).border = thinBorder;
+    footerRow.getCell(c).font = { name: 'Arial', size: 10, bold: true };
+  }
+
+  // Merge A to H with "Total Utang"
+  ws.mergeCells(`A${currentRowIdx}:H${currentRowIdx}`);
+  const totalUtangLabelCell = ws.getCell(`A${currentRowIdx}`);
+  totalUtangLabelCell.value = 'Total Utang';
+  totalUtangLabelCell.alignment = { horizontal: 'right', vertical: 'middle' };
+  totalUtangLabelCell.font = { name: 'Arial', size: 10, bold: true };
+
+  const cellDibayar = footerRow.getCell(9);
+  cellDibayar.value = Number(summary.total_dibayar ?? 0);
+  cellDibayar.alignment = { horizontal: 'right', vertical: 'middle' };
+  cellDibayar.numFmt = '#,##0.00';
+  cellDibayar.font = { name: 'Arial', size: 10, bold: true };
+
+  const cellSisa = footerRow.getCell(10);
+  cellSisa.value = Number(summary.total_sisa_hutang ?? 0);
+  cellSisa.alignment = { horizontal: 'right', vertical: 'middle' };
+  cellSisa.numFmt = '#,##0.00';
+  cellSisa.font = { name: 'Arial', size: 10, bold: true };
+
+  const cellTotal = footerRow.getCell(11);
+  cellTotal.value = Number(summary.total_hutang ?? 0);
+  cellTotal.alignment = { horizontal: 'right', vertical: 'middle' };
+  cellTotal.numFmt = '#,##0.00';
+  cellTotal.font = { name: 'Arial', size: 10, bold: true };
+
+  // Set column widths for readability
+  ws.getColumn(1).width = 6;   // No.
+  ws.getColumn(2).width = 32;  // Supplier/Tanggal
+  ws.getColumn(3).width = 14;  // Tgl. Dibuat
+  ws.getColumn(4).width = 16;  // Dibuat Oleh
+  ws.getColumn(5).width = 20;  // No.Pembelian
+  ws.getColumn(6).width = 24;  // No.Bayar
+  ws.getColumn(7).width = 14;  // Jatuh Tempo
+  ws.getColumn(8).width = 16;  // Hutang
+  ws.getColumn(9).width = 16;  // Dibayar
+  ws.getColumn(10).width = 16; // Sisa Hutang
+  ws.getColumn(11).width = 16; // Total Hutang
+
+  const filename = `Laporan_Hutang_Supplier_${period.from || 'all'}_sd_${period.to || 'all'}.xlsx`;
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
+
+  return filename;
+}
+
+/**
+ * 13. Print / PDF Export for Laporan Hutang Supplier
+ */
+export function printSupplierPayablesReport({
+  rows = [],
+  period = {},
+  outletName = 'Semua Cabang',
+  summary = {},
+}) {
+  const periodText = period.from_formatted && period.to_formatted
+    ? `Per ${period.from_formatted} s/d ${period.to_formatted}`
+    : (period.from && period.to ? `Per ${period.from} s/d ${period.to}` : 'Semua Periode');
+
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    alert('Pop-up browser diblokir. Harap izinkan pop-up untuk mencetak laporan.');
+    return;
+  }
+
+  const numFmt = (val) =>
+    Number(val || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const tableRowsHtml = rows
+    .map(
+      (r, idx) => `
+    <tr>
+      <td style="text-align:center;">${idx + 1}</td>
+      <td>${r.supplier_tanggal || r.supplier_name || '-'}</td>
+      <td style="text-align:center;">${r.tgl_dibuat_fmt || r.tgl_dibuat || '-'}</td>
+      <td>${r.dibuat_oleh || 'Admin'}</td>
+      <td style="text-align:center;">${r.no_pembelian || '-'}</td>
+      <td style="text-align:center;">${r.no_bayar || '-'}</td>
+      <td style="text-align:center;">${r.jatuh_tempo_fmt || r.jatuh_tempo || '-'}</td>
+      <td style="text-align:right;">${numFmt(r.hutang)}</td>
+      <td style="text-align:right;">${numFmt(r.dibayar)}</td>
+      <td style="text-align:right;">${numFmt(r.sisa_hutang)}</td>
+      <td style="text-align:right;">${numFmt(r.total_hutang)}</td>
+    </tr>
+  `
+    )
+    .join('');
+
+  const html = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>LAPORAN HUTANG SUPPLIER</title>
+    <style>
+      @page { size: landscape; margin: 12mm; }
+      body { font-family: Arial, sans-serif; font-size: 11px; color: #111; margin: 0; padding: 10px; }
+      .header { text-align: center; margin-bottom: 20px; }
+      .title { font-size: 16px; font-weight: bold; letter-spacing: 0.5px; }
+      .subtitle { font-size: 12px; font-style: italic; margin-top: 4px; color: #333; }
+      .meta { display: flex; justify-content: space-between; font-size: 10.5px; margin-bottom: 8px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 5px; }
+      th, td { border: 1px solid #222; padding: 6px 8px; }
+      th { background-color: #f3f4f6; font-weight: bold; text-align: center; }
+      .footer-total { font-weight: bold; background-color: #f9fafb; }
+      @media print {
+        th { background-color: #eee !important; -webkit-print-color-adjust: exact; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div class="title">LAPORAN HUTANG SUPPLIER</div>
+      <div class="subtitle">${periodText}</div>
+    </div>
+    <div class="meta">
+      <div><strong>Outlet/Cabang:</strong> ${outletName}</div>
+      <div><strong>Dicetak Pada:</strong> ${new Date().toLocaleString('id-ID')}</div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 35px;">No.</th>
+          <th>Supplier/Tanggal</th>
+          <th style="width: 85px;">Tgl. Dibuat</th>
+          <th style="width: 90px;">Dibuat Oleh</th>
+          <th style="width: 110px;">No.Pembelian</th>
+          <th style="width: 120px;">No.Bayar</th>
+          <th style="width: 85px;">Jatuh Tempo</th>
+          <th style="width: 95px;">Hutang</th>
+          <th style="width: 95px;">Dibayar</th>
+          <th style="width: 95px;">Sisa Hutang</th>
+          <th style="width: 95px;">Total Hutang</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${tableRowsHtml || '<tr><td colspan="11" style="text-align:center; padding:15px;">Tidak ada data hutang untuk periode ini</td></tr>'}
+      </tbody>
+      <tfoot>
+        <tr class="footer-total">
+          <td colspan="8" style="text-align: right; padding-right: 12px;">Total Utang</td>
+          <td style="text-align: right;">${numFmt(summary.total_dibayar)}</td>
+          <td style="text-align: right;">${numFmt(summary.total_sisa_hutang)}</td>
+          <td style="text-align: right;">${numFmt(summary.total_hutang)}</td>
+        </tr>
+      </tfoot>
+    </table>
+    <script>
+      window.onload = function() {
+        window.print();
+      };
+    </script>
+  </body>
+  </html>
+  `;
+
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+}
+
 

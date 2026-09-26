@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
-import { PageHeader, LoadingState, AuditInfo, MiniCard, num, PeriodPicker } from '../components/ui';
+import { PageHeader, LoadingState, AuditInfo, MiniCard, num, rupiah, PeriodPicker } from '../components/ui';
 import { printElement } from '../utils/print';
 import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
 import { useOutlet } from '../context/OutletContext';
@@ -85,6 +85,12 @@ export default function TransferBahan() {
     driver_name: '',
     vehicle_no: '',
     notes: '',
+    payment_type: 'INTERNAL', // 'INTERNAL', 'CASH', 'BANK', 'QRIS', 'HUTANG'
+    payment_method: 'CASH',
+    supplier_name: '',
+    purchase_no: '',
+    due_date: '',
+    initial_paid: '',
     items: [
       {
         item_type: 'INGREDIENT', // 'INGREDIENT' or 'PRODUCT'
@@ -94,6 +100,8 @@ export default function TransferBahan() {
         input_unit: '',
         qty: '',
         unit: '',
+        unit_price: '',
+        total_price: 0,
         notes: ''
       }
     ]
@@ -208,6 +216,7 @@ export default function TransferBahan() {
     const secondOut = outlets.length > 1 ? outlets[1] : null;
     const firstIng = ingredients[0];
     const defaultUnit = firstIng?.unit_beli || firstIng?.unit_pakai || 'gram';
+    const defaultPrice = firstIng?.cost || firstIng?.harga_beli || '';
 
     setFormData({
       date: getTodayStr(),
@@ -220,6 +229,12 @@ export default function TransferBahan() {
       driver_name: '',
       vehicle_no: '',
       notes: '',
+      payment_type: 'INTERNAL',
+      payment_method: 'CASH',
+      supplier_name: '',
+      purchase_no: '',
+      due_date: '',
+      initial_paid: '',
       items: [
         {
           item_type: 'INGREDIENT',
@@ -229,6 +244,8 @@ export default function TransferBahan() {
           input_unit: defaultUnit,
           qty: '',
           unit: firstIng ? firstIng.unit_pakai : 'gram',
+          unit_price: defaultPrice,
+          total_price: 0,
           notes: ''
         }
       ]
@@ -264,6 +281,7 @@ export default function TransferBahan() {
   function handleAddItem(type = 'INGREDIENT') {
     if (type === 'PRODUCT') {
       const firstMenu = directMenus[0] || menus[0];
+      const defaultPrice = firstMenu?.cost_price || firstMenu?.price || '';
       setFormData(p => ({
         ...p,
         items: [
@@ -276,6 +294,8 @@ export default function TransferBahan() {
             input_unit: firstMenu?.unit || 'pcs',
             qty: '',
             unit: firstMenu?.unit || 'pcs',
+            unit_price: defaultPrice,
+            total_price: 0,
             notes: ''
           }
         ]
@@ -283,6 +303,7 @@ export default function TransferBahan() {
     } else {
       const firstIng = ingredients[0];
       const defaultUnit = firstIng?.unit_beli || firstIng?.unit_pakai || 'gram';
+      const defaultPrice = firstIng?.cost || firstIng?.harga_beli || '';
       setFormData(p => ({
         ...p,
         items: [
@@ -295,6 +316,8 @@ export default function TransferBahan() {
             input_unit: defaultUnit,
             qty: '',
             unit: firstIng ? firstIng.unit_pakai : 'gram',
+            unit_price: defaultPrice,
+            total_price: 0,
             notes: ''
           }
         ]
@@ -329,6 +352,7 @@ export default function TransferBahan() {
           current.input_unit = firstMenu?.unit || 'pcs';
           current.unit = firstMenu?.unit || 'pcs';
           current.qty = current.input_qty || '';
+          current.unit_price = firstMenu?.cost_price || firstMenu?.price || '';
         } else {
           const firstIng = ingredients[0];
           current.ingredient_id = firstIng ? firstIng.id : '';
@@ -336,6 +360,7 @@ export default function TransferBahan() {
           current.input_unit = firstIng?.unit_beli || firstIng?.unit_pakai || 'gram';
           current.unit = firstIng ? firstIng.unit_pakai : 'gram';
           current.qty = current.input_qty || '';
+          current.unit_price = firstIng?.cost || firstIng?.harga_beli || '';
         }
       } else if (field === 'menu_id') {
         const mId = Number(value);
@@ -344,6 +369,9 @@ export default function TransferBahan() {
         current.input_unit = selMenu?.unit || 'pcs';
         current.unit = selMenu?.unit || 'pcs';
         current.qty = Number(current.input_qty || 0);
+        if (selMenu?.cost_price || selMenu?.price) {
+          current.unit_price = selMenu.cost_price || selMenu.price;
+        }
       } else if (field === 'ingredient_id') {
         const ingId = Number(value);
         const selected = ingredients.find(i => i.id === ingId);
@@ -357,6 +385,9 @@ export default function TransferBahan() {
         const isConvertible = selected && ub && selected.unit_pakai && ub.toLowerCase() !== selected.unit_pakai.toLowerCase() && factor > 1;
         const isBeli = isConvertible && newUnit.toLowerCase() === ub.toLowerCase();
         current.qty = isBeli ? (Number(current.input_qty || 0) * factor) : Number(current.input_qty || 0);
+        if (selected?.cost || selected?.harga_beli) {
+          current.unit_price = selected.cost || selected.harga_beli;
+        }
       } else if (field === 'input_qty') {
         current.input_qty = value;
         if (current.item_type === 'PRODUCT') {
@@ -379,14 +410,22 @@ export default function TransferBahan() {
           const isBeli = isConvertible && value && value.toLowerCase() === ub.toLowerCase();
           current.qty = isBeli ? (Number(current.input_qty || 0) * factor) : Number(current.input_qty || 0);
         }
+      } else if (field === 'unit_price') {
+        current.unit_price = value;
       } else {
         current[field] = value;
       }
 
+      current.total_price = Math.round(Number(current.input_qty || 0) * Number(current.unit_price || 0));
       newItems[index] = current;
       return { ...p, items: newItems };
     });
   }
+
+  // Grand Total Nilai Transfer / Pembelian
+  const transferGrandTotal = useMemo(() => {
+    return (formData.items || []).reduce((acc, it) => acc + (Number(it.total_price) || (Number(it.input_qty || 0) * Number(it.unit_price || 0))), 0);
+  }, [formData.items]);
 
   // Check live stock of an item at source outlet
   function getSourceStockInfo(item) {
@@ -613,6 +652,8 @@ export default function TransferBahan() {
 
     setSaving(true);
     try {
+      const grandTotal = (formData.items || []).reduce((acc, it) => acc + (Number(it.total_price) || (Number(it.input_qty || 0) * Number(it.unit_price || 0))), 0);
+
       const payload = {
         date: formData.date,
         source_type: sourceIsOutlet ? 'OUTLET' : 'EXTERNAL',
@@ -625,7 +666,17 @@ export default function TransferBahan() {
         vehicle_no: formData.vehicle_no || null,
         status: 'IN_TRANSIT',
         notes: formData.notes || null,
+        payment_type: formData.payment_type || 'INTERNAL',
+        payment_method: (formData.payment_type === 'HUTANG' || formData.payment_type === 'INTERNAL') ? (formData.payment_method || 'CASH') : formData.payment_type,
+        total_amount: grandTotal,
+        supplier_name: formData.supplier_name || null,
+        purchase_no: formData.purchase_no || null,
+        due_date: (formData.payment_type === 'HUTANG' && formData.due_date) ? formData.due_date : null,
+        initial_paid: (formData.payment_type === 'HUTANG' && formData.initial_paid) ? Number(formData.initial_paid) : 0,
         items: formData.items.map(it => {
+          const uPrice = Number(it.unit_price) || 0;
+          const tPrice = Number(it.total_price) || Math.round(Number(it.input_qty || 0) * uPrice);
+
           if (it.item_type === 'PRODUCT') {
             const menu = menus.find(m => m.id === Number(it.menu_id));
             const q = Number(it.input_qty || it.qty);
@@ -636,6 +687,8 @@ export default function TransferBahan() {
               input_unit: it.input_unit || menu?.unit || 'pcs',
               qty: q,
               unit: menu?.unit || 'pcs',
+              unit_price: uPrice,
+              total_price: tPrice,
               notes: it.notes || null,
             };
           } else {
@@ -655,6 +708,8 @@ export default function TransferBahan() {
               input_unit: it.input_unit || up || 'gram',
               qty: baseQ,
               unit: up || it.unit || 'gram',
+              unit_price: uPrice,
+              total_price: tPrice,
               notes: it.notes || null,
             };
           }
@@ -1252,6 +1307,17 @@ export default function TransferBahan() {
                           <span className="pill pill-ok" style={{ fontSize: 10.5, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                             <CheckCircle2 size={11} /> SELESAI
                           </span>
+                        )}
+                        {trf.payment_type && trf.payment_type !== 'INTERNAL' && (
+                          <div style={{ marginTop: 4 }}>
+                            <span
+                              className={`pill ${trf.payment_type === 'HUTANG' ? 'pill-warning' : 'pill-primary'}`}
+                              style={{ fontSize: 9.5, padding: '2px 6px', fontWeight: 700 }}
+                            >
+                              {trf.payment_type === 'HUTANG' ? 'HUTANG' : trf.payment_type}
+                              {Number(trf.total_amount) > 0 && ` · ${rupiah(trf.total_amount)}`}
+                            </span>
+                          </div>
                         )}
                       </td>
                       <td>
@@ -2423,6 +2489,113 @@ export default function TransferBahan() {
                 </div>
               </div>
 
+              {/* METODE TRANSAKSI & PEMBAYARAN PENGADAAN */}
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.02)',
+                border: '1px solid var(--border)',
+                borderRadius: 12,
+                padding: '12px 14px',
+                marginBottom: 14
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
+                  <label className="form-label mb-0" style={{ fontWeight: 700, fontSize: 12.5, color: '#ffffff' }}>
+                    Metode Transaksi / Pembayaran
+                  </label>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    Pilih metode pembayaran jika transfer ini berupa pembelian / pengadaan stok
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8, marginBottom: formData.payment_type === 'HUTANG' ? 12 : 0 }}>
+                  {[
+                    { id: 'INTERNAL', label: 'Internal Rutin', desc: 'Non-finansial' },
+                    { id: 'CASH', label: 'Kas / Tunai', desc: 'Bayar tunai kasir' },
+                    { id: 'BANK', label: 'Transfer Bank', desc: 'Rekening bank' },
+                    { id: 'QRIS', label: 'QRIS Digital', desc: 'Scan QRIS' },
+                    { id: 'HUTANG', label: 'Hutang / Tempo', desc: 'Buku hutang supplier' }
+                  ].map(m => {
+                    const active = (formData.payment_type || 'INTERNAL') === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setFormData(p => ({ ...p, payment_type: m.id }))}
+                        style={{
+                          padding: '8px 10px',
+                          borderRadius: 8,
+                          border: active ? '2px solid var(--accent-bright)' : '1px solid var(--border)',
+                          background: active ? 'rgba(99, 102, 241, 0.15)' : 'var(--bg-card)',
+                          color: active ? '#ffffff' : 'var(--text-secondary)',
+                          textAlign: 'left',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <div style={{ fontWeight: 700, fontSize: 12, color: active ? 'var(--accent-bright)' : undefined }}>
+                          {active && '✓ '}{m.label}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{m.desc}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Form Hutang Supplier */}
+                {formData.payment_type === 'HUTANG' && (
+                  <div style={{
+                    marginTop: 10,
+                    padding: '12px 14px',
+                    background: 'rgba(245, 158, 11, 0.08)',
+                    border: '1px solid rgba(245, 158, 11, 0.3)',
+                    borderRadius: 10,
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+                    gap: 10
+                  }}>
+                    <div>
+                      <label className="form-label" style={{ fontSize: 11.5, color: '#fcd34d' }}>Nama Supplier / Vendor</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="Nama supplier..."
+                        value={formData.supplier_name}
+                        onChange={e => setFormData(p => ({ ...p, supplier_name: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="form-label" style={{ fontSize: 11.5, color: '#fcd34d' }}>No. Bon / Faktur Pembelian</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="Misal: INV-2026/001"
+                        value={formData.purchase_no}
+                        onChange={e => setFormData(p => ({ ...p, purchase_no: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="form-label" style={{ fontSize: 11.5, color: '#fcd34d' }}>Tanggal Jatuh Tempo</label>
+                      <input
+                        type="date"
+                        className="form-control"
+                        value={formData.due_date}
+                        onChange={e => setFormData(p => ({ ...p, due_date: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="form-label" style={{ fontSize: 11.5, color: '#fcd34d' }}>Uang Muka / DP (Opsional)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        className="form-control mono"
+                        placeholder="Rp 0"
+                        value={formData.initial_paid}
+                        onChange={e => setFormData(p => ({ ...p, initial_paid: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* DAFTAR BARANG YANG DITRANSFER */}
               <div className="card mb-4" style={{ background: 'var(--bg-card-subtle)', padding: 14 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
@@ -2509,7 +2682,7 @@ export default function TransferBahan() {
                           border: isItemInDeficit ? '1px solid rgba(239, 68, 68, 0.45)' : '1px solid var(--border-soft)'
                         }}
                       >
-                        <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr 110px 100px 1fr 32px', gap: 8, alignItems: 'center' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '100px 1.4fr 85px 85px 115px 105px 1fr 32px', gap: 8, alignItems: 'center' }}>
                           {/* Item Type */}
                           <select
                             className="form-control"
@@ -2604,6 +2777,35 @@ export default function TransferBahan() {
                             </div>
                           )}
 
+                          {/* Unit Price (Rp) */}
+                          <input
+                            type="number"
+                            min="0"
+                            className="form-control mono right"
+                            style={{ padding: '6px 8px', fontSize: 12 }}
+                            placeholder="Harga/satuan"
+                            title="Harga beli / pengadaan per satuan"
+                            value={item.unit_price}
+                            onChange={e => handleItemChange(idx, 'unit_price', e.target.value)}
+                          />
+
+                          {/* Subtotal (Rp) */}
+                          <div
+                            className="mono right"
+                            style={{
+                              padding: '6px 8px',
+                              fontSize: 12,
+                              fontWeight: 700,
+                              color: item.total_price > 0 ? '#34d399' : 'var(--text-muted)',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
+                            }}
+                            title={`Subtotal: ${rupiah(item.total_price)}`}
+                          >
+                            {rupiah(item.total_price)}
+                          </div>
+
                           {/* Item Note */}
                           <input
                             type="text"
@@ -2658,6 +2860,41 @@ export default function TransferBahan() {
                     );
                   })}
                 </div>
+
+                {/* GRAND TOTAL SUMMARY BANNER */}
+                {transferGrandTotal > 0 && (
+                  <div style={{
+                    marginTop: 14,
+                    padding: '12px 16px',
+                    background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(99, 102, 241, 0.15) 100%)',
+                    border: '1px solid rgba(16, 185, 129, 0.4)',
+                    borderRadius: 10,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: 10
+                  }}>
+                    <div>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Total Nilai Transfer / Pembelian ({formData.items.length} Item):
+                      </div>
+                      <div className="mono" style={{ fontSize: 20, fontWeight: 800, color: '#34d399', marginTop: 2 }}>
+                        {rupiah(transferGrandTotal)}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <span className="pill pill-primary" style={{ fontWeight: 700, fontSize: 12, padding: '4px 10px' }}>
+                        Metode: {formData.payment_type === 'HUTANG' ? 'HUTANG (Tempo)' : (formData.payment_type === 'BANK' ? 'Transfer Bank' : (formData.payment_type === 'QRIS' ? 'QRIS' : (formData.payment_type === 'CASH' ? 'Kas / Tunai' : 'Internal Rutin')))}
+                      </span>
+                      {formData.payment_type === 'HUTANG' && Number(formData.initial_paid) > 0 && (
+                        <div style={{ fontSize: 11, color: '#fcd34d', marginTop: 4 }}>
+                          DP: {rupiah(formData.initial_paid)} | Sisa Hutang: {rupiah(Math.max(0, transferGrandTotal - Number(formData.initial_paid)))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* General Note */}
@@ -2867,6 +3104,31 @@ export default function TransferBahan() {
                   </span>
                 </div>
               </div>
+
+              {/* Payment / Financial Info */}
+              {selectedTransfer.payment_type && selectedTransfer.payment_type !== 'INTERNAL' && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, padding: '8px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, marginBottom: 14 }}>
+                  <div>
+                    <strong>Metode Transaksi:</strong>{' '}
+                    <span style={{ fontWeight: 700, color: selectedTransfer.payment_type === 'HUTANG' ? '#b45309' : '#047857' }}>
+                      {selectedTransfer.payment_type === 'HUTANG' ? 'HUTANG / TEMPO' : selectedTransfer.payment_type}
+                    </span>
+                    {selectedTransfer.supplier_name && <span> · Supplier: <strong>{selectedTransfer.supplier_name}</strong></span>}
+                    {selectedTransfer.purchase_no && <span> · No. Bon: <strong>{selectedTransfer.purchase_no}</strong></span>}
+                  </div>
+                  <div>
+                    <strong>Total Nilai:</strong>{' '}
+                    <span className="mono" style={{ fontWeight: 800, color: '#0f172a', fontSize: 13 }}>
+                      {rupiah(selectedTransfer.total_amount)}
+                    </span>
+                    {selectedTransfer.payment_type === 'HUTANG' && Number(selectedTransfer.initial_paid) > 0 && (
+                      <span style={{ fontSize: 11, color: '#64748b', marginLeft: 6 }}>
+                        (DP: {rupiah(selectedTransfer.initial_paid)})
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Audit Receive Info if completed */}
               {selectedTransfer.received_at && (

@@ -4,13 +4,14 @@ import {
   Download, RefreshCw, AlertOctagon, Check, ArrowRight, Table
 } from 'lucide-react';
 import api from '../api/client';
-import { rupiah, LoadingState } from './ui';
+import { rupiah, num, LoadingState } from './ui';
 import {
   downloadIngredientTemplate,
   downloadPerlengkapanTemplate,
   downloadMenuTemplate,
   downloadReceivableTemplate,
-  downloadOutletTemplate
+  downloadOutletTemplate,
+  downloadSaldoAwalTemplate
 } from '../utils/exportTemplates';
 import toast from 'react-hot-toast';
 
@@ -135,6 +136,13 @@ export default function ImportMasterModal({
       columns: ['Nama Pelanggan*', 'Total Tagihan*', 'Uang Muka (DP)', 'Tgl Terbit*', 'Tgl Jatuh Tempo*'],
       sampleHint: 'Contoh: Bpk H. Paksi, Total Tagihan: 250000, DP: 50000, Terbit: 2026-09-24',
     },
+    SALDO_AWAL: {
+      title: 'Saldo Awal Stok (Transisi Aplikasi & Kartu Stok)',
+      downloadFn: downloadSaldoAwalTemplate,
+      endpoint: '/stock-card/bulk-import-initial',
+      columns: ['Kode Item', 'Nama Bahan/Item*', 'Outlet/Cabang*', 'Saldo Awal Fisik*', 'Satuan*', 'Tipe Satuan*', 'Harga Modal*'],
+      sampleHint: 'Contoh: Biji Kopi Arabika, Outlet: Cabang Utama, Saldo Awal: 25 kg (BELI), Harga: 180000, Tgl: 2026-09-01',
+    },
     OUTLET: {
       title: 'Master Gudang & Outlet Cabang',
       downloadFn: downloadOutletTemplate,
@@ -159,13 +167,35 @@ export default function ImportMasterModal({
 
   // Helper to normalize object keys (trim spaces & lowercase)
   function getVal(row, possibleKeys) {
-    const keys = Object.keys(row || {});
+    if (!row) return '';
+    const keys = Object.keys(row);
+
+    // 1. Try exact match first (ignoring banner/title/empty keys)
     for (const p of possibleKeys) {
-      const match = keys.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '').includes(p.toLowerCase().replace(/[^a-z0-9]/g, '')));
-      if (match && row[match] !== undefined && row[match] !== null && String(row[match]).trim() !== '') {
-        return row[match];
+      const cleanP = p.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const matchKey = keys.find(k => {
+        const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (cleanK.startsWith('template') || cleanK.startsWith('empty') || cleanK.startsWith('petunjuk') || cleanK.includes('movapos')) return false;
+        return cleanK === cleanP;
+      });
+      if (matchKey && row[matchKey] !== undefined && row[matchKey] !== null && String(row[matchKey]).trim() !== '') {
+        return String(row[matchKey]).trim();
       }
     }
+
+    // 2. Try startsWith or includes match (strictly avoiding banner/title/empty keys)
+    for (const p of possibleKeys) {
+      const cleanP = p.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const matchKey = keys.find(k => {
+        const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (cleanK.startsWith('template') || cleanK.startsWith('empty') || cleanK.startsWith('petunjuk') || cleanK.includes('movapos')) return false;
+        return cleanK.startsWith(cleanP) || cleanK.includes(cleanP);
+      });
+      if (matchKey && row[matchKey] !== undefined && row[matchKey] !== null && String(row[matchKey]).trim() !== '') {
+        return String(row[matchKey]).trim();
+      }
+    }
+
     return '';
   }
 
@@ -186,27 +216,76 @@ export default function ImportMasterModal({
       const workbook = XLSX.read(buffer, { type: 'array' });
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
-      const rawJson = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+      // Convert sheet to 2D array to dynamically find the exact table header row
+      const sheetRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      
+      const HEADER_KEYWORDS = [
+        'nama bahan', 'nama perlengkapan', 'nama menu', 'nama pelanggan', 'nama debitur', 'nama outlet',
+        'kode bahan', 'kode perlengkapan', 'kode menu', 'kode outlet',
+        'satuan beli', 'satuan pakai', 'tipe bahan', 'tipe item', 'total tagihan',
+        'saldo awal', 'saldo awal fisik', 'nama bahan / item', 'kode bahan / item'
+      ];
 
-      // Filter out header title rows or instruction rows (rows that don't look like data)
+      let headerRowIndex = 0;
+      for (let i = 0; i < Math.min(sheetRows.length, 25); i++) {
+        const rowVals = (sheetRows[i] || []).map(c => String(c).toLowerCase().trim());
+        const hasHeader = rowVals.some(v => HEADER_KEYWORDS.some(kw => v.includes(kw)));
+        if (hasHeader) {
+          headerRowIndex = i;
+          break;
+        }
+      }
+
+      const rawJson = XLSX.utils.sheet_to_json(sheet, { range: headerRowIndex, defval: '' });
+
+      // Filter out header title rows, banner rows, instruction rows, or empty rows
       const dataRows = rawJson.filter(row => {
-        const strValues = Object.values(row).join(' ').toLowerCase();
-        if (strValues.includes('template import') || strValues.includes('petunjuk:') || strValues.includes('=== daftar') || strValues.includes('=== petunjuk')) {
+        const values = Object.values(row).map(v => String(v).trim());
+        const strValues = values.join(' ').toLowerCase();
+
+        if (
+          strValues.includes('===') ||
+          strValues.includes('template import') ||
+          strValues.includes('petunjuk:') ||
+          strValues.includes('daftar bahan') ||
+          strValues.includes('data bahan')
+        ) {
           return false;
         }
-        return Object.values(row).some(v => v !== '' && v !== null);
+
+        // Check if row literally repeats header names
+        const firstVal = (values[0] || '').toLowerCase();
+        const secondVal = (values[1] || '').toLowerCase();
+        if (
+          ['kode bahan', 'nama bahan', 'nama bahan*', 'kode perlengkapan', 'nama perlengkapan', 'kode menu', 'nama menu'].includes(firstVal) ||
+          ['nama bahan', 'nama bahan*', 'nama perlengkapan', 'nama menu'].includes(secondVal)
+        ) {
+          return false;
+        }
+
+        return values.some(v => v !== '');
       });
 
       // Parse & Validate depending on master type
       const parsed = dataRows.map((row, idx) => {
         const errors = [];
         let mappedData = {};
+        const keys = Object.keys(row);
 
         if (currentMasterType === 'INGREDIENT') {
-          const name = getVal(row, ['nama', 'namabahan', 'ingredient']);
-          const code = getVal(row, ['kode', 'kodebahan', 'code']);
+          let code = getVal(row, ['kodebahan', 'kode', 'code', 'sku', 'itemcode']);
+          let name = getVal(row, ['namabahan', 'nama', 'namabarang', 'itemname']);
+
+          // Fallback if user's file has column 0 as Code and column 1 as Name
+          if (!code && keys[0] && keys[0].toLowerCase().includes('kode')) {
+            code = String(row[keys[0]] || '').trim();
+          }
+          if (!name && keys[1] && keys[1].toLowerCase().includes('nama')) {
+            name = String(row[keys[1]] || '').trim();
+          }
+
           const category = getVal(row, ['kategori', 'category']) || 'BAHAN_BAKU';
-          const typeRaw = getVal(row, ['tipe', 'tipebahan', 'type']);
+          const typeRaw = getVal(row, ['tipebahan', 'tipe', 'type']);
           const type = (typeRaw && typeRaw.toUpperCase().includes('SEMI')) ? 'SEMI_FINISHED' : 'RAW';
           const rawUnitBeli = getVal(row, ['satuanbeli', 'unitbeli']);
           const rawUnitPakai = getVal(row, ['satuanpakai', 'unitpakai']);
@@ -247,8 +326,16 @@ export default function ImportMasterModal({
           };
 
         } else if (currentMasterType === 'PERLENGKAPAN') {
-          const name = getVal(row, ['namaperlengkapan', 'namabarang', 'nama', 'perlengkapan', 'item']);
-          const code = getVal(row, ['kodeperlengkapan', 'kode', 'code']);
+          let code = getVal(row, ['kodeperlengkapan', 'kode', 'code', 'sku', 'itemcode']);
+          let name = getVal(row, ['namaperlengkapan', 'namabarang', 'nama', 'itemname']);
+
+          if (!code && keys[0] && keys[0].toLowerCase().includes('kode')) {
+            code = String(row[keys[0]] || '').trim();
+          }
+          if (!name && keys[1] && keys[1].toLowerCase().includes('nama')) {
+            name = String(row[keys[1]] || '').trim();
+          }
+
           const category = getVal(row, ['kategori', 'category']) || 'Perlengkapan';
           const rawUnitBeli = getVal(row, ['satuanbeli', 'unitbeli']);
           const rawUnitPakai = getVal(row, ['satuanpakai', 'unitpakai']);
@@ -291,9 +378,16 @@ export default function ImportMasterModal({
           };
 
         } else if (currentMasterType === 'MENU') {
-          const name = getVal(row, ['namamenu', 'nama', 'menu']);
-          const code = getVal(row, ['kodemenu', 'kode', 'code']);
+          let code = getVal(row, ['kodemenu', 'kode', 'code', 'sku']);
+          let name = getVal(row, ['namamenu', 'nama', 'itemname']);
           const barcode = getVal(row, ['barcode']);
+
+          if (!code && keys[0] && keys[0].toLowerCase().includes('kode')) {
+            code = String(row[keys[0]] || '').trim();
+          }
+          if (!name && (keys[1]?.toLowerCase().includes('nama') || keys[2]?.toLowerCase().includes('nama'))) {
+            name = String(row[keys.find(k => k.toLowerCase().includes('nama'))] || '').trim();
+          }
           const category = getVal(row, ['kategori', 'category']) || 'Umum';
           const typeRaw = getVal(row, ['tipeitem', 'tipe', 'type']).toUpperCase();
           const itemType = ['RECIPE', 'DIRECT', 'SERVICE', 'BUNDLE'].includes(typeRaw) ? typeRaw : 'RECIPE';
@@ -337,15 +431,74 @@ export default function ImportMasterModal({
           if (!name) errors.push('Nama outlet wajib diisi.');
 
           mappedData = { code, name, type, pic_name: picName, phone, address, is_main: isMain };
+        } else if (currentMasterType === 'SALDO_AWAL') {
+          let code = getVal(row, ['kodebahanitem', 'kodebahan', 'kodeitem', 'kode', 'code', 'sku']);
+          let name = getVal(row, ['namabahanitem', 'namabahan', 'namaitem', 'namabarang', 'nama', 'itemname']);
+
+          if (!code && keys[0] && keys[0].toLowerCase().includes('kode')) {
+            code = String(row[keys[0]] || '').trim();
+          }
+          if (!name && keys[1] && keys[1].toLowerCase().includes('nama')) {
+            name = String(row[keys[1]] || '').trim();
+          }
+
+          const outletName = getVal(row, ['namaoutletcabang', 'namaoutlet', 'outlet', 'cabang', 'namacabang', 'gudang']) || '';
+          const initialStock = parseFloat(getVal(row, ['saldoawalfisik', 'saldoawal', 'stokawal', 'stok', 'qty'])) || 0;
+          const rawUnit = getVal(row, ['satuan', 'unit']);
+          const uNorm = normalizeUnitClient(rawUnit, 'pcs');
+          const unitTypeRaw = getVal(row, ['tipesatuan', 'tipesatuanbeli', 'tipe', 'unittype']);
+          const unitType = (unitTypeRaw && unitTypeRaw.toUpperCase().includes('BELI')) ? 'BELI' : 'PAKAI';
+          const harga = parseFloat(getVal(row, ['hargamodalbeli', 'hargamodal', 'hargabeli', 'harga', 'price'])) || 0;
+          const minStock = parseFloat(getVal(row, ['stokminimalparlevel', 'stokminimal', 'minstok'])) || 0;
+          const date = getVal(row, ['tanggalcutoff', 'tanggal', 'date']) || '2026-09-01';
+          const notes = getVal(row, ['catatanketerangan', 'catatan', 'keterangan']);
+
+          if (!name) errors.push('Nama bahan/item wajib diisi.');
+          if (initialStock < 0) errors.push('Saldo awal tidak boleh bernilai negatif.');
+          if (harga < 0) errors.push('Harga modal tidak boleh bernilai negatif.');
+
+          mappedData = {
+            code,
+            name,
+            outlet_name: outletName,
+            initial_stock: initialStock,
+            unit: uNorm.symbol,
+            unit_type: unitType,
+            harga,
+            stok_min: minStock,
+            date,
+            notes,
+            _uBeli: uNorm,
+          };
         }
 
         return {
-          rowNumber: idx + 6,
+          rowNumber: idx + headerRowIndex + 2,
           original: row,
           data: mappedData,
           isValid: errors.length === 0,
           errors,
         };
+      }).filter(item => {
+        const d = item.data;
+        const name = (d.name || d.customer_name || '').trim();
+        const lower = name.toLowerCase();
+        if (
+          !name ||
+          name.startsWith('===') ||
+          lower.includes('template import') ||
+          lower.includes('petunjuk') ||
+          lower.includes('data bahan') ||
+          lower.includes('daftar perlengkapan') ||
+          lower.includes('daftar menu') ||
+          lower.includes('tagihan piutang') ||
+          lower.includes('daftar outlet') ||
+          lower.includes('saldo awal stok') ||
+          ['kode bahan', 'nama bahan', 'nama bahan*', 'kode perlengkapan', 'nama perlengkapan', 'kode menu', 'nama menu', 'nama pelanggan', 'kode bahan / item', 'nama bahan / item', 'nama bahan / item*'].includes(lower)
+        ) {
+          return false;
+        }
+        return true;
       });
 
       setParsedRows(parsed);
@@ -433,6 +586,7 @@ export default function ImportMasterModal({
           {[
             { key: 'INGREDIENT', label: 'Master Bahan' },
             { key: 'PERLENGKAPAN', label: 'Master Perlengkapan' },
+            { key: 'SALDO_AWAL', label: 'Saldo Awal (Kartu Stok)' },
             { key: 'MENU', label: 'Master Menu' },
             { key: 'RECEIVABLE', label: 'Kasbon / Piutang' },
             { key: 'OUTLET', label: 'Outlet & Gudang' },
@@ -621,7 +775,8 @@ export default function ImportMasterModal({
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                 <thead>
                   <tr style={{ background: 'rgba(0,0,0,0.3)', color: 'var(--text-secondary)' }}>
-                    <th style={{ padding: '8px 12px', width: '50px' }}>#</th>
+                    <th style={{ padding: '8px 12px', width: '45px' }}>#</th>
+                    <th style={{ padding: '8px 12px', width: '105px' }}>Kode</th>
                     <th style={{ padding: '8px 12px' }}>Nama Item</th>
                     <th style={{ padding: '8px 12px' }}>Detail Data</th>
                     <th style={{ padding: '8px 12px', textAlign: 'center' }}>Status Validasi</th>
@@ -631,6 +786,17 @@ export default function ImportMasterModal({
                   {displayedRows.map((row, idx) => (
                     <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: row.isValid ? undefined : 'rgba(239, 68, 68, 0.08)' }}>
                       <td style={{ padding: '8px 12px', color: 'var(--text-muted)' }}>{row.rowNumber}</td>
+                      <td style={{ padding: '8px 12px' }}>
+                        {row.data.code ? (
+                          <span className="mono" style={{ color: 'var(--accent-bright)', fontWeight: 700, fontSize: '11.5px' }}>
+                            {row.data.code}
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '11px' }}>
+                            (Auto)
+                          </span>
+                        )}
+                      </td>
                       <td style={{ padding: '8px 12px', fontWeight: 700, color: '#ffffff' }}>
                         {row.data.name || row.data.customer_name || '—'}
                       </td>
@@ -660,6 +826,23 @@ export default function ImportMasterModal({
                             )}
                             {(row.data._uBeli?.isNew || row.data._uPakai?.isNew) && (
                               <span style={{ background: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }} title="Satuan baru otomatis didaftarkan ke Master Satuan">
+                                ✨ Satuan Baru
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {currentMasterType === 'SALDO_AWAL' && (
+                          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+                            <span>
+                              Cabang: <strong>{row.data.outlet_name || '(Pusat / Sesuai User)'}</strong> · Saldo Awal: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit} ({row.data.unit_type})</strong> · Modal: {rupiah(row.data.harga)} · Cut-off: {row.data.date}
+                            </span>
+                            {row.data._uBeli?.isFixed && (
+                              <span style={{ background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }} title="Typo/singkatan otomatis diperbaiki ke format standar">
+                                ✓ Auto-Fix ({row.data._uBeli.original})
+                              </span>
+                            )}
+                            {row.data._uBeli?.isNew && (
+                              <span style={{ background: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>
                                 ✨ Satuan Baru
                               </span>
                             )}
