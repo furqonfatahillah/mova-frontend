@@ -1,3 +1,4 @@
+import { useSearchParams } from 'react-router-dom';
 import { Plus, Trash2, Filter, Store, TrendingUp, TrendingDown, Sparkles, Calculator, X, ShoppingBag, CheckCircle2, Clock } from 'lucide-react';
 import api from '../api/client';
 import { num, rupiah, fmtQtyVal, LoadingState, PageHeader, AuditInfo, PeriodPicker } from '../components/ui';
@@ -36,12 +37,14 @@ const MOVEMENT_TYPES = [
 
 const OUT_TYPES = ['SALE_USAGE', 'WASTE', 'ADJUSTMENT_OUT', 'TRANSFER_OUT', 'PREP_USAGE'];
 
-export default function StockMovement() {
+export default function StockMovement({ defaultFilterType }) {
+  const [searchParams] = useSearchParams();
+  const initialType = defaultFilterType || searchParams.get('type') || 'ALL';
   const [movements, setMovements] = useState([]);
   const [ingredients, setIngredients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterIng, setFilterIng] = useState('ALL');
-  const [filterType, setFilterType] = useState('ALL');
+  const [filterType, setFilterType] = useState(initialType);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const {
@@ -328,16 +331,21 @@ export default function StockMovement() {
   return (
     <div className="fade-in">
       <PageHeader
-        title="Stock Movement & Waste Log"
-        subtitle="Ledger seluruh mutasi stok bahan baku: pembelian, pemakaian penjualan (POS), pencatatan kerusakan/waste terpisah, transfer, dan adjustment."
+        title={filterType === 'PURCHASE' ? "Laporan Pembelian Bahan & Barang" : "Stock Movement & Waste Log"}
+        subtitle={filterType === 'PURCHASE' ? "Ledger & rekapitulasi riwayat pembelian stok bahan baku, update moving average, supplier, dan metode pembayaran." : "Ledger seluruh mutasi stok bahan baku: pembelian, pemakaian penjualan (POS), pencatatan kerusakan/waste terpisah, transfer, dan adjustment."}
         rightContent={
           <button
-            onClick={() => setIsModalOpen(true)}
+            onClick={() => {
+              if (filterType === 'PURCHASE') {
+                setForm(f => ({ ...f, type: 'PURCHASE' }));
+              }
+              setIsModalOpen(true);
+            }}
             className="btn btn-primary"
             style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}
           >
             <Plus size={16} />
-            Catat Pergerakan Manual
+            {filterType === 'PURCHASE' ? 'Catat Pembelian Baru' : 'Catat Pergerakan Manual'}
           </button>
         }
       />

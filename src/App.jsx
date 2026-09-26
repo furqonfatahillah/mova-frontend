@@ -142,6 +142,7 @@ export default function App() {
               <Route path="profitability"  element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><Profitability /></RoleRoute>} />
               <Route path="root-cause"     element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><RootCause /></RoleRoute>} />
               <Route path="laporan-penjualan" element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><SalesReport /></RoleRoute>} />
+              <Route path="laporan-pembelian" element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><StockMovement defaultFilterType="PURCHASE" /></RoleRoute>} />
             </Route>
           </Routes>
         </Suspense>

@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Package, UtensilsCrossed, ShoppingCart,
   ArrowUpDown, ClipboardList, BarChart2, TrendingUp, DollarSign,
   AlertTriangle, LogOut, ScrollText, Menu, X, Clock,
   Store, Send, Users, UserCheck, Building2, ChefHat, Trash2, Percent, Landmark, Wallet, Coins, Gift, Copy, Check, Receipt, Headset,
-  AlertOctagon, CreditCard, Boxes, FileSpreadsheet, BookOpen
+  AlertOctagon, CreditCard, Boxes, FileSpreadsheet, BookOpen, ChevronDown, ChevronRight, ShoppingBag
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
@@ -15,11 +15,20 @@ import DateRangePicker from './DateRangePicker';
 
 export default function Layout() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     return localStorage.getItem('pos_sidebar_collapsed') === 'true';
   });
   const [pendingCount, setPendingCount] = useState(0);
+  const [openDropdowns, setOpenDropdowns] = useState({});
+
+  const toggleDropdown = (id) => {
+    setOpenDropdowns(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
 
   const toggleSidebar = () => {
     if (window.innerWidth <= 768) {
@@ -119,15 +128,37 @@ export default function Layout() {
               { to: '/movement', label: 'Riwayat Mutasi', icon: ArrowUpDown },
               { to: '/opname', label: 'Stock Opname', icon: ClipboardList },
               { to: '/opex', label: 'Biaya Operasional (OPEX)', icon: Receipt },
-              { to: '/profit-loss', label: 'Laba Rugi (P&L)', icon: Landmark },
-              { to: '/cash-flow', label: 'Arus Kas (Cash Flow)', icon: Wallet },
-              {to: '/piutang', label: 'Buku Piutang / Kasbon Customer', icon: CreditCard },
-              { to: '/hutang', label: 'Buku Hutang Supplier', icon: BookOpen },
+              {
+                id: 'laporan-keuangan',
+                label: 'Laporan Keuangan',
+                icon: Landmark,
+                children: [
+                  { to: '/profit-loss', label: 'Laba Rugi (P&L)', icon: TrendingUp },
+                  { to: '/cash-flow', label: 'Arus Kas (Cash Flow)', icon: Wallet },
+                ],
+              },
+              {
+                id: 'laporan-penjualan-pembelian',
+                label: 'Laporan Penjualan & Pembelian',
+                icon: FileSpreadsheet,
+                children: [
+                  { to: '/laporan-penjualan', label: 'Laporan Penjualan (POS)', icon: ShoppingCart },
+                  { to: '/laporan-pembelian', label: 'Laporan Pembelian', icon: ShoppingBag },
+                ],
+              },
+              {
+                id: 'buku-besar-hutang-piutang',
+                label: 'Buku Besar Hutang & Piutang',
+                icon: BookOpen,
+                children: [
+                  { to: '/hutang', label: 'Buku Hutang Supplier', icon: BookOpen },
+                  { to: '/piutang', label: 'Buku Piutang / Kasbon Customer', icon: CreditCard },
+                ],
+              },
               { to: '/variance/bahan', label: 'Variance Bahan', icon: BarChart2 },
               { to: '/variance/menu', label: 'Variance Menu', icon: TrendingUp },
               { to: '/profitability', label: 'Profitability', icon: DollarSign },
               { to: '/root-cause', label: 'Root Cause', icon: AlertTriangle },
-              { to: '/laporan-penjualan', label: 'Laporan Penjualan (POS)', icon: FileSpreadsheet },
             ],
           },
           {
@@ -205,17 +236,39 @@ export default function Layout() {
           ],
         },
         {
-          label: 'Finansial & Analitik',
+          label: 'Laporan & Finansial',
           items: [
-            { to: '/profit-loss', label: 'Laba Rugi (P&L)', icon: Landmark },
-            { to: '/cash-flow', label: 'Arus Kas (Cash Flow)', icon: Wallet },
-            { to: '/piutang', label: 'Buku Piutang / Kasbon Customer', icon: CreditCard },
-            { to: '/hutang', label: 'Buku Hutang Supplier', icon: BookOpen },
+            {
+              id: 'laporan-keuangan',
+              label: 'Laporan Keuangan',
+              icon: Landmark,
+              children: [
+                { to: '/profit-loss', label: 'Laba Rugi (P&L)', icon: TrendingUp },
+                { to: '/cash-flow', label: 'Arus Kas (Cash Flow)', icon: Wallet },
+              ],
+            },
+            {
+              id: 'laporan-penjualan-pembelian',
+              label: 'Laporan Penjualan & Pembelian',
+              icon: FileSpreadsheet,
+              children: [
+                { to: '/laporan-penjualan', label: 'Laporan Penjualan (POS)', icon: ShoppingCart },
+                { to: '/laporan-pembelian', label: 'Laporan Pembelian', icon: ShoppingBag },
+              ],
+            },
+            {
+              id: 'buku-besar-hutang-piutang',
+              label: 'Buku Besar Hutang & Piutang',
+              icon: BookOpen,
+              children: [
+                { to: '/hutang', label: 'Buku Hutang Supplier', icon: BookOpen },
+                { to: '/piutang', label: 'Buku Piutang / Kasbon Customer', icon: CreditCard },
+              ],
+            },
             { to: '/variance/bahan', label: 'Analisis Varian Bahan', icon: BarChart2 },
             { to: '/variance/menu', label: 'Analisis Varian Menu', icon: TrendingUp },
             { to: '/profitability', label: 'Profitability (Menu Eng.)', icon: DollarSign },
             { to: '/root-cause', label: 'Root Cause Analysis', icon: AlertTriangle },
-            { to: '/laporan-penjualan', label: 'Laporan Penjualan (POS)', icon: FileSpreadsheet },
           ],
         },
         {
@@ -258,8 +311,15 @@ export default function Layout() {
             { to: '/batch-prep', label: 'Batch Prep Dapur', icon: ChefHat },
             { to: '/waste', label: 'Waste Log', icon: Trash2 },
             { to: '/opex', label: 'Biaya Operasional Cabang', icon: Receipt },
-            { to: '/piutang', label: 'Buku Piutang / Kasbon Customer', icon: CreditCard },
-            { to: '/hutang', label: 'Buku Hutang Supplier', icon: BookOpen },
+            {
+              id: 'buku-besar-hutang-piutang',
+              label: 'Buku Besar Hutang & Piutang',
+              icon: BookOpen,
+              children: [
+                { to: '/hutang', label: 'Buku Hutang Supplier', icon: BookOpen },
+                { to: '/piutang', label: 'Buku Piutang / Kasbon Customer', icon: CreditCard },
+              ],
+            },
           ],
         },
         {
@@ -275,9 +335,17 @@ export default function Layout() {
         {
           label: 'Analitik Cabang',
           items: [
+            {
+              id: 'laporan-penjualan-pembelian',
+              label: 'Laporan Penjualan & Pembelian',
+              icon: FileSpreadsheet,
+              children: [
+                { to: '/laporan-penjualan', label: 'Laporan Penjualan (POS)', icon: ShoppingCart },
+                { to: '/laporan-pembelian', label: 'Laporan Pembelian', icon: ShoppingBag },
+              ],
+            },
             { to: '/variance/bahan', label: 'Analisis Varian Bahan', icon: BarChart2 },
             { to: '/variance/menu', label: 'Analisis Varian Menu', icon: TrendingUp },
-            { to: '/laporan-penjualan', label: 'Laporan Penjualan (POS)', icon: FileSpreadsheet },
           ],
         },
         {
@@ -424,39 +492,95 @@ export default function Layout() {
           {navSections.map((section) => (
             <div key={section.label}>
               <div className="sidebar-section-label">{section.label}</div>
-              {section.items.map(({ to, href, label, icon: Icon, isUserMgmt, isExternal }) => (
-                isExternal ? (
-                  <a
-                    key={href}
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={() => setSidebarOpen(false)}
-                    className="nav-item"
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#25D366' }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <Icon size={16} className="nav-icon" style={{ color: '#25D366' }} />
-                      <span style={{ fontWeight: 700 }}>{label}</span>
+              {section.items.map((item) => {
+                if (item.isExternal) {
+                  const Icon = item.icon;
+                  return (
+                    <a
+                      key={item.href}
+                      href={item.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setSidebarOpen(false)}
+                      className="nav-item"
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#25D366' }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <Icon size={16} className="nav-icon" style={{ color: '#25D366' }} />
+                        <span style={{ fontWeight: 700 }}>{item.label}</span>
+                      </div>
+                      <span style={{ fontSize: 10, background: 'rgba(37, 211, 102, 0.15)', color: '#25D366', padding: '1px 7px', borderRadius: 6, fontWeight: 800 }}>
+                        WA ↗
+                      </span>
+                    </a>
+                  );
+                }
+
+                // Collapsible Dropdown Menu (Laporan Keuangan, Laporan Penjualan & Pembelian, Buku Besar)
+                if (item.children && item.children.length > 0) {
+                  const Icon = item.icon;
+                  const isChildActive = item.children.some(c => location.pathname === c.to || location.pathname.startsWith(c.to + '/'));
+                  const isOpen = openDropdowns[item.id] !== undefined ? openDropdowns[item.id] : isChildActive;
+
+                  return (
+                    <div key={item.id || item.label} className="nav-dropdown-group" style={{ marginBottom: 2 }}>
+                      <button
+                        type="button"
+                        className={`nav-dropdown-btn ${isChildActive ? 'has-active-child' : ''}`}
+                        onClick={() => toggleDropdown(item.id)}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <Icon size={16} className="nav-icon" style={{ color: isChildActive ? 'var(--accent-bright)' : undefined }} />
+                          <span style={{ fontWeight: isChildActive ? 700 : 500 }}>{item.label}</span>
+                        </div>
+                        <ChevronDown
+                          size={14}
+                          style={{
+                            transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)',
+                            transition: 'transform 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+                            opacity: 0.75,
+                            color: isChildActive ? 'var(--accent-bright)' : undefined
+                          }}
+                        />
+                      </button>
+
+                      {isOpen && (
+                        <div className="nav-submenu-list">
+                          {item.children.map(child => {
+                            const ChildIcon = child.icon;
+                            return (
+                              <NavLink
+                                key={child.to}
+                                to={child.to}
+                                onClick={() => setSidebarOpen(false)}
+                                className={({ isActive }) => `nav-sub-item ${isActive ? 'active' : ''}`}
+                              >
+                                {ChildIcon && <ChildIcon size={14} style={{ opacity: 0.85 }} />}
+                                <span>{child.label}</span>
+                              </NavLink>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
-                    <span style={{ fontSize: 10, background: 'rgba(37, 211, 102, 0.15)', color: '#25D366', padding: '1px 7px', borderRadius: 6, fontWeight: 800 }}>
-                      WA ↗
-                    </span>
-                  </a>
-                ) : (
+                  );
+                }
+
+                const Icon = item.icon;
+                return (
                   <NavLink
-                    key={to}
-                    to={to}
-                    end={to === '/'}
+                    key={item.to}
+                    to={item.to}
+                    end={item.to === '/'}
                     onClick={() => setSidebarOpen(false)}
                     className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <Icon size={16} className="nav-icon" />
-                      <span>{label}</span>
+                      <span>{item.label}</span>
                     </div>
-                    {isUserMgmt && pendingCount > 0 && (
+                    {item.isUserMgmt && pendingCount > 0 && (
                       <span
                         style={{
                           background: '#f59e0b',
@@ -474,8 +598,8 @@ export default function Layout() {
                       </span>
                     )}
                   </NavLink>
-                )
-              ))}
+                );
+              })}
             </div>
           ))}
         </nav>
