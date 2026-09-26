@@ -378,45 +378,58 @@ export async function exportReceivablesToExcel({ items = [], stats = {}, outletN
   const dateStr = new Date().toLocaleString('id-ID');
 
   const rows = [
-    ['BUKU KASBON CUSTOMER (HUTANG PELANGGAN)'],
-    ['MOVA POS — Customer Credit Ledger & Bulk Payment Management'],
+    ['BUKU PIUTANG USAHA (AR CUSTOMER & AR MERCHANT)'],
+    ['MOVA POS — Customer Credit Ledger & Merchant Settlement (QRIS & E-Commerce)'],
     [],
     ['Bisnis / Brand', businessName, '', 'Waktu Ekspor', dateStr],
     ['Cabang / Outlet', outletName, '', 'Dicetak Oleh', userName],
-    ['Total Tagihan Kasbon', stats.total_receivables || 0, '', 'Sisa Kasbon Berjalan', stats.total_remaining || 0],
-    ['Total Telah Dilunasi', stats.total_paid || 0, '', 'Kasbon Jatuh Tempo (Overdue)', stats.total_overdue || 0],
+    ['Total Tagihan Piutang', stats.total_receivables || 0, '', 'Sisa Piutang Berjalan', stats.total_remaining || 0],
+    ['Total Telah Dilunasi/Cair', stats.total_paid || 0, '', 'Piutang Overdue', stats.total_overdue || 0],
+    ['AR Merchant QRIS (Unsettled)', stats.ar_qris_unsettled || 0, '', 'AR E-Commerce (Unsettled)', stats.ar_ecommerce_unsettled || 0],
     [],
     [
       'No',
-      'No Invoice Kasbon',
+      'No Invoice / Ref',
+      'Kategori Piutang',
+      'Debitur / Merchant Channel',
       'Tanggal Terbit',
       'Jatuh Tempo',
-      'Nama Pelanggan',
-      'No. Telepon / WA',
       'Cabang Outlet',
-      'Total Kasbon (Rp)',
-      'Sudah Dibayar (Rp)',
-      'Sisa Kasbon (Rp)',
-      'Progress (%)',
-      'Status Pelunasan',
+      'Gross Amount (Rp)',
+      'Potongan MDR/Fee (Rp)',
+      'Net Amount (Rp)',
+      'Sudah Dibayar / Cair (Rp)',
+      'Sisa Piutang (Rp)',
+      'Status Settlement',
+      'Rekening Bank Settlement',
       'Keterangan / Rincian',
     ],
   ];
 
   items.forEach((r, idx) => {
+    let arTypeLabel = 'Kasbon Pelanggan';
+    if (r.ar_type === 'MERCHANT_QRIS') arTypeLabel = 'AR Merchant QRIS';
+    else if (r.ar_type === 'MERCHANT_ECOMMERCE') arTypeLabel = `AR E-Commerce (${r.merchant_channel || 'Online'})`;
+
+    const channelOrName = r.ar_type && r.ar_type !== 'CUSTOMER'
+      ? `${r.merchant_channel || 'MERCHANT'} - ${r.customer_name || ''}`
+      : (r.customer_name || '-');
+
     rows.push([
       idx + 1,
-      r.receivable_no || '-',
+      r.receivable_no || r.order_number || '-',
+      arTypeLabel,
+      channelOrName,
       r.issue_date || '-',
       r.due_date || '-',
-      r.customer_name || '-',
-      r.customer_phone || '-',
-      r.outlet_name || '-',
-      r.total_amount || 0,
-      r.paid_amount || 0,
-      r.remaining_amount || 0,
-      r.progress_pct ?? (r.total_amount > 0 ? Math.round((r.paid_amount / r.total_amount) * 100) : 0),
-      r.status_label || r.status || '-',
+      r.outlet?.name || r.outlet_name || '-',
+      Number(r.total_amount) || 0,
+      Number(r.mdr_fee) || 0,
+      Number(r.net_amount || r.total_amount) || 0,
+      Number(r.paid_amount) || 0,
+      Number(r.remaining_amount) || 0,
+      r.settlement_status ? `${r.settlement_status} (${r.status || '-'})` : (r.status_label || r.status || '-'),
+      r.settlement_bank || '-',
       r.notes || '-',
     ]);
   });
@@ -425,7 +438,7 @@ export async function exportReceivablesToExcel({ items = [], stats = {}, outletN
   ws['!cols'] = fitColumns(rows);
   XLSX.utils.book_append_sheet(wb, ws, 'Buku Piutang');
 
-  const filename = `Buku_Piutang_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  const filename = `Buku_Piutang_Usaha_${new Date().toISOString().slice(0, 10)}.xlsx`;
   XLSX.writeFile(wb, filename);
   return filename;
 }
@@ -975,33 +988,45 @@ export async function exportCustomerReceivablesToExcel({ items = [], summary = {
 
   const rows = [
     [businessName],
-    ['LAPORAN PIUTANG CUSTOMER'],
+    ['LAPORAN BUKU PIUTANG USAHA (AR CUSTOMER & AR MERCHANT)'],
     [`Per ${periodStr}`],
     [],
     [
       'No.',
-      'Customer',
+      'Kategori AR',
+      'Debitur / Merchant Channel',
       'Tanggal',
       'Jam',
-      'No.Penjualan',
-      'Piutang',
-      'Dibayar',
-      'Sisa Piutang',
+      'No.Penjualan / Order',
+      'Gross Piutang (Rp)',
+      'Potongan MDR/Komisi (Rp)',
+      'Net Piutang (Rp)',
+      'Dibayar / Dicairkan (Rp)',
+      'Sisa Piutang (Rp)',
+      'Status Settlement',
       'Usia Piutang',
       'Jatuh Tempo',
     ],
   ];
 
   items.forEach((item, idx) => {
+    let arTypeLabel = 'Kasbon Pelanggan';
+    if (item.ar_type === 'MERCHANT_QRIS') arTypeLabel = 'AR Merchant QRIS';
+    else if (item.ar_type === 'MERCHANT_ECOMMERCE') arTypeLabel = `AR E-Commerce (${item.merchant_channel || 'Online'})`;
+
     rows.push([
       idx + 1,
-      item.customer || '-',
+      arTypeLabel,
+      item.customer || item.merchant_channel || '-',
       item.tanggal || '-',
       item.jam || '-',
       item.no_penjualan || '-',
       Number(item.piutang) || 0,
+      Number(item.mdr_fee) || 0,
+      Number(item.net_amount || item.piutang) || 0,
       Number(item.dibayar) || 0,
       Number(item.sisa_piutang) || 0,
+      item.settlement_status || (item.sisa_piutang <= 0 ? 'LUNAS' : 'BELUM LUNAS'),
       item.usia_piutang || '0 Hari',
       item.jatuh_tempo || '-',
     ]);
@@ -1015,17 +1040,21 @@ export async function exportCustomerReceivablesToExcel({ items = [], summary = {
     '',
     '',
     '',
-    '',
+    Number(summary.total_gross_piutang || summary.total_piutang) || 0,
+    Number(summary.total_mdr_fee) || 0,
+    Number(summary.total_net_piutang) || 0,
+    Number(summary.total_dibayar) || 0,
     Number(summary.total_sisa_piutang) || 0,
+    '',
     '',
     '',
   ]);
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws['!cols'] = fitColumns(rows);
-  XLSX.utils.book_append_sheet(wb, ws, 'Piutang Customer');
+  XLSX.utils.book_append_sheet(wb, ws, 'Buku Piutang');
 
-  const filename = `Laporan_Piutang_Customer_${period.from}_sd_${period.to}.xlsx`;
+  const filename = `Laporan_Buku_Piutang_${period.from}_sd_${period.to}.xlsx`;
   XLSX.writeFile(wb, filename);
   return filename;
 }

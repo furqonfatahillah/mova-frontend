@@ -80,10 +80,10 @@ const TABS = [
   },
   {
     id: 'customer-receivables',
-    label: 'Piutang Customer',
+    label: 'Buku Piutang (AR)',
     icon: BadgeAlert,
-    title: 'LAPORAN PIUTANG CUSTOMER',
-    desc: 'Daftar rincian piutang kasbon pelanggan, tanggal, no penjualan, pembayaran cicilan, dan usia piutang.',
+    title: 'LAPORAN BUKU PIUTANG (AR CUSTOMER & AR MERCHANT)',
+    desc: 'Daftar rincian piutang kasbon pelanggan, piutang non-tunai merchant (QRIS & E-Commerce/Delivery), komisi MDR, dan status pencairan (settlement).',
   },
   {
     id: 'promos',
@@ -115,6 +115,7 @@ export default function SalesReport() {
   const [activeTab, setActiveTab] = useState('by-product');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
+  const [arTypeFilter, setArTypeFilter] = useState('ALL'); // 'ALL' | 'CUSTOMER' | 'MERCHANT_QRIS' | 'MERCHANT_ECOMMERCE'
   const [reportData, setReportData] = useState({
     items: [],
     summary: {},
@@ -150,7 +151,7 @@ export default function SalesReport() {
 
   useEffect(() => {
     fetchReport();
-  }, [activeTab, period?.from, period?.to, activeOutletId, compareEnabled, compareMode, customCompareFrom, customCompareTo]);
+  }, [activeTab, period?.from, period?.to, activeOutletId, compareEnabled, compareMode, customCompareFrom, customCompareTo, arTypeFilter]);
 
   async function fetchReport() {
     setLoading(true);
@@ -172,6 +173,10 @@ export default function SalesReport() {
         outlet_id: targetOutlet,
         search: search.trim() || undefined,
       };
+
+      if (activeTab === 'customer-receivables' && arTypeFilter !== 'ALL') {
+        params.ar_type = arTypeFilter;
+      }
 
       if (compareEnabled) {
         params.compare = 1;
@@ -290,8 +295,15 @@ export default function SalesReport() {
     if (activeTab === 'customer-receivables') {
       return {
         total_piutang: items.reduce((s, i) => s + (Number(i.piutang) || 0), 0),
+        total_gross_piutang: items.reduce((s, i) => s + (Number(i.piutang) || 0), 0),
+        total_mdr_fee: items.reduce((s, i) => s + (Number(i.mdr_fee) || 0), 0),
+        total_net_piutang: items.reduce((s, i) => s + (Number(i.net_amount || i.piutang) || 0), 0),
         total_dibayar: items.reduce((s, i) => s + (Number(i.dibayar) || 0), 0),
         total_sisa_piutang: items.reduce((s, i) => s + (Number(i.sisa_piutang) || 0), 0),
+        total_customer_piutang: items.filter(i => (i.ar_type || 'CUSTOMER') === 'CUSTOMER').reduce((s, i) => s + (Number(i.sisa_piutang) || 0), 0),
+        total_merchant_qris: items.filter(i => i.ar_type === 'MERCHANT_QRIS').reduce((s, i) => s + (Number(i.sisa_piutang) || 0), 0),
+        total_merchant_ecommerce: items.filter(i => i.ar_type === 'MERCHANT_ECOMMERCE').reduce((s, i) => s + (Number(i.sisa_piutang) || 0), 0),
+        total_unsettled_merchant: items.filter(i => i.ar_type !== 'CUSTOMER' && i.settlement_status !== 'SETTLED').reduce((s, i) => s + (Number(i.sisa_piutang) || 0), 0),
       };
     }
     if (activeTab === 'promos') {
@@ -972,21 +984,27 @@ export default function SalesReport() {
         {activeTab === 'customer-receivables' && (
           <>
             <div className="card" style={{ padding: '12px 16px' }}>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Nilai Piutang</div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: '#38bdf8', marginTop: 4 }}>
-                {rupiah(activeSummary?.total_piutang || 0)}
-              </div>
-            </div>
-            <div className="card" style={{ padding: '12px 16px' }}>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Cicilan Dibayar</div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: '#34d399', marginTop: 4 }}>
-                {rupiah(activeSummary?.total_dibayar || 0)}
-              </div>
-            </div>
-            <div className="card" style={{ padding: '12px 16px' }}>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Sisa Piutang (Outstanding)</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Sisa Piutang Usaha</div>
               <div style={{ fontSize: 20, fontWeight: 800, color: '#f43f5e', marginTop: 4 }}>
                 {rupiah(activeSummary?.total_sisa_piutang || 0)}
+              </div>
+            </div>
+            <div className="card" style={{ padding: '12px 16px' }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Piutang Customer (Kasbon)</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: '#38bdf8', marginTop: 4 }}>
+                {rupiah(activeSummary?.total_customer_piutang ?? 0)}
+              </div>
+            </div>
+            <div className="card" style={{ padding: '12px 16px' }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>AR Merchant QRIS (Belum Cair)</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: '#fbbf24', marginTop: 4 }}>
+                {rupiah(activeSummary?.total_merchant_qris || 0)}
+              </div>
+            </div>
+            <div className="card" style={{ padding: '12px 16px' }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>AR E-Commerce (Belum Cair)</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: '#a78bfa', marginTop: 4 }}>
+                {rupiah(activeSummary?.total_merchant_ecommerce || 0)}
               </div>
             </div>
           </>
@@ -1537,55 +1555,141 @@ export default function SalesReport() {
               </table>
             )}
 
-            {/* 7. TAB: PIUTANG CUSTOMER */}
+            {/* 7. TAB: BUKU PIUTANG (AR CUSTOMER & AR MERCHANT) */}
             {activeTab === 'customer-receivables' && (
-              <table style={{ fontSize: 12.5 }}>
-                <thead>
-                  <tr>
-                    <th style={{ width: 45 }}>No.</th>
-                    <th>Customer</th>
-                    <th>Tanggal</th>
-                    <th>Jam</th>
-                    <th>No.Penjualan</th>
-                    <th className="right">Piutang</th>
-                    <th className="right">Dibayar</th>
-                    <th className="right">Sisa Piutang</th>
-                    <th>Usia Piutang</th>
-                    <th>Jatuh Tempo</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredItems.length === 0 ? (
+              <>
+                <div style={{ display: 'flex', gap: 8, padding: '12px 16px', borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,0.02)', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginRight: 6 }}>Filter Kategori Piutang:</span>
+                  {[
+                    { id: 'ALL', label: 'Semua Piutang' },
+                    { id: 'CUSTOMER', label: 'Kasbon Customer (Pelanggan)' },
+                    { id: 'MERCHANT_QRIS', label: 'AR Merchant QRIS' },
+                    { id: 'MERCHANT_ECOMMERCE', label: 'AR E-Commerce (Delivery)' },
+                  ].map(btn => (
+                    <button
+                      key={btn.id}
+                      type="button"
+                      onClick={() => setArTypeFilter(btn.id)}
+                      style={{
+                        padding: '5px 12px',
+                        borderRadius: 6,
+                        border: 'none',
+                        fontSize: 12,
+                        fontWeight: arTypeFilter === btn.id ? 700 : 500,
+                        cursor: 'pointer',
+                        background: arTypeFilter === btn.id ? 'var(--primary)' : 'rgba(255,255,255,0.06)',
+                        color: arTypeFilter === btn.id ? '#ffffff' : 'var(--text-secondary)',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      {btn.label}
+                    </button>
+                  ))}
+                </div>
+
+                <table style={{ fontSize: 12.5 }}>
+                  <thead>
                     <tr>
-                      <td colSpan={10} className="text-center" style={{ padding: 32, color: 'var(--text-muted)' }}>
-                        Tidak ada riwayat piutang kasbon customer dalam periode ini.
-                      </td>
+                      <th style={{ width: 40 }}>No.</th>
+                      <th>Kategori AR</th>
+                      <th>Debitur / Merchant</th>
+                      <th>Tanggal & Jam</th>
+                      <th>No.Penjualan / Order</th>
+                      <th className="right">Gross Piutang</th>
+                      <th className="right">MDR / Komisi</th>
+                      <th className="right">Net Piutang</th>
+                      <th className="right">Dibayar / Cair</th>
+                      <th className="right">Sisa Piutang</th>
+                      <th style={{ textAlign: 'center' }}>Status Settlement</th>
+                      <th>Jatuh Tempo</th>
                     </tr>
-                  ) : (
-                    filteredItems.map((item, idx) => (
-                      <tr key={idx}>
-                        <td style={{ color: 'var(--text-muted)', textAlign: 'center' }}>{idx + 1}</td>
-                        <td style={{ fontWeight: 700 }}>{item.customer}</td>
-                        <td>{item.tanggal}</td>
-                        <td>{item.jam}</td>
-                        <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{item.no_penjualan}</td>
-                        <td className="right">{rupiah(item.piutang)}</td>
-                        <td className="right" style={{ color: '#34d399' }}>{rupiah(item.dibayar)}</td>
-                        <td className="right" style={{ fontWeight: 700, color: '#f43f5e' }}>{rupiah(item.sisa_piutang)}</td>
-                        <td>{item.usia_piutang}</td>
-                        <td>{item.jatuh_tempo}</td>
+                  </thead>
+                  <tbody>
+                    {filteredItems.length === 0 ? (
+                      <tr>
+                        <td colSpan={12} className="text-center" style={{ padding: 32, color: 'var(--text-muted)' }}>
+                          Tidak ada catatan piutang usaha ({arTypeFilter === 'ALL' ? 'Customer & Merchant' : arTypeFilter}) dalam periode ini.
+                        </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-                <tfoot>
-                  <tr style={{ fontWeight: 800, background: 'rgba(255, 255, 255, 0.04)', borderTop: '2px solid var(--border)' }}>
-                    <td colSpan={7}>Total Piutang</td>
-                    <td className="right" style={{ color: '#f43f5e' }}>{rupiah(activeSummary?.total_sisa_piutang || 0)}</td>
-                    <td colSpan={2}></td>
-                  </tr>
-                </tfoot>
-              </table>
+                    ) : (
+                      filteredItems.map((item, idx) => {
+                        const isQris = item.ar_type === 'MERCHANT_QRIS';
+                        const isEcom = item.ar_type === 'MERCHANT_ECOMMERCE';
+
+                        return (
+                          <tr key={idx}>
+                            <td style={{ color: 'var(--text-muted)', textAlign: 'center' }}>{idx + 1}</td>
+                            <td>
+                              <span
+                                className="badge"
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  background: isQris
+                                    ? 'rgba(245, 158, 11, 0.15)'
+                                    : isEcom
+                                    ? 'rgba(168, 85, 247, 0.15)'
+                                    : 'rgba(56, 189, 248, 0.15)',
+                                  color: isQris ? '#fbbf24' : isEcom ? '#c084fc' : '#38bdf8',
+                                }}
+                              >
+                                {isQris ? 'AR QRIS' : isEcom ? `AR ${item.merchant_channel || 'E-COM'}` : 'CUSTOMER'}
+                              </span>
+                            </td>
+                            <td style={{ fontWeight: 700 }}>
+                              {item.customer || item.merchant_channel || '-'}
+                            </td>
+                            <td style={{ fontSize: 11.5 }}>
+                              {item.tanggal} {item.jam && <span style={{ color: 'var(--text-muted)' }}>{item.jam}</span>}
+                            </td>
+                            <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{item.no_penjualan}</td>
+                            <td className="right">{rupiah(item.piutang)}</td>
+                            <td className="right" style={{ color: item.mdr_fee > 0 ? '#fbbf24' : 'inherit', fontSize: 11.5 }}>
+                              {item.mdr_fee > 0 ? rupiah(item.mdr_fee) : '-'}
+                            </td>
+                            <td className="right" style={{ fontWeight: 600 }}>
+                              {rupiah(item.net_amount || item.piutang)}
+                            </td>
+                            <td className="right" style={{ color: '#34d399' }}>{rupiah(item.dibayar)}</td>
+                            <td className="right" style={{ fontWeight: 700, color: item.sisa_piutang > 0 ? '#f43f5e' : 'inherit' }}>
+                              {rupiah(item.sisa_piutang)}
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <span
+                                className="badge"
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  background: (item.settlement_status === 'SETTLED' || item.sisa_piutang <= 0)
+                                    ? 'rgba(16, 185, 129, 0.15)'
+                                    : 'rgba(239, 68, 68, 0.15)',
+                                  color: (item.settlement_status === 'SETTLED' || item.sisa_piutang <= 0)
+                                    ? '#34d399'
+                                    : '#f87171',
+                                }}
+                              >
+                                {item.settlement_status || (item.sisa_piutang <= 0 ? 'LUNAS' : 'BELUM LUNAS')}
+                              </span>
+                            </td>
+                            <td style={{ fontSize: 11.5 }}>{item.jatuh_tempo || '-'}</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ fontWeight: 800, background: 'rgba(255, 255, 255, 0.04)', borderTop: '2px solid var(--border)' }}>
+                      <td colSpan={5}>Total Piutang</td>
+                      <td className="right">{rupiah(activeSummary?.total_gross_piutang || activeSummary?.total_piutang || 0)}</td>
+                      <td className="right" style={{ color: '#fbbf24' }}>{rupiah(activeSummary?.total_mdr_fee || 0)}</td>
+                      <td className="right">{rupiah(activeSummary?.total_net_piutang || 0)}</td>
+                      <td className="right" style={{ color: '#34d399' }}>{rupiah(activeSummary?.total_dibayar || 0)}</td>
+                      <td className="right" style={{ color: '#f43f5e' }}>{rupiah(activeSummary?.total_sisa_piutang || 0)}</td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </>
             )}
 
             {/* 8. TAB: LAPORAN PROMO */}
@@ -2061,7 +2165,7 @@ export default function SalesReport() {
         </div>
       </div>
 
-      {/* 7. PRINTABLE: PIUTANG CUSTOMER */}
+      {/* 7. PRINTABLE: BUKU PIUTANG (AR CUSTOMER & AR MERCHANT) */}
       <div id="printable-report-customer-receivables" style={{ display: 'none' }}>
         <div style={{ padding: 15, fontFamily: "'Plus Jakarta Sans', Arial, sans-serif", color: '#000000' }}>
           <div style={{ borderBottom: '2px solid #000000', paddingBottom: 10, marginBottom: 14 }}>
@@ -2069,49 +2173,65 @@ export default function SalesReport() {
               {reportData.business_name}
             </h2>
             <div style={{ fontSize: 14, fontWeight: 'bold', marginTop: 2 }}>
-              LAPORAN PIUTANG CUSTOMER
+              LAPORAN BUKU PIUTANG USAHA (AR CUSTOMER & AR MERCHANT)
             </div>
             <div style={{ fontSize: 11, marginTop: 4 }}>
               {periodText} | Cabang: {reportData.outlet_name} | Dicetak: {new Date().toLocaleString('id-ID')}
             </div>
           </div>
 
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10, margin: '8px 0' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 9.5, margin: '8px 0' }}>
             <thead>
               <tr style={{ background: '#f4f4f4', borderBottom: '1px solid #000' }}>
-                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'center' }}>No.</th>
-                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>Customer</th>
-                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>Tanggal</th>
-                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>Jam</th>
-                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>No.Penjualan</th>
-                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'right' }}>Piutang</th>
-                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'right' }}>Dibayar</th>
-                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'right' }}>Sisa Piutang</th>
-                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>Usia Piutang</th>
-                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>Jatuh Tempo</th>
+                <th style={{ border: '1px solid #000', padding: '5px 4px', textAlign: 'center' }}>No.</th>
+                <th style={{ border: '1px solid #000', padding: '5px 4px', textAlign: 'left' }}>Kategori AR</th>
+                <th style={{ border: '1px solid #000', padding: '5px 4px', textAlign: 'left' }}>Debitur / Merchant</th>
+                <th style={{ border: '1px solid #000', padding: '5px 4px', textAlign: 'left' }}>Tanggal & Jam</th>
+                <th style={{ border: '1px solid #000', padding: '5px 4px', textAlign: 'left' }}>No. Order / Ref</th>
+                <th style={{ border: '1px solid #000', padding: '5px 4px', textAlign: 'right' }}>Gross Piutang</th>
+                <th style={{ border: '1px solid #000', padding: '5px 4px', textAlign: 'right' }}>MDR/Komisi</th>
+                <th style={{ border: '1px solid #000', padding: '5px 4px', textAlign: 'right' }}>Net Piutang</th>
+                <th style={{ border: '1px solid #000', padding: '5px 4px', textAlign: 'right' }}>Dibayar / Cair</th>
+                <th style={{ border: '1px solid #000', padding: '5px 4px', textAlign: 'right' }}>Sisa Piutang</th>
+                <th style={{ border: '1px solid #000', padding: '5px 4px', textAlign: 'center' }}>Status Settlement</th>
+                <th style={{ border: '1px solid #000', padding: '5px 4px', textAlign: 'left' }}>Jatuh Tempo</th>
               </tr>
             </thead>
             <tbody>
-              {filteredItems.map((it, idx) => (
-                <tr key={idx} style={{ borderBottom: '1px solid #ddd' }}>
-                  <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'center' }}>{idx + 1}</td>
-                  <td style={{ border: '1px solid #000', padding: '4px 6px', fontWeight: 'bold' }}>{it.customer}</td>
-                  <td style={{ border: '1px solid #000', padding: '4px 6px' }}>{it.tanggal}</td>
-                  <td style={{ border: '1px solid #000', padding: '4px 6px' }}>{it.jam}</td>
-                  <td style={{ border: '1px solid #000', padding: '4px 6px' }}>{it.no_penjualan}</td>
-                  <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right' }}>{Number(it.piutang).toLocaleString('id-ID')}</td>
-                  <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right' }}>{Number(it.dibayar).toLocaleString('id-ID')}</td>
-                  <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right', fontWeight: 'bold' }}>{Number(it.sisa_piutang).toLocaleString('id-ID')}</td>
-                  <td style={{ border: '1px solid #000', padding: '4px 6px' }}>{it.usia_piutang}</td>
-                  <td style={{ border: '1px solid #000', padding: '4px 6px' }}>{it.jatuh_tempo}</td>
-                </tr>
-              ))}
+              {filteredItems.map((it, idx) => {
+                const arLabel = it.ar_type === 'MERCHANT_QRIS'
+                  ? 'AR QRIS'
+                  : it.ar_type === 'MERCHANT_ECOMMERCE'
+                  ? `AR ${it.merchant_channel || 'E-COM'}`
+                  : 'CUSTOMER';
+
+                return (
+                  <tr key={idx} style={{ borderBottom: '1px solid #ddd' }}>
+                    <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'center' }}>{idx + 1}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px', fontWeight: 'bold' }}>{arLabel}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px', fontWeight: 'bold' }}>{it.customer || it.merchant_channel || '-'}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px' }}>{it.tanggal} {it.jam || ''}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px' }}>{it.no_penjualan}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'right' }}>{Number(it.piutang).toLocaleString('id-ID')}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'right' }}>{Number(it.mdr_fee || 0).toLocaleString('id-ID')}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'right', fontWeight: 'bold' }}>{Number(it.net_amount || it.piutang).toLocaleString('id-ID')}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'right' }}>{Number(it.dibayar).toLocaleString('id-ID')}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'right', fontWeight: 'bold' }}>{Number(it.sisa_piutang).toLocaleString('id-ID')}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'center' }}>{it.settlement_status || (it.sisa_piutang <= 0 ? 'SETTLED' : 'UNSETTLED')}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px' }}>{it.jatuh_tempo || '-'}</td>
+                  </tr>
+                );
+              })}
             </tbody>
             <tfoot>
               <tr style={{ fontWeight: 900, background: '#f4f4f4', borderTop: '2px solid #000' }}>
-                <td colSpan={7} style={{ border: '1px solid #000', padding: '6px 8px' }}>Total Piutang</td>
-                <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'right' }}>{Number(activeSummary?.total_sisa_piutang || 0).toLocaleString('id-ID')}</td>
-                <td colSpan={2} style={{ border: '1px solid #000', padding: '6px 8px' }}></td>
+                <td colSpan={5} style={{ border: '1px solid #000', padding: '6px 4px' }}>Total Piutang</td>
+                <td style={{ border: '1px solid #000', padding: '6px 4px', textAlign: 'right' }}>{Number(activeSummary?.total_gross_piutang || activeSummary?.total_piutang || 0).toLocaleString('id-ID')}</td>
+                <td style={{ border: '1px solid #000', padding: '6px 4px', textAlign: 'right' }}>{Number(activeSummary?.total_mdr_fee || 0).toLocaleString('id-ID')}</td>
+                <td style={{ border: '1px solid #000', padding: '6px 4px', textAlign: 'right' }}>{Number(activeSummary?.total_net_piutang || 0).toLocaleString('id-ID')}</td>
+                <td style={{ border: '1px solid #000', padding: '6px 4px', textAlign: 'right' }}>{Number(activeSummary?.total_dibayar || 0).toLocaleString('id-ID')}</td>
+                <td style={{ border: '1px solid #000', padding: '6px 4px', textAlign: 'right' }}>{Number(activeSummary?.total_sisa_piutang || 0).toLocaleString('id-ID')}</td>
+                <td colSpan={2} style={{ border: '1px solid #000', padding: '6px 4px' }}></td>
               </tr>
             </tfoot>
           </table>

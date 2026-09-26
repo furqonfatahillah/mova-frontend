@@ -5,7 +5,8 @@ import {
   Calendar, CheckCircle2, AlertOctagon, Clock, DollarSign,
   ChevronRight, X, User, Phone, MapPin, CreditCard,
   Trash2, Edit3, ArrowRight, ShieldAlert, Receipt, Send, Check,
-  Users, CheckSquare, Square, Layers, Sparkles, History
+  Users, CheckSquare, Square, Layers, Sparkles, History,
+  Landmark, Building2, QrCode, ShoppingCart, ArrowDownToLine
 } from 'lucide-react';
 import api from '../api/client';
 import {
@@ -43,7 +44,7 @@ export default function Receivables() {
     return undefined;
   }, [activeOutletId, outlets, canSwitchOutlet, currentUser?.outlet_id]);
 
-  // Tab State: 'CUSTOMERS' (Ringkasan Per Pelanggan) vs 'RECEIVABLES' (Daftar Nota Detail)
+  // Tab State: 'CUSTOMERS' | 'RECEIVABLES' | 'PAYMENTS' | 'AR_MERCHANT'
   const [activeTab, setActiveTab] = useState('CUSTOMERS');
 
   // Main Data States
@@ -93,6 +94,19 @@ export default function Receivables() {
   const [invoiceModal, setInvoiceModal] = useState({ open: false, item: null });
   const [expandedCustomerKey, setExpandedCustomerKey] = useState(null);
   const [selectedReceivableIds, setSelectedReceivableIds] = useState([]);
+
+  // AR Merchant States
+  const [merchantChannels, setMerchantChannels] = useState([]);
+  const [merchantAllRows, setMerchantAllRows] = useState([]);
+  const [merchantSummary, setMerchantSummary] = useState({});
+  const [merchantFilter, setMerchantFilter] = useState('ALL'); // 'ALL' | 'QRIS' | 'ECOMMERCE' | 'UNSETTLED' | 'SETTLED'
+  const [bankAccounts, setBankAccounts] = useState([]);
+  const [selectedMerchantIds, setSelectedMerchantIds] = useState([]);
+  const [settleModal, setSettleModal] = useState({
+    open: false, mode: 'single', items: [],
+    settlement_bank: '', settlement_ref: '', settled_at: getTodayStr(),
+  });
+  const [merchantLoading, setMerchantLoading] = useState(false);
 
   // Selected items from Receivables table for multi-select bulk payment
   const selectedUnpaidReceivables = useMemo(() => {
@@ -207,7 +221,14 @@ export default function Receivables() {
   useEffect(() => {
     fetchData();
     fetchMasterCustomers();
+    fetchBankAccounts();
   }, [targetOutlet, statusFilter, dueFilter]);
+
+  useEffect(() => {
+    if (activeTab === 'AR_MERCHANT') {
+      fetchMerchantData();
+    }
+  }, [activeTab, targetOutlet]);
 
   async function fetchData() {
     setLoading(true);
@@ -240,6 +261,105 @@ export default function Receivables() {
       setMasterCustomers(res.data?.data || res.data || []);
     } catch (err) {
       console.error('Error fetching master customers:', err);
+    }
+  }
+
+  async function fetchBankAccounts() {
+    try {
+      const res = await api.get('/bank-accounts');
+      setBankAccounts(res.data?.data || res.data || []);
+    } catch (err) {
+      console.error('Error fetching bank accounts:', err);
+    }
+  }
+
+  async function fetchMerchantData() {
+    setMerchantLoading(true);
+    try {
+      const params = { outlet_id: targetOutlet };
+      const res = await api.get('/receivables/merchants', { params });
+      setMerchantChannels(res.data?.data || []);
+      setMerchantAllRows(res.data?.all_rows || []);
+      setMerchantSummary(res.data?.summary || {});
+    } catch (err) {
+      console.error('Error fetching merchant receivables:', err);
+      toast.error('Gagal memuat data AR Merchant');
+    } finally {
+      setMerchantLoading(false);
+    }
+  }
+
+  // AR Merchant filtered rows based on merchantFilter
+  const filteredMerchantRows = useMemo(() => {
+    let rows = merchantAllRows;
+    if (merchantFilter === 'QRIS') rows = rows.filter(r => r.ar_type === 'MERCHANT_QRIS');
+    else if (merchantFilter === 'ECOMMERCE') rows = rows.filter(r => r.ar_type === 'MERCHANT_ECOMMERCE');
+    else if (merchantFilter === 'UNSETTLED') rows = rows.filter(r => r.settlement_status !== 'SETTLED');
+    else if (merchantFilter === 'SETTLED') rows = rows.filter(r => r.settlement_status === 'SETTLED');
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      rows = rows.filter(r =>
+        (r.merchant_channel || '').toLowerCase().includes(q) ||
+        (r.order_number || '').toLowerCase().includes(q) ||
+        (r.customer_name || '').toLowerCase().includes(q) ||
+        (r.notes || '').toLowerCase().includes(q)
+      );
+    }
+    return rows;
+  }, [merchantAllRows, merchantFilter, searchQuery]);
+
+  const merchantUnsettledCount = useMemo(() => {
+    return merchantAllRows.filter(r => r.settlement_status !== 'SETTLED').length;
+  }, [merchantAllRows]);
+
+  function toggleSelectMerchant(id) {
+    setSelectedMerchantIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  }
+
+  function toggleSelectAllMerchants() {
+    const unsettled = filteredMerchantRows.filter(r => r.settlement_status !== 'SETTLED');
+    const unsettledIds = unsettled.map(r => r.id);
+    const allSelected = unsettledIds.length > 0 && unsettledIds.every(id => selectedMerchantIds.includes(id));
+    if (allSelected) {
+      setSelectedMerchantIds(prev => prev.filter(id => !unsettledIds.includes(id)));
+    } else {
+      setSelectedMerchantIds(prev => [...new Set([...prev, ...unsettledIds])]);
+    }
+  }
+
+  async function handleSettleMerchant(e) {
+    e.preventDefault();
+    if (settleModal.items.length === 0) return;
+    setSubmitting(true);
+    try {
+      if (settleModal.mode === 'single') {
+        await api.post(`/receivables/${settleModal.items[0].id}/settle`, {
+          settlement_bank: settleModal.settlement_bank,
+          settlement_ref: settleModal.settlement_ref,
+          settled_at: settleModal.settled_at,
+        });
+        toast.success('Pencairan AR Merchant berhasil dicatat!');
+      } else {
+        const res = await api.post('/receivables/merchants/bulk-settle', {
+          ids: settleModal.items.map(i => i.id),
+          settlement_bank: settleModal.settlement_bank,
+          settlement_ref: settleModal.settlement_ref,
+          settled_at: settleModal.settled_at,
+        });
+        toast.success(res.data?.message || 'Pencairan masal berhasil!');
+      }
+      setSettleModal({ open: false, mode: 'single', items: [], settlement_bank: '', settlement_ref: '', settled_at: getTodayStr() });
+      setSelectedMerchantIds([]);
+      fetchMerchantData();
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      toast.error(err.response?.data?.message || 'Gagal memproses pencairan AR Merchant');
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -756,6 +876,41 @@ export default function Receivables() {
               }}
             >
               <History size={15} /> Riwayat Pelunasan ({allPaymentLogs.length})
+            </button>
+
+            <button
+              onClick={() => setActiveTab('AR_MERCHANT')}
+              style={{
+                padding: '7px 16px',
+                borderRadius: '7px',
+                border: 'none',
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                background: activeTab === 'AR_MERCHANT' ? 'linear-gradient(135deg, #f59e0b, #a855f7)' : 'transparent',
+                color: activeTab === 'AR_MERCHANT' ? '#ffffff' : 'var(--text-secondary)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                transition: 'all 0.2s ease',
+                position: 'relative',
+              }}
+            >
+              <Landmark size={15} /> AR Merchant (QRIS & E-Com)
+              {merchantUnsettledCount > 0 && (
+                <span style={{
+                  background: '#ef4444',
+                  color: '#fff',
+                  fontSize: '10px',
+                  fontWeight: 800,
+                  padding: '1px 6px',
+                  borderRadius: '10px',
+                  minWidth: '18px',
+                  textAlign: 'center',
+                }}>
+                  {merchantUnsettledCount}
+                </span>
+              )}
             </button>
           </div>
 
@@ -1434,6 +1589,443 @@ export default function Receivables() {
               )}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 4: AR MERCHANT (QRIS & E-COMMERCE) */}
+      {/* ========================================================================= */}
+      {activeTab === 'AR_MERCHANT' && (
+        <div className="card fade-in" style={{ padding: '24px', borderRadius: '16px' }}>
+          {/* Sub-filter Pills */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '20px' }}>
+            {[
+              { key: 'ALL', label: 'Semua', icon: <Layers size={13} /> },
+              { key: 'QRIS', label: 'QRIS', icon: <QrCode size={13} /> },
+              { key: 'ECOMMERCE', label: 'E-Commerce', icon: <ShoppingCart size={13} /> },
+              { key: 'UNSETTLED', label: 'Belum Cair', icon: <Clock size={13} />, color: '#ef4444' },
+              { key: 'SETTLED', label: 'Sudah Cair', icon: <CheckCircle2 size={13} />, color: '#22c55e' },
+            ].map(f => (
+              <button
+                key={f.key}
+                onClick={() => { setMerchantFilter(f.key); setSelectedMerchantIds([]); }}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '20px',
+                  border: merchantFilter === f.key ? '2px solid' : '1px solid var(--border)',
+                  borderColor: merchantFilter === f.key ? (f.color || 'var(--primary)') : 'var(--border)',
+                  background: merchantFilter === f.key
+                    ? `${f.color || 'var(--primary)'}22`
+                    : 'transparent',
+                  color: merchantFilter === f.key ? (f.color || 'var(--primary)') : 'var(--text-secondary)',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                {f.icon} {f.label}
+              </button>
+            ))}
+
+            <button
+              onClick={fetchMerchantData}
+              disabled={merchantLoading}
+              className="btn btn-ghost btn-sm"
+              style={{ marginLeft: 'auto', fontSize: '12px', gap: '6px' }}
+            >
+              <RefreshCw size={13} className={merchantLoading ? 'spin' : ''} /> Refresh
+            </button>
+          </div>
+
+          {/* KPI Summary Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0.08))',
+              border: '1px solid rgba(99, 102, 241, 0.3)',
+              borderRadius: '12px', padding: '16px',
+            }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: '4px' }}>Total Gross</div>
+              <div style={{ fontSize: '18px', fontWeight: 900, color: '#818cf8' }}>
+                {Number(merchantSummary.total_gross || 0).toLocaleString('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 })}
+              </div>
+            </div>
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(220, 38, 38, 0.08))',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              borderRadius: '12px', padding: '16px',
+            }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: '4px' }}>Total MDR Fee</div>
+              <div style={{ fontSize: '18px', fontWeight: 900, color: '#f87171' }}>
+                -{Number(merchantSummary.total_mdr || 0).toLocaleString('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 })}
+              </div>
+            </div>
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(22, 163, 74, 0.08))',
+              border: '1px solid rgba(34, 197, 94, 0.3)',
+              borderRadius: '12px', padding: '16px',
+            }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: '4px' }}>Net Amount</div>
+              <div style={{ fontSize: '18px', fontWeight: 900, color: '#4ade80' }}>
+                {Number(merchantSummary.total_net || 0).toLocaleString('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 })}
+              </div>
+            </div>
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.15), rgba(217, 119, 6, 0.08))',
+              border: '1px solid rgba(251, 191, 36, 0.3)',
+              borderRadius: '12px', padding: '16px',
+            }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: '4px' }}>Belum Cair</div>
+              <div style={{ fontSize: '18px', fontWeight: 900, color: '#fbbf24' }}>
+                {Number(merchantSummary.unsettled_count || 0)} trx
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                {Number(merchantSummary.unsettled_amount || 0).toLocaleString('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 })}
+              </div>
+            </div>
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(22, 163, 74, 0.08))',
+              border: '1px solid rgba(34, 197, 94, 0.3)',
+              borderRadius: '12px', padding: '16px',
+            }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: '4px' }}>Sudah Cair</div>
+              <div style={{ fontSize: '18px', fontWeight: 900, color: '#22c55e' }}>
+                {Number(merchantSummary.settled_count || 0)} trx
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                {Number(merchantSummary.settled_amount || 0).toLocaleString('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 })}
+              </div>
+            </div>
+          </div>
+
+          {/* Data Table */}
+          {merchantLoading ? (
+            <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-secondary)' }}>
+              <RefreshCw size={28} className="spin" style={{ marginBottom: '12px', color: 'var(--primary)' }} />
+              <div style={{ fontSize: '13px' }}>Memuat data AR Merchant...</div>
+            </div>
+          ) : filteredMerchantRows.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-secondary)' }}>
+              <Landmark size={40} style={{ opacity: 0.3, marginBottom: '12px' }} />
+              <div style={{ fontSize: '14px', fontWeight: 700 }}>Belum ada data AR Merchant</div>
+              <div style={{ fontSize: '12px', marginTop: '4px' }}>
+                Data AR Merchant otomatis tercatat dari transaksi penjualan dengan metode QRIS atau E-Commerce.
+              </div>
+            </div>
+          ) : (
+            <div className="table-wrap" style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', minWidth: '900px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '12.5px' }}>
+                <thead>
+                  <tr style={{ background: 'rgba(255, 255, 255, 0.04)' }}>
+                    <th style={{ padding: '10px 12px', textAlign: 'center', width: '40px' }}>
+                      <button
+                        onClick={toggleSelectAllMerchants}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '2px' }}
+                        title="Pilih Semua Belum Cair"
+                      >
+                        {filteredMerchantRows.filter(r => r.settlement_status !== 'SETTLED').length > 0 &&
+                         filteredMerchantRows.filter(r => r.settlement_status !== 'SETTLED').every(r => selectedMerchantIds.includes(r.id))
+                          ? <CheckSquare size={16} style={{ color: 'var(--primary)' }} />
+                          : <Square size={16} />}
+                      </button>
+                    </th>
+                    <th style={{ padding: '10px 12px', textAlign: 'left', color: 'var(--text-secondary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Tanggal / Nota</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'center', color: 'var(--text-secondary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Channel</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'left', color: 'var(--text-secondary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Merchant / Provider</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'right', color: 'var(--text-secondary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Gross (Rp)</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'center', color: 'var(--text-secondary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>MDR %</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'right', color: 'var(--text-secondary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>MDR Fee</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'right', color: 'var(--text-secondary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Net Amount</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'center', color: 'var(--text-secondary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Status</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'center', color: 'var(--text-secondary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Aksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredMerchantRows.map((row, idx) => {
+                    const isQris = row.ar_type === 'MERCHANT_QRIS';
+                    const isSettled = row.settlement_status === 'SETTLED';
+                    const isSelected = selectedMerchantIds.includes(row.id);
+                    return (
+                      <tr
+                        key={row.id}
+                        style={{
+                          borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                          background: isSelected ? 'rgba(99, 102, 241, 0.08)' : (idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)'),
+                          opacity: isSettled ? 0.6 : 1,
+                          transition: 'background 0.15s ease',
+                        }}
+                      >
+                        <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                          {!isSettled ? (
+                            <button
+                              onClick={() => toggleSelectMerchant(row.id)}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: isSelected ? 'var(--primary)' : 'var(--text-secondary)', padding: '2px' }}
+                            >
+                              {isSelected ? <CheckSquare size={16} /> : <Square size={16} />}
+                            </button>
+                          ) : (
+                            <CheckCircle2 size={14} style={{ color: '#22c55e' }} />
+                          )}
+                        </td>
+                        <td style={{ padding: '10px 12px' }}>
+                          <div style={{ fontWeight: 700, color: '#ffffff', fontSize: '12.5px' }}>
+                            {row.issue_date || '-'}
+                          </div>
+                          <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                            {row.order_number || row.receivable_no || '-'}
+                          </div>
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '5px',
+                            padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 700,
+                            background: isQris
+                              ? 'linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.2))'
+                              : 'linear-gradient(135deg, rgba(249, 115, 22, 0.2), rgba(234, 88, 12, 0.2))',
+                            color: isQris ? '#a5b4fc' : '#fdba74',
+                            border: `1px solid ${isQris ? 'rgba(99, 102, 241, 0.4)' : 'rgba(249, 115, 22, 0.4)'}`,
+                          }}>
+                            {isQris ? <QrCode size={11} /> : <ShoppingCart size={11} />}
+                            {isQris ? 'QRIS' : 'E-Com'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '10px 12px', fontWeight: 600, color: '#ffffff' }}>
+                          {row.merchant_channel || '-'}
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: '#ffffff' }}>
+                          {Number(row.total_amount || 0).toLocaleString('id-ID')}
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                          {row.mdr_rate != null ? `${Number(row.mdr_rate).toFixed(1)}%` : '-'}
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', color: '#f87171', fontWeight: 600 }}>
+                          -{Number(row.mdr_fee || 0).toLocaleString('id-ID')}
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 900, color: '#4ade80' }}>
+                          {Number(row.net_amount || row.remaining_amount || 0).toLocaleString('id-ID')}
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                          {isSettled ? (
+                            <span className="pill pill-ok" style={{ fontSize: '10px', fontWeight: 700, gap: '4px' }}>
+                              <CheckCircle2 size={11} /> Cair
+                            </span>
+                          ) : (
+                            <span className="pill pill-warning" style={{ fontSize: '10px', fontWeight: 700, gap: '4px' }}>
+                              <Clock size={11} /> Pending
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                          {!isSettled && (
+                            <button
+                              className="btn btn-primary btn-sm"
+                              style={{ fontSize: '11px', padding: '4px 10px', gap: '4px' }}
+                              onClick={() => setSettleModal({
+                                open: true, mode: 'single', items: [row],
+                                settlement_bank: '', settlement_ref: '', settled_at: getTodayStr(),
+                              })}
+                              title="Cairkan AR ini"
+                            >
+                              <ArrowDownToLine size={12} /> Cairkan
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Bulk Settlement Floating Action Bar */}
+          {selectedMerchantIds.length > 0 && (
+            <div style={{
+              position: 'sticky', bottom: '12px',
+              background: 'linear-gradient(135deg, var(--primary), #7c3aed)',
+              borderRadius: '14px', padding: '12px 20px',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              marginTop: '16px', boxShadow: '0 8px 32px rgba(99, 102, 241, 0.4)',
+              animation: 'fadeInUp 0.3s ease',
+            }}>
+              <div style={{ color: '#ffffff', fontSize: '13px', fontWeight: 700 }}>
+                <CheckSquare size={15} style={{ verticalAlign: 'middle', marginRight: '6px' }} />
+                {selectedMerchantIds.length} transaksi dipilih
+                <span style={{ marginLeft: '12px', opacity: 0.8 }}>
+                  Total Net: {
+                    merchantAllRows
+                      .filter(r => selectedMerchantIds.includes(r.id))
+                      .reduce((sum, r) => sum + Number(r.net_amount || r.remaining_amount || 0), 0)
+                      .toLocaleString('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 })
+                  }
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  style={{ color: '#ffffff', fontSize: '12px', borderColor: 'rgba(255,255,255,0.3)' }}
+                  onClick={() => setSelectedMerchantIds([])}
+                >
+                  Batal
+                </button>
+                <button
+                  className="btn btn-sm"
+                  style={{
+                    background: '#ffffff', color: 'var(--primary)', fontWeight: 800,
+                    fontSize: '12px', gap: '6px', border: 'none',
+                  }}
+                  onClick={() => {
+                    const selectedRows = merchantAllRows.filter(r => selectedMerchantIds.includes(r.id) && r.settlement_status !== 'SETTLED');
+                    if (selectedRows.length === 0) return;
+                    setSettleModal({
+                      open: true, mode: 'bulk', items: selectedRows,
+                      settlement_bank: '', settlement_ref: '', settled_at: getTodayStr(),
+                    });
+                  }}
+                >
+                  <ArrowDownToLine size={13} /> Cairkan Masal
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: SETTLEMENT / PENCAIRAN AR MERCHANT */}
+      {/* ========================================================================= */}
+      {settleModal.open && (
+        <div className="modal-backdrop fade-in" style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.75)', zIndex: 999, display: 'flex',
+          alignItems: 'center', justifyContent: 'center', padding: '16px'
+        }}>
+          <div className="card modal-content" style={{
+            maxWidth: '520px', width: '100%', maxHeight: '90vh',
+            overflowY: 'auto', padding: '24px', borderRadius: '16px'
+          }}>
+            <div className="flex-between mb-4">
+              <h3 style={{ fontSize: '17px', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ArrowDownToLine size={18} style={{ color: '#a855f7' }} />
+                {settleModal.mode === 'bulk'
+                  ? `Pencairan Masal (${settleModal.items.length} trx)`
+                  : 'Pencairan AR Merchant'}
+              </h3>
+              <button className="btn btn-ghost btn-icon" onClick={() => setSettleModal(s => ({ ...s, open: false }))}>
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Settlement Summary */}
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.15), rgba(99, 102, 241, 0.08))',
+              border: '1px solid rgba(168, 85, 247, 0.3)',
+              borderRadius: '12px', padding: '16px', marginBottom: '20px',
+            }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '12px' }}>
+                <div>
+                  <div style={{ color: 'var(--text-secondary)', fontWeight: 600, marginBottom: '2px' }}>Jumlah Trx</div>
+                  <div style={{ color: '#ffffff', fontWeight: 800, fontSize: '16px' }}>{settleModal.items.length}</div>
+                </div>
+                <div>
+                  <div style={{ color: 'var(--text-secondary)', fontWeight: 600, marginBottom: '2px' }}>Total Gross</div>
+                  <div style={{ color: '#ffffff', fontWeight: 800, fontSize: '14px' }}>
+                    {settleModal.items.reduce((s, r) => s + Number(r.total_amount || 0), 0).toLocaleString('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 })}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ color: 'var(--text-secondary)', fontWeight: 600, marginBottom: '2px' }}>Total MDR</div>
+                  <div style={{ color: '#f87171', fontWeight: 800, fontSize: '14px' }}>
+                    -{settleModal.items.reduce((s, r) => s + Number(r.mdr_fee || 0), 0).toLocaleString('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 })}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ color: 'var(--text-secondary)', fontWeight: 600, marginBottom: '2px' }}>Net Diterima</div>
+                  <div style={{ color: '#4ade80', fontWeight: 900, fontSize: '16px' }}>
+                    {settleModal.items.reduce((s, r) => s + Number(r.net_amount || r.remaining_amount || 0), 0).toLocaleString('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 })}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <form onSubmit={handleSettleMerchant}>
+              <div className="form-group mb-3">
+                <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
+                  <Building2 size={13} style={{ verticalAlign: 'middle', marginRight: '4px' }} />
+                  Bank Penerima (Masuk ke Rekening)
+                </label>
+                <select
+                  className="form-control"
+                  value={settleModal.settlement_bank}
+                  onChange={e => setSettleModal(s => ({ ...s, settlement_bank: e.target.value }))}
+                  required
+                >
+                  <option value="">-- Pilih Rekening Bank --</option>
+                  {bankAccounts.map(ba => (
+                    <option key={ba.id} value={ba.account_name || ba.bank_name}>
+                      {ba.bank_name} - {ba.account_name} ({ba.account_number})
+                    </option>
+                  ))}
+                  <option value="__manual__">Input Manual...</option>
+                </select>
+                {settleModal.settlement_bank === '__manual__' && (
+                  <input
+                    type="text"
+                    className="form-control mt-2"
+                    placeholder="Nama bank / rekening tujuan"
+                    value={settleModal._manual_bank || ''}
+                    onChange={e => setSettleModal(s => ({ ...s, _manual_bank: e.target.value, settlement_bank: e.target.value || '__manual__' }))}
+                    required
+                  />
+                )}
+              </div>
+
+              <div className="grid-2 gap-3 mb-3">
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
+                    No. Referensi Settlement
+                  </label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Opsional, No. mutasi / ref"
+                    value={settleModal.settlement_ref}
+                    onChange={e => setSettleModal(s => ({ ...s, settlement_ref: e.target.value }))}
+                  />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
+                    Tanggal Pencairan
+                  </label>
+                  <input
+                    type="date"
+                    className="form-control"
+                    value={settleModal.settled_at}
+                    onChange={e => setSettleModal(s => ({ ...s, settled_at: e.target.value }))}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setSettleModal(s => ({ ...s, open: false }))}>
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={submitting || !settleModal.settlement_bank || settleModal.settlement_bank === '__manual__'}
+                  style={{ gap: '6px' }}
+                >
+                  {submitting ? <RefreshCw size={14} className="spin" /> : <ArrowDownToLine size={14} />}
+                  {settleModal.mode === 'bulk' ? 'Cairkan Semua' : 'Cairkan'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
