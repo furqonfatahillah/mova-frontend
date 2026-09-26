@@ -5,7 +5,7 @@ import {
   Calendar, Store, Truck, FileText, AlertCircle, RefreshCw,
   ArrowLeftRight, ShoppingBag, Package, MapPin, Building,
   Search, ArrowRight, ShieldCheck, CheckCircle2, PackageCheck, Clock,
-  RotateCcw, AlertTriangle
+  RotateCcw, AlertTriangle, Sparkles
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
@@ -276,18 +276,70 @@ export default function TransferBahan() {
     }));
   }, [directMenus]);
 
+  // Dapatkan harga rata-rata bergerak (Moving Average) real-time dari gudang / cabang asal
+  function getItemAvgPriceFromSource(item, sourceOutletId = formData.source_outlet_id) {
+    if (!item) return 0;
+    const sOutletId = Number(sourceOutletId);
+
+    if (item.item_type === 'PRODUCT') {
+      const menu = menus.find(m => m.id === Number(item.menu_id));
+      if (!menu) return 0;
+      const om = menu.outlet_menus?.find(x => x.outlet_id === sOutletId);
+      return Number(om?.cost_price || menu.cost_price || menu.cost || menu.price || 0);
+    } else {
+      const ing = ingredients.find(i => i.id === Number(item.ingredient_id));
+      if (!ing) return 0;
+
+      let avgPricePerBeli = 0;
+      if (sOutletId && ing.outlet_stocks?.length) {
+        const os = ing.outlet_stocks.find(x => x.outlet_id === sOutletId);
+        if (os && Number(os.harga) > 0) {
+          avgPricePerBeli = Number(os.harga);
+        }
+      }
+      if (!avgPricePerBeli) {
+        avgPricePerBeli = Number(ing.current_harga || ing.harga || ing.cost || ing.harga_beli || 0);
+      }
+
+      const ub = (ing.unit_beli || '').trim().toLowerCase();
+      const up = (ing.unit_pakai || '').trim().toLowerCase();
+      const factor = Number(ing.konversi) || 1;
+      const inputUnit = (item.input_unit || ub).trim().toLowerCase();
+
+      // Jika menggunakan satuan pakai dan konversi > 1, hitung harga rata-rata per satuan pakai
+      if (inputUnit === up && ub !== up && factor > 1) {
+        return Math.round((avgPricePerBeli / factor) * 100) / 100;
+      }
+      return avgPricePerBeli;
+    }
+  }
+
   // Open Create Modal cleanly
   function openCreateModal() {
     const firstOut = outlets[0];
     const secondOut = outlets.length > 1 ? outlets[1] : null;
-    const firstIng = ingredients[0];
+    const firstIng = ingredients.find(i => getItemClassification(i) !== 'PERLENGKAPAN') || ingredients[0];
     const defaultUnit = firstIng?.unit_beli || firstIng?.unit_pakai || 'gram';
-    const defaultPrice = firstIng?.cost || firstIng?.harga_beli || '';
+    const sOutletId = firstOut ? String(firstOut.id) : '';
+
+    const initialItem = {
+      item_type: 'INGREDIENT',
+      ingredient_id: firstIng ? firstIng.id : '',
+      menu_id: '',
+      input_qty: '',
+      input_unit: defaultUnit,
+      qty: '',
+      unit: firstIng ? firstIng.unit_pakai : 'gram',
+      unit_price: '',
+      total_price: 0,
+      notes: ''
+    };
+    initialItem.unit_price = getItemAvgPriceFromSource(initialItem, sOutletId);
 
     setFormData({
       date: getTodayStr(),
       source_mode: 'OUTLET',
-      source_outlet_id: firstOut ? String(firstOut.id) : '',
+      source_outlet_id: sOutletId,
       source_name: '',
       destination_mode: 'OUTLET',
       destination_outlet_id: secondOut ? String(secondOut.id) : '',
@@ -301,20 +353,7 @@ export default function TransferBahan() {
       purchase_no: '',
       due_date: '',
       initial_paid: '',
-      items: [
-        {
-          item_type: 'INGREDIENT',
-          ingredient_id: firstIng ? firstIng.id : '',
-          menu_id: '',
-          input_qty: '',
-          input_unit: defaultUnit,
-          qty: '',
-          unit: firstIng ? firstIng.unit_pakai : 'gram',
-          unit_price: defaultPrice,
-          total_price: 0,
-          notes: ''
-        }
-      ]
+      items: [initialItem]
     });
     setCreateModalOpen(true);
   }
@@ -330,6 +369,18 @@ export default function TransferBahan() {
       const nextDestOutlet = prev.source_outlet_id;
       const nextDestName = prev.source_name;
 
+      const isInternal = (prev.payment_type || 'INTERNAL') === 'INTERNAL';
+      const updatedItems = prev.items.map(it => {
+        if (!isInternal) return it;
+        const avgPrice = getItemAvgPriceFromSource(it, nextSourceOutlet);
+        const q = Number(it.input_qty || 0);
+        return {
+          ...it,
+          unit_price: avgPrice,
+          total_price: Math.round(q * avgPrice)
+        };
+      });
+
       return {
         ...prev,
         source_mode: nextSourceMode,
@@ -338,77 +389,123 @@ export default function TransferBahan() {
         destination_mode: nextDestMode,
         destination_outlet_id: nextDestOutlet,
         destination_name: nextDestName,
+        items: updatedItems
       };
     });
-    toast.success('Lokasi asal dan tujuan berhasil ditukar!');
+    toast.success('Lokasi asal dan tujuan berhasil ditukar! Harga rata-rata bergerak telah diperbarui.');
+  }
+
+  // Change Source Outlet with real-time price sync
+  function handleSourceOutletChange(newSourceId) {
+    setFormData(prev => {
+      const isInternal = (prev.payment_type || 'INTERNAL') === 'INTERNAL';
+      const updatedItems = prev.items.map(it => {
+        if (!isInternal) return it;
+        const avgPrice = getItemAvgPriceFromSource(it, newSourceId);
+        const q = Number(it.input_qty || 0);
+        return {
+          ...it,
+          unit_price: avgPrice,
+          total_price: Math.round(q * avgPrice)
+        };
+      });
+
+      return {
+        ...prev,
+        source_outlet_id: newSourceId,
+        items: updatedItems
+      };
+    });
+  }
+
+  // Change Payment Type with automatic price sync when INTERNAL
+  function handlePaymentTypeChange(newType) {
+    setFormData(prev => {
+      const isInternal = newType === 'INTERNAL';
+      const updatedItems = prev.items.map(it => {
+        if (!isInternal) return it;
+        const avgPrice = getItemAvgPriceFromSource(it, prev.source_outlet_id);
+        const q = Number(it.input_qty || 0);
+        return {
+          ...it,
+          unit_price: avgPrice,
+          total_price: Math.round(q * avgPrice)
+        };
+      });
+
+      return {
+        ...prev,
+        payment_type: newType,
+        items: updatedItems
+      };
+    });
   }
 
   // Add Item Row
   function handleAddItem(type = 'INGREDIENT') {
+    const isInternal = (formData.payment_type || 'INTERNAL') === 'INTERNAL';
+
     if (type === 'PRODUCT') {
       const firstMenu = directMenus[0] || menus[0];
-      const defaultPrice = firstMenu?.cost_price || firstMenu?.price || '';
+      const newItem = {
+        item_type: 'PRODUCT',
+        ingredient_id: '',
+        menu_id: firstMenu ? firstMenu.id : '',
+        input_qty: '',
+        input_unit: firstMenu?.unit || 'pcs',
+        qty: '',
+        unit: firstMenu?.unit || 'pcs',
+        unit_price: '',
+        total_price: 0,
+        notes: ''
+      };
+      newItem.unit_price = isInternal ? getItemAvgPriceFromSource(newItem, formData.source_outlet_id) : (firstMenu?.cost_price || firstMenu?.price || '');
+
       setFormData(p => ({
         ...p,
-        items: [
-          ...p.items,
-          {
-            item_type: 'PRODUCT',
-            ingredient_id: '',
-            menu_id: firstMenu ? firstMenu.id : '',
-            input_qty: '',
-            input_unit: firstMenu?.unit || 'pcs',
-            qty: '',
-            unit: firstMenu?.unit || 'pcs',
-            unit_price: defaultPrice,
-            total_price: 0,
-            notes: ''
-          }
-        ]
+        items: [...p.items, newItem]
       }));
     } else if (type === 'PERLENGKAPAN') {
       const firstPerl = ingredients.find(i => getItemClassification(i) === 'PERLENGKAPAN') || ingredients[0];
       const defaultUnit = firstPerl?.unit_beli || firstPerl?.unit_pakai || 'pcs';
-      const defaultPrice = firstPerl?.cost || firstPerl?.harga_beli || '';
+      const newItem = {
+        item_type: 'PERLENGKAPAN',
+        ingredient_id: firstPerl ? firstPerl.id : '',
+        menu_id: '',
+        input_qty: '',
+        input_unit: defaultUnit,
+        qty: '',
+        unit: firstPerl ? firstPerl.unit_pakai : 'pcs',
+        unit_price: '',
+        total_price: 0,
+        notes: ''
+      };
+      newItem.unit_price = isInternal ? getItemAvgPriceFromSource(newItem, formData.source_outlet_id) : (firstPerl?.cost || firstPerl?.harga_beli || '');
+
       setFormData(p => ({
         ...p,
-        items: [
-          ...p.items,
-          {
-            item_type: 'PERLENGKAPAN',
-            ingredient_id: firstPerl ? firstPerl.id : '',
-            menu_id: '',
-            input_qty: '',
-            input_unit: defaultUnit,
-            qty: '',
-            unit: firstPerl ? firstPerl.unit_pakai : 'pcs',
-            unit_price: defaultPrice,
-            total_price: 0,
-            notes: ''
-          }
-        ]
+        items: [...p.items, newItem]
       }));
     } else {
       const firstIng = ingredients.find(i => getItemClassification(i) !== 'PERLENGKAPAN') || ingredients[0];
       const defaultUnit = firstIng?.unit_beli || firstIng?.unit_pakai || 'gram';
-      const defaultPrice = firstIng?.cost || firstIng?.harga_beli || '';
+      const newItem = {
+        item_type: 'INGREDIENT',
+        ingredient_id: firstIng ? firstIng.id : '',
+        menu_id: '',
+        input_qty: '',
+        input_unit: defaultUnit,
+        qty: '',
+        unit: firstIng ? firstIng.unit_pakai : 'gram',
+        unit_price: '',
+        total_price: 0,
+        notes: ''
+      };
+      newItem.unit_price = isInternal ? getItemAvgPriceFromSource(newItem, formData.source_outlet_id) : (firstIng?.cost || firstIng?.harga_beli || '');
+
       setFormData(p => ({
         ...p,
-        items: [
-          ...p.items,
-          {
-            item_type: 'INGREDIENT',
-            ingredient_id: firstIng ? firstIng.id : '',
-            menu_id: '',
-            input_qty: '',
-            input_unit: defaultUnit,
-            qty: '',
-            unit: firstIng ? firstIng.unit_pakai : 'gram',
-            unit_price: defaultPrice,
-            total_price: 0,
-            notes: ''
-          }
-        ]
+        items: [...p.items, newItem]
       }));
     }
   }
@@ -430,6 +527,7 @@ export default function TransferBahan() {
     setFormData(p => {
       const newItems = [...p.items];
       const current = { ...newItems[index] };
+      const isInternal = (p.payment_type || 'INTERNAL') === 'INTERNAL';
 
       if (field === 'item_type') {
         current.item_type = value;
@@ -440,7 +538,9 @@ export default function TransferBahan() {
           current.input_unit = firstMenu?.unit || 'pcs';
           current.unit = firstMenu?.unit || 'pcs';
           current.qty = current.input_qty || '';
-          current.unit_price = firstMenu?.cost_price || firstMenu?.price || '';
+          current.unit_price = isInternal
+            ? getItemAvgPriceFromSource(current, p.source_outlet_id)
+            : (firstMenu?.cost_price || firstMenu?.price || '');
         } else if (value === 'PERLENGKAPAN') {
           const firstPerl = ingredients.find(i => getItemClassification(i) === 'PERLENGKAPAN') || ingredients[0];
           const newUnit = firstPerl?.unit_beli || firstPerl?.unit_pakai || 'pcs';
@@ -453,7 +553,9 @@ export default function TransferBahan() {
           const isConvertible = firstPerl && ub && firstPerl.unit_pakai && ub.toLowerCase() !== firstPerl.unit_pakai.toLowerCase() && factor > 1;
           const isBeli = isConvertible && newUnit.toLowerCase() === ub.toLowerCase();
           current.qty = isBeli ? (Number(current.input_qty || 0) * factor) : Number(current.input_qty || 0);
-          current.unit_price = firstPerl?.cost || firstPerl?.harga_beli || '';
+          current.unit_price = isInternal
+            ? getItemAvgPriceFromSource(current, p.source_outlet_id)
+            : (firstPerl?.cost || firstPerl?.harga_beli || '');
         } else {
           const firstIng = ingredients.find(i => getItemClassification(i) !== 'PERLENGKAPAN') || ingredients[0];
           const newUnit = firstIng?.unit_beli || firstIng?.unit_pakai || 'gram';
@@ -466,7 +568,9 @@ export default function TransferBahan() {
           const isConvertible = firstIng && ub && firstIng.unit_pakai && ub.toLowerCase() !== firstIng.unit_pakai.toLowerCase() && factor > 1;
           const isBeli = isConvertible && newUnit.toLowerCase() === ub.toLowerCase();
           current.qty = isBeli ? (Number(current.input_qty || 0) * factor) : Number(current.input_qty || 0);
-          current.unit_price = firstIng?.cost || firstIng?.harga_beli || '';
+          current.unit_price = isInternal
+            ? getItemAvgPriceFromSource(current, p.source_outlet_id)
+            : (firstIng?.cost || firstIng?.harga_beli || '');
         }
       } else if (field === 'menu_id') {
         const mId = Number(value);
@@ -475,9 +579,9 @@ export default function TransferBahan() {
         current.input_unit = selMenu?.unit || 'pcs';
         current.unit = selMenu?.unit || 'pcs';
         current.qty = Number(current.input_qty || 0);
-        if (selMenu?.cost_price || selMenu?.price) {
-          current.unit_price = selMenu.cost_price || selMenu.price;
-        }
+        current.unit_price = isInternal
+          ? getItemAvgPriceFromSource(current, p.source_outlet_id)
+          : (selMenu?.cost_price || selMenu?.price || current.unit_price);
       } else if (field === 'ingredient_id') {
         const ingId = Number(value);
         const selected = ingredients.find(i => i.id === ingId);
@@ -491,9 +595,9 @@ export default function TransferBahan() {
         const isConvertible = selected && ub && selected.unit_pakai && ub.toLowerCase() !== selected.unit_pakai.toLowerCase() && factor > 1;
         const isBeli = isConvertible && newUnit.toLowerCase() === ub.toLowerCase();
         current.qty = isBeli ? (Number(current.input_qty || 0) * factor) : Number(current.input_qty || 0);
-        if (selected?.cost || selected?.harga_beli) {
-          current.unit_price = selected.cost || selected.harga_beli;
-        }
+        current.unit_price = isInternal
+          ? getItemAvgPriceFromSource(current, p.source_outlet_id)
+          : (selected?.cost || selected?.harga_beli || current.unit_price);
       } else if (field === 'input_qty') {
         current.input_qty = value;
         if (current.item_type === 'PRODUCT') {
@@ -515,6 +619,9 @@ export default function TransferBahan() {
           const isConvertible = selected && ub && selected.unit_pakai && ub.toLowerCase() !== selected.unit_pakai.toLowerCase() && factor > 1;
           const isBeli = isConvertible && value && value.toLowerCase() === ub.toLowerCase();
           current.qty = isBeli ? (Number(current.input_qty || 0) * factor) : Number(current.input_qty || 0);
+        }
+        if (isInternal) {
+          current.unit_price = getItemAvgPriceFromSource(current, p.source_outlet_id);
         }
       } else if (field === 'unit_price') {
         current.unit_price = value;
@@ -2445,7 +2552,7 @@ export default function TransferBahan() {
                           className="form-control"
                           style={{ fontWeight: 600 }}
                           value={formData.source_outlet_id}
-                          onChange={e => setFormData(p => ({ ...p, source_outlet_id: e.target.value }))}
+                          onChange={e => handleSourceOutletChange(e.target.value)}
                           required
                         >
                           <option value="">-- Pilih Cabang Pengirim --</option>
@@ -2629,7 +2736,7 @@ export default function TransferBahan() {
                       <button
                         key={m.id}
                         type="button"
-                        onClick={() => setFormData(p => ({ ...p, payment_type: m.id }))}
+                        onClick={() => handlePaymentTypeChange(m.id)}
                         style={{
                           padding: '8px 10px',
                           borderRadius: 8,
@@ -2649,6 +2756,27 @@ export default function TransferBahan() {
                     );
                   })}
                 </div>
+
+                {/* Banner Real-time Moving Average untuk Internal Rutin */}
+                {formData.payment_type === 'INTERNAL' && (
+                  <div style={{
+                    marginTop: 10,
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    background: 'rgba(56, 189, 248, 0.1)',
+                    border: '1px solid rgba(56, 189, 248, 0.3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    fontSize: 12,
+                    color: '#bae6fd'
+                  }}>
+                    <Sparkles size={15} style={{ color: '#38bdf8', flexShrink: 0 }} />
+                    <span>
+                      <strong>Mode Internal Rutin (Non-finansial):</strong> Harga transfer setiap barang otomatis tersinkronisasi mengikuti Moving Average (HPP Rata-Rata) gudang asal secara <strong>real-time</strong>.
+                    </span>
+                  </div>
+                )}
 
                 {/* Form Hutang Supplier */}
                 {formData.payment_type === 'HUTANG' && (
@@ -2895,16 +3023,33 @@ export default function TransferBahan() {
                           )}
 
                           {/* Unit Price (Rp) */}
-                          <input
-                            type="number"
-                            min="0"
-                            className="form-control mono right"
-                            style={{ padding: '6px 8px', fontSize: 12 }}
-                            placeholder="Harga/satuan"
-                            title="Harga beli / pengadaan per satuan"
-                            value={item.unit_price}
-                            onChange={e => handleItemChange(idx, 'unit_price', e.target.value)}
-                          />
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <input
+                              type="number"
+                              min="0"
+                              className="form-control mono right"
+                              style={{
+                                padding: '6px 8px',
+                                fontSize: 12,
+                                ...(formData.payment_type === 'INTERNAL' ? {
+                                  borderColor: 'rgba(56, 189, 248, 0.45)',
+                                  background: 'rgba(56, 189, 248, 0.08)',
+                                  color: '#38bdf8',
+                                  fontWeight: 700
+                                } : {})
+                              }}
+                              placeholder="Harga/satuan"
+                              title={formData.payment_type === 'INTERNAL' ? "Harga otomatis mengikuti moving average real-time gudang asal" : "Harga beli / pengadaan per satuan"}
+                              value={item.unit_price}
+                              readOnly={formData.payment_type === 'INTERNAL' && Number(item.unit_price) > 0}
+                              onChange={e => handleItemChange(idx, 'unit_price', e.target.value)}
+                            />
+                            {formData.payment_type === 'INTERNAL' && Number(item.unit_price) > 0 && (
+                              <div style={{ fontSize: 9.5, color: '#38bdf8', textAlign: 'right', marginTop: 2, fontWeight: 600 }}>
+                                ⚡ Avg Asal
+                              </div>
+                            )}
+                          </div>
 
                           {/* Subtotal (Rp) */}
                           <div

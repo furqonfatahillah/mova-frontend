@@ -1448,6 +1448,8 @@ export default function KartuStok() {
                     <th style={{ width: 140 }}>No. Referensi</th>
                     <th>Keterangan / Aktivitas</th>
                     <th style={{ width: 135 }}>Tipe Mutasi</th>
+                    <th style={{ width: 85 }}>Satuan</th>
+                    <th className="right" style={{ width: 125 }}>Harga Satuan</th>
                     <th className="right" style={{ width: 110 }}>Masuk (+)</th>
                     <th className="right" style={{ width: 110 }}>Keluar (-)</th>
                     <th className="right" style={{ width: 130 }}>Saldo Berjalan</th>
@@ -1464,6 +1466,10 @@ export default function KartuStok() {
                     <td className="mono" style={{ color: 'var(--text-muted)' }}>SALDO-AWAL</td>
                     <td style={{ fontWeight: 600, color: 'var(--accent)' }}>Saldo Awal per {period.from}</td>
                     <td><span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Saldo Awal</span></td>
+                    <td className="mono" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{selectedIng?.unit_pakai}</td>
+                    <td className="mono right" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                      {rupiah(selectedIng?.harga / (selectedIng?.konversi || 1))}
+                    </td>
                     <td className="mono right">—</td>
                     <td className="mono right">—</td>
                     <td className="mono right" style={{ fontWeight: 700, color: 'var(--accent)', fontSize: 13.5 }}>
@@ -1477,79 +1483,104 @@ export default function KartuStok() {
 
                   {/* Mutation Rows */}
                   {filteredDetailRows.length > 0 ? (
-                    filteredDetailRows.map((row, idx) => (
-                      <tr key={row.id || idx}>
-                        <td className="mono center" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                          {idx + 1}
-                        </td>
-                        <td className="mono" style={{ fontSize: 12 }}>
-                          {row.date}
-                        </td>
-                        <td>
-                          <span style={{ fontSize: 11, color: '#c7d2fe', fontWeight: 600 }}>
-                            {row.outlet_name || 'Outlet'}
-                          </span>
-                        </td>
-                        <td className="mono" style={{ fontSize: 12 }}>
-                          {row.shift_id ? (
-                            <button
-                              className="btn btn-sm"
-                              style={{
-                                padding: '3px 8px',
-                                fontSize: 11,
-                                color: 'var(--accent-bright)',
-                                border: '1px solid var(--border-accent)',
-                                background: 'var(--accent-dim)',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 5,
-                                cursor: 'pointer'
-                              }}
-                              onClick={() => handleOpenShiftDetail(row.shift_id)}
-                              title="Klik untuk melihat rincian transaksi POS di shift ini"
-                            >
-                              <Eye size={12} /> {row.ref}
-                            </button>
-                          ) : (
-                            <span style={{ color: 'var(--accent-bright)' }}>{row.ref}</span>
-                          )}
-                        </td>
-                        <td style={{ fontSize: 12.5 }}>
-                          {row.note || '—'}
-                        </td>
-                        <td>
-                          {getTypeBadge(row.type)}
-                        </td>
-                        <td className="mono right" style={{ color: row.qty_in > 0 ? 'var(--ok)' : 'var(--text-muted)', fontWeight: row.qty_in > 0 ? 600 : 400 }}>
-                          {row.qty_in > 0 ? `+${num(row.qty_in)}` : '—'}
-                        </td>
-                        <td className="mono right" style={{ color: row.qty_out > 0 ? 'var(--danger)' : 'var(--text-muted)', fontWeight: row.qty_out > 0 ? 600 : 400 }}>
-                          {row.qty_out > 0 ? `-${num(row.qty_out)}` : '—'}
-                        </td>
-                        <td className="mono right" style={{ fontWeight: 700, fontSize: 13, color: row.balance < 0 ? 'var(--danger)' : 'var(--text-primary)' }}>
-                          {num(row.balance)} {selectedIng?.unit_pakai}
-                        </td>
-                        <td className="mono right" style={{ fontWeight: 700, fontSize: 12.5, color: row.balance < 0 ? 'var(--danger)' : '#34d399' }}>
-                          {rupiah(Math.max(0, row.balance || 0) * (selectedIng?.harga / (selectedIng?.konversi || 1)))}
-                          {row.unit_price ? (
-                            <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>
-                              PO: @{rupiah(row.unit_price)}
+                    filteredDetailRows.map((row, idx) => {
+                      const unitPriceVal = row.cost_after
+                        ? Number(row.cost_after)
+                        : (row.unit_price
+                            ? (Number(row.unit_price) > 1000 && (selectedIng?.konversi || 1) > 1
+                                ? Number(row.unit_price) / Number(selectedIng.konversi)
+                                : Number(row.unit_price))
+                            : (Number(selectedIng?.harga || 0) / Number(selectedIng?.konversi || 1)));
+
+                      return (
+                        <tr key={row.id || idx}>
+                          <td className="mono center" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            {idx + 1}
+                          </td>
+                          <td className="mono" style={{ fontSize: 12 }}>
+                            {row.date}
+                          </td>
+                          <td>
+                            <span style={{ fontSize: 11, color: '#c7d2fe', fontWeight: 600 }}>
+                              {row.outlet_name || 'Outlet'}
+                            </span>
+                          </td>
+                          <td className="mono" style={{ fontSize: 12 }}>
+                            {row.shift_id ? (
+                              <button
+                                className="btn btn-sm"
+                                style={{
+                                  padding: '3px 8px',
+                                  fontSize: 11,
+                                  color: 'var(--accent-bright)',
+                                  border: '1px solid var(--border-accent)',
+                                  background: 'var(--accent-dim)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 5,
+                                  cursor: 'pointer'
+                                }}
+                                onClick={() => handleOpenShiftDetail(row.shift_id)}
+                                title="Klik untuk melihat rincian transaksi POS di shift ini"
+                              >
+                                <Eye size={12} /> {row.ref}
+                              </button>
+                            ) : (
+                              <span style={{ color: 'var(--accent-bright)' }}>{row.ref}</span>
+                            )}
+                          </td>
+                          <td style={{ fontSize: 12.5 }}>
+                            {row.note || '—'}
+                          </td>
+                          <td>
+                            {getTypeBadge(row.type)}
+                          </td>
+                          <td className="mono" style={{ fontSize: 12 }}>
+                            <span className="pill pill-muted" style={{ fontSize: 11, padding: '2px 6px' }}>
+                              {selectedIng?.unit_pakai}
+                            </span>
+                          </td>
+                          <td className="mono right" style={{ fontSize: 12 }}>
+                            <div style={{ fontWeight: 600, color: row.cost_after ? 'var(--accent-bright)' : 'inherit' }}>
+                              {rupiah(unitPriceVal)}
                             </div>
-                          ) : null}
-                        </td>
-                        <td>
-                          <AuditInfo
-                            createdAt={row.created_at}
-                            createdBy={row.created_by_name || row.user}
-                            updatedAt={row.changed_at}
-                            updatedBy={row.changed_by_name}
-                          />
-                        </td>
-                      </tr>
-                    ))
+                            {row.unit_price && Number(selectedIng?.konversi || 1) > 1 && (
+                              <div style={{ fontSize: 9.5, color: '#34d399' }}>
+                                @{rupiah(row.unit_price)}/{selectedIng?.unit_beli}
+                              </div>
+                            )}
+                          </td>
+                          <td className="mono right" style={{ color: row.qty_in > 0 ? 'var(--ok)' : 'var(--text-muted)', fontWeight: row.qty_in > 0 ? 600 : 400 }}>
+                            {row.qty_in > 0 ? `+${num(row.qty_in)}` : '—'}
+                          </td>
+                          <td className="mono right" style={{ color: row.qty_out > 0 ? 'var(--danger)' : 'var(--text-muted)', fontWeight: row.qty_out > 0 ? 600 : 400 }}>
+                            {row.qty_out > 0 ? `-${num(row.qty_out)}` : '—'}
+                          </td>
+                          <td className="mono right" style={{ fontWeight: 700, fontSize: 13, color: row.balance < 0 ? 'var(--danger)' : 'var(--text-primary)' }}>
+                            {num(row.balance)} {selectedIng?.unit_pakai}
+                          </td>
+                          <td className="mono right" style={{ fontWeight: 700, fontSize: 12.5, color: row.balance < 0 ? 'var(--danger)' : '#34d399' }}>
+                            {rupiah(Math.max(0, row.balance || 0) * (selectedIng?.harga / (selectedIng?.konversi || 1)))}
+                            {row.unit_price ? (
+                              <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>
+                                PO: @{rupiah(row.unit_price)}
+                              </div>
+                            ) : null}
+                          </td>
+                          <td>
+                            <AuditInfo
+                              createdAt={row.created_at}
+                              createdBy={row.created_by_name || row.user}
+                              updatedAt={row.changed_at}
+                              updatedBy={row.changed_by_name}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })
                   ) : (
                     <tr>
-                      <td colSpan={11} style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--text-muted)' }}>
+                      <td colSpan={13} style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--text-muted)' }}>
                         Tidak ada transaksi mutasi stok yang sesuai dengan filter.
                       </td>
                     </tr>
@@ -1559,7 +1590,7 @@ export default function KartuStok() {
                 {stockCard && (
                   <tfoot>
                     <tr style={{ background: 'rgba(255,255,255,0.03)', fontWeight: 700, borderTop: '2px solid var(--border-strong)' }}>
-                      <td colSpan={6} style={{ textTransform: 'uppercase', letterSpacing: '0.04em', fontSize: 11, color: 'var(--text-secondary)' }}>
+                      <td colSpan={8} style={{ textTransform: 'uppercase', letterSpacing: '0.04em', fontSize: 11, color: 'var(--text-secondary)' }}>
                         Total Periode ({period.from} s/d {period.to})
                       </td>
                       <td className="mono right" style={{ color: 'var(--ok)', fontSize: 13 }}>
@@ -1571,6 +1602,7 @@ export default function KartuStok() {
                       <td className="mono right" style={{ color: stockCard.stok_akhir < 0 ? 'var(--danger)' : 'var(--accent)', fontSize: 14 }}>
                         {num(stockCard.stok_akhir)} {selectedIng?.unit_pakai}
                       </td>
+                      <td></td>
                       <td></td>
                     </tr>
                   </tfoot>
