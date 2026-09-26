@@ -2,16 +2,23 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   build: {
+    target: 'es2020',
     sourcemap: false,
     cssCodeSplit: true,
-    assetsInlineLimit: 4096,
-    chunkSizeWarningLimit: 600,
+    assetsInlineLimit: 8192,
+    chunkSizeWarningLimit: 1000,
     minify: true,
     rollupOptions: {
       output: {
         manualChunks(id) {
+          if (id.includes('node_modules/exceljs')) {
+            return 'vendor-exceljs';
+          }
           if (id.includes('node_modules/xlsx')) {
-            return 'vendor-excel';
+            return 'vendor-xlsx';
+          }
+          if (id.includes('node_modules/sweetalert2')) {
+            return 'vendor-swal';
           }
           if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/')) {
             return 'vendor-react';

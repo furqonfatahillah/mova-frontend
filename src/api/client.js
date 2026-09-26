@@ -6,10 +6,13 @@ const api = axios.create({
   baseURL: `http://${apiHost}/api`,
   headers: {
     'Content-Type': 'application/json',
-    'Accept': 'application/json',
+    Accept: 'application/json',
   },
   withCredentials: true,
 });
+
+// In-flight request deduplicator to prevent parallel duplicate GET network calls
+const inFlightRequests = new Map();
 
 // Attach token and active outlet automatically
 api.interceptors.request.use((config) => {
@@ -41,6 +44,30 @@ api.interceptors.request.use((config) => {
 
   return config;
 });
+
+// Wrap api.get with in-flight deduplication
+const originalGet = api.get.bind(api);
+api.get = function (url, config = {}) {
+  // If skipDedupe is specified or method is not GET, bypass
+  if (config.skipDedupe) {
+    return originalGet(url, config);
+  }
+
+  const key = `${url}:${JSON.stringify(config.params || {})}:${localStorage.getItem('pos_active_outlet_id') || ''}:${localStorage.getItem('pos_active_business_id') || ''}`;
+
+  if (inFlightRequests.has(key)) {
+    return inFlightRequests.get(key);
+  }
+
+  const promise = originalGet(url, config)
+    .finally(() => {
+      // Clear after short microtask to allow all concurrent components to share the same response
+      setTimeout(() => inFlightRequests.delete(key), 120);
+    });
+
+  inFlightRequests.set(key, promise);
+  return promise;
+};
 
 // Handle 401 globally (only redirect if not already on /login)
 api.interceptors.response.use(
