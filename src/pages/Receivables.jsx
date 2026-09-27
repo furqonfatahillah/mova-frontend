@@ -695,17 +695,18 @@ export default function Receivables() {
   // Export to Excel
   async function handleExportExcel() {
     try {
+      const exportItems = activeTab === 'AR_MERCHANT' ? filteredMerchantRows : filteredItems;
       const fname = await exportReceivablesToExcel({
-        items: filteredItems,
+        items: exportItems,
         stats,
         outletName,
         businessName,
         userName: currentUser?.name || 'Administrator',
       });
-      toast.success(`Buku Kasbon berhasil diekspor: ${fname}`);
+      toast.success(`Buku Piutang berhasil diekspor: ${fname}`);
     } catch (err) {
       console.error(err);
-      toast.error('Gagal mengekspor data kasbon ke Excel');
+      toast.error('Gagal mengekspor data piutang ke Excel');
     }
   }
 
@@ -718,12 +719,15 @@ export default function Receivables() {
     );
   }
 
-  // Print Full Receivables Report (LAPORAN PIUTANG CUSTOMER)
+  // Print Full Receivables Report (LAPORAN BUKU PIUTANG / AR MERCHANT)
   function handlePrintReceivablesReport() {
+    const docTitle = activeTab === 'AR_MERCHANT'
+      ? `LAPORAN PIUTANG AR MERCHANT (QRIS & E-COM) - ${businessName}`
+      : `LAPORAN BUKU PIUTANG - ${businessName}`;
     printElement(
       'printable-receivables-report',
-      `LAPORAN PIUTANG CUSTOMER - ${businessName}`,
-      { orientation: 'portrait' }
+      docTitle,
+      { orientation: activeTab === 'AR_MERCHANT' ? 'landscape' : 'portrait' }
     );
   }
 
@@ -2683,7 +2687,7 @@ export default function Receivables() {
         }}
       />
 
-      {/* Printable Report Document for LAPORAN PIUTANG CUSTOMER */}
+      {/* Printable Report Document for LAPORAN PIUTANG / AR MERCHANT */}
       <div id="printable-receivables-report" style={{ display: 'none' }}>
         <div style={{ padding: 15, fontFamily: "'Plus Jakarta Sans', Arial, sans-serif", color: '#000000' }}>
           <div style={{ borderBottom: '2px solid #000000', paddingBottom: 10, marginBottom: 14 }}>
@@ -2691,59 +2695,108 @@ export default function Receivables() {
               {businessName}
             </h2>
             <div style={{ fontSize: 14, fontWeight: 'bold', marginTop: 2 }}>
-              LAPORAN PIUTANG CUSTOMER
+              {activeTab === 'AR_MERCHANT' ? 'LAPORAN PIUTANG AR MERCHANT (QRIS & E-COMMERCE)' : 'LAPORAN BUKU PIUTANG USAHA'}
             </div>
             <div style={{ fontSize: 11, marginTop: 4 }}>
               Cabang: {outletName} | Dicetak: {new Date().toLocaleString('id-ID')}
             </div>
           </div>
 
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10, margin: '8px 0' }}>
-            <thead>
-              <tr style={{ background: '#f4f4f4', borderBottom: '1px solid #000' }}>
-                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'center' }}>No.</th>
-                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>Customer</th>
-                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>Tanggal</th>
-                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>Jam</th>
-                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>No.Penjualan</th>
-                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'right' }}>Piutang</th>
-                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'right' }}>Dibayar</th>
-                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'right' }}>Sisa Piutang</th>
-                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>Usia Piutang</th>
-                <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>Jatuh Tempo</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredItems.map((it, idx) => {
-                const issueTs = new Date(it.issue_date).getTime();
-                const nowTs = new Date().getTime();
-                const diffDays = Math.max(0, Math.floor((nowTs - issueTs) / (1000 * 60 * 60 * 24)));
-                return (
+          {activeTab === 'AR_MERCHANT' ? (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10, margin: '8px 0' }}>
+              <thead>
+                <tr style={{ background: '#f4f4f4', borderBottom: '1px solid #000' }}>
+                  <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'center' }}>No.</th>
+                  <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>Tanggal</th>
+                  <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>No. Order / Ref</th>
+                  <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'center' }}>Channel</th>
+                  <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>Provider / Merchant</th>
+                  <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'right' }}>Gross (Rp)</th>
+                  <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'center' }}>MDR %</th>
+                  <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'right' }}>MDR Fee (Rp)</th>
+                  <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'right' }}>Net Amount (Rp)</th>
+                  <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'center' }}>Status</th>
+                  <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>Rekening Pencairan</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredMerchantRows.map((it, idx) => (
                   <tr key={idx} style={{ borderBottom: '1px solid #ddd' }}>
                     <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'center' }}>{idx + 1}</td>
-                    <td style={{ border: '1px solid #000', padding: '4px 6px', fontWeight: 'bold' }}>{it.customer_name || 'Walk-in Customer'}</td>
                     <td style={{ border: '1px solid #000', padding: '4px 6px' }}>{it.issue_date || '-'}</td>
-                    <td style={{ border: '1px solid #000', padding: '4px 6px' }}>{it.created_at ? it.created_at.substring(11, 16) : '00:00'}</td>
                     <td style={{ border: '1px solid #000', padding: '4px 6px' }}>{it.order_number || it.receivable_no || '-'}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'center' }}>{it.ar_type === 'MERCHANT_QRIS' ? 'QRIS' : 'E-Commerce'}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 6px', fontWeight: 'bold' }}>{it.merchant_channel || '-'}</td>
                     <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right' }}>{Number(it.total_amount).toLocaleString('id-ID')}</td>
-                    <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right' }}>{Number(it.paid_amount).toLocaleString('id-ID')}</td>
-                    <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right', fontWeight: 'bold' }}>{Number(it.remaining_amount).toLocaleString('id-ID')}</td>
-                    <td style={{ border: '1px solid #000', padding: '4px 6px' }}>{diffDays} Hari</td>
-                    <td style={{ border: '1px solid #000', padding: '4px 6px' }}>{it.due_date || '-'}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'center' }}>{it.mdr_rate ? `${it.mdr_rate}%` : '-'}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right' }}>{Number(it.mdr_fee || 0).toLocaleString('id-ID')}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right', fontWeight: 'bold' }}>{Number(it.net_amount || it.remaining_amount || 0).toLocaleString('id-ID')}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'center', fontWeight: 'bold' }}>{it.settlement_status || (it.remaining_amount <= 0 ? 'SETTLED' : 'UNSETTLED')}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 6px' }}>{it.settlement_bank || '-'}</td>
                   </tr>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr style={{ fontWeight: 900, background: '#f4f4f4', borderTop: '2px solid #000' }}>
-                <td colSpan={7} style={{ border: '1px solid #000', padding: '6px 8px' }}>Total Piutang</td>
-                <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'right' }}>
-                  {Number(stats?.total_remaining || 0).toLocaleString('id-ID')}
-                </td>
-                <td colSpan={2} style={{ border: '1px solid #000', padding: '6px 8px' }}></td>
-              </tr>
-            </tfoot>
-          </table>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{ fontWeight: 900, background: '#f4f4f4', borderTop: '2px solid #000' }}>
+                  <td colSpan={5} style={{ border: '1px solid #000', padding: '6px 8px' }}>Total AR Merchant</td>
+                  <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'right' }}>{Number(merchantSummary.total_gross || 0).toLocaleString('id-ID')}</td>
+                  <td style={{ border: '1px solid #000', padding: '6px 8px' }}></td>
+                  <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'right' }}>{Number(merchantSummary.total_mdr || 0).toLocaleString('id-ID')}</td>
+                  <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'right' }}>{Number(merchantSummary.total_net || 0).toLocaleString('id-ID')}</td>
+                  <td colSpan={2} style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'center' }}>
+                    Belum Cair: {Number(merchantSummary.unsettled_amount || 0).toLocaleString('id-ID')}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10, margin: '8px 0' }}>
+              <thead>
+                <tr style={{ background: '#f4f4f4', borderBottom: '1px solid #000' }}>
+                  <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'center' }}>No.</th>
+                  <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>Customer</th>
+                  <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>Tanggal</th>
+                  <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>Jam</th>
+                  <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>No.Penjualan</th>
+                  <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'right' }}>Piutang</th>
+                  <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'right' }}>Dibayar</th>
+                  <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'right' }}>Sisa Piutang</th>
+                  <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>Usia Piutang</th>
+                  <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'left' }}>Jatuh Tempo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredItems.map((it, idx) => {
+                  const issueTs = new Date(it.issue_date).getTime();
+                  const nowTs = new Date().getTime();
+                  const diffDays = Math.max(0, Math.floor((nowTs - issueTs) / (1000 * 60 * 60 * 24)));
+                  return (
+                    <tr key={idx} style={{ borderBottom: '1px solid #ddd' }}>
+                      <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'center' }}>{idx + 1}</td>
+                      <td style={{ border: '1px solid #000', padding: '4px 6px', fontWeight: 'bold' }}>{it.customer_name || 'Walk-in Customer'}</td>
+                      <td style={{ border: '1px solid #000', padding: '4px 6px' }}>{it.issue_date || '-'}</td>
+                      <td style={{ border: '1px solid #000', padding: '4px 6px' }}>{it.created_at ? it.created_at.substring(11, 16) : '00:00'}</td>
+                      <td style={{ border: '1px solid #000', padding: '4px 6px' }}>{it.order_number || it.receivable_no || '-'}</td>
+                      <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right' }}>{Number(it.total_amount).toLocaleString('id-ID')}</td>
+                      <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right' }}>{Number(it.paid_amount).toLocaleString('id-ID')}</td>
+                      <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right', fontWeight: 'bold' }}>{Number(it.remaining_amount).toLocaleString('id-ID')}</td>
+                      <td style={{ border: '1px solid #000', padding: '4px 6px' }}>{diffDays} Hari</td>
+                      <td style={{ border: '1px solid #000', padding: '4px 6px' }}>{it.due_date || '-'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr style={{ fontWeight: 900, background: '#f4f4f4', borderTop: '2px solid #000' }}>
+                  <td colSpan={7} style={{ border: '1px solid #000', padding: '6px 8px' }}>Total Piutang</td>
+                  <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'right' }}>
+                    {Number(stats?.total_remaining || 0).toLocaleString('id-ID')}
+                  </td>
+                  <td colSpan={2} style={{ border: '1px solid #000', padding: '6px 8px' }}></td>
+                </tr>
+              </tfoot>
+            </table>
+          )}
         </div>
       </div>
     </div>
