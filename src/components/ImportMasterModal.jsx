@@ -126,18 +126,18 @@ export default function ImportMasterModal({
 
   const MASTER_CONFIG = {
     INGREDIENT: {
-      title: 'Master Bahan (Bahan Baku & Stock Awal)',
+      title: 'Master Bahan (Bahan Baku & Saldo/Stock Awal)',
       downloadFn: downloadIngredientTemplate,
       endpoint: '/ingredients/bulk-import',
-      columns: ['Nama Bahan*', 'Kategori', 'Tipe*', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Stock Awal (Satuan Pakai)*', 'Stok Minimal'],
-      sampleHint: 'Master bahan terpusat dan otomatis berlaku untuk seluruh cabang usaha. Kolom Stock Awal tercatat sebagai Saldo & Stock Awal di Kartu Stok.',
+      columns: ['Nama Bahan*', 'Kategori', 'Tipe*', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Saldo & Stock Awal (Satuan Pakai)*', 'Stok Minimal'],
+      sampleHint: 'Master bahan terpusat untuk seluruh cabang usaha. Kolom "Saldo & Stock Awal" otomatis tercatat sebagai Saldo Berjalan dan Nilai Saldo (Rp) di Kartu Stok.',
     },
     PERLENGKAPAN: {
-      title: 'Master Perlengkapan & Packaging (Stock Awal)',
+      title: 'Master Perlengkapan & Packaging (Saldo/Stock Awal)',
       downloadFn: downloadPerlengkapanTemplate,
       endpoint: '/perlengkapans/bulk-import',
-      columns: ['Nama Perlengkapan*', 'Kategori', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Stock Awal (Satuan Pakai)*', 'Stok Minimal'],
-      sampleHint: 'Master perlengkapan terpusat dan otomatis berlaku untuk seluruh cabang usaha. Kolom Stock Awal tercatat sebagai Saldo & Stock Awal di Kartu Stok.',
+      columns: ['Nama Perlengkapan*', 'Kategori', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Saldo & Stock Awal (Satuan Pakai)*', 'Stok Minimal'],
+      sampleHint: 'Master perlengkapan terpusat untuk seluruh cabang usaha. Kolom "Saldo & Stock Awal" otomatis tercatat sebagai Saldo Berjalan dan Nilai Saldo (Rp) di Kartu Stok.',
     },
     MENU: {
       title: 'Master Menu & F&B',
@@ -374,6 +374,8 @@ export default function ImportMasterModal({
           const harga = parseFloat(getVal(row, ['hargabelipersatuanbelirp', 'hargabeli', 'harga', 'hargasatuan', 'cost', 'modal'])) || 0;
           const minStock = parseFloat(getVal(row, ['stokminimalsatuanpakai', 'stokminimal', 'minstok', 'minimumstok', 'minstock'])) || 0;
           const initialStock = parseFloat(getVal(row, [
+            'saldodanstockawalsatuanpakai', 'saldostockawalsatuanpakai', 'saldoawalstockawalsatuanpakai',
+            'saldodanstockawal', 'saldostockawal',
             'stockawalsatuanpakai', 'stokawalsatuanpakai',
             'stockawal', 'stokawal',
             'stock_awal', 'stok_awal',
@@ -443,6 +445,8 @@ export default function ImportMasterModal({
           const harga = parseFloat(getVal(row, ['hargabelipersatuanbelirp', 'hargabeli', 'harga', 'hargasatuan'])) || 0;
           const minStock = parseFloat(getVal(row, ['stokminimalsatuanpakai', 'stokminimal', 'minstok'])) || 0;
           const initialStock = parseFloat(getVal(row, [
+            'saldodanstockawalsatuanpakai', 'saldostockawalsatuanpakai', 'saldoawalstockawalsatuanpakai',
+            'saldodanstockawal', 'saldostockawal',
             'stockawalsatuanpakai', 'stokawalsatuanpakai',
             'stockawal', 'stokawal',
             'stock_awal', 'stok_awal',
@@ -947,7 +951,7 @@ export default function ImportMasterModal({
                               </span>
                             )}
                             <span>
-                              {row.data.type} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · Harga: <strong>{rupiah(row.data.harga)}</strong> · Stock Awal (Saldo): <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit_pakai}</strong> (Nilai: <span style={{ color: '#34d399' }}>{rupiah(row.data.initial_stock * (row.data.harga / Math.max(row.data.konversi || 1, 1)))}</span>)
+                              {row.data.type} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · Harga: <strong>{rupiah(row.data.harga)}</strong> · Saldo & Stock Awal: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit_pakai}</strong> (Nilai Saldo: <span style={{ color: '#34d399', fontWeight: 700 }}>{rupiah(row.data.initial_stock * (row.data.harga / Math.max(row.data.konversi || 1, 1)))}</span>)
                             </span>
                             {(row.data._uBeli?.isFixed || row.data._uPakai?.isFixed) && (
                               <span style={{ background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }} title="Typo/singkatan otomatis diperbaiki ke format standar">
@@ -973,7 +977,7 @@ export default function ImportMasterModal({
                               </span>
                             )}
                             <span>
-                              {row.data.category} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · Harga: <strong>{rupiah(row.data.harga)}</strong> · Stock Awal (Saldo): <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit_pakai}</strong> (Nilai: <span style={{ color: '#34d399' }}>{rupiah(row.data.initial_stock * (row.data.harga / Math.max(row.data.konversi || 1, 1)))}</span>)
+                              {row.data.category} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · Harga: <strong>{rupiah(row.data.harga)}</strong> · Saldo & Stock Awal: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit_pakai}</strong> (Nilai Saldo: <span style={{ color: '#34d399', fontWeight: 700 }}>{rupiah(row.data.initial_stock * (row.data.harga / Math.max(row.data.konversi || 1, 1)))}</span>)
                             </span>
                             {(row.data._uBeli?.isFixed || row.data._uPakai?.isFixed) && (
                               <span style={{ background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }} title="Typo/singkatan otomatis diperbaiki ke format standar">
