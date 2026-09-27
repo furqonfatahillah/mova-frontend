@@ -1294,69 +1294,26 @@ export default function Payables() {
           {/* Report Toolbar */}
           <div className="card" style={{ padding: '14px 16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-              {/* Left: Search & Information Badges */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                <div style={{ position: 'relative', width: 280, maxWidth: '100%' }}>
-                  <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                  <input
-                    type="text"
-                    className="form-control"
-                    style={{ paddingLeft: 34, fontSize: 12.5 }}
-                    placeholder="Cari supplier / no pembelian..."
-                    value={reportSearch}
-                    onChange={e => setReportSearch(e.target.value)}
-                  />
-                  {reportSearch && (
-                    <button
-                      onClick={() => setReportSearch('')}
-                      style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}
-                      title="Hapus pencarian"
-                    >
-                      <X size={14} />
-                    </button>
-                  )}
-                </div>
-
-                {/* Navbar Period Info Tag */}
-                <div
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 7,
-                    padding: '6px 12px',
-                    borderRadius: 8,
-                    background: 'rgba(139, 92, 246, 0.1)',
-                    border: '1px solid rgba(139, 92, 246, 0.25)',
-                    fontSize: 12,
-                    color: 'var(--text-secondary)'
-                  }}
-                  title="Periode laporan otomatis mengikuti rentang tanggal global pada navbar atas"
-                >
-                  <Calendar size={13} style={{ color: 'var(--accent-bright)' }} />
-                  <span>Periode:</span>
-                  <strong style={{ color: '#ffffff' }}>
-                    {reportData.period?.from_formatted && reportData.period?.to_formatted
-                      ? `${reportData.period.from_formatted} — ${reportData.period.to_formatted}`
-                      : `${activePeriod.from} s/d ${activePeriod.to}`}
-                  </strong>
-                </div>
-
-                {/* Outlet Info Tag */}
-                <div style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '6px 12px',
-                  borderRadius: 8,
-                  background: 'rgba(255, 255, 255, 0.04)',
-                  border: '1px solid var(--border)',
-                  fontSize: 12,
-                  color: 'var(--text-secondary)'
-                }}>
-                  <Building2 size={13} style={{ color: 'var(--accent-bright)' }} />
-                  <span>Cabang:</span>
-                  <strong style={{ color: '#ffffff' }}>{reportData.outlet || outletName}</strong>
-                </div>
+              {/* Left: Search */}
+              <div style={{ position: 'relative', width: 280, maxWidth: '100%' }}>
+                <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                <input
+                  type="text"
+                  className="form-control"
+                  style={{ paddingLeft: 34, fontSize: 12.5 }}
+                  placeholder="Cari supplier / no pembelian..."
+                  value={reportSearch}
+                  onChange={e => setReportSearch(e.target.value)}
+                />
+                {reportSearch && (
+                  <button
+                    onClick={() => setReportSearch('')}
+                    style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}
+                    title="Hapus pencarian"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
               </div>
 
               {/* Right: Actions (Refresh, Export, Print) */}

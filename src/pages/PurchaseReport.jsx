@@ -93,8 +93,15 @@ export default function PurchaseReport() {
   const from = activePeriod.from;
   const to = activePeriod.to;
 
-  // Filter States (No local date state, date is 100% controlled by navbar dateRange)
-  const [filterOutlet, setFilterOutlet] = useState(() => currentOutletId || 'ALL');
+  // Active Outlet (100% synchronized with global navbar activeOutletId)
+  const filterOutlet = useMemo(() => {
+    if (!currentOutletId || currentOutletId === 'ALL' || currentOutletId === 'all') {
+      return 'ALL';
+    }
+    return String(currentOutletId);
+  }, [currentOutletId]);
+
+  // Filter States (Payment, Supplier, Search)
   const [filterPayment, setFilterPayment] = useState('ALL');
   const [filterSupplier, setFilterSupplier] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
@@ -104,13 +111,6 @@ export default function PurchaseReport() {
   const [reportData, setReportData] = useState(null);
   const [suppliersList, setSuppliersList] = useState([]);
   const [exporting, setExporting] = useState(false);
-
-  // Sync outlet from context if changed
-  useEffect(() => {
-    if (currentOutletId && currentOutletId !== 'ALL' && currentOutletId !== 'all') {
-      setFilterOutlet(String(currentOutletId));
-    }
-  }, [currentOutletId]);
 
   // Current outlet object
   const currentOutletObj = useMemo(() => {
@@ -328,7 +328,7 @@ export default function PurchaseReport() {
         </div>
       </div>
 
-      {/* FILTER TOOLBAR CARD (SYNCHRONIZED WITH GLOBAL NAVBAR FILTERS) */}
+      {/* FILTER TOOLBAR CARD */}
       <div
         className="card"
         style={{
@@ -339,70 +339,13 @@ export default function PurchaseReport() {
           marginBottom: 20
         }}
       >
-        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
-          {/* Visual Indicators of Active Scope from Global Navbar */}
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+          {/* Left: Filter Controls */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 7,
-                padding: '6px 14px',
-                borderRadius: 8,
-                background: 'rgba(56, 189, 248, 0.08)',
-                border: '1px solid rgba(56, 189, 248, 0.25)',
-                fontSize: 12,
-                color: '#38bdf8',
-                fontWeight: 600,
-              }}
-              title="Periode laporan otomatis mengikuti rentang tanggal global pada navbar atas"
-            >
-              <Calendar size={14} />
-              <span>Periode Global: <strong style={{ color: '#ffffff' }}>{from} — {to}</strong></span>
-            </div>
-
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 7,
-                padding: '6px 14px',
-                borderRadius: 8,
-                background: 'rgba(16, 185, 129, 0.08)',
-                border: '1px solid rgba(16, 185, 129, 0.25)',
-                fontSize: 12,
-                color: '#34d399',
-                fontWeight: 600,
-              }}
-              title="Cabang terpilih di navbar atas"
-            >
-              <Store size={14} />
-              <span>Cabang: <strong style={{ color: '#ffffff' }}>{currentOutletObj?.name || outletName}</strong></span>
-            </div>
-          </div>
-
-          {/* Quick Selectors & Instant Search */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', flex: '1 1 auto', justifyContent: 'flex-end' }}>
-            {/* Warehouse / Outlet Selector */}
-            <select
-              className="form-control"
-              style={{ fontSize: 12, width: 'auto', minWidth: 160 }}
-              value={filterOutlet}
-              onChange={e => setFilterOutlet(e.target.value)}
-              title="Filter Warehouse / Cabang"
-            >
-              <option value="ALL">🏢 Semua Unit (Holding & Outlet)</option>
-              {outlets.map(o => (
-                <option key={o.id} value={String(o.id)}>
-                  {o.is_main ? '👑 [HOLDING] ' : '📍 '} {o.name}
-                </option>
-              ))}
-            </select>
-
             {/* Metode Pembayaran Filter */}
             <select
               className="form-control"
-              style={{ fontSize: 12, width: 'auto', minWidth: 155 }}
+              style={{ fontSize: 12, width: 'auto', minWidth: 160 }}
               value={filterPayment}
               onChange={e => setFilterPayment(e.target.value)}
               disabled={!isCurrentHolding && filterOutlet !== 'ALL' && activeTab !== 'payables'}
@@ -421,7 +364,7 @@ export default function PurchaseReport() {
             {/* Supplier Filter */}
             <select
               className="form-control"
-              style={{ fontSize: 12, width: 'auto', minWidth: 145 }}
+              style={{ fontSize: 12, width: 'auto', minWidth: 160 }}
               value={filterSupplier}
               onChange={e => setFilterSupplier(e.target.value)}
               title="Filter Berdasarkan Vendor / Supplier"
@@ -431,9 +374,12 @@ export default function PurchaseReport() {
                 <option key={s.id || s.name} value={s.name}>{s.name}</option>
               ))}
             </select>
+          </div>
 
+          {/* Right: Search & Refresh */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             {/* Quick Search */}
-            <div style={{ position: 'relative', width: 230, maxWidth: '100%' }}>
+            <div style={{ position: 'relative', width: 250, maxWidth: '100%' }}>
               <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
               <input
                 type="text"
