@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   BookOpen, PlusCircle, Search, RefreshCw, Eye,
   Printer, FileSpreadsheet, AlertCircle,
@@ -28,6 +28,7 @@ export default function Payables() {
     canSwitchOutlet,
     currentBusiness,
     currentUser,
+    dateRange: period,
   } = useOutlet();
 
   const businessName = currentBusiness?.name || currentUser?.business?.name || 'MOVA POS F&B';
@@ -68,11 +69,12 @@ export default function Payables() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [dueFilter, setDueFilter] = useState('ALL');
 
-  // Report Specific States
-  const [reportPeriod, setReportPeriod] = useState({
-    from: getMonthStartStr(),
-    to: getMonthEndStr(),
-  });
+  // Report Specific States (synchronized with global navbar date range)
+  const activePeriod = useMemo(() => ({
+    from: period?.from || getMonthStartStr(),
+    to: period?.to || getMonthEndStr(),
+  }), [period?.from, period?.to]);
+  const [reportSearch, setReportSearch] = useState('');
   const [reportData, setReportData] = useState({ rows: [], summary: {}, period: {}, outlet: '' });
   const [reportLoading, setReportLoading] = useState(false);
 
@@ -192,12 +194,31 @@ export default function Payables() {
     fetchSuppliers();
   }, [targetOutlet, statusFilter, dueFilter]);
 
-  // Fetch report data when REPORT tab is active or reportPeriod changes
+  const fetchReportData = useCallback(async () => {
+    setReportLoading(true);
+    try {
+      const params = {
+        from: activePeriod.from,
+        to: activePeriod.to,
+      };
+      if (targetOutlet) params.outlet_id = targetOutlet;
+      if (statusFilter !== 'ALL') params.status = statusFilter;
+
+      const { data } = await api.get('/payables/report', { params });
+      setReportData(data || { rows: [], summary: {}, period: {}, outlet: '' });
+    } catch (err) {
+      toast.error('Gagal memuat data laporan hutang');
+    } finally {
+      setReportLoading(false);
+    }
+  }, [activePeriod.from, activePeriod.to, targetOutlet, statusFilter]);
+
+  // Fetch report data when REPORT tab is active or activePeriod/targetOutlet changes
   useEffect(() => {
     if (activeTab === 'REPORT') {
       fetchReportData();
     }
-  }, [activeTab, reportPeriod, targetOutlet]);
+  }, [activeTab, fetchReportData]);
 
   async function fetchPayables() {
     setLoading(true);
@@ -227,24 +248,38 @@ export default function Payables() {
     } catch {}
   }
 
-  async function fetchReportData() {
-    setReportLoading(true);
-    try {
-      const params = {
-        from: reportPeriod.from,
-        to: reportPeriod.to,
-      };
-      if (targetOutlet) params.outlet_id = targetOutlet;
-      if (statusFilter !== 'ALL') params.status = statusFilter;
+  // Filtered rows for Tab 4 Laporan Hutang Supplier
+  const filteredReportRows = useMemo(() => {
+    const list = reportData.rows || [];
+    if (!reportSearch.trim()) return list;
+    const q = reportSearch.toLowerCase().trim();
+    return list.filter(r =>
+      (r.supplier_name || '').toLowerCase().includes(q) ||
+      (r.no_pembelian || '').toLowerCase().includes(q) ||
+      (r.no_bayar || '').toLowerCase().includes(q) ||
+      (r.dibuat_oleh || '').toLowerCase().includes(q) ||
+      (r.ingredient_name || '').toLowerCase().includes(q)
+    );
+  }, [reportData.rows, reportSearch]);
 
-      const { data } = await api.get('/payables/report', { params });
-      setReportData(data);
-    } catch (err) {
-      toast.error('Gagal memuat data laporan hutang');
-    } finally {
-      setReportLoading(false);
+  const reportTotals = useMemo(() => {
+    if (!reportSearch.trim() && reportData.summary) {
+      return {
+        hutang: Number(reportData.summary.total_hutang) || 0,
+        dibayar: Number(reportData.summary.total_dibayar) || 0,
+        sisa_hutang: Number(reportData.summary.total_sisa_hutang) || 0,
+        total_hutang: Number(reportData.summary.total_hutang) || 0,
+        count: Number(reportData.summary.count_rows) || (reportData.rows || []).length,
+      };
     }
-  }
+    return filteredReportRows.reduce((acc, curr) => ({
+      hutang: acc.hutang + (Number(curr.hutang) || 0),
+      dibayar: acc.dibayar + (Number(curr.dibayar) || 0),
+      sisa_hutang: acc.sisa_hutang + (Number(curr.sisa_hutang) || 0),
+      total_hutang: acc.total_hutang + (Number(curr.total_hutang) || 0),
+      count: acc.count + 1,
+    }), { hutang: 0, dibayar: 0, sisa_hutang: 0, total_hutang: 0, count: 0 });
+  }, [filteredReportRows, reportSearch, reportData.summary, reportData.rows]);
 
   // Filtered Payables
   const filteredItems = useMemo(() => {
@@ -700,14 +735,21 @@ export default function Payables() {
             fontWeight: 700,
             borderRadius: '8px 8px 0 0',
             border: 'none',
-            borderBottom: activeTab === 'REPORT' ? '2.5px solid #10b981' : '2.5px solid transparent',
-            color: activeTab === 'REPORT' ? '#34d399' : 'var(--text-secondary)',
-            background: activeTab === 'REPORT' ? 'rgba(16, 185, 129, 0.08)' : 'transparent',
+            borderBottom: activeTab === 'REPORT' ? '2.5px solid var(--accent-bright)' : '2.5px solid transparent',
+            color: activeTab === 'REPORT' ? 'var(--accent-bright)' : 'var(--text-secondary)',
+            background: activeTab === 'REPORT' ? 'rgba(124, 58, 237, 0.08)' : 'transparent',
             display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer'
           }}
         >
-          <FileSpreadsheet size={16} color={activeTab === 'REPORT' ? '#34d399' : undefined} />
-          <span>Laporan Hutang Supplier (Excel/PDF)</span>
+          <FileSpreadsheet size={16} />
+          <span>Laporan Hutang Supplier</span>
+          <span style={{
+            fontSize: 11, padding: '2px 6px', borderRadius: 999,
+            background: activeTab === 'REPORT' ? 'var(--accent)' : 'rgba(255,255,255,0.06)',
+            color: '#fff'
+          }}>
+            {reportData?.rows?.length || 0}
+          </span>
         </button>
       </div>
 
@@ -1167,62 +1209,194 @@ export default function Payables() {
         </div>
       )}
 
-      {/* TAB 4: LAPORAN HUTANG SUPPLIER (MATCHING USER SCREENSHOT) */}
+      {/* TAB 4: LAPORAN HUTANG SUPPLIER (SYNCHRONIZED WITH GLOBAL NAVBAR DATE RANGE & MODERN DARK STYLING) */}
       {activeTab === 'REPORT' && (
         <div className="space-y-4">
-          {/* Report Toolbar */}
-          <div className="card" style={{ padding: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Calendar size={15} color="var(--text-muted)" />
-                  <span style={{ fontSize: 12.5, fontWeight: 600 }}>Periode:</span>
+          {/* Summary KPI Cards for Report Period */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+            <div className="card" style={{ padding: '14px 18px', borderLeft: '4px solid var(--accent-bright)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 700 }}>
+                    Total Hutang Periode Ini
+                  </div>
+                  <div className="mono" style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-primary)', marginTop: 4 }}>
+                    {rupiah(reportTotals.hutang)}
+                  </div>
                 </div>
-                <input
-                  type="date"
-                  className="form-control mono"
-                  style={{ width: 140, fontSize: 12 }}
-                  value={reportPeriod.from}
-                  onChange={e => setReportPeriod(p => ({ ...p, from: e.target.value }))}
-                />
-                <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>s/d</span>
-                <input
-                  type="date"
-                  className="form-control mono"
-                  style={{ width: 140, fontSize: 12 }}
-                  value={reportPeriod.to}
-                  onChange={e => setReportPeriod(p => ({ ...p, to: e.target.value }))}
-                />
+                <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(124, 58, 237, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-bright)' }}>
+                  <DollarSign size={17} />
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                Nilai faktur pembelian tempo
+              </div>
+            </div>
+
+            <div className="card" style={{ padding: '14px 18px', borderLeft: '4px solid #10b981' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 700 }}>
+                    Total Telah Dibayar
+                  </div>
+                  <div className="mono" style={{ fontSize: 20, fontWeight: 800, color: '#34d399', marginTop: 4 }}>
+                    {rupiah(reportTotals.dibayar)}
+                  </div>
+                </div>
+                <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(16, 185, 129, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#34d399' }}>
+                  <CheckCircle2 size={17} />
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                Realisasi kas pelunasan
+              </div>
+            </div>
+
+            <div className="card" style={{ padding: '14px 18px', borderLeft: '4px solid #ef4444' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 700 }}>
+                    Sisa Hutang Berjalan
+                  </div>
+                  <div className="mono" style={{ fontSize: 20, fontWeight: 800, color: '#f87171', marginTop: 4 }}>
+                    {rupiah(reportTotals.sisa_hutang)}
+                  </div>
+                </div>
+                <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(239, 68, 68, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#f87171' }}>
+                  <Clock size={17} />
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                Kewajiban aktif yang belum lunas
+              </div>
+            </div>
+
+            <div className="card" style={{ padding: '14px 18px', borderLeft: '4px solid #38bdf8' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 700 }}>
+                    Jumlah Transaksi
+                  </div>
+                  <div className="mono" style={{ fontSize: 20, fontWeight: 800, color: '#38bdf8', marginTop: 4 }}>
+                    {reportTotals.count} <span style={{ fontSize: 13, fontWeight: 500 }}>Nota</span>
+                  </div>
+                </div>
+                <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(56, 189, 248, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#38bdf8' }}>
+                  <Receipt size={17} />
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                {reportData.outlet || outletName}
+              </div>
+            </div>
+          </div>
+
+          {/* Report Toolbar */}
+          <div className="card" style={{ padding: '14px 16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+              {/* Left: Search & Information Badges */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ position: 'relative', width: 280, maxWidth: '100%' }}>
+                  <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                  <input
+                    type="text"
+                    className="form-control"
+                    style={{ paddingLeft: 34, fontSize: 12.5 }}
+                    placeholder="Cari supplier / no pembelian..."
+                    value={reportSearch}
+                    onChange={e => setReportSearch(e.target.value)}
+                  />
+                  {reportSearch && (
+                    <button
+                      onClick={() => setReportSearch('')}
+                      style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}
+                      title="Hapus pencarian"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Navbar Period Info Tag */}
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 7,
+                    padding: '6px 12px',
+                    borderRadius: 8,
+                    background: 'rgba(139, 92, 246, 0.1)',
+                    border: '1px solid rgba(139, 92, 246, 0.25)',
+                    fontSize: 12,
+                    color: 'var(--text-secondary)'
+                  }}
+                  title="Periode laporan otomatis mengikuti rentang tanggal global pada navbar atas"
+                >
+                  <Calendar size={13} style={{ color: 'var(--accent-bright)' }} />
+                  <span>Periode:</span>
+                  <strong style={{ color: '#ffffff' }}>
+                    {reportData.period?.from_formatted && reportData.period?.to_formatted
+                      ? `${reportData.period.from_formatted} — ${reportData.period.to_formatted}`
+                      : `${activePeriod.from} s/d ${activePeriod.to}`}
+                  </strong>
+                </div>
+
+                {/* Outlet Info Tag */}
+                <div style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '6px 12px',
+                  borderRadius: 8,
+                  background: 'rgba(255, 255, 255, 0.04)',
+                  border: '1px solid var(--border)',
+                  fontSize: 12,
+                  color: 'var(--text-secondary)'
+                }}>
+                  <Building2 size={13} style={{ color: 'var(--accent-bright)' }} />
+                  <span>Cabang:</span>
+                  <strong style={{ color: '#ffffff' }}>{reportData.outlet || outletName}</strong>
+                </div>
+              </div>
+
+              {/* Right: Actions (Refresh, Export, Print) */}
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                 <button
                   onClick={fetchReportData}
                   className="btn btn-secondary"
-                  style={{ fontSize: 12, padding: '6px 12px' }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}
+                  title="Segarkan data dari server"
+                  disabled={reportLoading}
                 >
-                  Tampilkan
+                  <RefreshCw size={14} className={reportLoading ? 'spin' : ''} />
+                  <span>Segarkan</span>
                 </button>
-              </div>
 
-              {/* Export Buttons */}
-              <div style={{ display: 'flex', gap: 10 }}>
                 <button
                   onClick={() => exportSupplierPayablesToExcel({
-                    rows: reportData.rows || [],
-                    period: reportData.period || reportPeriod,
+                    rows: filteredReportRows,
+                    period: reportData.period || activePeriod,
                     outletName: reportData.outlet || outletName,
                     businessName,
-                    summary: reportData.summary || {},
+                    summary: {
+                      total_hutang: reportTotals.hutang,
+                      total_dibayar: reportTotals.dibayar,
+                      total_sisa_hutang: reportTotals.sisa_hutang,
+                      count_rows: reportTotals.count,
+                    },
                   })}
                   className="btn"
                   style={{
-                    background: 'rgba(16, 185, 129, 0.2)',
+                    background: 'rgba(16, 185, 129, 0.15)',
                     color: '#34d399',
-                    border: '1px solid #10b981',
+                    border: '1px solid rgba(16, 185, 129, 0.35)',
                     fontSize: 12.5,
                     fontWeight: 700,
                     display: 'flex',
                     alignItems: 'center',
                     gap: 6
                   }}
+                  title="Unduh laporan dalam format Excel (.xlsx)"
                 >
                   <FileSpreadsheet size={15} />
                   <span>Export Excel</span>
@@ -1230,13 +1404,19 @@ export default function Payables() {
 
                 <button
                   onClick={() => printSupplierPayablesReport({
-                    rows: reportData.rows || [],
-                    period: reportData.period || reportPeriod,
+                    rows: filteredReportRows,
+                    period: reportData.period || activePeriod,
                     outletName: reportData.outlet || outletName,
-                    summary: reportData.summary || {},
+                    summary: {
+                      total_hutang: reportTotals.hutang,
+                      total_dibayar: reportTotals.dibayar,
+                      total_sisa_hutang: reportTotals.sisa_hutang,
+                      count_rows: reportTotals.count,
+                    },
                   })}
                   className="btn btn-secondary"
                   style={{ fontSize: 12.5, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}
+                  title="Cetak laporan atau simpan sebagai PDF"
                 >
                   <Printer size={15} />
                   <span>Cetak / PDF</span>
@@ -1245,99 +1425,159 @@ export default function Payables() {
             </div>
           </div>
 
-          {/* Report Preview Document */}
-          <div className="card" style={{ padding: 24, background: '#ffffff', color: '#111827', borderRadius: 8, boxShadow: '0 4px 20px rgba(0,0,0,0.15)' }}>
-            <div style={{ textAlign: 'center', marginBottom: 20 }}>
-              <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#111827' }}>
-                LAPORAN HUTANG SUPPLIER
-              </h2>
-              <div style={{ fontSize: 13, fontStyle: 'italic', marginTop: 4, color: '#4b5563' }}>
-                {reportData.period?.from_formatted && reportData.period?.to_formatted
-                  ? `Per ${reportData.period.from_formatted} s/d ${reportData.period.to_formatted}`
-                  : `Per ${reportPeriod.from} s/d ${reportPeriod.to}`}
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#6b7280', marginBottom: 10 }}>
-              <div><strong>Cabang:</strong> {reportData.outlet || outletName}</div>
-              <div><strong>Jumlah Transaksi:</strong> {reportData.summary?.count_rows || (reportData.rows || []).length} Data</div>
-            </div>
-
+          {/* Report Data Table Card with App's Modern Dark Styling */}
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
             {reportLoading ? (
-              <div style={{ padding: 40, textAlign: 'center', color: '#6b7280' }}>
-                <LoadingState message="Memuat format laporan hutang supplier..." />
+              <div style={{ padding: 48, textAlign: 'center' }}>
+                <LoadingState message="Memuat data laporan hutang supplier..." />
               </div>
             ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{
-                  width: '100%',
-                  borderCollapse: 'collapse',
-                  fontSize: 11.5,
-                  color: '#111827',
-                  border: '1px solid #111827'
-                }}>
+              <div className="table-wrap" style={{ maxHeight: '68vh', overflowY: 'auto' }}>
+                <table style={{ fontSize: 12.5, width: '100%' }}>
                   <thead>
-                    <tr style={{ background: '#f9fafb' }}>
-                      <th style={{ border: '1px solid #111827', padding: '6px 8px', textAlign: 'center', width: 35 }}>No.</th>
-                      <th style={{ border: '1px solid #111827', padding: '6px 8px', textAlign: 'left' }}>Supplier/Tanggal</th>
-                      <th style={{ border: '1px solid #111827', padding: '6px 8px', textAlign: 'center', width: 85 }}>Tgl. Dibuat</th>
-                      <th style={{ border: '1px solid #111827', padding: '6px 8px', textAlign: 'left', width: 90 }}>Dibuat Oleh</th>
-                      <th style={{ border: '1px solid #111827', padding: '6px 8px', textAlign: 'center', width: 110 }}>No.Pembelian</th>
-                      <th style={{ border: '1px solid #111827', padding: '6px 8px', textAlign: 'center', width: 120 }}>No.Bayar</th>
-                      <th style={{ border: '1px solid #111827', padding: '6px 8px', textAlign: 'center', width: 85 }}>Jatuh Tempo</th>
-                      <th style={{ border: '1px solid #111827', padding: '6px 8px', textAlign: 'right', width: 95 }}>Hutang</th>
-                      <th style={{ border: '1px solid #111827', padding: '6px 8px', textAlign: 'right', width: 95 }}>Dibayar</th>
-                      <th style={{ border: '1px solid #111827', padding: '6px 8px', textAlign: 'right', width: 95 }}>Sisa Hutang</th>
-                      <th style={{ border: '1px solid #111827', padding: '6px 8px', textAlign: 'right', width: 95 }}>Total Hutang</th>
+                    <tr>
+                      <th style={{ width: 45, textAlign: 'center' }}>No.</th>
+                      <th>Supplier</th>
+                      <th style={{ width: 105, textAlign: 'center' }}>Tgl. Dibuat</th>
+                      <th style={{ width: 110 }}>Dibuat Oleh</th>
+                      <th style={{ width: 130 }}>No. Pembelian</th>
+                      <th style={{ width: 130 }}>No. Bayar</th>
+                      <th style={{ width: 115, textAlign: 'center' }}>Jatuh Tempo</th>
+                      <th className="right" style={{ width: 125 }}>Hutang</th>
+                      <th className="right" style={{ width: 125, color: '#34d399' }}>Dibayar</th>
+                      <th className="right" style={{ width: 125, color: '#f87171' }}>Sisa Hutang</th>
+                      <th className="right" style={{ width: 125, fontWeight: 800 }}>Total Hutang</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {(reportData.rows || []).length === 0 ? (
+                    {filteredReportRows.length === 0 ? (
                       <tr>
-                        <td colSpan="11" style={{ border: '1px solid #111827', padding: 20, textAlign: 'center', color: '#6b7280' }}>
-                          Tidak ada data hutang pada periode ini.
+                        <td colSpan="11" style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)' }}>
+                          {reportSearch ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                              <div>Tidak ada data hutang yang sesuai dengan kata kunci <strong>"{reportSearch}"</strong>.</div>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => setReportSearch('')}
+                                style={{ fontSize: 12 }}
+                              >
+                                Bersihkan Pencarian
+                              </button>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                              <AlertCircle size={28} style={{ opacity: 0.4, color: 'var(--text-muted)' }} />
+                              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Tidak ada transaksi hutang supplier pada periode ini.</div>
+                              <div style={{ fontSize: 11.5 }}>Silakan sesuaikan rentang tanggal di navbar atas atau pilih cabang lain.</div>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ) : (
-                      reportData.rows.map((row, idx) => (
-                        <tr key={idx}>
-                          <td style={{ border: '1px solid #111827', padding: '5px 8px', textAlign: 'center' }}>{row.no}</td>
-                          <td style={{ border: '1px solid #111827', padding: '5px 8px' }}>{row.supplier_tanggal}</td>
-                          <td style={{ border: '1px solid #111827', padding: '5px 8px', textAlign: 'center' }}>{row.tgl_dibuat_fmt || row.tgl_dibuat}</td>
-                          <td style={{ border: '1px solid #111827', padding: '5px 8px' }}>{row.dibuat_oleh}</td>
-                          <td style={{ border: '1px solid #111827', padding: '5px 8px', textAlign: 'center' }}>{row.no_pembelian}</td>
-                          <td style={{ border: '1px solid #111827', padding: '5px 8px', textAlign: 'center' }}>{row.no_bayar}</td>
-                          <td style={{ border: '1px solid #111827', padding: '5px 8px', textAlign: 'center' }}>{row.jatuh_tempo_fmt || row.jatuh_tempo}</td>
-                          <td style={{ border: '1px solid #111827', padding: '5px 8px', textAlign: 'right', fontFamily: 'monospace' }}>
-                            {Number(row.hutang || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </td>
-                          <td style={{ border: '1px solid #111827', padding: '5px 8px', textAlign: 'right', fontFamily: 'monospace' }}>
-                            {Number(row.dibayar || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </td>
-                          <td style={{ border: '1px solid #111827', padding: '5px 8px', textAlign: 'right', fontFamily: 'monospace' }}>
-                            {Number(row.sisa_hutang || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </td>
-                          <td style={{ border: '1px solid #111827', padding: '5px 8px', textAlign: 'right', fontFamily: 'monospace' }}>
-                            {Number(row.total_hutang || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </td>
-                        </tr>
-                      ))
+                      filteredReportRows.map((row, idx) => {
+                        const isOverdue = row.jatuh_tempo && row.sisa_hutang > 0 && new Date(row.jatuh_tempo) < new Date(getTodayStr());
+
+                        return (
+                          <tr key={row.id || idx}>
+                            <td style={{ textAlign: 'center', color: 'var(--text-muted)' }}>{idx + 1}</td>
+                            <td>
+                              <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{row.supplier_name}</div>
+                              {row.ingredient_name && row.ingredient_name !== '-' && (
+                                <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Item: {row.ingredient_name}</div>
+                              )}
+                            </td>
+                            <td style={{ textAlign: 'center' }} className="mono">
+                              <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
+                                {row.tgl_dibuat_fmt || row.tgl_dibuat}
+                              </span>
+                            </td>
+                            <td>
+                              <span style={{ color: 'var(--text-secondary)' }}>{row.dibuat_oleh || '-'}</span>
+                            </td>
+                            <td>
+                              <span
+                                className="mono"
+                                style={{
+                                  fontSize: 11.5,
+                                  fontWeight: 600,
+                                  padding: '2px 8px',
+                                  borderRadius: 6,
+                                  background: 'rgba(255,255,255,0.05)',
+                                  border: '1px solid var(--border)',
+                                  color: 'var(--text-primary)'
+                                }}
+                              >
+                                {row.no_pembelian || '-'}
+                              </span>
+                            </td>
+                            <td>
+                              <span
+                                className="mono"
+                                style={{
+                                  fontSize: 11.5,
+                                  color: row.no_bayar && row.no_bayar !== '-' ? 'var(--accent-bright)' : 'var(--text-muted)'
+                                }}
+                              >
+                                {row.no_bayar || '-'}
+                              </span>
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <div style={{ color: isOverdue ? '#fca5a5' : 'var(--text-secondary)', fontWeight: isOverdue ? 700 : 400 }} className="mono">
+                                {row.jatuh_tempo_fmt || row.jatuh_tempo}
+                              </div>
+                              {isOverdue && (
+                                <span
+                                  style={{
+                                    fontSize: 9.5,
+                                    fontWeight: 700,
+                                    padding: '1px 6px',
+                                    borderRadius: 4,
+                                    background: 'rgba(239, 68, 68, 0.15)',
+                                    color: '#f87171',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 3,
+                                    marginTop: 2
+                                  }}
+                                >
+                                  Lewat Tempo
+                                </span>
+                              )}
+                            </td>
+                            <td className="right mono" style={{ fontWeight: 600 }}>
+                              {rupiah(row.hutang)}
+                            </td>
+                            <td className="right mono" style={{ fontWeight: 700, color: '#34d399' }}>
+                              {rupiah(row.dibayar)}
+                            </td>
+                            <td className="right mono" style={{ fontWeight: 700, color: row.sisa_hutang > 0 ? '#f87171' : '#34d399' }}>
+                              {rupiah(row.sisa_hutang)}
+                            </td>
+                            <td className="right mono" style={{ fontWeight: 800, color: 'var(--text-primary)' }}>
+                              {rupiah(row.total_hutang)}
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                   <tfoot>
-                    {/* Exactly matching screenshot: Col H has Total Utang label, Col I, J, K have totals */}
-                    <tr style={{ fontWeight: 800, background: '#f3f4f6' }}>
-                      <td colSpan="8" style={{ border: '1px solid #111827', padding: '6px 8px', textAlign: 'right', paddingRight: 12 }}>
-                        Total Utang
+                    <tr style={{ background: 'var(--bg-elevated)', fontWeight: 800 }}>
+                      <td colSpan={7} style={{ textAlign: 'right', fontSize: 13, color: 'var(--text-secondary)', paddingRight: 16 }}>
+                        Total Utang ({reportTotals.count} Transaksi)
                       </td>
-                      <td style={{ border: '1px solid #111827', padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace' }}>
-                        {Number(reportData.summary?.total_dibayar || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <td className="right mono" style={{ fontWeight: 800, color: 'var(--text-primary)' }}>
+                        {rupiah(reportTotals.hutang)}
                       </td>
-                      <td style={{ border: '1px solid #111827', padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace' }}>
-                        {Number(reportData.summary?.total_sisa_hutang || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <td className="right mono" style={{ fontWeight: 800, color: '#34d399' }}>
+                        {rupiah(reportTotals.dibayar)}
                       </td>
-                      <td style={{ border: '1px solid #111827', padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace' }}>
-                        {Number(reportData.summary?.total_hutang || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <td className="right mono" style={{ fontWeight: 800, color: '#f87171', fontSize: 13 }}>
+                        {rupiah(reportTotals.sisa_hutang)}
+                      </td>
+                      <td className="right mono" style={{ fontWeight: 800, color: '#f87171', fontSize: 13 }}>
+                        {rupiah(reportTotals.total_hutang)}
                       </td>
                     </tr>
                   </tfoot>

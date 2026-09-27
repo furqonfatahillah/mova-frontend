@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../api/client';
 import { rupiah, LoadingState, PageHeader } from '../components/ui';
 import { useOutlet } from '../context/OutletContext';
+import { getTodayStr, getMonthStartStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import {
   ShoppingBag,
@@ -22,7 +23,8 @@ import {
   Coins,
   Receipt,
   FileText,
-  DollarSign
+  DollarSign,
+  X
 } from 'lucide-react';
 import { printElement } from '../utils/print';
 import {
@@ -72,19 +74,27 @@ const TABS = [
 ];
 
 export default function PurchaseReport() {
-  const { selectedOutletId, outlets } = useOutlet();
+  const { selectedOutletId, activeOutletId, outlets, dateRange, currentBusiness, currentUser } = useOutlet();
+  const currentOutletId = activeOutletId || selectedOutletId;
+  const businessName = currentBusiness?.name || currentUser?.business?.name || 'MOVA POS';
+  const outletName = (currentOutletId && currentOutletId !== 'ALL' && currentOutletId !== 'all')
+    ? (outlets.find(o => String(o.id) === String(currentOutletId))?.name || 'Cabang Terpilih')
+    : 'Semua Cabang (Konsolidasi)';
 
   // Active Tab
   const [activeTab, setActiveTab] = useState('transactions');
 
-  // Filter States
-  const [dateRangePreset, setDateRangePreset] = useState('this_month');
-  const [from, setFrom] = useState(() => {
-    const d = new Date();
-    return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
-  });
-  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
-  const [filterOutlet, setFilterOutlet] = useState(() => selectedOutletId || 'ALL');
+  // Active Period (100% synchronized with global navbar dateRange)
+  const activePeriod = useMemo(() => ({
+    from: dateRange?.from || getMonthStartStr(),
+    to: dateRange?.to || getTodayStr(),
+  }), [dateRange?.from, dateRange?.to]);
+
+  const from = activePeriod.from;
+  const to = activePeriod.to;
+
+  // Filter States (No local date state, date is 100% controlled by navbar dateRange)
+  const [filterOutlet, setFilterOutlet] = useState(() => currentOutletId || 'ALL');
   const [filterPayment, setFilterPayment] = useState('ALL');
   const [filterSupplier, setFilterSupplier] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
@@ -97,10 +107,10 @@ export default function PurchaseReport() {
 
   // Sync outlet from context if changed
   useEffect(() => {
-    if (selectedOutletId && selectedOutletId !== 'ALL' && selectedOutletId !== 'all') {
-      setFilterOutlet(String(selectedOutletId));
+    if (currentOutletId && currentOutletId !== 'ALL' && currentOutletId !== 'all') {
+      setFilterOutlet(String(currentOutletId));
     }
-  }, [selectedOutletId]);
+  }, [currentOutletId]);
 
   // Current outlet object
   const currentOutletObj = useMemo(() => {
@@ -112,31 +122,6 @@ export default function PurchaseReport() {
     if (!currentOutletObj) return false;
     return Boolean(currentOutletObj.is_main);
   }, [currentOutletObj]);
-
-  // Preset Handlers
-  const handleDatePreset = (preset) => {
-    setDateRangePreset(preset);
-    const now = new Date();
-    let f = new Date();
-    let t = new Date();
-
-    if (preset === 'today') {
-      // today
-    } else if (preset === 'this_week') {
-      const day = now.getDay() || 7;
-      f.setDate(now.getDate() - day + 1);
-    } else if (preset === 'this_month') {
-      f = new Date(now.getFullYear(), now.getMonth(), 1);
-    } else if (preset === 'last_month') {
-      f = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      t = new Date(now.getFullYear(), now.getMonth(), 0);
-    } else if (preset === 'this_year') {
-      f = new Date(now.getFullYear(), 0, 1);
-    }
-
-    setFrom(f.toISOString().slice(0, 10));
-    setTo(t.toISOString().slice(0, 10));
-  };
 
   // Load distinct suppliers
   useEffect(() => {
@@ -343,86 +328,68 @@ export default function PurchaseReport() {
         </div>
       </div>
 
-      {/* FILTER BAR */}
-      <div className="card" style={{ padding: '16px 20px', marginBottom: 20 }}>
-        {/* Row 1: Date presets */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {[
-              { id: 'today', label: 'Hari Ini' },
-              { id: 'this_week', label: 'Minggu Ini' },
-              { id: 'this_month', label: 'Bulan Ini' },
-              { id: 'last_month', label: 'Bulan Lalu' },
-              { id: 'this_year', label: 'Tahun Ini' },
-              { id: 'custom', label: 'Custom' },
-            ].map(p => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => handleDatePreset(p.id)}
-                className={`btn btn-sm ${dateRangePreset === p.id ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ fontSize: 11.5, padding: '5px 12px', borderRadius: 8 }}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
+      {/* FILTER TOOLBAR CARD (SYNCHRONIZED WITH GLOBAL NAVBAR FILTERS) */}
+      <div
+        className="card"
+        style={{
+          padding: '14px 18px',
+          background: 'var(--bg-card)',
+          borderRadius: 12,
+          border: '1px solid var(--border)',
+          marginBottom: 20
+        }}
+      >
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+          {/* Visual Indicators of Active Scope from Global Navbar */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 7,
+                padding: '6px 14px',
+                borderRadius: 8,
+                background: 'rgba(56, 189, 248, 0.08)',
+                border: '1px solid rgba(56, 189, 248, 0.25)',
+                fontSize: 12,
+                color: '#38bdf8',
+                fontWeight: 600,
+              }}
+              title="Periode laporan otomatis mengikuti rentang tanggal global pada navbar atas"
+            >
+              <Calendar size={14} />
+              <span>Periode Global: <strong style={{ color: '#ffffff' }}>{from} — {to}</strong></span>
+            </div>
 
-          <button
-            onClick={fetchReport}
-            className="btn btn-secondary btn-sm"
-            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-            disabled={loading}
-          >
-            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
-            <span>Segarkan</span>
-          </button>
-        </div>
-
-        {/* Row 2: Selectors */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-          {/* Dari */}
-          <div>
-            <label className="form-label" style={{ fontSize: 11, color: 'var(--text-muted)' }}>Dari Tanggal</label>
-            <div style={{ position: 'relative' }}>
-              <input
-                type="date"
-                className="form-control"
-                style={{ fontSize: 12 }}
-                value={from}
-                onChange={e => {
-                  setFrom(e.target.value);
-                  setDateRangePreset('custom');
-                }}
-              />
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 7,
+                padding: '6px 14px',
+                borderRadius: 8,
+                background: 'rgba(16, 185, 129, 0.08)',
+                border: '1px solid rgba(16, 185, 129, 0.25)',
+                fontSize: 12,
+                color: '#34d399',
+                fontWeight: 600,
+              }}
+              title="Cabang terpilih di navbar atas"
+            >
+              <Store size={14} />
+              <span>Cabang: <strong style={{ color: '#ffffff' }}>{currentOutletObj?.name || outletName}</strong></span>
             </div>
           </div>
 
-          {/* Sampai */}
-          <div>
-            <label className="form-label" style={{ fontSize: 11, color: 'var(--text-muted)' }}>Sampai Tanggal</label>
-            <div style={{ position: 'relative' }}>
-              <input
-                type="date"
-                className="form-control"
-                style={{ fontSize: 12 }}
-                value={to}
-                onChange={e => {
-                  setTo(e.target.value);
-                  setDateRangePreset('custom');
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Outlet / Warehouse */}
-          <div>
-            <label className="form-label" style={{ fontSize: 11, color: 'var(--text-muted)' }}>Warehouse / Outlet</label>
+          {/* Quick Selectors & Instant Search */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', flex: '1 1 auto', justifyContent: 'flex-end' }}>
+            {/* Warehouse / Outlet Selector */}
             <select
               className="form-control"
-              style={{ fontSize: 12 }}
+              style={{ fontSize: 12, width: 'auto', minWidth: 160 }}
               value={filterOutlet}
               onChange={e => setFilterOutlet(e.target.value)}
+              title="Filter Warehouse / Cabang"
             >
               <option value="ALL">🏢 Semua Unit (Holding & Outlet)</option>
               {outlets.map(o => (
@@ -431,17 +398,15 @@ export default function PurchaseReport() {
                 </option>
               ))}
             </select>
-          </div>
 
-          {/* Metode Pembayaran */}
-          <div>
-            <label className="form-label" style={{ fontSize: 11, color: 'var(--text-muted)' }}>Tipe Pembayaran</label>
+            {/* Metode Pembayaran Filter */}
             <select
               className="form-control"
-              style={{ fontSize: 12 }}
+              style={{ fontSize: 12, width: 'auto', minWidth: 155 }}
               value={filterPayment}
               onChange={e => setFilterPayment(e.target.value)}
               disabled={!isCurrentHolding && filterOutlet !== 'ALL' && activeTab !== 'payables'}
+              title="Filter Metode Pembayaran"
             >
               <option value="ALL">Semua Pembayaran</option>
               <option value="CASH">💵 Kas Tunai / Petty Cash</option>
@@ -452,38 +417,58 @@ export default function PurchaseReport() {
                 </>
               )}
             </select>
-          </div>
 
-          {/* Supplier */}
-          <div>
-            <label className="form-label" style={{ fontSize: 11, color: 'var(--text-muted)' }}>Supplier</label>
+            {/* Supplier Filter */}
             <select
               className="form-control"
-              style={{ fontSize: 12 }}
+              style={{ fontSize: 12, width: 'auto', minWidth: 145 }}
               value={filterSupplier}
               onChange={e => setFilterSupplier(e.target.value)}
+              title="Filter Berdasarkan Vendor / Supplier"
             >
               <option value="ALL">Semua Supplier</option>
               {suppliersList.map(s => (
-                <option key={s.id} value={s.name}>{s.name}</option>
+                <option key={s.id || s.name} value={s.name}>{s.name}</option>
               ))}
             </select>
-          </div>
 
-          {/* Search */}
-          <div>
-            <label className="form-label" style={{ fontSize: 11, color: 'var(--text-muted)' }}>Pencarian Cepat</label>
-            <div style={{ position: 'relative' }}>
-              <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--text-muted)' }} />
+            {/* Quick Search */}
+            <div style={{ position: 'relative', width: 230, maxWidth: '100%' }}>
+              <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
               <input
                 type="text"
                 className="form-control"
-                placeholder="No ref, produk, vendor..."
-                style={{ paddingLeft: 32, fontSize: 12 }}
+                placeholder="Cari ref, produk, vendor..."
+                style={{ paddingLeft: 30, paddingRight: searchTerm ? 26 : 10, fontSize: 12 }}
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
               />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  style={{
+                    position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                    background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0
+                  }}
+                  title="Hapus pencarian"
+                >
+                  <X size={13} />
+                </button>
+              )}
             </div>
+
+            {/* Refresh Button */}
+            <button
+              onClick={fetchReport}
+              className="btn btn-secondary btn-sm"
+              style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '7px 12px' }}
+              disabled={loading}
+              title="Segarkan data laporan dari server"
+            >
+              <RefreshCw size={13} className={loading ? 'spin' : ''} />
+              <span>Segarkan</span>
+            </button>
           </div>
         </div>
       </div>
@@ -564,9 +549,9 @@ export default function PurchaseReport() {
       {/* TABS NAVIGATION */}
       <div style={{
         display: 'flex',
-        gap: 8,
+        gap: 6,
         borderBottom: '1px solid var(--border)',
-        marginBottom: 20,
+        marginBottom: 18,
         overflowX: 'auto',
         paddingBottom: 2
       }}>
@@ -579,25 +564,25 @@ export default function PurchaseReport() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
+              className="btn"
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
-                padding: '10px 16px',
-                fontSize: 13,
+                fontSize: 12.5,
                 fontWeight: isActive ? 700 : 500,
-                color: isActive ? 'var(--primary)' : 'var(--text-secondary)',
-                borderBottom: isActive ? '2.5px solid var(--primary)' : '2.5px solid transparent',
-                background: 'transparent',
-                borderTop: 'none',
-                borderLeft: 'none',
-                borderRight: 'none',
+                padding: '9px 16px',
+                borderRadius: '8px 8px 0 0',
+                border: 'none',
+                borderBottom: isActive ? '2.5px solid var(--accent-bright)' : '2.5px solid transparent',
+                color: isActive ? 'var(--accent-bright)' : 'var(--text-secondary)',
+                background: isActive ? 'rgba(124, 58, 237, 0.08)' : 'transparent',
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
                 transition: 'all 0.15s ease',
               }}
             >
-              <Icon size={16} />
+              <Icon size={15} />
               <span>{tab.label}</span>
               {isPayableTab && (
                 <span className="pill pill-primary" style={{ fontSize: 9.5, padding: '1px 6px' }}>Holding</span>
