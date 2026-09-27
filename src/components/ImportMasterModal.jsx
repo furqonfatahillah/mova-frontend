@@ -126,18 +126,18 @@ export default function ImportMasterModal({
 
   const MASTER_CONFIG = {
     INGREDIENT: {
-      title: 'Master Bahan (Bahan Baku & Saldo/Stock Awal)',
+      title: 'Master Bahan (Bahan Baku, Stock Awal & Saldo Awal)',
       downloadFn: downloadIngredientTemplate,
       endpoint: '/ingredients/bulk-import',
-      columns: ['Nama Bahan*', 'Kategori', 'Tipe*', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Saldo & Stock Awal (Satuan Pakai)*', 'Stok Minimal', 'Batas Toleransi (%)'],
-      sampleHint: 'Master bahan terpusat untuk seluruh cabang usaha. Kolom "Saldo & Stock Awal" otomatis tercatat sebagai Saldo Berjalan dan Nilai Saldo (Rp) di Kartu Stok.',
+      columns: ['Nama Bahan*', 'Kategori', 'Tipe*', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Stock Awal (Satuan Pakai)*', 'Saldo Awal (Rp)*', 'Stok Minimal', 'Batas Toleransi (%)'],
+      sampleHint: 'Master bahan terpusat untuk seluruh cabang usaha. Kolom "Stock Awal" (Kuantitas) & "Saldo Awal (Rp)" (Nominal) terpisah dan otomatis tercatat di Kartu Stok.',
     },
     PERLENGKAPAN: {
-      title: 'Master Perlengkapan & Packaging (Saldo/Stock Awal)',
+      title: 'Master Perlengkapan & Packaging (Stock Awal & Saldo Awal)',
       downloadFn: downloadPerlengkapanTemplate,
       endpoint: '/perlengkapans/bulk-import',
-      columns: ['Nama Perlengkapan*', 'Kategori', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Saldo & Stock Awal (Satuan Pakai)*', 'Stok Minimal'],
-      sampleHint: 'Master perlengkapan terpusat untuk seluruh cabang usaha. Kolom "Saldo & Stock Awal" otomatis tercatat sebagai Saldo Berjalan dan Nilai Saldo (Rp) di Kartu Stok.',
+      columns: ['Nama Perlengkapan*', 'Kategori', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Stock Awal (Satuan Pakai)*', 'Saldo Awal (Rp)*', 'Stok Minimal', 'Batas Toleransi (%)'],
+      sampleHint: 'Master perlengkapan terpusat untuk seluruh cabang usaha. Kolom "Stock Awal" (Kuantitas) & "Saldo Awal (Rp)" (Nominal) terpisah dan otomatis tercatat di Kartu Stok.',
     },
     MENU: {
       title: 'Master Menu & F&B',
@@ -372,18 +372,27 @@ export default function ImportMasterModal({
 
           const outletName = getVal(row, ['cabangoutletopsional', 'cabangoutlet', 'cabang', 'outlet', 'namaoutlet', 'namacabang']) || '';
           const harga = parseFloat(getVal(row, ['hargabelipersatuanbelirp', 'hargabeli', 'harga', 'hargasatuan', 'cost', 'modal'])) || 0;
-          const minStock = parseFloat(getVal(row, ['stokminimalsatuanpakai', 'stokminimal', 'minstok', 'minimumstok', 'minstock'])) || 0;
           const initialStock = parseFloat(getVal(row, [
-            'saldodanstockawalsatuanpakai', 'saldostockawalsatuanpakai', 'saldoawalstockawalsatuanpakai',
-            'saldodanstockawal', 'saldostockawal',
             'stockawalsatuanpakai', 'stokawalsatuanpakai',
             'stockawal', 'stokawal',
             'stock_awal', 'stok_awal',
-            'saldoawalsatuanpakai', 'saldoawal',
-            'stockawalfisik', 'stokawalfisik', 'saldoawalfisik',
+            'saldodanstockawalsatuanpakai', 'saldostockawalsatuanpakai', 'saldoawalstockawalsatuanpakai',
+            'saldodanstockawal', 'saldostockawal',
+            'stockawalfisik', 'stokawalfisik',
             'initialstock', 'initial_stock',
-            'saldo', 'stok', 'stock', 'stokfisik', 'stockfisik'
+            'stok', 'stock', 'stokfisik', 'stockfisik'
           ])) || 0;
+
+          const unitPricePakai = harga / Math.max(konversi || 1, 1);
+          let initialBalanceRaw = getVal(row, [
+            'saldoawalrp', 'saldoawalrupiah', 'saldoawalnominal', 'saldoawal', 'saldo_awal',
+            'initialbalance', 'openingbalance', 'saldorp'
+          ]);
+          let initialBalance = parseFloat(initialBalanceRaw);
+          if (isNaN(initialBalance) || initialBalance === null || initialBalance === undefined) {
+            initialBalance = Math.round(initialStock * unitPricePakai);
+          }
+
           const tolerance = parseFloat(getVal(row, ['batastoleransi', 'toleransi', 'tolerance'])) || 5;
           const notes = getVal(row, ['catatan', 'keterangan']);
 
@@ -404,7 +413,9 @@ export default function ImportMasterModal({
             initial_stock: initialStock,
             stok_awal: initialStock,
             stock_awal: initialStock,
-            saldo_awal: initialStock,
+            initial_balance: initialBalance,
+            saldo_awal_nominal: initialBalance,
+            saldo_awal: initialBalance || initialStock,
             tolerance,
             notes,
             _uBeli: uBeli,
@@ -447,16 +458,26 @@ export default function ImportMasterModal({
           const harga = parseFloat(getVal(row, ['hargabelipersatuanbelirp', 'hargabeli', 'harga', 'hargasatuan'])) || 0;
           const minStock = parseFloat(getVal(row, ['stokminimalsatuanpakai', 'stokminimal', 'minstok'])) || 0;
           const initialStock = parseFloat(getVal(row, [
-            'saldodanstockawalsatuanpakai', 'saldostockawalsatuanpakai', 'saldoawalstockawalsatuanpakai',
-            'saldodanstockawal', 'saldostockawal',
             'stockawalsatuanpakai', 'stokawalsatuanpakai',
             'stockawal', 'stokawal',
             'stock_awal', 'stok_awal',
-            'saldoawalsatuanpakai', 'saldoawal',
-            'stockawalfisik', 'stokawalfisik', 'saldoawalfisik',
+            'saldodanstockawalsatuanpakai', 'saldostockawalsatuanpakai', 'saldoawalstockawalsatuanpakai',
+            'saldodanstockawal', 'saldostockawal',
+            'stockawalfisik', 'stokawalfisik',
             'initialstock', 'initial_stock',
-            'saldo', 'stok', 'stock', 'stokfisik', 'stockfisik'
+            'stok', 'stock', 'stokfisik', 'stockfisik'
           ])) || 0;
+
+          const unitPricePakai = harga / Math.max(konversi || 1, 1);
+          let initialBalanceRaw = getVal(row, [
+            'saldoawalrp', 'saldoawalrupiah', 'saldoawalnominal', 'saldoawal', 'saldo_awal',
+            'initialbalance', 'openingbalance', 'saldorp'
+          ]);
+          let initialBalance = parseFloat(initialBalanceRaw);
+          if (isNaN(initialBalance) || initialBalance === null || initialBalance === undefined) {
+            initialBalance = Math.round(initialStock * unitPricePakai);
+          }
+
           const tolerance = parseFloat(getVal(row, ['batastoleransi', 'toleransi', 'tolerance'])) || 5;
           const notes = getVal(row, ['catatan', 'spesifikasi', 'keterangan']);
 
@@ -478,7 +499,9 @@ export default function ImportMasterModal({
             initial_stock: initialStock,
             stok_awal: initialStock,
             stock_awal: initialStock,
-            saldo_awal: initialStock,
+            initial_balance: initialBalance,
+            saldo_awal_nominal: initialBalance,
+            saldo_awal: initialBalance || initialStock,
             tolerance,
             notes: notes || 'Imported Perlengkapan from Excel',
             _uBeli: uBeli,
@@ -953,7 +976,7 @@ export default function ImportMasterModal({
                               </span>
                             )}
                             <span>
-                              {row.data.type} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · Harga: <strong>{rupiah(row.data.harga)}</strong> · Saldo & Stock Awal: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit_pakai}</strong> (Nilai Saldo: <span style={{ color: '#34d399', fontWeight: 700 }}>{rupiah(row.data.initial_stock * (row.data.harga / Math.max(row.data.konversi || 1, 1)))}</span>) · Toleransi: <strong>{row.data.tolerance ?? 5}%</strong>
+                              {row.data.type} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · Harga: <strong>{rupiah(row.data.harga)}</strong> · Stock Awal: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit_pakai}</strong> · Saldo Awal: <span style={{ color: '#34d399', fontWeight: 700 }}>{rupiah(row.data.initial_balance)}</span> · Toleransi: <strong>{row.data.tolerance ?? 5}%</strong>
                             </span>
                             {(row.data._uBeli?.isFixed || row.data._uPakai?.isFixed) && (
                               <span style={{ background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }} title="Typo/singkatan otomatis diperbaiki ke format standar">
@@ -979,7 +1002,7 @@ export default function ImportMasterModal({
                               </span>
                             )}
                             <span>
-                              {row.data.category} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · Harga: <strong>{rupiah(row.data.harga)}</strong> · Saldo & Stock Awal: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit_pakai}</strong> (Nilai Saldo: <span style={{ color: '#34d399', fontWeight: 700 }}>{rupiah(row.data.initial_stock * (row.data.harga / Math.max(row.data.konversi || 1, 1)))}</span>)
+                              {row.data.category} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · Harga: <strong>{rupiah(row.data.harga)}</strong> · Stock Awal: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit_pakai}</strong> · Saldo Awal: <span style={{ color: '#34d399', fontWeight: 700 }}>{rupiah(row.data.initial_balance)}</span> · Toleransi: <strong>{row.data.tolerance ?? 5}%</strong>
                             </span>
                             {(row.data._uBeli?.isFixed || row.data._uPakai?.isFixed) && (
                               <span style={{ background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }} title="Typo/singkatan otomatis diperbaiki ke format standar">

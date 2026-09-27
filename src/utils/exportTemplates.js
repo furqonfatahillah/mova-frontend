@@ -148,7 +148,7 @@ export async function downloadIngredientTemplate() {
   const ws = wb.addWorksheet('Master Bahan', { views: [{ showGridLines: true }] });
 
   // Banner Title (Row 1)
-  ws.mergeCells('A1:L1');
+  ws.mergeCells('A1:M1');
   const titleCell = ws.getCell('A1');
   titleCell.value = 'TEMPLATE IMPORT MASTER BAHAN (BERLAKU UNTUK SELURUH CABANG) — MOVA POS';
   titleCell.font = { name: 'Segoe UI', size: 13, bold: true, color: { argb: 'FF1E293B' } };
@@ -157,9 +157,9 @@ export async function downloadIngredientTemplate() {
   ws.getRow(1).height = 28;
 
   // Instructions (Row 2)
-  ws.mergeCells('A2:L2');
+  ws.mergeCells('A2:M2');
   const noteCell = ws.getCell('A2');
-  noteCell.value = 'Petunjuk: Kolom bertanda (*) wajib diisi. Kolom "Saldo & Stock Awal" diisi kuantitas stok awal (satuan pakai). Nilai Rupiah Saldo Awal (Rp) otomatis dikalkulasi sistem dan tercatat di Kartu Stok.';
+  noteCell.value = 'Petunjuk: Kolom bertanda (*) wajib diisi. Kolom "Stock Awal" diisi kuantitas fisik & kolom "Saldo Awal (Rp)" diisi nilai rupiahnya (terisi rumus otomatis). Keduanya tercatat di Kartu Stok.';
   noteCell.font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF475569' } };
   ws.getRow(2).height = 20;
 
@@ -175,7 +175,8 @@ export async function downloadIngredientTemplate() {
     'Satuan Pakai (▼)*',
     'Faktor Konversi*',
     'Harga Beli Per Satuan Beli (Rp)*',
-    'Saldo & Stock Awal (Satuan Pakai)*',
+    'Stock Awal (Satuan Pakai)*',
+    'Saldo Awal (Rp)*',
     'Stok Minimal (Satuan Pakai)',
     'Batas Toleransi (%)',
     'Catatan',
@@ -184,15 +185,15 @@ export async function downloadIngredientTemplate() {
 
   // Rows 5+: Sample Data
   const sampleData = [
-    ['BHN-001', 'Tepung Terigu Segitiga', 'BAHAN_BAKU', 'RAW', 'kg', 'gram', 1000, 14000, 10000, 2000, 5, 'Kemasan 1 kg (Saldo & Stock Awal 10.000 gram otomatis jadi Saldo Awal di Kartu Stok senilai Rp 140.000)'],
-    ['BHN-002', 'Minyak Goreng Bimoli', 'BAHAN_BAKU', 'RAW', 'liter', 'ml', 1000, 20000, 20000, 5000, 5, 'Kemasan 1 liter (Saldo & Stock Awal 20.000 ml otomatis tercatat di Kartu Stok senilai Rp 400.000)'],
-    ['BHN-003', 'Kopi Arabika Gayo', 'KOPI', 'RAW', 'kg', 'gram', 1000, 120000, 5000, 1000, 5, 'Roast Bean Medium (Saldo & Stock Awal 5.000 gram senilai Rp 600.000)'],
-    ['BHN-004', 'Saus Keju Special (Olahan)', 'SAUS', 'SEMI_FINISHED', 'liter', 'ml', 1000, 45000, 2000, 1000, 5, 'Buatan Dapur (Saldo & Stock Awal 2.000 ml senilai Rp 90.000)'],
+    ['BHN-001', 'Tepung Terigu Segitiga', 'BAHAN_BAKU', 'RAW', 'kg', 'gram', 1000, 14000, 10000, { formula: 'I5*(H5/G5)', result: 140000 }, 2000, 5, 'Kemasan 1 kg (Stock Awal 10.000 gram & Saldo Awal Rp 140.000 tercatat di Kartu Stok)'],
+    ['BHN-002', 'Minyak Goreng Bimoli', 'BAHAN_BAKU', 'RAW', 'liter', 'ml', 1000, 20000, 20000, { formula: 'I6*(H6/G6)', result: 400000 }, 5000, 5, 'Kemasan 1 liter (Stock Awal 20.000 ml & Saldo Awal Rp 400.000)'],
+    ['BHN-003', 'Kopi Arabika Gayo', 'KOPI', 'RAW', 'kg', 'gram', 1000, 120000, 5000, { formula: 'I7*(H7/G7)', result: 600000 }, 1000, 5, 'Roast Bean Medium (Stock Awal 5.000 gram & Saldo Awal Rp 600.000)'],
+    ['BHN-004', 'Saus Keju Special (Olahan)', 'SAUS', 'SEMI_FINISHED', 'liter', 'ml', 1000, 45000, 2000, { formula: 'I8*(H8/G8)', result: 90000 }, 1000, 5, 'Buatan Dapur (Stock Awal 2.000 ml & Saldo Awal Rp 90.000)'],
   ];
   sampleData.forEach((r) => ws.addRow(r));
 
   // Enable Auto-Filter on Row 4
-  ws.autoFilter = { from: 'A4', to: 'L4' };
+  ws.autoFilter = { from: 'A4', to: 'M4' };
 
   // Dropdown list options
   const SATUAN_BELI_LIST = '"kg,gram,liter,ml,Slop,Pack,Roll,Dus,Botol,pcs,Kaleng,Sachet"';
@@ -245,7 +246,8 @@ export async function downloadIngredientTemplate() {
 
   const guideRows = [
     ['Master Terpusat', 'Berlaku otomatis di semua cabang', 'Setiap bahan yang di-import otomatis terdaftar dan bisa digunakan di semua cabang usaha Anda.'],
-    ['Saldo & Stock Awal (Satuan Pakai)*', 'Kuantitas fisik dalam SATUAN PAKAI (misal: 10.000 gram)', 'Otomatis menjadi Saldo Awal Fisik (10.000 gram) dan Nilai Saldo Awal Rp (Stock Awal × Harga Satuan = Rp 140.000) di Kartu Stok. Sistem menghitung nominal rupiahnya secara otomatis.'],
+    ['Stock Awal (Satuan Pakai)*', 'Kuantitas fisik dalam SATUAN PAKAI (misal: 10.000 gram)', 'Jumlah fisik stok awal yang ada di gudang / outlet dalam satuan pakai. Otomatis masuk ke kolom Saldo Berjalan di Kartu Stok.'],
+    ['Saldo Awal (Rp)*', 'Nominal rupiah nilai persediaan awal (misal: Rp 140.000)', 'Nilai uang persediaan awal. Secara default terisi rumus otomatis = Stock Awal × (Harga Beli / Konversi), atau dapat diisi sesuai nilai buku akuntansi Anda.'],
     ['Batas Toleransi (%)', 'Persentase toleransi selisih stok (default: 5%)', 'Batas wajar selisih antara stok teoritis dan fisik saat Stock Opname atau Variance Report sebelum diberi status peringatan selisih.'],
     ['Satuan Beli: kg', 'Satuan Pakai: gram', '1 kg = 1.000 gram (Standar tepung, gula, daging, kopi roast bean)'],
     ['Satuan Beli: liter', 'Satuan Pakai: ml', '1 liter = 1.000 ml (Standar susu, sirup, minyak, saus)'],
@@ -278,7 +280,7 @@ export async function downloadPerlengkapanTemplate() {
 
   const ws = wb.addWorksheet('Master Perlengkapan', { views: [{ showGridLines: true }] });
 
-  ws.mergeCells('A1:K1');
+  ws.mergeCells('A1:L1');
   const titleCell = ws.getCell('A1');
   titleCell.value = 'TEMPLATE IMPORT MASTER PERLENGKAPAN & PACKAGING (BERLAKU UNTUK SELURUH CABANG) — MOVA POS';
   titleCell.font = { name: 'Segoe UI', size: 13, bold: true, color: { argb: 'FF1E293B' } };
@@ -286,9 +288,9 @@ export async function downloadPerlengkapanTemplate() {
   titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
   ws.getRow(1).height = 28;
 
-  ws.mergeCells('A2:K2');
+  ws.mergeCells('A2:L2');
   const noteCell = ws.getCell('A2');
-  noteCell.value = 'Petunjuk: Baris bertanda (*) wajib diisi. Kolom "Saldo & Stock Awal" diisi kuantitas awal (satuan pakai). Nilai Rupiah Saldo Awal (Rp) otomatis dikalkulasi sistem dan tercatat di Kartu Stok.';
+  noteCell.value = 'Petunjuk: Baris bertanda (*) wajib diisi. Kolom "Stock Awal" diisi kuantitas & "Saldo Awal (Rp)" diisi nilai rupiah (terisi rumus otomatis). Keduanya tercatat di Kartu Stok.';
   noteCell.font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF475569' } };
   ws.getRow(2).height = 20;
 
@@ -302,7 +304,8 @@ export async function downloadPerlengkapanTemplate() {
     'Satuan Pakai (▼)*',
     'Faktor Konversi*',
     'Harga Beli Per Satuan Beli (Rp)*',
-    'Saldo & Stock Awal (Satuan Pakai)*',
+    'Stock Awal (Satuan Pakai)*',
+    'Saldo Awal (Rp)*',
     'Stok Minimal (Satuan Pakai)',
     'Batas Toleransi (%)',
     'Catatan / Spesifikasi',
@@ -310,15 +313,15 @@ export async function downloadPerlengkapanTemplate() {
   applyHeaderStyle(headerRow, 'FF1E293B');
 
   const sampleData = [
-    ['PLK-001', 'Cup Dingin 16oz Sablon Logo', 'Cup & Gelas', 'Slop', 'pcs', 50, 25000, 500, 100, 5, 'Sablon logo 2 sisi, 1 slop = 50 pcs (Saldo & Stock Awal 500 pcs otomatis jadi Saldo Awal di Kartu Stok senilai Rp 250.000)'],
-    ['PLK-002', 'Sedotan Boba Steril (Wrap)', 'Sedotan / Pipet', 'Pack', 'pcs', 100, 15000, 1000, 200, 5, 'Sedotan steril bungkus plastik (Saldo & Stock Awal 1.000 pcs)'],
-    ['PLK-003', 'Tissue Makan Meja (Lunch Paper)', 'Tissue', 'Pack', 'lembar', 250, 12500, 2500, 500, 5, '1 pack = 250 lembar tissue (Saldo & Stock Awal 2.500 lembar)'],
-    ['PLK-004', 'Roll Plastik Sealer Cup Motif', 'Tutup Cup / Sealer', 'Roll', 'pcs', 1200, 75000, 2400, 300, 5, '1 roll estimasi 1.200 cup (Saldo & Stock Awal 2.400 pcs)'],
-    ['PLK-005', 'Kantong Plastik Kresek T-Shirt 1 Cup', 'Kantong & Paperbag', 'Pack', 'pcs', 100, 8500, 500, 100, 5, 'Bahan ramah lingkungan bening (Saldo & Stock Awal 500 pcs)'],
+    ['PLK-001', 'Cup Dingin 16oz Sablon Logo', 'Cup & Gelas', 'Slop', 'pcs', 50, 25000, 500, { formula: 'H5*(G5/F5)', result: 250000 }, 100, 5, 'Sablon logo 2 sisi, 1 slop = 50 pcs (Stock Awal 500 pcs & Saldo Awal Rp 250.000)'],
+    ['PLK-002', 'Sedotan Boba Steril (Wrap)', 'Sedotan / Pipet', 'Pack', 'pcs', 100, 15000, 1000, { formula: 'H6*(G6/F6)', result: 150000 }, 200, 5, 'Sedotan steril bungkus plastik (Stock Awal 1.000 pcs & Saldo Awal Rp 150.000)'],
+    ['PLK-003', 'Tissue Makan Meja (Lunch Paper)', 'Tissue', 'Pack', 'lembar', 250, 12500, 2500, { formula: 'H7*(G7/F7)', result: 125000 }, 500, 5, '1 pack = 250 lembar tissue (Stock Awal 2.500 lembar & Saldo Awal Rp 125.000)'],
+    ['PLK-004', 'Roll Plastik Sealer Cup Motif', 'Tutup Cup / Sealer', 'Roll', 'pcs', 1200, 75000, 2400, { formula: 'H8*(G8/F8)', result: 150000 }, 300, 5, '1 roll estimasi 1.200 cup (Stock Awal 2.400 pcs & Saldo Awal Rp 150.000)'],
+    ['PLK-005', 'Kantong Plastik Kresek T-Shirt 1 Cup', 'Kantong & Paperbag', 'Pack', 'pcs', 100, 8500, 500, { formula: 'H9*(G9/F9)', result: 42500 }, 100, 5, 'Bahan ramah lingkungan bening (Stock Awal 500 pcs & Saldo Awal Rp 42.500)'],
   ];
   sampleData.forEach((r) => ws.addRow(r));
 
-  ws.autoFilter = { from: 'A4', to: 'K4' };
+  ws.autoFilter = { from: 'A4', to: 'L4' };
 
   for (let r = 5; r <= 300; r++) {
     // Column D: Satuan Beli
