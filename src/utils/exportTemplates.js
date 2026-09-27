@@ -148,7 +148,7 @@ export async function downloadIngredientTemplate() {
   const ws = wb.addWorksheet('Master Bahan', { views: [{ showGridLines: true }] });
 
   // Banner Title (Row 1)
-  ws.mergeCells('A1:K1');
+  ws.mergeCells('A1:L1');
   const titleCell = ws.getCell('A1');
   titleCell.value = 'TEMPLATE IMPORT MASTER BAHAN (BERLAKU UNTUK SELURUH CABANG) — MOVA POS';
   titleCell.font = { name: 'Segoe UI', size: 13, bold: true, color: { argb: 'FF1E293B' } };
@@ -157,7 +157,7 @@ export async function downloadIngredientTemplate() {
   ws.getRow(1).height = 28;
 
   // Instructions (Row 2)
-  ws.mergeCells('A2:K2');
+  ws.mergeCells('A2:L2');
   const noteCell = ws.getCell('A2');
   noteCell.value = 'Petunjuk: Kolom bertanda (*) wajib diisi. Kolom "Saldo & Stock Awal" diisi kuantitas stok awal (satuan pakai). Nilai Rupiah Saldo Awal (Rp) otomatis dikalkulasi sistem dan tercatat di Kartu Stok.';
   noteCell.font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF475569' } };
@@ -177,21 +177,22 @@ export async function downloadIngredientTemplate() {
     'Harga Beli Per Satuan Beli (Rp)*',
     'Saldo & Stock Awal (Satuan Pakai)*',
     'Stok Minimal (Satuan Pakai)',
+    'Batas Toleransi (%)',
     'Catatan',
   ]);
   applyHeaderStyle(headerRow, 'FF1E293B');
 
   // Rows 5+: Sample Data
   const sampleData = [
-    ['BHN-001', 'Tepung Terigu Segitiga', 'BAHAN_BAKU', 'RAW', 'kg', 'gram', 1000, 14000, 10000, 2000, 'Kemasan 1 kg (Saldo & Stock Awal 10.000 gram otomatis jadi Saldo Awal di Kartu Stok senilai Rp 140.000)'],
-    ['BHN-002', 'Minyak Goreng Bimoli', 'BAHAN_BAKU', 'RAW', 'liter', 'ml', 1000, 20000, 20000, 5000, 'Kemasan 1 liter (Saldo & Stock Awal 20.000 ml otomatis tercatat di Kartu Stok senilai Rp 400.000)'],
-    ['BHN-003', 'Kopi Arabika Gayo', 'KOPI', 'RAW', 'kg', 'gram', 1000, 120000, 5000, 1000, 'Roast Bean Medium (Saldo & Stock Awal 5.000 gram senilai Rp 600.000)'],
-    ['BHN-004', 'Saus Keju Special (Olahan)', 'SAUS', 'SEMI_FINISHED', 'liter', 'ml', 1000, 45000, 2000, 1000, 'Buatan Dapur (Saldo & Stock Awal 2.000 ml senilai Rp 90.000)'],
+    ['BHN-001', 'Tepung Terigu Segitiga', 'BAHAN_BAKU', 'RAW', 'kg', 'gram', 1000, 14000, 10000, 2000, 5, 'Kemasan 1 kg (Saldo & Stock Awal 10.000 gram otomatis jadi Saldo Awal di Kartu Stok senilai Rp 140.000)'],
+    ['BHN-002', 'Minyak Goreng Bimoli', 'BAHAN_BAKU', 'RAW', 'liter', 'ml', 1000, 20000, 20000, 5000, 5, 'Kemasan 1 liter (Saldo & Stock Awal 20.000 ml otomatis tercatat di Kartu Stok senilai Rp 400.000)'],
+    ['BHN-003', 'Kopi Arabika Gayo', 'KOPI', 'RAW', 'kg', 'gram', 1000, 120000, 5000, 1000, 5, 'Roast Bean Medium (Saldo & Stock Awal 5.000 gram senilai Rp 600.000)'],
+    ['BHN-004', 'Saus Keju Special (Olahan)', 'SAUS', 'SEMI_FINISHED', 'liter', 'ml', 1000, 45000, 2000, 1000, 5, 'Buatan Dapur (Saldo & Stock Awal 2.000 ml senilai Rp 90.000)'],
   ];
   sampleData.forEach((r) => ws.addRow(r));
 
   // Enable Auto-Filter on Row 4
-  ws.autoFilter = { from: 'A4', to: 'K4' };
+  ws.autoFilter = { from: 'A4', to: 'L4' };
 
   // Dropdown list options
   const SATUAN_BELI_LIST = '"kg,gram,liter,ml,Slop,Pack,Roll,Dus,Botol,pcs,Kaleng,Sachet"';
@@ -245,6 +246,7 @@ export async function downloadIngredientTemplate() {
   const guideRows = [
     ['Master Terpusat', 'Berlaku otomatis di semua cabang', 'Setiap bahan yang di-import otomatis terdaftar dan bisa digunakan di semua cabang usaha Anda.'],
     ['Saldo & Stock Awal (Satuan Pakai)*', 'Kuantitas fisik dalam SATUAN PAKAI (misal: 10.000 gram)', 'Otomatis menjadi Saldo Awal Fisik (10.000 gram) dan Nilai Saldo Awal Rp (Stock Awal × Harga Satuan = Rp 140.000) di Kartu Stok. Sistem menghitung nominal rupiahnya secara otomatis.'],
+    ['Batas Toleransi (%)', 'Persentase toleransi selisih stok (default: 5%)', 'Batas wajar selisih antara stok teoritis dan fisik saat Stock Opname atau Variance Report sebelum diberi status peringatan selisih.'],
     ['Satuan Beli: kg', 'Satuan Pakai: gram', '1 kg = 1.000 gram (Standar tepung, gula, daging, kopi roast bean)'],
     ['Satuan Beli: liter', 'Satuan Pakai: ml', '1 liter = 1.000 ml (Standar susu, sirup, minyak, saus)'],
     ['Satuan Beli: Slop', 'Satuan Pakai: pcs', '1 Slop = 50 pcs (Standar cup plastik 16oz / 22oz)'],

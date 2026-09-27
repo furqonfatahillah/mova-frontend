@@ -129,7 +129,7 @@ export default function ImportMasterModal({
       title: 'Master Bahan (Bahan Baku & Saldo/Stock Awal)',
       downloadFn: downloadIngredientTemplate,
       endpoint: '/ingredients/bulk-import',
-      columns: ['Nama Bahan*', 'Kategori', 'Tipe*', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Saldo & Stock Awal (Satuan Pakai)*', 'Stok Minimal'],
+      columns: ['Nama Bahan*', 'Kategori', 'Tipe*', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Saldo & Stock Awal (Satuan Pakai)*', 'Stok Minimal', 'Batas Toleransi (%)'],
       sampleHint: 'Master bahan terpusat untuk seluruh cabang usaha. Kolom "Saldo & Stock Awal" otomatis tercatat sebagai Saldo Berjalan dan Nilai Saldo (Rp) di Kartu Stok.',
     },
     PERLENGKAPAN: {
@@ -384,6 +384,7 @@ export default function ImportMasterModal({
             'initialstock', 'initial_stock',
             'saldo', 'stok', 'stock', 'stokfisik', 'stockfisik'
           ])) || 0;
+          const tolerance = parseFloat(getVal(row, ['batastoleransi', 'toleransi', 'tolerance'])) || 5;
           const notes = getVal(row, ['catatan', 'keterangan']);
 
           if (!name) errors.push('Nama bahan wajib diisi.');
@@ -404,6 +405,7 @@ export default function ImportMasterModal({
             stok_awal: initialStock,
             stock_awal: initialStock,
             saldo_awal: initialStock,
+            tolerance,
             notes,
             _uBeli: uBeli,
             _uPakai: uPakai,
@@ -951,7 +953,7 @@ export default function ImportMasterModal({
                               </span>
                             )}
                             <span>
-                              {row.data.type} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · Harga: <strong>{rupiah(row.data.harga)}</strong> · Saldo & Stock Awal: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit_pakai}</strong> (Nilai Saldo: <span style={{ color: '#34d399', fontWeight: 700 }}>{rupiah(row.data.initial_stock * (row.data.harga / Math.max(row.data.konversi || 1, 1)))}</span>)
+                              {row.data.type} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · Harga: <strong>{rupiah(row.data.harga)}</strong> · Saldo & Stock Awal: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit_pakai}</strong> (Nilai Saldo: <span style={{ color: '#34d399', fontWeight: 700 }}>{rupiah(row.data.initial_stock * (row.data.harga / Math.max(row.data.konversi || 1, 1)))}</span>) · Toleransi: <strong>{row.data.tolerance ?? 5}%</strong>
                             </span>
                             {(row.data._uBeli?.isFixed || row.data._uPakai?.isFixed) && (
                               <span style={{ background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }} title="Typo/singkatan otomatis diperbaiki ke format standar">
