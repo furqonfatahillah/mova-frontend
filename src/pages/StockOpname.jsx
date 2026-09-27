@@ -3,7 +3,8 @@ import {
   Save, Store, ClipboardCheck, History, Eye, Printer, X, Check,
   Calendar, Search, RefreshCw, AlertTriangle, FileText, ArrowRight,
   TrendingDown, TrendingUp, CheckCircle2, UserCheck, Edit3,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, Filter, Layers, ArrowDownRight, ArrowUpRight,
+  Sparkles, CheckSquare, RotateCcw, Package, Boxes
 } from 'lucide-react';
 import api from '../api/client';
 import { num, pct, rupiah, fmtQtyVal, StatusPill, LoadingState, PeriodPicker, PageHeader, AuditInfo, MiniCard } from '../components/ui';
@@ -57,6 +58,11 @@ export default function StockOpname() {
     from: getTodayStr(),
     to: getTodayStr(),
   }));
+
+  // Filters for input table
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('ALL');
+  const [stockFilter, setStockFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'HAS_IN' | 'HAS_OUT' | 'HAS_TEORITIS' | 'ZERO_TEORITIS' | 'UNFILLED' | 'FILLED' | 'HAS_VARIANCE'
 
   // Effective period for querying variance and opname records
   const period = useMemo(() => {
@@ -361,6 +367,179 @@ export default function StockOpname() {
     };
   }
 
+  // Categories list from loaded ingredients
+  const availableCategories = useMemo(() => {
+    const set = new Set();
+    varData.forEach(v => {
+      if (v.ingredient?.category) set.add(v.ingredient.category);
+    });
+    return Array.from(set).sort();
+  }, [varData]);
+
+  // Aggregate badge counts for quick filter pills
+  const filterCounts = useMemo(() => {
+    let all = 0;
+    let activeOutlet = 0;
+    let hasIn = 0;
+    let hasOut = 0;
+    let hasTeoritis = 0;
+    let zeroTeoritis = 0;
+    let unfilled = 0;
+    let filled = 0;
+    let hasVariance = 0;
+
+    varData.forEach(ivRaw => {
+      all++;
+      const ingId = ivRaw.ingredient?.id;
+      const totalIn = (ivRaw.pembelian || 0) + (ivRaw.transfer_in || 0) + (ivRaw.prep_output || 0) + (ivRaw.adjustment > 0 ? ivRaw.adjustment : 0);
+      const totalOut = (ivRaw.pemakaian_teoritis || 0) + (ivRaw.prep_usage || 0) + (ivRaw.waste || 0) + (ivRaw.transfer_out || 0) + (ivRaw.adjustment < 0 ? Math.abs(ivRaw.adjustment) : 0);
+      const stokAwal = ivRaw.stok_awal_periode || 0;
+      const stokTeoritis = ivRaw.stok_akhir_teoritis || 0;
+      const isAct = stokAwal > 0 || totalIn > 0 || totalOut > 0 || Math.abs(stokTeoritis) > 0.0001;
+
+      const actVal = actuals[ingId];
+      const isFilled = actVal !== '' && actVal !== undefined;
+
+      if (isAct) activeOutlet++;
+      if (totalIn > 0.0001) hasIn++;
+      if (totalOut > 0.0001) hasOut++;
+      if (stokTeoritis > 0.0001) hasTeoritis++;
+      if (stokTeoritis <= 0.0001) zeroTeoritis++;
+      if (isFilled) filled++;
+      else unfilled++;
+
+      if (isFilled) {
+        const diff = Number(actVal) - stokTeoritis;
+        if (Math.abs(diff) > 0.0001) hasVariance++;
+      }
+    });
+
+    return {
+      all,
+      activeOutlet,
+      hasIn,
+      hasOut,
+      hasTeoritis,
+      zeroTeoritis,
+      unfilled,
+      filled,
+      hasVariance,
+    };
+  }, [varData, actuals]);
+
+  // Filtered dataset for Table 1 (Input Hitung Fisik)
+  const filteredVarData = useMemo(() => {
+    return varData.filter(ivRaw => {
+      const ing = ivRaw.ingredient;
+      const ingId = ing?.id;
+
+      // 1. Category Filter
+      if (categoryFilter !== 'ALL' && ing?.category !== categoryFilter) {
+        return false;
+      }
+
+      // 2. Text Search Query
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const matchName = (ing?.name || '').toLowerCase().includes(q);
+        const matchCode = (ing?.code || '').toLowerCase().includes(q);
+        const matchCat = (ing?.category || '').toLowerCase().includes(q);
+        if (!matchName && !matchCode && !matchCat) return false;
+      }
+
+      // 3. Stock Movement & Theoretical Activity Filter
+      const totalIn = (ivRaw.pembelian || 0) + (ivRaw.transfer_in || 0) + (ivRaw.prep_output || 0) + (ivRaw.adjustment > 0 ? ivRaw.adjustment : 0);
+      const totalOut = (ivRaw.pemakaian_teoritis || 0) + (ivRaw.prep_usage || 0) + (ivRaw.waste || 0) + (ivRaw.transfer_out || 0) + (ivRaw.adjustment < 0 ? Math.abs(ivRaw.adjustment) : 0);
+      const stokAwal = ivRaw.stok_awal_periode || 0;
+      const stokTeoritis = ivRaw.stok_akhir_teoritis || 0;
+      const isAct = stokAwal > 0 || totalIn > 0 || totalOut > 0 || Math.abs(stokTeoritis) > 0.0001;
+      const actVal = actuals[ingId];
+      const isFilled = actVal !== '' && actVal !== undefined;
+
+      if (stockFilter === 'ACTIVE') {
+        if (!isAct) return false;
+      } else if (stockFilter === 'HAS_IN') {
+        if (totalIn <= 0.0001) return false;
+      } else if (stockFilter === 'HAS_OUT') {
+        if (totalOut <= 0.0001) return false;
+      } else if (stockFilter === 'HAS_TEORITIS') {
+        if (stokTeoritis <= 0.0001) return false;
+      } else if (stockFilter === 'ZERO_TEORITIS') {
+        if (stokTeoritis > 0.0001) return false;
+      } else if (stockFilter === 'UNFILLED') {
+        if (isFilled) return false;
+      } else if (stockFilter === 'FILLED') {
+        if (!isFilled) return false;
+      } else if (stockFilter === 'HAS_VARIANCE') {
+        if (!isFilled) return false;
+        const diff = Number(actVal) - stokTeoritis;
+        if (Math.abs(diff) <= 0.0001) return false;
+      }
+
+      return true;
+    });
+  }, [varData, categoryFilter, searchQuery, stockFilter, actuals]);
+
+  // Bulk Auto-fill Theoretical helper
+  async function handleAutoFillTheoretical() {
+    if (isSessionClosed) return;
+    const count = filteredVarData.length;
+    if (count === 0) return;
+    const confirmed = await confirmDialog({
+      title: 'Isi Fisik Sesuai Sisa Teoritis?',
+      text: `Nilai hitung fisik untuk ${count} bahan baku yang sedang ditampilkan akan diisi otomatis sama dengan sisa stok teoritis sistem.`,
+      confirmText: 'Ya, Isi Otomatis',
+      cancelText: 'Batal',
+      icon: 'question',
+    });
+    if (!confirmed) return;
+
+    setActuals(prev => {
+      const next = { ...prev };
+      filteredVarData.forEach(iv => {
+        const ingId = iv.ingredient?.id;
+        if (ingId) {
+          next[ingId] = iv.stok_akhir_teoritis ?? 0;
+        }
+      });
+      return next;
+    });
+    toast.success(`${count} bahan berhasil diisi sesuai stok teoritis!`);
+  }
+
+  // Clear inputs for filtered items
+  async function handleClearFilteredActuals() {
+    if (isSessionClosed) return;
+    const count = filteredVarData.length;
+    if (count === 0) return;
+    const confirmed = await confirmDialog({
+      title: 'Kosongkan Input Fisik?',
+      text: `Inputan fisik pada ${count} bahan yang sedang difilter akan dikosongkan kembali.`,
+      confirmText: 'Ya, Kosongkan',
+      cancelText: 'Batal',
+      icon: 'warning',
+    });
+    if (!confirmed) return;
+
+    setActuals(prev => {
+      const next = { ...prev };
+      filteredVarData.forEach(iv => {
+        const ingId = iv.ingredient?.id;
+        if (ingId) {
+          delete next[ingId];
+        }
+      });
+      return next;
+    });
+    toast.success('Inputan fisik berhasil dikosongkan!');
+  }
+
+  function resetFilters() {
+    setSearchQuery('');
+    setCategoryFilter('ALL');
+    setStockFilter('ALL');
+  }
+
   // Filtered sessions for Tab 2
   const filteredSessions = useMemo(() => {
     return sessions.filter(s => {
@@ -556,10 +735,11 @@ export default function StockOpname() {
           </div>
 
           {/* Table Input Hitung Fisik */}
-          <div className="card mb-4">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 12 }}>
+          <div className="card mb-4" style={{ padding: '20px' }}>
+            {/* Header Title & Action Buttons */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
               <div>
-                <div style={{ fontWeight: 700, fontSize: 15, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ fontWeight: 800, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', color: '#ffffff' }}>
                   <span>Formulir Hitung Fisik Bahan Baku — {activeOutlet?.name || 'Cabang'}</span>
                   {currentOpnameSession && (
                     <span style={{
@@ -575,18 +755,18 @@ export default function StockOpname() {
                     </span>
                   )}
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 3 }}>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
                   {isSessionClosed ? (
                     <span>Sesi opname tanggal ini (<strong>{currentOpnameSession?.opname_no}</strong>) telah <strong>DI-RELEASE & DISETUJUI</strong>. Formulir terkunci (Read-Only) untuk menjaga integritas stok & pembukuan akuntansi.</span>
                   ) : currentOpnameSession && !currentOpnameSession.is_closed ? (
                     <span>Sesi ini berstatus <strong>DRAFT</strong>. Anda dapat mengedit kembali angka fisik kapan saja, lalu klik <strong>Simpan Draft</strong> untuk memperbarui atau <strong>Release</strong> untuk mengunci.</span>
                   ) : (
-                    <span>Ketikkan angka timbangan fisik pada kolom <strong>Stok Akhir Fisik</strong>. Inputan pegawai akan berstatus <strong>DRAFT</strong> dan di-release oleh Owner.</span>
+                    <span>Ketikkan angka timbangan fisik pada kolom <strong>Stok Akhir Fisik</strong>. Gunakan filter <strong>Bahan Aktif Cabang / Ada In / Ada Out / Sisa Teoritis</strong> untuk mempermudah pencarian.</span>
                   )}
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 {isSessionClosed ? (
                   <>
                     <span style={{
@@ -605,68 +785,287 @@ export default function StockOpname() {
                     </span>
                     {currentOpnameSession?.opname_no && (
                       <button
-                        className="btn btn-primary"
+                        className="btn btn-primary btn-sm"
                         style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
                         onClick={() => openSessionDetail(currentOpnameSession.opname_no)}
                       >
-                        <FileText size={15} /> Lihat & Cetak Berita Acara
+                        <FileText size={14} /> Berita Acara
                       </button>
                     )}
                   </>
                 ) : canRelease ? (
                   <>
-                    <button className="btn btn-secondary" onClick={() => handleSave('DRAFT')} disabled={saving}>
+                    <button className="btn btn-secondary btn-sm" onClick={() => handleSave('DRAFT')} disabled={saving}>
                       {saving ? 'Menyimpan...' : 'Simpan Draft'}
                     </button>
-                    <button className="btn btn-primary" onClick={() => handleSave('RELEASE')} disabled={saving} style={{ background: '#10b981', borderColor: '#10b981', color: '#ffffff', fontWeight: 700 }}>
+                    <button className="btn btn-primary btn-sm" onClick={() => handleSave('RELEASE')} disabled={saving} style={{ background: '#10b981', borderColor: '#10b981', color: '#ffffff', fontWeight: 700 }}>
                       {saving ? 'Menyimpan...' : 'Release & Setujui Opname'}
                     </button>
                   </>
                 ) : (
-                  <button className="btn btn-primary" onClick={() => handleSave('DRAFT')} disabled={saving}>
-                    {saving ? 'Menyimpan...' : 'Simpan Draft Opname (Menunggu Release Owner)'}
+                  <button className="btn btn-primary btn-sm" onClick={() => handleSave('DRAFT')} disabled={saving}>
+                    {saving ? 'Menyimpan...' : 'Simpan Draft Opname'}
                   </button>
                 )}
               </div>
             </div>
 
+            {/* Quick KPI Summary Bar for Filter Context */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 16 }}>
+              <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px' }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Total Master Bahan</div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: '#ffffff', marginTop: 2 }}>
+                  {filterCounts.all} <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)' }}>Item</span>
+                </div>
+              </div>
+              <div style={{ background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.25)', borderRadius: 10, padding: '10px 14px' }}>
+                <div style={{ fontSize: 11, color: '#a5b4fc', fontWeight: 600 }}>Bahan Aktif Cabang</div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: '#818cf8', marginTop: 2 }}>
+                  {filterCounts.activeOutlet} <span style={{ fontSize: 11, fontWeight: 500 }}>Item Bergerak</span>
+                </div>
+              </div>
+              <div style={{ background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: 10, padding: '10px 14px' }}>
+                <div style={{ fontSize: 11, color: '#7dd3fc', fontWeight: 600 }}>Ada In (+) / Out (-)</div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: '#38bdf8', marginTop: 2 }}>
+                  +{filterCounts.hasIn} <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>/</span> -{filterCounts.hasOut}
+                </div>
+              </div>
+              <div style={{ background: 'rgba(34, 197, 94, 0.08)', border: '1px solid rgba(34, 197, 94, 0.25)', borderRadius: 10, padding: '10px 14px' }}>
+                <div style={{ fontSize: 11, color: '#86efac', fontWeight: 600 }}>Progress Hitung Fisik</div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: '#4ade80', marginTop: 2 }}>
+                  {filterCounts.filled} <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500 }}>/ {filterCounts.all} ({filterCounts.unfilled} Belum)</span>
+                </div>
+              </div>
+              <div style={{ background: filterCounts.hasVariance > 0 ? 'rgba(239, 68, 68, 0.08)' : 'rgba(255, 255, 255, 0.03)', border: filterCounts.hasVariance > 0 ? '1px solid rgba(239, 68, 68, 0.25)' : '1px solid var(--border)', borderRadius: 10, padding: '10px 14px' }}>
+                <div style={{ fontSize: 11, color: filterCounts.hasVariance > 0 ? '#fca5a5' : 'var(--text-muted)', fontWeight: 600 }}>Ada Selisih Fisik</div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: filterCounts.hasVariance > 0 ? '#f87171' : 'var(--text-secondary)', marginTop: 2 }}>
+                  {filterCounts.hasVariance} <span style={{ fontSize: 11, fontWeight: 500 }}>Item Beda</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Filter Pills Navigation */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              flexWrap: 'wrap',
+              marginBottom: '14px',
+              padding: '8px 10px',
+              background: 'rgba(255, 255, 255, 0.02)',
+              borderRadius: '10px',
+              border: '1px solid var(--border)'
+            }}>
+              <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--text-secondary)', marginRight: '4px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <Filter size={13} /> Filter Cepat:
+              </span>
+
+              {[
+                { id: 'ALL', label: 'Semua Bahan', count: filterCounts.all, color: 'var(--primary)' },
+                { id: 'ACTIVE', label: '⭐ Bahan Aktif Cabang', count: filterCounts.activeOutlet, color: '#818cf8' },
+                { id: 'HAS_IN', label: '📥 Ada Masuk / In (+)', count: filterCounts.hasIn, color: '#34d399' },
+                { id: 'HAS_OUT', label: '📤 Ada Keluar / Out (-)', count: filterCounts.hasOut, color: '#fb923c' },
+                { id: 'HAS_TEORITIS', label: '📦 Ada Stok Teoritis (> 0)', count: filterCounts.hasTeoritis, color: '#38bdf8' },
+                { id: 'ZERO_TEORITIS', label: '⚠️ Stok Kosong (≤ 0)', count: filterCounts.zeroTeoritis, color: '#94a3b8' },
+                { id: 'UNFILLED', label: '✏️ Belum Diisi Fisik', count: filterCounts.unfilled, color: '#fbbf24' },
+                { id: 'HAS_VARIANCE', label: '⚡ Ada Selisih Fisik (≠ 0)', count: filterCounts.hasVariance, color: '#f87171' },
+              ].map(pill => {
+                const isActive = stockFilter === pill.id;
+                return (
+                  <button
+                    key={pill.id}
+                    type="button"
+                    onClick={() => setStockFilter(pill.id)}
+                    style={{
+                      padding: '5px 10px',
+                      borderRadius: '8px',
+                      border: isActive ? '1px solid' : '1px solid transparent',
+                      borderColor: isActive ? pill.color : 'transparent',
+                      background: isActive ? `${pill.color}22` : 'rgba(255, 255, 255, 0.04)',
+                      color: isActive ? '#ffffff' : 'var(--text-secondary)',
+                      fontSize: '11.5px',
+                      fontWeight: isActive ? 800 : 500,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <span>{pill.label}</span>
+                    <span style={{
+                      fontSize: '10px',
+                      padding: '1px 5px',
+                      borderRadius: '6px',
+                      background: isActive ? pill.color : 'rgba(255, 255, 255, 0.08)',
+                      color: isActive ? '#000000' : 'var(--text-muted)',
+                      fontWeight: 800,
+                    }}>
+                      {pill.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Search, Category Selector & Auto-fill Helpers Row */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flex: 1, minWidth: '280px' }}>
+                {/* Search Input */}
+                <div style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  background: 'rgba(0, 0, 0, 0.25)',
+                  padding: '5px 12px',
+                  borderRadius: 8,
+                  border: '1px solid var(--border)',
+                  minWidth: '220px',
+                  flex: 1,
+                  maxWidth: '360px',
+                }}>
+                  <Search size={14} style={{ color: 'var(--text-secondary)' }} />
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Cari nama bahan, kode, kategori..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    style={{ border: 'none', background: 'transparent', padding: 0, fontSize: '12px', color: '#ffffff', height: '24px' }}
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Category Dropdown */}
+                <select
+                  className="form-control form-control-sm"
+                  value={categoryFilter}
+                  onChange={e => setCategoryFilter(e.target.value)}
+                  style={{ width: 'auto', fontSize: '12px', height: '34px', minWidth: '150px' }}
+                >
+                  <option value="ALL">Semua Kategori ({varData.length})</option>
+                  {availableCategories.map(cat => {
+                    const count = varData.filter(v => v.ingredient?.category === cat).length;
+                    return (
+                      <option key={cat} value={cat}>
+                        {cat} ({count})
+                      </option>
+                    );
+                  })}
+                </select>
+
+                {/* Reset Filters button if any filter active */}
+                {(searchQuery || categoryFilter !== 'ALL' || stockFilter !== 'ALL') && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs"
+                    onClick={resetFilters}
+                    style={{ color: '#ef4444', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '11px' }}
+                  >
+                    <RotateCcw size={12} /> Reset Filter
+                  </button>
+                )}
+              </div>
+
+              {/* Action Helpers */}
+              {!isSessionClosed && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-xs"
+                    onClick={handleAutoFillTheoretical}
+                    title="Isi otomatis input fisik sama dengan sisa stok teoritis untuk baris yang sedang ditampilkan"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '11.5px', color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.3)' }}
+                  >
+                    <Sparkles size={12} /> Isi Fisik = Teoritis ({filteredVarData.length})
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs"
+                    onClick={handleClearFilteredActuals}
+                    title="Kosongkan input fisik pada baris yang sedang ditampilkan"
+                    style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}
+                  >
+                    Kosongkan Input
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Main Interactive Table */}
             {loading ? (
               <LoadingState />
+            ) : filteredVarData.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '48px 16px', color: 'var(--text-secondary)' }}>
+                <Boxes size={36} style={{ opacity: 0.4, margin: '0 auto 10px' }} />
+                <div style={{ fontSize: '14px', fontWeight: 700 }}>Tidak ada bahan baku yang cocok dengan filter</div>
+                <div style={{ fontSize: '12px', marginTop: '4px' }}>
+                  Coba ubah kata kunci pencarian, pilih kategori lain, atau pilih filter <strong>Semua Bahan</strong>.
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={resetFilters}
+                  style={{ marginTop: '14px', fontSize: '12px' }}
+                >
+                  Tampilkan Semua Bahan Baku
+                </button>
+              </div>
             ) : (
               <div className="table-wrap">
-                <table>
+                <table style={{ fontSize: '12.5px' }}>
                   <thead>
                     <tr>
-                      <th style={{ minWidth: 150 }}>Nama Bahan Baku</th>
+                      <th style={{ minWidth: 160 }}>Nama Bahan Baku</th>
                       <th className="right">Stok Awal</th>
-                      <th className="right">Pembelian (+)</th>
-                      <th className="right">Pemakaian POS (-)</th>
-                      <th className="right" style={{ color: '#fb923c' }}>Waste (-)</th>
+                      <th className="right" style={{ color: '#34d399' }}>Masuk / In (+)</th>
+                      <th className="right" style={{ color: '#fb923c' }}>Keluar / Out (-)</th>
+                      <th className="right" style={{ color: '#f87171' }}>Waste (-)</th>
                       <th className="right" style={{ color: 'var(--accent-bright)' }}>Sisa Teoritis</th>
                       <th className="right" style={{ width: 130 }}>Stok Akhir Fisik</th>
                       <th className="right" style={{ color: '#fb7185' }}>Selisih Bersih (Net)</th>
                       <th className="center">Status</th>
-                      <th style={{ minWidth: 160 }}>Catatan Alasan Selisih</th>
-                      <th style={{ minWidth: 140 }}>Audit Pemeriksa</th>
+                      <th style={{ minWidth: 150 }}>Catatan Alasan Selisih</th>
+                      <th style={{ minWidth: 130 }}>Audit Pemeriksa</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {varData.map(ivRaw => {
+                    {filteredVarData.map(ivRaw => {
                       const iv = getLiveVariance(ivRaw);
                       const ingId = iv.ingredient?.id;
                       const opn = opnameMap[ingId];
 
+                      const inTotal = (iv.pembelian || 0) + (iv.transfer_in || 0) + (iv.prep_output || 0) + (iv.adjustment > 0 ? iv.adjustment : 0);
+                      const outTotal = (iv.pemakaian_teoritis || 0) + (iv.prep_usage || 0) + (iv.transfer_out || 0) + (iv.adjustment < 0 ? Math.abs(iv.adjustment) : 0);
+
                       return (
-                        <tr key={ingId}>
+                        <tr key={ingId} style={{ transition: 'background 0.15s ease' }}>
                           <td>
-                            <div style={{ fontWeight: 600, color: '#ffffff' }}>{iv.ingredient?.name}</div>
-                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{iv.ingredient?.code} · {iv.ingredient?.category}</div>
+                            <div style={{ fontWeight: 700, color: '#ffffff' }}>{iv.ingredient?.name}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: '1px' }}>
+                              <span style={{ fontFamily: 'monospace' }}>{iv.ingredient?.code || '-'}</span> · <span style={{ color: 'var(--text-secondary)' }}>{iv.ingredient?.category || '-'}</span>
+                            </div>
                           </td>
                           <td className="mono right">{fmtQtyVal(iv.stok_awal_periode, iv.ingredient?.unit_pakai, iv.cost_per_unit)}</td>
-                          <td className="mono right">{fmtQtyVal(iv.pembelian, iv.ingredient?.unit_pakai, iv.cost_per_unit)}</td>
-                          <td className="mono right">{fmtQtyVal(iv.pemakaian_teoritis, iv.ingredient?.unit_pakai, iv.cost_per_unit)}</td>
-                          <td className="mono right" style={{ color: '#fb923c' }}>{fmtQtyVal(iv.waste, iv.ingredient?.unit_pakai, iv.cost_per_unit)}</td>
-                          <td className="mono right" style={{ fontWeight: 700, color: 'var(--accent-bright)' }}>
+                          <td className="mono right" style={{ color: inTotal > 0 ? '#34d399' : 'var(--text-muted)' }}>
+                            {inTotal > 0 ? `+${fmtQtyVal(inTotal, iv.ingredient?.unit_pakai, iv.cost_per_unit)}` : '0'}
+                          </td>
+                          <td className="mono right" style={{ color: outTotal > 0 ? '#fb923c' : 'var(--text-muted)' }}>
+                            {outTotal > 0 ? `-${fmtQtyVal(outTotal, iv.ingredient?.unit_pakai, iv.cost_per_unit)}` : '0'}
+                          </td>
+                          <td className="mono right" style={{ color: (iv.waste || 0) > 0 ? '#f87171' : 'var(--text-muted)' }}>
+                            {(iv.waste || 0) > 0 ? `-${fmtQtyVal(iv.waste, iv.ingredient?.unit_pakai, iv.cost_per_unit)}` : '0'}
+                          </td>
+                          <td className="mono right" style={{ fontWeight: 800, color: 'var(--accent-bright)' }}>
                             {fmtQtyVal(iv.stok_akhir_teoritis, iv.ingredient?.unit_pakai, iv.cost_per_unit)}
                           </td>
                           <td style={{ textAlign: 'right' }}>
@@ -680,9 +1079,9 @@ export default function StockOpname() {
                                 fontSize: 12.5,
                                 fontWeight: 700,
                                 borderColor: isSessionClosed ? 'rgba(255,255,255,0.1)' : 'var(--accent)',
-                                background: isSessionClosed ? 'rgba(255,255,255,0.04)' : undefined,
+                                background: isSessionClosed ? 'rgba(255,255,255,0.04)' : (actuals[ingId] !== '' && actuals[ingId] !== undefined ? 'rgba(99, 102, 241, 0.08)' : undefined),
                                 cursor: isSessionClosed ? 'not-allowed' : undefined,
-                                color: isSessionClosed ? '#94a3b8' : undefined
+                                color: isSessionClosed ? '#94a3b8' : '#ffffff'
                               }}
                               placeholder={isSessionClosed ? 'Terkunci' : 'Input fisik...'}
                               value={actuals[ingId] ?? ''}
@@ -740,6 +1139,14 @@ export default function StockOpname() {
                       );
                     })}
                   </tbody>
+                  <tfoot>
+                    <tr style={{ fontWeight: 800, background: 'rgba(255, 255, 255, 0.04)', borderTop: '2px solid var(--border)' }}>
+                      <td>Menampilkan {filteredVarData.length} dari {varData.length} Bahan</td>
+                      <td colSpan={10} style={{ textAlign: 'right', color: 'var(--text-secondary)', fontSize: 12 }}>
+                        Total Terisi: <strong style={{ color: '#34d399' }}>{filterCounts.filled}</strong> | Belum Terisi: <strong style={{ color: '#fbbf24' }}>{filterCounts.unfilled}</strong>
+                      </td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             )}
