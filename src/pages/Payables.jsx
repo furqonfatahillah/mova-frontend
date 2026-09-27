@@ -1547,14 +1547,14 @@ export default function Payables() {
 
       {/* MODAL 1: PEMBAYARAN NOTA TUNGGAL */}
       {payModal.open && payModal.item && (
-        <div className="modal-backdrop">
-          <div className="modal" style={{ maxWidth: 500 }}>
+        <div className="modal-backdrop" onClick={() => setPayModal({ open: false, item: null })}>
+          <div className="modal-content card" style={{ maxWidth: 500, background: '#11162d' }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <CheckCircle2 size={18} color="#34d399" />
                 Bayar Hutang: {payModal.item.supplier_name}
               </h3>
-              <button onClick={() => setPayModal({ open: false, item: null })} className="btn btn-icon">
+              <button onClick={() => setPayModal({ open: false, item: null })} className="btn btn-ghost btn-icon">
                 <X size={18} />
               </button>
             </div>
@@ -1691,14 +1691,14 @@ export default function Payables() {
 
       {/* MODAL 2: BULK PAYMENT (BAYAR SEKALIGUS) */}
       {bulkPayModal.open && (
-        <div className="modal-backdrop">
-          <div className="modal" style={{ maxWidth: 540 }}>
+        <div className="modal-backdrop" onClick={() => setBulkPayModal(f => ({ ...f, open: false }))}>
+          <div className="modal-content card" style={{ maxWidth: 540, background: '#11162d' }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Check size={18} color="#34d399" />
                 Bayar Sekaligus Hutang: {bulkPayModal.supplierName}
               </h3>
-              <button onClick={() => setBulkPayModal(f => ({ ...f, open: false }))} className="btn btn-icon">
+              <button onClick={() => setBulkPayModal(f => ({ ...f, open: false }))} className="btn btn-ghost btn-icon">
                 <X size={18} />
               </button>
             </div>
@@ -1798,14 +1798,14 @@ export default function Payables() {
 
       {/* MODAL 3: CATAT HUTANG BARU MANUAL */}
       {createModalOpen && (
-        <div className="modal-backdrop">
-          <div className="modal" style={{ maxWidth: 520 }}>
+        <div className="modal-backdrop" onClick={() => setCreateModalOpen(false)}>
+          <div className="modal-content card" style={{ maxWidth: 520, background: '#11162d' }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <PlusCircle size={18} color="var(--accent-bright)" />
                 Catat Hutang Supplier Manual
               </h3>
-              <button onClick={() => setCreateModalOpen(false)} className="btn btn-icon">
+              <button onClick={() => setCreateModalOpen(false)} className="btn btn-ghost btn-icon">
                 <X size={18} />
               </button>
             </div>
@@ -1952,14 +1952,14 @@ export default function Payables() {
 
       {/* MODAL 4: RIWAYAT PEMBAYARAN NOTA TERTENTU */}
       {historyModal.open && historyModal.item && (
-        <div className="modal-backdrop">
-          <div className="modal" style={{ maxWidth: 540 }}>
+        <div className="modal-backdrop" onClick={() => setHistoryModal({ open: false, item: null })}>
+          <div className="modal-content card" style={{ maxWidth: 540, background: '#11162d' }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <History size={18} color="var(--accent-bright)" />
                 Riwayat Pembayaran: {historyModal.item.payable_no}
               </h3>
-              <button onClick={() => setHistoryModal({ open: false, item: null })} className="btn btn-icon">
+              <button onClick={() => setHistoryModal({ open: false, item: null })} className="btn btn-ghost btn-icon">
                 <X size={18} />
               </button>
             </div>

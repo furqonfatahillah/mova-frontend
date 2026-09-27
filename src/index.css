@@ -1524,10 +1524,11 @@ textarea.form-control {
   animation: modalFadeIn 0.15s ease-out;
 }
 
+.modal,
 .modal-content,
 .modal.card,
 .modal-card {
-  background: #11162d;
+  background: #11162d !important;
   border: 1px solid var(--border-strong);
   border-radius: 16px;
   width: 100%;
@@ -1535,7 +1536,7 @@ textarea.form-control {
   max-height: 90vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.75), 0 0 30px rgba(124, 58, 237, 0.2);
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.85), 0 0 30px rgba(124, 58, 237, 0.2);
   overflow: hidden;
   animation: slideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
