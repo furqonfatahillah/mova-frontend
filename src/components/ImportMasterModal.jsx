@@ -114,7 +114,7 @@ export default function ImportMasterModal({
     } else {
       api.get('/outlets')
         .then(res => setModalOutlets(Array.isArray(res.data) ? res.data : (res.data?.data || [])))
-        .catch(() => {});
+        .catch(() => { });
     }
   }, [outlets]);
 

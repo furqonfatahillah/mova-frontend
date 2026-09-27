@@ -3,7 +3,7 @@ import {
   Clock, Plus, CheckCircle, AlertTriangle, ArrowRight, DollarSign,
   Receipt, ShoppingBag, Eye, Calendar, User, RefreshCw, X, FileText, Store,
   Users, ShieldCheck, ShieldAlert, Lock, Unlock, Edit2, Trash2, CheckSquare,
-  Square, Settings, UserCheck, Search, Info
+  Square, Settings, UserCheck, Search, Info, Printer, History
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, num, PageHeader, LoadingState, MiniCard, PeriodPicker } from '../components/ui';
@@ -11,6 +11,7 @@ import { getMonthStartStr, getTodayStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 import { confirmDialog } from '../utils/swal';
+import { printElement } from '../utils/print';
 
 export default function ShiftManagement() {
   const {
@@ -40,7 +41,7 @@ export default function ShiftManagement() {
     return Number(outlets.find(o => o.is_main)?.id || outlets[0]?.id || 1);
   }, [canSwitchOutlet, currentUser?.outlet_id, activeOutletId, outlets]);
 
-  // Tab: 'operational' | 'schedules'
+  // Tab: 'operational' | 'schedules' | 'history'
   const [activeTab, setActiveTab] = useState('operational');
 
   // Operational shifts state
@@ -62,6 +63,14 @@ export default function ShiftManagement() {
   const [detailShift, setDetailShift] = useState(null);
   const [detailData, setDetailData] = useState(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [receiptData, setReceiptData] = useState(null);
+  const [loadingReceipt, setLoadingReceipt] = useState(false);
+
+  // History tab sub-state
+  const [historyShifts, setHistoryShifts] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [expandedShiftId, setExpandedShiftId] = useState(null);
+  const [expandedData, setExpandedData] = useState({});
 
   // Form Open Shift
   const [openForm, setOpenForm] = useState({
@@ -107,6 +116,8 @@ export default function ShiftManagement() {
     } else if (activeTab === 'schedules') {
       fetchSchedules(selectedOutlet);
       fetchCompanyEmployees();
+    } else if (activeTab === 'history') {
+      fetchHistoryShifts();
     }
   }, [filterStatus, selectedOutlet, activeTab, period]);
 
@@ -139,13 +150,78 @@ export default function ShiftManagement() {
     try {
       if (activeTab === 'operational') {
         await fetchData();
-      } else {
+      } else if (activeTab === 'schedules') {
         await fetchSchedules(selectedOutlet);
         await fetchCompanyEmployees();
+      } else if (activeTab === 'history') {
+        await fetchHistoryShifts();
       }
       toast.success('Data shift diperbarui');
     } finally {
       setRefreshing(false);
+    }
+  }
+
+  // Fetch history shifts (closed only)
+  async function fetchHistoryShifts() {
+    setLoadingHistory(true);
+    try {
+      const targetOutlet = selectedOutlet || (outlets.find(o => o.is_main)?.id || outlets[0]?.id || 1);
+      const { data } = await api.get('/shifts', {
+        params: {
+          status: 'CLOSED',
+          outlet_id: targetOutlet || undefined,
+          from: period.from || undefined,
+          to: period.to || undefined,
+        }
+      });
+      setHistoryShifts(data);
+    } catch {
+      toast.error('Gagal memuat riwayat shift');
+    } finally {
+      setLoadingHistory(false);
+    }
+  }
+
+  // Fetch expanded shift detail for history tab
+  async function handleExpandShift(shift) {
+    if (expandedShiftId === shift.id) {
+      setExpandedShiftId(null);
+      return;
+    }
+    setExpandedShiftId(shift.id);
+    if (expandedData[shift.id]) return; // Already loaded
+    try {
+      const [sumRes, trxRes] = await Promise.all([
+        api.get(`/shifts/${shift.id}/summary`),
+        api.get(`/shifts/${shift.id}/transactions`),
+      ]);
+      setExpandedData(prev => ({
+        ...prev,
+        [shift.id]: {
+          summary: sumRes.data,
+          transactions: trxRes.data.transactions,
+        }
+      }));
+    } catch {
+      toast.error('Gagal memuat detail shift');
+    }
+  }
+
+  // Print shift receipt
+  async function handlePrintReceipt(shiftId) {
+    setLoadingReceipt(true);
+    try {
+      const { data } = await api.get(`/shifts/${shiftId}/receipt`);
+      setReceiptData(data);
+      // Wait for state update and DOM render before printing
+      setTimeout(() => {
+        printElement('shift-receipt-print', `Rekap Kas Shift #${shiftId}`, { isThermal: true });
+        setLoadingReceipt(false);
+      }, 400);
+    } catch {
+      toast.error('Gagal memuat data struk');
+      setLoadingReceipt(false);
     }
   }
 
@@ -364,8 +440,11 @@ export default function ShiftManagement() {
       });
       const carryMsg = data.carry_over_count > 0 ? ` (${data.carry_over_count} tagihan pelanggan dialihkan ke shift berikutnya)` : '';
       toast.success(`Shift #${activeData.shift.id} berhasil ditutup! ${data.movements_count} bahan dibukukan.${carryMsg}`);
+      const closedShiftId = activeData.shift.id;
       setShowCloseModal(false);
       fetchData();
+      // Auto-print receipt after closing
+      setTimeout(() => handlePrintReceipt(closedShiftId), 800);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Gagal menutup shift');
     } finally {
@@ -373,7 +452,7 @@ export default function ShiftManagement() {
     }
   }
 
-  async function handleViewDetail(shift) {
+  async function handleViewDetail(shift, printAfter = false) {
     setDetailShift(shift);
     setLoadingDetail(true);
     try {
@@ -427,31 +506,39 @@ export default function ShiftManagement() {
         }
       />
 
-      {/* Owner Navigation Tabs */}
-      {isOwnerWebsite && (
-        <div style={{
-          display: 'flex',
-          gap: 10,
-          marginBottom: 20,
-          borderBottom: '1px solid rgba(255,255,255,0.08)',
-          paddingBottom: 12
-        }}>
-          <button
-            className={`btn ${activeTab === 'operational' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 10 }}
-            onClick={() => setActiveTab('operational')}
-          >
-            <Clock size={16} /> Operasional & Riwayat Shift
-          </button>
+      {/* Navigation Tabs */}
+      <div style={{
+        display: 'flex',
+        gap: 10,
+        marginBottom: 20,
+        borderBottom: '1px solid rgba(255,255,255,0.08)',
+        paddingBottom: 12,
+        flexWrap: 'wrap'
+      }}>
+        <button
+          className={`btn ${activeTab === 'operational' ? 'btn-primary' : 'btn-secondary'}`}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 10 }}
+          onClick={() => setActiveTab('operational')}
+        >
+          <Clock size={16} /> Operasional Shift
+        </button>
+        <button
+          className={`btn ${activeTab === 'history' ? 'btn-primary' : 'btn-secondary'}`}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 10 }}
+          onClick={() => setActiveTab('history')}
+        >
+          <History size={16} /> Riwayat Shift
+        </button>
+        {isOwnerWebsite && (
           <button
             className={`btn ${activeTab === 'schedules' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 10 }}
             onClick={() => setActiveTab('schedules')}
           >
-            <Settings size={16} /> Pengaturan Master Shift & Jadwal Kasir (Khusus Owner)
+            <Settings size={16} /> Pengaturan Master Shift
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {activeTab === 'operational' && (
         <>
@@ -705,13 +792,25 @@ export default function ShiftManagement() {
                         </span>
                       </td>
                       <td className="center">
-                        <button
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => handleViewDetail(s)}
-                          title="Lihat rincian transaksi dan pemakaian bahan shift ini"
-                        >
-                          <Eye size={13} /> Rincian
-                        </button>
+                        <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => handleViewDetail(s)}
+                            title="Lihat rincian transaksi dan pemakaian bahan shift ini"
+                          >
+                            <Eye size={13} />
+                          </button>
+                          {s.status === 'CLOSED' && (
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => handlePrintReceipt(s.id)}
+                              title="Cetak rekap kas shift"
+                              disabled={loadingReceipt}
+                            >
+                              <Printer size={13} />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -981,6 +1080,247 @@ export default function ShiftManagement() {
               <button className="btn btn-primary" onClick={handleOpenCreateSchedule}>
                 <Plus size={15} /> Buat Master Shift Sekarang
               </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tab: Riwayat Shift */}
+      {activeTab === 'history' && (
+        <div className="fade-in">
+          {/* Info Banner */}
+          <div className="card mb-4" style={{
+            padding: '14px 18px',
+            background: 'linear-gradient(135deg, rgba(30, 27, 75, 0.45) 0%, rgba(15, 23, 42, 0.8) 100%)',
+            border: '1px solid rgba(139, 92, 246, 0.3)',
+            display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap'
+          }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: 10,
+              background: 'rgba(139, 92, 246, 0.2)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'var(--accent-bright)'
+            }}>
+              <History size={18} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#ffffff' }}>Riwayat Shift yang Telah Ditutup</div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                Klik salah satu shift untuk melihat detail transaksi, pemakaian bahan, dan rekap kas. Anda juga dapat mencetak rekap kas.
+              </div>
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+              Total: <strong style={{ color: 'var(--accent-bright)' }}>{historyShifts.length}</strong> shift
+            </div>
+          </div>
+
+          {loadingHistory ? <LoadingState /> : historyShifts.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {historyShifts.map(s => {
+                const isExpanded = expandedShiftId === s.id;
+                const detail = expandedData[s.id];
+                const diff = s.cash_difference ?? 0;
+                return (
+                  <div key={s.id} className="card" style={{
+                    border: isExpanded ? '1px solid rgba(139, 92, 246, 0.4)' : '1px solid var(--border)',
+                    transition: 'all 0.2s',
+                    overflow: 'hidden'
+                  }}>
+                    {/* Shift Header (clickable) */}
+                    <div
+                      onClick={() => handleExpandShift(s)}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        cursor: 'pointer', flexWrap: 'wrap', gap: 12,
+                        padding: isExpanded ? '0 0 16px 0' : 0,
+                        borderBottom: isExpanded ? '1px solid rgba(255,255,255,0.06)' : 'none'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{
+                          width: 40, height: 40, borderRadius: 10,
+                          background: isExpanded ? 'rgba(139, 92, 246, 0.2)' : 'rgba(255,255,255,0.05)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          color: 'var(--accent-bright)', fontWeight: 800, fontSize: 14
+                        }}>
+                          #{s.id}
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: 14, color: '#ffffff' }}>{s.shift_name}</div>
+                          <div style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                            <span>Kasir: <strong>{s.user?.name}</strong></span>
+                            <span>Outlet: <strong>{s.outlet?.name || outlets.find(o => Number(o.id) === Number(s.outlet_id))?.name || 'Pusat'}</strong></span>
+                            <span>{s.transactions_count || 0} trx</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Omzet</div>
+                          <div className="mono" style={{ fontWeight: 700, fontSize: 14, color: 'var(--ok)' }}>{rupiah(s.system_cash)}</div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Selisih</div>
+                          <div className="mono" style={{
+                            fontWeight: 700, fontSize: 14,
+                            color: diff === 0 ? 'var(--ok)' : diff > 0 ? '#38bdf8' : 'var(--danger)'
+                          }}>
+                            {diff === 0 ? 'Pas' : diff > 0 ? `+${rupiah(diff)}` : rupiah(diff)}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            onClick={(e) => { e.stopPropagation(); handlePrintReceipt(s.id); }}
+                            title="Cetak Rekap Kas"
+                            disabled={loadingReceipt}
+                          >
+                            <Printer size={13} />
+                          </button>
+                        </div>
+                        <ArrowRight size={16} style={{
+                          color: 'var(--text-muted)',
+                          transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                          transition: 'transform 0.2s'
+                        }} />
+                      </div>
+                    </div>
+
+                    {/* Expanded Detail */}
+                    {isExpanded && (
+                      <div style={{ paddingTop: 16 }} className="fade-in">
+                        {/* Shift info summary cards */}
+                        <div className="grid-4 gap-3 mb-4">
+                          <MiniCard label="Waktu Buka" value={new Date(s.opened_at).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })} color="var(--text-secondary)" />
+                          <MiniCard label="Waktu Tutup" value={s.closed_at ? new Date(s.closed_at).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' }) : '-'} color="var(--accent-bright)" />
+                          <MiniCard label="Modal Awal" value={rupiah(s.initial_cash)} color="var(--text-secondary)" />
+                          <MiniCard label="Kas Aktual" value={s.closing_cash !== null ? rupiah(s.closing_cash) : '—'} color="var(--accent-bright)" />
+                        </div>
+
+                        {!detail ? (
+                          <div style={{ textAlign: 'center', padding: '24px 0' }}>
+                            <LoadingState />
+                          </div>
+                        ) : (
+                          <>
+                            {/* Menu Terjual */}
+                            {detail.summary?.menus_sold?.length > 0 && (
+                              <div style={{ marginBottom: 16 }}>
+                                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <ShoppingBag size={14} style={{ color: 'var(--accent-bright)' }} /> Menu Terjual
+                                </div>
+                                <div className="table-wrap" style={{ maxHeight: 200, overflowY: 'auto' }}>
+                                  <table>
+                                    <thead>
+                                      <tr>
+                                        <th>Menu</th>
+                                        <th className="right">Porsi</th>
+                                        <th className="right">Total</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {detail.summary.menus_sold.map(m => (
+                                        <tr key={m.menu_id}>
+                                          <td style={{ fontWeight: 600 }}>{m.menu_name}</td>
+                                          <td className="mono right">{m.qty}x</td>
+                                          <td className="mono right">{rupiah(m.total)}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Daftar Transaksi */}
+                            {detail.transactions?.length > 0 && (
+                              <div style={{ marginBottom: 16 }}>
+                                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <Receipt size={14} style={{ color: 'var(--accent-bright)' }} /> Daftar Transaksi ({detail.transactions.length})
+                                </div>
+                                <div className="table-wrap" style={{ maxHeight: 280, overflowY: 'auto' }}>
+                                  <table>
+                                    <thead>
+                                      <tr>
+                                        <th style={{ width: 50 }}>ID</th>
+                                        <th style={{ width: 50 }}>Jam</th>
+                                        <th>Menu</th>
+                                        <th className="right" style={{ width: 50 }}>Qty</th>
+                                        <th className="right">Total</th>
+                                        <th style={{ width: 70 }}>Bayar</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {detail.transactions.map(t => (
+                                        <tr key={t.id}>
+                                          <td className="mono" style={{ color: 'var(--accent-bright)', fontSize: 11 }}>#{t.id}</td>
+                                          <td className="mono" style={{ fontSize: 11 }}>{t.time}</td>
+                                          <td style={{ fontWeight: 500, fontSize: 12 }}>{t.menu_name}</td>
+                                          <td className="mono right" style={{ fontSize: 12 }}>{t.qty}x</td>
+                                          <td className="mono right" style={{ fontSize: 12 }}>{rupiah(t.total_price)}</td>
+                                          <td>
+                                            <span className="pill pill-muted mono" style={{ fontSize: 9.5 }}>
+                                              {t.payment_method || 'CASH'}
+                                            </span>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Bahan Terpakai */}
+                            {detail.summary?.ingredient_usages?.length > 0 && (
+                              <div>
+                                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <FileText size={14} style={{ color: 'var(--accent-bright)' }} /> Pemakaian Bahan Baku
+                                </div>
+                                <div className="table-wrap" style={{ maxHeight: 200, overflowY: 'auto' }}>
+                                  <table>
+                                    <thead>
+                                      <tr>
+                                        <th>Bahan</th>
+                                        <th className="right">Qty</th>
+                                        <th className="right">Biaya</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {detail.summary.ingredient_usages.map(u => (
+                                        <tr key={u.ingredient_id}>
+                                          <td style={{ fontWeight: 600 }}>{u.ingredient_name}</td>
+                                          <td className="mono right" style={{ color: 'var(--danger)' }}>-{num(u.total_qty)} {u.unit}</td>
+                                          <td className="mono right">{rupiah(u.total_cost)}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            )}
+
+                            {detail.transactions?.length === 0 && !detail.summary?.menus_sold?.length && (
+                              <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)', fontSize: 13 }}>
+                                Tidak ada transaksi pada shift ini.
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="card" style={{ textAlign: 'center', padding: '50px 20px', background: 'rgba(15, 23, 42, 0.4)' }}>
+              <History size={40} style={{ color: 'var(--text-muted)', margin: '0 auto 12px' }} />
+              <h4 style={{ margin: '0 0 6px 0', color: '#ffffff', fontSize: 16 }}>Belum Ada Riwayat Shift</h4>
+              <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 13 }}>
+                Belum ada shift yang ditutup pada periode dan outlet yang dipilih.
+              </p>
             </div>
           )}
         </div>
@@ -1443,6 +1783,19 @@ export default function ShiftManagement() {
                   </button>
                 </div>
               </form>
+              {/* Post-close: suggest print */}
+              {activeShift?.status === 'CLOSED' && (
+                <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', textAlign: 'center' }}>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => handlePrintReceipt(activeShift.id)}
+                    disabled={loadingReceipt}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
+                  >
+                    <Printer size={14} /> Cetak Rekap Kas Shift
+                  </button>
+                </div>
+              )}
             )}
           </div>
         </div>
@@ -1601,6 +1954,16 @@ export default function ShiftManagement() {
             </div>
 
             <div className="modal-footer">
+              {detailShift.status === 'CLOSED' && (
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => handlePrintReceipt(detailShift.id)}
+                  disabled={loadingReceipt}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  <Printer size={14} /> Cetak Rekap Kas
+                </button>
+              )}
               <button className="btn btn-secondary" onClick={() => setDetailShift(null)}>
                 Tutup
               </button>
@@ -1905,6 +2268,131 @@ export default function ShiftManagement() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Hidden thermal receipt for printing */}
+      {receiptData && (
+        <div id="shift-receipt-print" style={{ display: 'none' }}>
+          <div className="thermal-receipt-preview" style={{
+            fontFamily: "'JetBrains Mono', 'Courier New', monospace",
+            fontSize: 11,
+            color: '#000',
+            background: '#fff',
+            padding: '4px 2px',
+            width: '100%',
+            maxWidth: '76mm'
+          }}>
+            {/* Header */}
+            <div style={{ textAlign: 'center', marginBottom: 6 }}>
+              <div style={{ fontWeight: 800, fontSize: 13 }}>{receiptData.outlet_name || receiptData.business_name}</div>
+              {receiptData.outlet_address && <div style={{ fontSize: 10 }}>{receiptData.outlet_address}</div>}
+              {receiptData.outlet_phone && <div style={{ fontSize: 10 }}>No.Telp : {receiptData.outlet_phone}</div>}
+            </div>
+
+            <div className="dashed-line" style={{ borderBottom: '1px dashed #000', margin: '6px 0' }} />
+
+            <div style={{ textAlign: 'center', fontWeight: 700, fontSize: 12, marginBottom: 4 }}>REKAP KAS</div>
+            <div style={{ textAlign: 'center', fontSize: 10, marginBottom: 2 }}>
+              {receiptData.shift?.closed_at ? new Date(receiptData.shift.closed_at).toLocaleString('id-ID') : new Date().toLocaleString('id-ID')}
+            </div>
+            <div style={{ fontSize: 10, marginBottom: 2 }}>
+              Kasir : <span style={{ fontWeight: 700 }}>{receiptData.kasir_name}</span>
+            </div>
+
+            <div className="dashed-line" style={{ borderBottom: '1px dashed #000', margin: '6px 0' }} />
+
+            {/* Items Sold */}
+            <div style={{ fontWeight: 700, fontSize: 10.5, marginBottom: 4 }}>Item Terjual</div>
+            {receiptData.items_sold?.length > 0 ? (
+              receiptData.items_sold.map((item, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, padding: '1px 0' }}>
+                  <span>- {item.menu_name} x{item.qty}</span>
+                  <span style={{ fontWeight: 600 }}>{Number(item.total).toLocaleString('id-ID')}</span>
+                </div>
+              ))
+            ) : (
+              <div style={{ fontSize: 10, color: '#666' }}>Tidak ada item terjual</div>
+            )}
+
+            <div className="dashed-line" style={{ borderBottom: '1px dashed #000', margin: '6px 0' }} />
+
+            {/* Transaction Summary */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, marginBottom: 2 }}>
+              <span>Transaksi</span>
+              <span></span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, paddingLeft: 8 }}>
+              <span>Umum : {receiptData.total_transactions}</span>
+              <span></span>
+            </div>
+
+            <div className="dashed-line" style={{ borderBottom: '1px dashed #000', margin: '6px 0' }} />
+
+            {/* Payment Breakdown */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontWeight: 700, marginBottom: 2 }}>
+              <span>Kas Kecil</span>
+              <span>{Number(receiptData.initial_cash || 0).toLocaleString('id-ID')}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10 }}>
+              <span>Tunai</span>
+              <span>{Number(receiptData.cash_total || 0).toLocaleString('id-ID')}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, marginTop: 2 }}>
+              <span>Non Tunai</span>
+              <span>{Number(receiptData.non_cash_total || 0).toLocaleString('id-ID')}</span>
+            </div>
+            {Object.entries(receiptData.non_cash_details || {}).map(([method, amount]) => (
+              <div key={method} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, paddingLeft: 8 }}>
+                <span>- {method}</span>
+                <span>{Number(amount).toLocaleString('id-ID')}</span>
+              </div>
+            ))}
+
+            {/* Expenses */}
+            {receiptData.expenses?.length > 0 && (
+              <>
+                <div className="dashed-line" style={{ borderBottom: '1px dashed #000', margin: '6px 0' }} />
+                <div style={{ fontWeight: 700, fontSize: 10.5, marginBottom: 2 }}>Biaya</div>
+                {receiptData.expenses.map((exp, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10 }}>
+                    <span>- {exp.description}</span>
+                    <span>({Number(exp.amount).toLocaleString('id-ID')})</span>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontWeight: 700 }}>
+                  <span>Total Biaya</span>
+                  <span>-{Number(receiptData.total_expenses).toLocaleString('id-ID')}</span>
+                </div>
+              </>
+            )}
+
+            <div className="dashed-line" style={{ borderBottom: '1px dashed #000', margin: '6px 0' }} />
+
+            {/* Totals */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontWeight: 800, marginBottom: 4 }}>
+              <span>Jumlah</span>
+              <span>{Number(receiptData.total_sales || 0).toLocaleString('id-ID')}</span>
+            </div>
+
+            <div className="solid-line" style={{ borderBottom: '1px solid #000', margin: '4px 0' }} />
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10 }}>
+              <span>Total Tunai Sistem</span>
+              <span>{Number((receiptData.initial_cash || 0) + (receiptData.cash_total || 0)).toLocaleString('id-ID')}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10 }}>
+              <span>Total Tunai Aktual</span>
+              <span>{receiptData.closing_cash !== null ? Number(receiptData.closing_cash).toLocaleString('id-ID') : '-'}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontWeight: 700 }}>
+              <span>Selisih</span>
+              <span>{receiptData.cash_difference !== null ? Number(receiptData.cash_difference).toLocaleString('id-ID') : '0'}</span>
+            </div>
+
+            <div className="dashed-line" style={{ borderBottom: '1px dashed #000', margin: '8px 0' }} />
+            <div style={{ textAlign: 'center', fontSize: 9, color: '#666' }}>Dicetak oleh MOVA POS</div>
           </div>
         </div>
       )}
