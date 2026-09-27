@@ -1587,6 +1587,7 @@ export default function ShiftManagement() {
                 <LoadingState />
               </div>
             ) : (
+              <>
               <form onSubmit={handleCloseShiftSubmit}>
                 <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
                   {/* Peringatan & Opsi Open Bill Pelanggan */}
@@ -1796,6 +1797,7 @@ export default function ShiftManagement() {
                   </button>
                 </div>
               )}
+              </>
             )}
           </div>
         </div>
