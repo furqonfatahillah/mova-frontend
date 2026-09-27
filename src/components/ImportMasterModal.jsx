@@ -372,6 +372,7 @@ export default function ImportMasterModal({
 
           const outletName = getVal(row, ['cabangoutletopsional', 'cabangoutlet', 'cabang', 'outlet', 'namaoutlet', 'namacabang']) || '';
           const harga = parseFloat(getVal(row, ['hargabelipersatuanbelirp', 'hargabeli', 'harga', 'hargasatuan', 'cost', 'modal'])) || 0;
+          const minStock = parseFloat(getVal(row, ['stokminimalsatuanpakai', 'stokminimal', 'minstok', 'minimumstok', 'minstock', 'stokmin', 'stockmin'])) || 0;
           const initialStock = parseFloat(getVal(row, [
             'stockawalsatuanpakai', 'stokawalsatuanpakai',
             'stockawal', 'stokawal',
@@ -456,7 +457,7 @@ export default function ImportMasterModal({
           }
 
           const harga = parseFloat(getVal(row, ['hargabelipersatuanbelirp', 'hargabeli', 'harga', 'hargasatuan'])) || 0;
-          const minStock = parseFloat(getVal(row, ['stokminimalsatuanpakai', 'stokminimal', 'minstok'])) || 0;
+          const minStock = parseFloat(getVal(row, ['stokminimalsatuanpakai', 'stokminimal', 'minstok', 'minimumstok', 'minstock', 'stokmin', 'stockmin'])) || 0;
           const initialStock = parseFloat(getVal(row, [
             'stockawalsatuanpakai', 'stokawalsatuanpakai',
             'stockawal', 'stokawal',
