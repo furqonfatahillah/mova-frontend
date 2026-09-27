@@ -59,9 +59,9 @@ const TABS = [
   },
   {
     id: 'payables',
-    label: 'Hutang Supplier (Holding)',
+    label: 'Hutang Supplier (Tempo)',
     icon: Clock,
-    title: 'LAPORAN HUTANG SUPPLIER',
+    title: 'LAPORAN HUTANG SUPPLIER (TEMPO)',
     desc: 'Buku hutang dagang / tempo supplier holding, riwayat pembayaran cicilan, jatuh tempo, dan sisa kewajiban aktif.',
   },
   {
@@ -293,19 +293,19 @@ export default function PurchaseReport() {
                 {filterOutlet === 'ALL'
                   ? 'Mode Konsolidasi Multi-Outlet'
                   : isCurrentHolding
-                    ? `Level Holding: ${currentOutletObj?.name || 'Gudang Pusat'}`
+                    ? `Level Holding (Outlet Pusat): ${currentOutletObj?.name || 'Gudang Pusat'}`
                     : `Level Outlet Cabang: ${currentOutletObj?.name || 'Cabang Operasional'}`}
               </span>
               <span className={`pill ${isCurrentHolding ? 'pill-primary' : filterOutlet === 'ALL' ? 'pill-info' : 'pill-warning'}`} style={{ fontSize: 11, fontWeight: 700 }}>
-                {filterOutlet === 'ALL' ? 'Holding & Cabang' : isCurrentHolding ? 'Holding Pusat' : 'Outlet Cabang'}
+                {filterOutlet === 'ALL' ? 'Holding & Cabang' : isCurrentHolding ? 'Holding / Outlet Pusat' : 'Outlet Cabang'}
               </span>
             </div>
             <p style={{ margin: '2px 0 0 0', fontSize: 12, color: 'var(--text-secondary)' }}>
               {filterOutlet === 'ALL'
                 ? 'Menampilkan seluruh pengadaan barang masuk: Holding (Hutang, Kas, Bank) dan Outlet Cabang (Kas Only).'
                 : isCurrentHolding
-                  ? 'Mendukung metode pembayaran: HUTANG (Tempo Supplier), KAS, dan BANK.'
-                  : 'Kebijakan Standar: Pembelian barang masuk di outlet cabang dibatasi KAS ONLY (Petty Cash Cabang).'}
+                  ? 'Outlet ini diset sebagai Toko Pusat / Holding. Mendukung metode pembayaran: HUTANG (Tempo Supplier), KAS, dan BANK.'
+                  : 'Outlet ini berstatus Cabang Operasional. Kebijakan Standar: Pembelian barang masuk dibatasi KAS ONLY (Petty Cash Cabang).'}
             </p>
           </div>
         </div>
@@ -531,7 +531,7 @@ export default function PurchaseReport() {
               <Icon size={15} />
               <span>{tab.label}</span>
               {isPayableTab && (
-                <span className="pill pill-primary" style={{ fontSize: 9.5, padding: '1px 6px' }}>Holding</span>
+                <span className="pill pill-primary" style={{ fontSize: 9.5, padding: '1px 6px' }}>Tempo</span>
               )}
             </button>
           );
@@ -565,13 +565,79 @@ export default function PurchaseReport() {
           </div>
         ) : !reportData || !reportData.items || reportData.items.length === 0 ? (
           <div style={{ padding: '60px 20px', textAlign: 'center' }}>
-            <ShoppingBag size={42} style={{ color: 'var(--text-muted)', marginBottom: 12, opacity: 0.5 }} />
-            <h4 style={{ margin: '0 0 6px 0', fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>
-              Tidak Ada Data Pembelian
-            </h4>
-            <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)', maxWidth: 450, marginInline: 'auto' }}>
-              Tidak ditemukan data transaksi pembelian barang masuk pada filter rentang tanggal dan warehouse terpilih.
-            </p>
+            {activeTab === 'payables' ? (
+              reportData?.policy_note ? (
+                <div>
+                  <Store size={42} style={{ color: '#f59e0b', marginBottom: 12, opacity: 0.85 }} />
+                  <h4 style={{ margin: '0 0 6px 0', fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>
+                    Buku Hutang Tidak Tersedia di Cabang Ini
+                  </h4>
+                  <p style={{ margin: '0 auto 16px auto', fontSize: 13, color: 'var(--text-secondary)', maxWidth: 500, lineHeight: 1.5 }}>
+                    {reportData.policy_note}
+                  </p>
+                  <button
+                    onClick={() => setActiveTab('transactions')}
+                    className="btn btn-secondary btn-sm"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                  >
+                    <ShoppingBag size={14} />
+                    <span>Lihat Transaksi Pembelian Cabang (Kas Only)</span>
+                  </button>
+                </div>
+              ) : (reportData?.summary?.total_kas > 0 || reportData?.summary?.total_pembelian > 0) ? (
+                <div>
+                  <div style={{
+                    width: 52,
+                    height: 52,
+                    borderRadius: '50%',
+                    background: 'rgba(16, 185, 129, 0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: '0 auto 14px auto',
+                    color: '#10b981'
+                  }}>
+                    <CheckCircle2 size={30} />
+                  </div>
+                  <h4 style={{ margin: '0 0 6px 0', fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>
+                    Tidak Ada Hutang Supplier (Semua Pembelian Lunas)
+                  </h4>
+                  <p style={{ margin: '0 auto 16px auto', fontSize: 13, color: 'var(--text-secondary)', maxWidth: 540, lineHeight: 1.6 }}>
+                    Seluruh transaksi belanja barang masuk pada periode ini telah dibayar secara <strong style={{ color: '#10b981' }}>KAS / TUNAI</strong>. 
+                    Tidak ada transaksi berstatus hutang/tempo ke supplier yang belum lunas.
+                  </p>
+                  <button
+                    onClick={() => setActiveTab('transactions')}
+                    className="btn btn-primary btn-sm"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontWeight: 700, padding: '8px 16px' }}
+                  >
+                    <ShoppingBag size={15} />
+                    <span>Buka Tab Transaksi Pembelian (Barang Masuk)</span>
+                    <ArrowRight size={14} />
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <Clock size={42} style={{ color: 'var(--text-muted)', marginBottom: 12, opacity: 0.5 }} />
+                  <h4 style={{ margin: '0 0 6px 0', fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>
+                    Tidak Ada Data Hutang Supplier
+                  </h4>
+                  <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)', maxWidth: 450, marginInline: 'auto' }}>
+                    Tidak ditemukan data hutang tempo supplier pada filter rentang tanggal dan warehouse terpilih.
+                  </p>
+                </div>
+              )
+            ) : (
+              <div>
+                <ShoppingBag size={42} style={{ color: 'var(--text-muted)', marginBottom: 12, opacity: 0.5 }} />
+                <h4 style={{ margin: '0 0 6px 0', fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Tidak Ada Data Pembelian
+                </h4>
+                <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)', maxWidth: 450, marginInline: 'auto' }}>
+                  Tidak ditemukan data transaksi pembelian barang masuk pada filter rentang tanggal dan warehouse terpilih.
+                </p>
+              </div>
+            )}
           </div>
         ) : (
           <div className="table-responsive">

@@ -69,14 +69,86 @@ function autoFitColumns(ws) {
 }
 
 /**
+ * Setup Master Cabang Dropdown Data Validation and dedicated Sheet
+ */
+function setupOutletValidationAndSheet(wb, ws, outlets = [], businessName = '') {
+  const activeOutlets = Array.isArray(outlets) && outlets.length > 0
+    ? outlets.filter((o) => o.active !== false && o.active !== 0)
+    : [];
+
+  const mainOutlet = activeOutlets.find((o) => o.is_main) || activeOutlets[0] || { name: 'Outlet Pusat' };
+  const secondOutlet = activeOutlets.find((o) => !o.is_main) || activeOutlets[1] || mainOutlet;
+  const outletNames = activeOutlets.length > 0
+    ? activeOutlets.map((o) => o.name)
+    : ['Outlet Pusat (Gudang Utama)', 'Outlet Cabang'];
+
+  // 1. Add DAFTAR_CABANG reference worksheet
+  const wsOutlets = wb.addWorksheet('DAFTAR_CABANG', { views: [{ showGridLines: true }] });
+
+  wsOutlets.mergeCells('A1:E1');
+  const oTitle = wsOutlets.getCell('A1');
+  oTitle.value = `DAFTAR MASTER CABANG RESMI — ${businessName || 'MOVA POS'}`;
+  oTitle.font = { name: 'Segoe UI', size: 12, bold: true, color: { argb: 'FF1E293B' } };
+  oTitle.alignment = { vertical: 'middle', horizontal: 'left' };
+  oTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+  wsOutlets.getRow(1).height = 26;
+
+  wsOutlets.mergeCells('A2:E2');
+  const oDesc = wsOutlets.getCell('A2');
+  oDesc.value = 'Daftar cabang ini terhubung dengan Master Cabang usaha Anda. Pilih nama cabang dari dropdown (▼) di Sheet Master Bahan / Perlengkapan.';
+  oDesc.font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF475569' } };
+  wsOutlets.getRow(2).height = 20;
+
+  wsOutlets.addRow([]); // Row 3 spacer
+
+  const oHeader = wsOutlets.addRow(['Kode Cabang', 'Nama Cabang (Master)', 'Tipe Cabang', 'Alamat Cabang', 'Status']);
+  applyHeaderStyle(oHeader, 'FF047857'); // Emerald Dark
+
+  if (activeOutlets.length > 0) {
+    activeOutlets.forEach((o) => {
+      wsOutlets.addRow([
+        o.code || `OUT-${o.id}`,
+        o.name,
+        o.is_main ? 'PUSAT / HOLDING' : 'CABANG OPERASIONAL',
+        o.address || '-',
+        o.active !== false && o.active !== 0 ? 'AKTIF' : 'NON-AKTIF',
+      ]);
+    });
+  } else {
+    wsOutlets.addRow(['OUT-001', 'Outlet Pusat (Gudang Utama)', 'PUSAT / HOLDING', 'Alamat Utama', 'AKTIF']);
+  }
+  autoFitColumns(wsOutlets);
+
+  // 2. Data Validation formula for column C in the main sheet
+  const joinedNames = outletNames.join(',');
+  const outletFormula = joinedNames.length <= 240
+    ? `"${joinedNames}"`
+    : `'DAFTAR_CABANG'!$B$5:$B$${4 + (activeOutlets.length || 1)}`;
+
+  for (let r = 5; r <= 300; r++) {
+    ws.getCell(`C${r}`).dataValidation = {
+      type: 'list',
+      allowBlank: true,
+      formulae: [outletFormula],
+      showErrorMessage: true,
+      errorTitle: 'Pilihan Cabang / Outlet',
+      error: 'Pilih nama cabang yang terdaftar di Master Cabang Anda.',
+    };
+  }
+
+  return { mainOutlet, secondOutlet, outletNames };
+}
+
+/**
  * 1. Download Template Excel Master Bahan (Ingredients)
  * Features:
+ * - Dropdown Data Validation for Cabang / Outlet based on Owner's Master Cabang
  * - Dropdown Data Validation for Tipe (RAW/SEMI_FINISHED)
  * - Dropdown Data Validation for Satuan Beli & Satuan Pakai
  * - Auto-Filter on header row
- * - Guide Reference Sheet for Units & Conversions
+ * - Reference Sheet for Master Cabang & Units Guide
  */
-export async function downloadIngredientTemplate() {
+export async function downloadIngredientTemplate(outlets = [], businessName = '') {
   const ExcelJS = await getExcelJS();
   const wb = new ExcelJS.Workbook();
   wb.creator = 'MOVA POS System';
@@ -97,17 +169,20 @@ export async function downloadIngredientTemplate() {
   // Instructions
   ws.mergeCells('A2:L2');
   const noteCell = ws.getCell('A2');
-  noteCell.value = 'Petunjuk: Kolom bertanda (*) wajib diisi. Saldo Awal (diisi angka fisik dalam Satuan Pakai) dan Harga Beli otomatis tersimpan dan masuk sebagai Saldo Awal di Kartu Stok & Laporan Persediaan setiap cabang (tidak perlu impor ulang di Kartu Stok).';
+  noteCell.value = 'Petunjuk: Kolom bertanda (*) wajib diisi. Kolom Cabang / Outlet menggunakan dropdown (▼) sesuai Master Cabang usaha Anda. Saldo Awal otomatis tercatat di cabang terkait.';
   noteCell.font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF475569' } };
   ws.getRow(2).height = 20;
 
   ws.addRow([]); // Row 3 empty spacer
 
+  // Setup Master Cabang Dropdown & Sheet
+  const { mainOutlet, secondOutlet } = setupOutletValidationAndSheet(wb, ws, outlets, businessName);
+
   // Row 4: Headers
   const headerRow = ws.addRow([
     'Kode Bahan',
     'Nama Bahan*',
-    'Cabang / Outlet (Opsional)',
+    'Cabang / Outlet (Opsional) (▼)',
     'Kategori',
     'Tipe Bahan (▼)*',
     'Satuan Beli (▼)*',
@@ -120,12 +195,12 @@ export async function downloadIngredientTemplate() {
   ]);
   applyHeaderStyle(headerRow, 'FF1E293B');
 
-  // Rows 5+: Sample Data
+  // Rows 5+: Sample Data with Owner's Real Master Cabang
   const sampleData = [
-    ['BHN-001', 'Tepung Terigu Segitiga', 'Cabang Utama (Pusat)', 'BAHAN_BAKU', 'RAW', 'kg', 'gram', 1000, 14000, 10000, 2000, 'Kemasan 1 kg (Saldo Awal 10.000 gram masuk ke Kartu Stok)'],
-    ['BHN-002', 'Minyak Goreng Bimoli', 'Cabang Utama (Pusat)', 'BAHAN_BAKU', 'RAW', 'liter', 'ml', 1000, 20000, 20000, 5000, 'Kemasan 1 liter (Saldo Awal 20.000 ml masuk ke Kartu Stok)'],
-    ['BHN-003', 'Kopi Arabika Gayo', 'Branch Panakkukang', 'KOPI', 'RAW', 'kg', 'gram', 1000, 120000, 5000, 1000, 'Roast Bean Medium (Saldo Awal 5.000 gram)'],
-    ['BHN-004', 'Saus Keju Special (Olahan)', 'Cabang Utama (Pusat)', 'SAUS', 'SEMI_FINISHED', 'liter', 'ml', 1000, 45000, 2000, 1000, 'Buatan Dapur (Saldo Awal 2.000 ml)'],
+    ['BHN-001', 'Tepung Terigu Segitiga', mainOutlet.name, 'BAHAN_BAKU', 'RAW', 'kg', 'gram', 1000, 14000, 10000, 2000, 'Kemasan 1 kg (Saldo Awal 10.000 gram masuk ke Kartu Stok)'],
+    ['BHN-002', 'Minyak Goreng Bimoli', mainOutlet.name, 'BAHAN_BAKU', 'RAW', 'liter', 'ml', 1000, 20000, 20000, 5000, 'Kemasan 1 liter (Saldo Awal 20.000 ml masuk ke Kartu Stok)'],
+    ['BHN-003', 'Kopi Arabika Gayo', secondOutlet.name, 'KOPI', 'RAW', 'kg', 'gram', 1000, 120000, 5000, 1000, 'Roast Bean Medium (Saldo Awal 5.000 gram)'],
+    ['BHN-004', 'Saus Keju Special (Olahan)', mainOutlet.name, 'SAUS', 'SEMI_FINISHED', 'liter', 'ml', 1000, 45000, 2000, 1000, 'Buatan Dapur (Saldo Awal 2.000 ml)'],
   ];
 
   sampleData.forEach((r) => ws.addRow(r));
@@ -171,7 +246,7 @@ export async function downloadIngredientTemplate() {
 
   autoFitColumns(ws);
 
-  // --- SHEET 2: Panduan Satuan & Konversi ---
+  // --- SHEET 3: Panduan Satuan & Konversi ---
   const wsGuide = wb.addWorksheet('PANDUAN_SATUAN_DAN_KONVERSI', { views: [{ showGridLines: true }] });
   wsGuide.addRow(['PEDOMAN SATUAN STANDAR, KONVERSI & SALDO AWAL MOVA POS']);
   wsGuide.getRow(1).font = { size: 12, bold: true, color: { argb: 'FF1E293B' } };
@@ -182,7 +257,7 @@ export async function downloadIngredientTemplate() {
   applyHeaderStyle(guideHeader, 'FF0F766E'); // Teal Dark
 
   const guideRows = [
-    ['Cabang / Outlet (Opsional)', 'Nama Cabang (Contoh: "Cabang Utama", "Panakkukang")', 'Jika diisi nama cabang, saldo awal dialokasikan ke cabang tsb. Jika kosong, masuk ke cabang aktif / pusat.'],
+    ['Cabang / Outlet (Opsional)', 'Pilih dari dropdown (▼) Master Cabang Anda', 'Saldo awal dialokasikan ke cabang terpilih. Jika dikosongkan, otomatis masuk ke cabang aktif / pusat.'],
     ['Saldo Awal (Satuan Pakai)', 'Angka riil stok fisik dalam SATUAN PAKAI (misal: 10000 gram)', 'Otomatis langsung tercatat sebagai Saldo Awal di Kartu Stok & Laporan Persediaan (tidak perlu dobel import).'],
     ['Satuan Beli: kg', 'Satuan Pakai: gram', '1 kg = 1.000 gram (Standar tepung, gula, daging, kopi roast bean)'],
     ['Satuan Beli: liter', 'Satuan Pakai: ml', '1 liter = 1.000 ml (Standar susu, sirup, minyak, saus)'],
@@ -203,10 +278,12 @@ export async function downloadIngredientTemplate() {
 /**
  * 2. Download Template Excel Master Perlengkapan & Packaging
  * Features:
+ * - Dropdown Data Validation for Cabang / Outlet based on Owner's Master Cabang
  * - Dropdown Data Validation for Satuan Beli & Satuan Pakai
  * - Auto-Filter on header row
+ * - Reference Sheet for Master Cabang
  */
-export async function downloadPerlengkapanTemplate() {
+export async function downloadPerlengkapanTemplate(outlets = [], businessName = '') {
   const ExcelJS = await getExcelJS();
   const wb = new ExcelJS.Workbook();
   wb.creator = 'MOVA POS System';
@@ -224,16 +301,19 @@ export async function downloadPerlengkapanTemplate() {
 
   ws.mergeCells('A2:L2');
   const noteCell = ws.getCell('A2');
-  noteCell.value = 'Petunjuk: Baris bertanda (*) wajib diisi. Saldo Awal (diisi angka fisik dalam Satuan Pakai) dan Harga Beli otomatis tersimpan dan masuk sebagai Saldo Awal di Kartu Stok & Laporan Persediaan setiap cabang (tidak perlu impor ulang di Kartu Stok).';
+  noteCell.value = 'Petunjuk: Baris bertanda (*) wajib diisi. Kolom Cabang / Outlet menggunakan dropdown (▼) sesuai Master Cabang usaha Anda. Saldo Awal otomatis tercatat di cabang terkait.';
   noteCell.font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF475569' } };
   ws.getRow(2).height = 20;
 
   ws.addRow([]); // Row 3 empty spacer
 
+  // Setup Master Cabang Dropdown & Sheet
+  const { mainOutlet, secondOutlet } = setupOutletValidationAndSheet(wb, ws, outlets, businessName);
+
   const headerRow = ws.addRow([
     'Kode Perlengkapan',
     'Nama Perlengkapan*',
-    'Cabang / Outlet (Opsional)',
+    'Cabang / Outlet (Opsional) (▼)',
     'Kategori',
     'Satuan Beli (▼)*',
     'Satuan Pakai (▼)*',
@@ -247,11 +327,11 @@ export async function downloadPerlengkapanTemplate() {
   applyHeaderStyle(headerRow, 'FF1E293B');
 
   const sampleData = [
-    ['PLK-001', 'Cup Dingin 16oz Sablon Logo', 'Cabang Utama (Pusat)', 'Cup & Gelas', 'Slop', 'pcs', 50, 25000, 500, 100, 5, 'Sablon logo 2 sisi, 1 slop = 50 pcs (Saldo Awal 500 pcs)'],
-    ['PLK-002', 'Sedotan Boba Steril (Wrap)', 'Cabang Utama (Pusat)', 'Sedotan / Pipet', 'Pack', 'pcs', 100, 15000, 1000, 200, 5, 'Sedotan steril bungkus plastik (Saldo Awal 1.000 pcs)'],
-    ['PLK-003', 'Tissue Makan Meja (Lunch Paper)', 'Branch Panakkukang', 'Tissue', 'Pack', 'lembar', 250, 12500, 2500, 500, 5, '1 pack = 250 lembar tissue (Saldo Awal 2.500 lembar)'],
-    ['PLK-004', 'Roll Plastik Sealer Cup Motif', 'Cabang Utama (Pusat)', 'Tutup Cup / Sealer', 'Roll', 'pcs', 1200, 75000, 2400, 300, 5, '1 roll estimasi 1.200 cup (Saldo Awal 2.400 pcs)'],
-    ['PLK-005', 'Kantong Plastik Kresek T-Shirt 1 Cup', 'Cabang Utama (Pusat)', 'Kantong & Paperbag', 'Pack', 'pcs', 100, 8500, 500, 100, 5, 'Bahan ramah lingkungan bening (Saldo Awal 500 pcs)'],
+    ['PLK-001', 'Cup Dingin 16oz Sablon Logo', mainOutlet.name, 'Cup & Gelas', 'Slop', 'pcs', 50, 25000, 500, 100, 5, 'Sablon logo 2 sisi, 1 slop = 50 pcs (Saldo Awal 500 pcs)'],
+    ['PLK-002', 'Sedotan Boba Steril (Wrap)', mainOutlet.name, 'Sedotan / Pipet', 'Pack', 'pcs', 100, 15000, 1000, 200, 5, 'Sedotan steril bungkus plastik (Saldo Awal 1.000 pcs)'],
+    ['PLK-003', 'Tissue Makan Meja (Lunch Paper)', secondOutlet.name, 'Tissue', 'Pack', 'lembar', 250, 12500, 2500, 500, 5, '1 pack = 250 lembar tissue (Saldo Awal 2.500 lembar)'],
+    ['PLK-004', 'Roll Plastik Sealer Cup Motif', mainOutlet.name, 'Tutup Cup / Sealer', 'Roll', 'pcs', 1200, 75000, 2400, 300, 5, '1 roll estimasi 1.200 cup (Saldo Awal 2.400 pcs)'],
+    ['PLK-005', 'Kantong Plastik Kresek T-Shirt 1 Cup', mainOutlet.name, 'Kantong & Paperbag', 'Pack', 'pcs', 100, 8500, 500, 100, 5, 'Bahan ramah lingkungan bening (Saldo Awal 500 pcs)'],
   ];
   sampleData.forEach((r) => ws.addRow(r));
 
@@ -495,8 +575,8 @@ export async function downloadOutletTemplate() {
  * Saldo Awal stok persediaan terintegrasi langsung di template Master Bahan & Perlengkapan
  * (otomatis langsung tercatat ke Kartu Stok & Laporan Persediaan).
  */
-export async function downloadSaldoAwalTemplate() {
-  return await downloadIngredientTemplate();
+export async function downloadSaldoAwalTemplate(outlets = [], businessName = '') {
+  return await downloadIngredientTemplate(outlets, businessName);
 }
 
 

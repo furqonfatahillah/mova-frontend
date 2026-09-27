@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   FileSpreadsheet, Upload, X, CheckCircle2, AlertCircle,
-  Download, RefreshCw, AlertOctagon, Check, ArrowRight, Table
+  Download, RefreshCw, AlertOctagon, Check, ArrowRight, Table, Store
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, num, LoadingState } from './ui';
+import { useOutlet } from '../context/OutletContext';
 import {
   downloadIngredientTemplate,
   downloadPerlengkapanTemplate,
@@ -93,6 +94,9 @@ export default function ImportMasterModal({
   targetMaster = 'INGREDIENT', // 'INGREDIENT' | 'PERLENGKAPAN' | 'MENU' | 'RECEIVABLE' | 'OUTLET'
   onSuccess,
 }) {
+  const { outlets = [], currentBusiness, currentUser } = useOutlet();
+  const [modalOutlets, setModalOutlets] = useState([]);
+  const [selectedOutletFilter, setSelectedOutletFilter] = useState('ALL');
   const [selectedMaster, setSelectedMaster] = useState(targetMaster);
   const [file, setFile] = useState(null);
   const [fileName, setFileName] = useState('');
@@ -101,25 +105,43 @@ export default function ImportMasterModal({
   const [submitting, setSubmitting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [previewFilter, setPreviewFilter] = useState('ALL');
+  const fileInputRef = useRef(null);
+
+  // Fetch or sync outlets from master cabang
+  useEffect(() => {
+    if (outlets && outlets.length > 0) {
+      setModalOutlets(outlets);
+    } else {
+      api.get('/outlets')
+        .then(res => setModalOutlets(Array.isArray(res.data) ? res.data : (res.data?.data || [])))
+        .catch(() => {});
+    }
+  }, [outlets]);
 
   if (!isOpen) return null;
 
   const currentMasterType = selectedMaster || targetMaster;
+  const businessName = currentBusiness?.name || currentUser?.business?.name || '';
+  const outletNamesList = modalOutlets.map(o => o.name).join(', ');
 
   const MASTER_CONFIG = {
     INGREDIENT: {
       title: 'Master Bahan (Ingredients & Saldo Awal)',
       downloadFn: downloadIngredientTemplate,
       endpoint: '/ingredients/bulk-import',
-      columns: ['Nama Bahan*', 'Tipe*', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Stok Awal (Saldo Awal)', 'Stok Minimal'],
-      sampleHint: 'Contoh: Tepung Terigu, Satuan Beli: kg, Satuan Pakai: gram, Konversi: 1000, Harga: 14000, Stok Awal: 10000 gram, Min: 2000 gram',
+      columns: ['Nama Bahan*', 'Cabang (▼)', 'Tipe*', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Stok Awal (Saldo Awal)', 'Stok Minimal'],
+      sampleHint: modalOutlets.length > 0
+        ? `Template dilengkapi dropdown Master Cabang usaha Anda (${modalOutlets.length} cabang aktif: ${outletNamesList.slice(0, 50)}${outletNamesList.length > 50 ? '...' : ''}).`
+        : 'Contoh: Tepung Terigu, Satuan Beli: kg, Satuan Pakai: gram, Konversi: 1000, Harga: 14000, Stok Awal: 10000 gram, Min: 2000 gram',
     },
     PERLENGKAPAN: {
       title: 'Master Perlengkapan & Packaging (Beserta Saldo Awal)',
       downloadFn: downloadPerlengkapanTemplate,
       endpoint: '/perlengkapans/bulk-import',
-      columns: ['Nama Perlengkapan*', 'Kategori', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Stok Awal (Saldo Awal)', 'Stok Minimal'],
-      sampleHint: 'Contoh: Cup Dingin 16oz Sablon, Satuan Beli: Slop, Satuan Pakai: pcs, Konversi: 50, Harga: 25000, Stok Awal: 500 pcs, Min: 100 pcs',
+      columns: ['Nama Perlengkapan*', 'Cabang (▼)', 'Kategori', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Stok Awal (Saldo Awal)', 'Stok Minimal'],
+      sampleHint: modalOutlets.length > 0
+        ? `Template dilengkapi dropdown Master Cabang usaha Anda (${modalOutlets.length} cabang aktif: ${outletNamesList.slice(0, 50)}${outletNamesList.length > 50 ? '...' : ''}).`
+        : 'Contoh: Cup Dingin 16oz Sablon, Satuan Beli: Slop, Satuan Pakai: pcs, Konversi: 50, Harga: 25000, Stok Awal: 500 pcs, Min: 100 pcs',
     },
     MENU: {
       title: 'Master Menu & F&B',
@@ -146,10 +168,11 @@ export default function ImportMasterModal({
 
   const activeConfig = MASTER_CONFIG[currentMasterType] || MASTER_CONFIG.INGREDIENT;
 
-  // Handle template download
+  // Handle template download with Owner's Master Cabang
   async function handleDownloadTemplate() {
     try {
-      await activeConfig.downloadFn();
+      const effectiveOutlets = modalOutlets.length > 0 ? modalOutlets : outlets;
+      await activeConfig.downloadFn(effectiveOutlets, businessName);
       toast.success(`Template Excel ${activeConfig.title} berhasil terunduh!`);
     } catch (err) {
       console.error(err);
@@ -181,7 +204,7 @@ export default function ImportMasterModal({
       const matchKey = keys.find(k => {
         const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
         if (cleanK.startsWith('template') || cleanK.startsWith('empty') || cleanK.startsWith('petunjuk') || cleanK.includes('movapos')) return false;
-        return cleanK.startsWith(cleanP) || cleanK.includes(cleanP);
+        return cleanK.startsWith(cleanP) || cleanK.includes(cleanP) || cleanP.startsWith(cleanK);
       });
       if (matchKey && row[matchKey] !== undefined && row[matchKey] !== null && String(row[matchKey]).trim() !== '') {
         return String(row[matchKey]).trim();
@@ -215,16 +238,65 @@ export default function ImportMasterModal({
         'nama bahan', 'nama perlengkapan', 'nama menu', 'nama pelanggan', 'nama debitur', 'nama outlet',
         'kode bahan', 'kode perlengkapan', 'kode menu', 'kode outlet',
         'satuan beli', 'satuan pakai', 'tipe bahan', 'tipe item', 'total tagihan',
-        'saldo awal', 'saldo awal fisik', 'nama bahan / item', 'kode bahan / item'
+        'saldo awal', 'saldo awal fisik', 'nama bahan / item', 'kode bahan / item',
+        'harga beli', 'harga jual', 'stok minimal', 'pic manager', 'tipe outlet',
+        'faktor konversi', 'konversi'
       ];
 
       let headerRowIndex = 0;
+      let maxMatches = 0;
+
+      // Smart header row finder: score rows by how many cells match known header keywords
       for (let i = 0; i < Math.min(sheetRows.length, 25); i++) {
-        const rowVals = (sheetRows[i] || []).map(c => String(c).toLowerCase().trim());
-        const hasHeader = rowVals.some(v => HEADER_KEYWORDS.some(kw => v.includes(kw)));
-        if (hasHeader) {
+        const rawCells = sheetRows[i] || [];
+        const nonBlankCells = rawCells.filter(c => String(c !== null && c !== undefined ? c : '').trim() !== '');
+
+        // Skip banner or note rows that have fewer than 2 distinct columns
+        if (nonBlankCells.length < 2) continue;
+
+        const firstCell = String(nonBlankCells[0]).toLowerCase().trim();
+        // Skip obvious banner or instruction rows
+        if (
+          firstCell.startsWith('template') ||
+          firstCell.startsWith('petunjuk') ||
+          firstCell.startsWith('pemberitahuan') ||
+          firstCell.startsWith('pedoman') ||
+          firstCell.includes('===') ||
+          firstCell.includes('mova pos')
+        ) {
+          continue;
+        }
+
+        // Count how many cells in this row match known header keywords
+        let matchCount = 0;
+        for (const cell of nonBlankCells) {
+          const clean = String(cell).toLowerCase().replace(/[^a-z0-9]/g, '');
+          for (const kw of HEADER_KEYWORDS) {
+            const cleanKw = kw.replace(/[^a-z0-9]/g, '');
+            if (clean === cleanKw || clean.includes(cleanKw) || cleanKw.includes(clean)) {
+              matchCount++;
+              break;
+            }
+          }
+        }
+
+        if (matchCount > maxMatches) {
+          maxMatches = matchCount;
           headerRowIndex = i;
-          break;
+        }
+      }
+
+      // Fallback: If no keywords matched, pick first row with >= 2 columns that isn't banner/instructions
+      if (maxMatches === 0) {
+        for (let i = 0; i < Math.min(sheetRows.length, 10); i++) {
+          const nonBlankCells = (sheetRows[i] || []).filter(c => String(c || '').trim() !== '');
+          if (nonBlankCells.length >= 2) {
+            const firstCell = String(nonBlankCells[0]).toLowerCase().trim();
+            if (!firstCell.startsWith('template') && !firstCell.startsWith('petunjuk') && !firstCell.includes('===')) {
+              headerRowIndex = i;
+              break;
+            }
+          }
         }
       }
 
@@ -232,7 +304,7 @@ export default function ImportMasterModal({
 
       // Filter out header title rows, banner rows, instruction rows, or empty rows
       const dataRows = rawJson.filter(row => {
-        const values = Object.values(row).map(v => String(v).trim());
+        const values = Object.values(row).map(v => String(v !== null && v !== undefined ? v : '').trim());
         const strValues = values.join(' ').toLowerCase();
 
         if (
@@ -249,8 +321,8 @@ export default function ImportMasterModal({
         const firstVal = (values[0] || '').toLowerCase();
         const secondVal = (values[1] || '').toLowerCase();
         if (
-          ['kode bahan', 'nama bahan', 'nama bahan*', 'kode perlengkapan', 'nama perlengkapan', 'kode menu', 'nama menu'].includes(firstVal) ||
-          ['nama bahan', 'nama bahan*', 'nama perlengkapan', 'nama menu'].includes(secondVal)
+          ['kode bahan', 'nama bahan', 'nama bahan*', 'kode perlengkapan', 'nama perlengkapan', 'kode menu', 'nama menu', 'nama pelanggan', 'kode outlet', 'nama outlet'].includes(firstVal) ||
+          ['nama bahan', 'nama bahan*', 'nama perlengkapan', 'nama menu', 'nama pelanggan', 'nama outlet'].includes(secondVal)
         ) {
           return false;
         }
@@ -265,8 +337,8 @@ export default function ImportMasterModal({
         const keys = Object.keys(row);
 
         if (currentMasterType === 'INGREDIENT') {
-          let code = getVal(row, ['kodebahan', 'kode', 'code', 'sku', 'itemcode']);
-          let name = getVal(row, ['namabahan', 'nama', 'namabarang', 'itemname']);
+          let code = getVal(row, ['kodebahan', 'kode', 'code', 'sku', 'itemcode', 'barcode']);
+          let name = getVal(row, ['namabahan', 'nama', 'namabarang', 'itemname', 'bahan', 'item']);
 
           // Fallback if user's file has column 0 as Code and column 1 as Name
           if (!code && keys[0] && keys[0].toLowerCase().includes('kode')) {
@@ -275,16 +347,23 @@ export default function ImportMasterModal({
           if (!name && keys[1] && keys[1].toLowerCase().includes('nama')) {
             name = String(row[keys[1]] || '').trim();
           }
+          if (!name) {
+            const nameKey = keys.find(k => {
+              const cl = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+              return cl.includes('nama') || cl.includes('bahan') || cl.includes('barang');
+            });
+            if (nameKey) name = String(row[nameKey] || '').trim();
+          }
 
-          const category = getVal(row, ['kategori', 'category']) || 'BAHAN_BAKU';
-          const typeRaw = getVal(row, ['tipebahan', 'tipe', 'type']);
+          const category = getVal(row, ['kategori', 'category', 'kelompok']) || 'BAHAN_BAKU';
+          const typeRaw = getVal(row, ['tipebahan', 'tipe', 'type', 'jenis']);
           const type = (typeRaw && typeRaw.toUpperCase().includes('SEMI')) ? 'SEMI_FINISHED' : 'RAW';
-          const rawUnitBeli = getVal(row, ['satuanbeli', 'unitbeli']);
-          const rawUnitPakai = getVal(row, ['satuanpakai', 'unitpakai']);
+          const rawUnitBeli = getVal(row, ['satuanbeli', 'unitbeli', 'satuanmasuk']);
+          const rawUnitPakai = getVal(row, ['satuanpakai', 'unitpakai', 'satuankeluar']);
           const uBeli = normalizeUnitClient(rawUnitBeli, 'kg');
           const uPakai = normalizeUnitClient(rawUnitPakai, 'gram');
 
-          let konversi = parseFloat(getVal(row, ['konversi', 'faktorkonversi'])) || 0;
+          let konversi = parseFloat(getVal(row, ['faktorkonversi', 'konversi', 'isipack', 'isi'])) || 0;
           if (konversi <= 0 || (konversi === 1 && uBeli.symbol !== uPakai.symbol)) {
             if (uBeli.symbol === 'kg' && uPakai.symbol === 'gram') konversi = 1000;
             else if (uBeli.symbol === 'liter' && uPakai.symbol === 'ml') konversi = 1000;
@@ -294,9 +373,9 @@ export default function ImportMasterModal({
           }
 
           const outletName = getVal(row, ['cabangoutletopsional', 'cabangoutlet', 'cabang', 'outlet', 'namaoutlet', 'namacabang']) || '';
-          const harga = parseFloat(getVal(row, ['hargabeli', 'harga', 'hargasatuan'])) || 0;
-          const minStock = parseFloat(getVal(row, ['stokminimal', 'minstok'])) || 0;
-          const initialStock = parseFloat(getVal(row, ['saldoawalsatuanpakai', 'saldoawal', 'stokawal', 'stok', 'initialstock', 'saldo'])) || 0;
+          const harga = parseFloat(getVal(row, ['hargabelipersatuanbelirp', 'hargabeli', 'harga', 'hargasatuan', 'cost', 'modal'])) || 0;
+          const minStock = parseFloat(getVal(row, ['stokminimalsatuanpakai', 'stokminimal', 'minstok', 'minimumstok', 'minstock'])) || 0;
+          const initialStock = parseFloat(getVal(row, ['saldoawalsatuanpakai', 'saldoawal', 'stokawal', 'stok', 'initialstock', 'saldo', 'stokfisik'])) || 0;
           const notes = getVal(row, ['catatan', 'keterangan']);
 
           if (!name) errors.push('Nama bahan wajib diisi.');
@@ -321,13 +400,20 @@ export default function ImportMasterModal({
 
         } else if (currentMasterType === 'PERLENGKAPAN') {
           let code = getVal(row, ['kodeperlengkapan', 'kode', 'code', 'sku', 'itemcode']);
-          let name = getVal(row, ['namaperlengkapan', 'namabarang', 'nama', 'itemname']);
+          let name = getVal(row, ['namaperlengkapan', 'namabarang', 'nama', 'itemname', 'perlengkapan']);
 
           if (!code && keys[0] && keys[0].toLowerCase().includes('kode')) {
             code = String(row[keys[0]] || '').trim();
           }
           if (!name && keys[1] && keys[1].toLowerCase().includes('nama')) {
             name = String(row[keys[1]] || '').trim();
+          }
+          if (!name) {
+            const nameKey = keys.find(k => {
+              const cl = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+              return cl.includes('nama') || cl.includes('perlengkapan') || cl.includes('barang');
+            });
+            if (nameKey) name = String(row[nameKey] || '').trim();
           }
 
           const outletName = getVal(row, ['cabangoutletopsional', 'cabangoutlet', 'cabang', 'outlet', 'namaoutlet', 'namacabang']) || '';
@@ -337,7 +423,7 @@ export default function ImportMasterModal({
           const uBeli = normalizeUnitClient(rawUnitBeli, 'Slop');
           const uPakai = normalizeUnitClient(rawUnitPakai, 'pcs');
 
-          let konversi = parseFloat(getVal(row, ['konversi', 'faktorkonversi'])) || 0;
+          let konversi = parseFloat(getVal(row, ['faktorkonversi', 'konversi'])) || 0;
           if (konversi <= 0 || (konversi === 1 && uBeli.symbol !== uPakai.symbol)) {
             if (uBeli.symbol === 'slop' && uPakai.symbol === 'pcs') konversi = 50;
             else if (uBeli.symbol === 'pack' && (uPakai.symbol === 'pcs' || uPakai.symbol === 'lembar')) konversi = uPakai.symbol === 'lembar' ? 200 : 100;
@@ -345,8 +431,8 @@ export default function ImportMasterModal({
             else if (konversi <= 0) konversi = 1;
           }
 
-          const harga = parseFloat(getVal(row, ['hargabeli', 'harga', 'hargasatuan'])) || 0;
-          const minStock = parseFloat(getVal(row, ['stokminimal', 'minstok'])) || 0;
+          const harga = parseFloat(getVal(row, ['hargabelipersatuanbelirp', 'hargabeli', 'harga', 'hargasatuan'])) || 0;
+          const minStock = parseFloat(getVal(row, ['stokminimalsatuanpakai', 'stokminimal', 'minstok'])) || 0;
           const initialStock = parseFloat(getVal(row, ['saldoawalsatuanpakai', 'saldoawal', 'stokawal', 'stok', 'initialstock', 'saldo'])) || 0;
           const tolerance = parseFloat(getVal(row, ['batastoleransi', 'toleransi', 'tolerance'])) || 5;
           const notes = getVal(row, ['catatan', 'spesifikasi', 'keterangan']);
@@ -375,20 +461,24 @@ export default function ImportMasterModal({
 
         } else if (currentMasterType === 'MENU') {
           let code = getVal(row, ['kodemenu', 'kode', 'code', 'sku']);
-          let name = getVal(row, ['namamenu', 'nama', 'itemname']);
+          let name = getVal(row, ['namamenu', 'nama', 'itemname', 'menu']);
           const barcode = getVal(row, ['barcode']);
 
           if (!code && keys[0] && keys[0].toLowerCase().includes('kode')) {
             code = String(row[keys[0]] || '').trim();
           }
-          if (!name && (keys[1]?.toLowerCase().includes('nama') || keys[2]?.toLowerCase().includes('nama'))) {
-            name = String(row[keys.find(k => k.toLowerCase().includes('nama'))] || '').trim();
+          if (!name) {
+            const nameKey = keys.find(k => {
+              const cl = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+              return cl.includes('nama') || cl.includes('menu');
+            });
+            if (nameKey) name = String(row[nameKey] || '').trim();
           }
           const category = getVal(row, ['kategori', 'category']) || 'Umum';
           const typeRaw = getVal(row, ['tipeitem', 'tipe', 'type']).toUpperCase();
           const itemType = ['RECIPE', 'DIRECT', 'SERVICE', 'BUNDLE'].includes(typeRaw) ? typeRaw : 'RECIPE';
-          const price = parseFloat(getVal(row, ['hargajual', 'harga', 'price'])) || 0;
-          const costPrice = parseFloat(getVal(row, ['hpp', 'modal', 'cost'])) || 0;
+          const price = parseFloat(getVal(row, ['hargajualrp', 'hargajual', 'harga', 'price'])) || 0;
+          const costPrice = parseFloat(getVal(row, ['hppmodalrp', 'hpp', 'modal', 'cost', 'hppmodal'])) || 0;
           const description = getVal(row, ['deskripsi', 'keterangan']);
           const statusRaw = getVal(row, ['status']);
           const isKosong = statusRaw && statusRaw.toUpperCase().includes('KOSONG');
@@ -399,13 +489,20 @@ export default function ImportMasterModal({
           mappedData = { code, barcode, name, category, item_type: itemType, price, cost_price: costPrice, description, is_available: !isKosong };
 
         } else if (currentMasterType === 'RECEIVABLE') {
-          const customerName = getVal(row, ['namapelanggan', 'namadebitur', 'nama', 'customer']);
+          let customerName = getVal(row, ['namapelanggan', 'namadebitur', 'nama', 'customer', 'pelanggan']);
+          if (!customerName) {
+            const nameKey = keys.find(k => {
+              const cl = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+              return cl.includes('nama') || cl.includes('pelanggan') || cl.includes('debitur');
+            });
+            if (nameKey) customerName = String(row[nameKey] || '').trim();
+          }
           const phone = getVal(row, ['nomorhp', 'phone', 'telepon', 'hp']);
-          const address = getVal(row, ['alamat', 'address']);
-          const totalAmount = parseFloat(getVal(row, ['totaltagihan', 'total', 'nominal'])) || 0;
-          const initialPaid = parseFloat(getVal(row, ['nominaldp', 'uangmuka', 'dp'])) || 0;
-          const issueDate = getVal(row, ['tanggalterbit', 'terbit', 'issuedate']) || new Date().toISOString().slice(0, 10);
-          const dueDate = getVal(row, ['tanggaljatuh', 'jatuhtempo', 'duedate']) || new Date().toISOString().slice(0, 10);
+          const address = getVal(row, ['alamatpelanggan', 'alamat', 'address']);
+          const totalAmount = parseFloat(getVal(row, ['totaltagihankasbonrp', 'totaltagihan', 'total', 'nominal', 'tagihan'])) || 0;
+          const initialPaid = parseFloat(getVal(row, ['nominaldpuangmuka', 'nominaldp', 'uangmuka', 'dp'])) || 0;
+          const issueDate = getVal(row, ['tanggalterbityyyymmdd', 'tanggalterbit', 'terbit', 'issuedate']) || new Date().toISOString().slice(0, 10);
+          const dueDate = getVal(row, ['tanggaljatuhtempoyyyymmdd', 'tanggaljatuhtempo', 'tanggaljatuh', 'jatuhtempo', 'duedate']) || new Date().toISOString().slice(0, 10);
           const notes = getVal(row, ['catatan', 'keterangan']);
 
           if (!customerName) errors.push('Nama pelanggan wajib diisi.');
@@ -414,13 +511,20 @@ export default function ImportMasterModal({
           mappedData = { customer_name: customerName, customer_phone: phone, customer_address: address, total_amount: totalAmount, initial_paid: initialPaid, issue_date: issueDate, due_date: dueDate, notes };
 
         } else if (currentMasterType === 'OUTLET') {
-          const name = getVal(row, ['namaoutlet', 'namacabang', 'nama', 'outlet']);
-          const code = getVal(row, ['kodeoutlet', 'kode', 'code']);
-          const typeRaw = getVal(row, ['tipe', 'type']).toUpperCase();
+          let name = getVal(row, ['namaoutletcabang', 'namaoutlet', 'namacabang', 'nama', 'outlet']);
+          let code = getVal(row, ['kodeoutletgudang', 'kodeoutlet', 'kode', 'code']);
+          if (!name) {
+            const nameKey = keys.find(k => {
+              const cl = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+              return cl.includes('nama') || cl.includes('outlet') || cl.includes('cabang');
+            });
+            if (nameKey) name = String(row[nameKey] || '').trim();
+          }
+          const typeRaw = getVal(row, ['tipe', 'type', 'tipeoutlet']).toUpperCase();
           const type = ['CABANG', 'PUSAT', 'GUDANG'].includes(typeRaw) ? typeRaw : 'CABANG';
-          const picName = getVal(row, ['namapic', 'pic', 'manager']);
-          const phone = getVal(row, ['telepon', 'phone', 'hp']);
-          const address = getVal(row, ['alamat', 'address']);
+          const picName = getVal(row, ['namapicmanager', 'namapic', 'pic', 'manager']);
+          const phone = getVal(row, ['nomortelepon', 'telepon', 'phone', 'hp']);
+          const address = getVal(row, ['alamatlengkap', 'alamat', 'address']);
           const mainFlag = getVal(row, ['cabangutama', 'is_main', 'main']);
           const isMain = mainFlag && mainFlag.toUpperCase().includes('YA');
 
@@ -459,7 +563,12 @@ export default function ImportMasterModal({
       });
 
       setParsedRows(parsed);
-      toast.success(`Berhasil membaca ${parsed.length} baris data dari file Excel!`);
+      const valid = parsed.filter(r => r.isValid).length;
+      if (parsed.length === 0) {
+        toast.error('Tidak ada baris data valid yang terdeteksi dari file Excel. Pastikan file tidak kosong dan kolom sesuai.');
+      } else {
+        toast.success(`Berhasil membaca ${parsed.length} baris data (${valid} baris valid siap di-import)!`);
+      }
     } catch (err) {
       console.error(err);
       toast.error('Gagal membaca file Excel. Pastikan format file sesuai (.xlsx / .csv)');
@@ -503,13 +612,18 @@ export default function ImportMasterModal({
   const cleanValidCount = Math.max(0, validCount - attentionCount);
 
   const displayedRows = parsedRows.filter(r => {
+    let statusMatch = true;
     if (previewFilter === 'ATTENTION') {
-      return !r.isValid || r.data._uBeli?.isFixed || r.data._uPakai?.isFixed || r.data._uBeli?.isNew || r.data._uPakai?.isNew;
+      statusMatch = !r.isValid || r.data._uBeli?.isFixed || r.data._uPakai?.isFixed || r.data._uBeli?.isNew || r.data._uPakai?.isNew;
+    } else if (previewFilter === 'VALID') {
+      statusMatch = r.isValid && !r.data._uBeli?.isFixed && !r.data._uPakai?.isFixed && !r.data._uBeli?.isNew && !r.data._uPakai?.isNew;
     }
-    if (previewFilter === 'VALID') {
-      return r.isValid && !r.data._uBeli?.isFixed && !r.data._uPakai?.isFixed && !r.data._uBeli?.isNew && !r.data._uPakai?.isNew;
-    }
-    return true;
+    if (!statusMatch) return false;
+
+    if (selectedOutletFilter === 'ALL' || !selectedOutletFilter) return true;
+    const rowOutlet = (r.data?.outlet_name || '').trim().toLowerCase();
+    const filterOutlet = selectedOutletFilter.trim().toLowerCase();
+    return rowOutlet.includes(filterOutlet) || filterOutlet.includes(rowOutlet);
   });
 
   return (
@@ -606,16 +720,19 @@ export default function ImportMasterModal({
         </div>
 
         {/* File Upload Dropzone */}
-        <div style={{
-          border: '2px dashed var(--border-strong)',
-          borderRadius: '14px',
-          padding: '24px 16px',
-          textAlign: 'center',
-          background: 'rgba(0, 0, 0, 0.2)',
-          marginBottom: '20px',
-          cursor: 'pointer',
-          transition: 'all 0.2s ease'
-        }}>
+        <div
+          onClick={() => fileInputRef.current?.click()}
+          style={{
+            border: '2px dashed var(--border-strong)',
+            borderRadius: '14px',
+            padding: '24px 16px',
+            textAlign: 'center',
+            background: 'rgba(0, 0, 0, 0.2)',
+            marginBottom: '20px',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease'
+          }}
+        >
           <Upload size={32} style={{ color: 'var(--primary)', margin: '0 auto 8px' }} />
           <div style={{ fontSize: '14px', fontWeight: 700, color: '#ffffff' }}>
             {fileName ? `File Terpilih: ${fileName}` : 'Pilih atau Drag & Drop File Excel (.xlsx / .csv)'}
@@ -624,9 +741,11 @@ export default function ImportMasterModal({
             Format didukung: .xlsx, .xls, .csv (Maksimal 5.000 baris per sekali import)
           </div>
           <input
+            ref={fileInputRef}
             type="file"
             accept=".xlsx, .xls, .csv"
             onChange={handleFileUpload}
+            onClick={(e) => { e.stopPropagation(); e.target.value = null; }}
             style={{ marginTop: '12px', fontSize: '12px', color: 'var(--text-secondary)' }}
           />
         </div>
@@ -686,45 +805,83 @@ export default function ImportMasterModal({
             </div>
 
             {/* Interactive Preview Filter Tabs */}
-            <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                className={`btn btn-sm ${previewFilter === 'ALL' ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => setPreviewFilter('ALL')}
-                style={{ fontSize: '11px', padding: '4px 10px', borderRadius: '6px' }}
-              >
-                Semua Baris ({parsedRows.length})
-              </button>
-              {attentionCount > 0 && (
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
                 <button
                   type="button"
-                  className={`btn btn-sm ${previewFilter === 'ATTENTION' ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => setPreviewFilter('ATTENTION')}
+                  className={`btn btn-sm ${previewFilter === 'ALL' ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setPreviewFilter('ALL')}
+                  style={{ fontSize: '11px', padding: '4px 10px', borderRadius: '6px' }}
+                >
+                  Semua Baris ({parsedRows.length})
+                </button>
+                {attentionCount > 0 && (
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${previewFilter === 'ATTENTION' ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => setPreviewFilter('ATTENTION')}
+                    style={{
+                      fontSize: '11px',
+                      padding: '4px 10px',
+                      borderRadius: '6px',
+                      color: previewFilter === 'ATTENTION' ? '#fff' : '#f59e0b',
+                      borderColor: 'rgba(245, 158, 11, 0.5)',
+                      background: previewFilter === 'ATTENTION' ? undefined : 'rgba(245, 158, 11, 0.08)'
+                    }}
+                  >
+                    ⚡ Perlu Perhatian / Auto-Fix ({attentionCount})
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className={`btn btn-sm ${previewFilter === 'VALID' ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setPreviewFilter('VALID')}
                   style={{
                     fontSize: '11px',
                     padding: '4px 10px',
                     borderRadius: '6px',
-                    color: previewFilter === 'ATTENTION' ? '#fff' : '#f59e0b',
-                    borderColor: 'rgba(245, 158, 11, 0.5)',
-                    background: previewFilter === 'ATTENTION' ? undefined : 'rgba(245, 158, 11, 0.08)'
+                    color: previewFilter === 'VALID' ? '#fff' : '#4ade80'
                   }}
                 >
-                  ⚡ Perlu Perhatian / Auto-Fix ({attentionCount})
+                  ✓ Standar Bersih ({cleanValidCount})
                 </button>
+              </div>
+
+              {/* Master Cabang Filter Dropdown */}
+              {modalOutlets.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Store size={14} style={{ color: 'var(--accent-bright)' }} />
+                  <select
+                    className="form-control"
+                    value={selectedOutletFilter}
+                    onChange={(e) => setSelectedOutletFilter(e.target.value)}
+                    style={{
+                      fontSize: 11.5,
+                      padding: '4px 10px',
+                      height: 'auto',
+                      width: 'auto',
+                      minWidth: 160,
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      borderColor: selectedOutletFilter !== 'ALL' ? 'var(--primary)' : 'var(--border)',
+                      color: selectedOutletFilter !== 'ALL' ? 'var(--accent-bright)' : '#ffffff'
+                    }}
+                    title="Filter pratinjau data berdasarkan Master Cabang"
+                  >
+                    <option value="ALL">🏢 Semua Cabang ({parsedRows.length})</option>
+                    {modalOutlets.map((o) => {
+                      const count = parsedRows.filter((r) => {
+                        const oName = (r.data?.outlet_name || '').toLowerCase();
+                        return oName && (oName.includes(o.name.toLowerCase()) || o.name.toLowerCase().includes(oName));
+                      }).length;
+                      return (
+                        <option key={o.id} value={o.name}>
+                          {o.is_main ? '🏢 ' : '📍 '} {o.name} ({count})
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
               )}
-              <button
-                type="button"
-                className={`btn btn-sm ${previewFilter === 'VALID' ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => setPreviewFilter('VALID')}
-                style={{
-                  fontSize: '11px',
-                  padding: '4px 10px',
-                  borderRadius: '6px',
-                  color: previewFilter === 'VALID' ? '#fff' : '#4ade80'
-                }}
-              >
-                ✓ Standar Bersih ({cleanValidCount})
-              </button>
             </div>
 
             <div style={{ maxHeight: '220px', overflowY: 'auto', borderRadius: '10px', border: '1px solid var(--border)' }}>
