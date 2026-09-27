@@ -129,19 +129,15 @@ export default function ImportMasterModal({
       title: 'Master Bahan (Bahan Baku & Stock Awal)',
       downloadFn: downloadIngredientTemplate,
       endpoint: '/ingredients/bulk-import',
-      columns: ['Nama Bahan*', 'Cabang (▼)', 'Tipe*', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Stock Awal (Satuan Pakai)*', 'Stok Minimal'],
-      sampleHint: modalOutlets.length > 0
-        ? `Template dilengkapi kolom Stock Awal (otomatis menjadi Saldo Awal di Kartu Stok) dan dropdown Master Cabang (${modalOutlets.length} cabang aktif: ${outletNamesList.slice(0, 50)}${outletNamesList.length > 50 ? '...' : ''}).`
-        : 'Contoh: Tepung Terigu, Satuan Beli: kg, Satuan Pakai: gram, Konversi: 1000, Harga: 14000, Stock Awal: 10000 gram, Min: 2000 gram',
+      columns: ['Nama Bahan*', 'Kategori', 'Tipe*', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Stock Awal (Satuan Pakai)*', 'Stok Minimal'],
+      sampleHint: 'Master bahan terpusat dan otomatis berlaku untuk seluruh cabang usaha. Kolom Stock Awal tercatat sebagai Saldo & Stock Awal di Kartu Stok.',
     },
     PERLENGKAPAN: {
       title: 'Master Perlengkapan & Packaging (Stock Awal)',
       downloadFn: downloadPerlengkapanTemplate,
       endpoint: '/perlengkapans/bulk-import',
-      columns: ['Nama Perlengkapan*', 'Cabang (▼)', 'Kategori', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Stock Awal (Satuan Pakai)*', 'Stok Minimal'],
-      sampleHint: modalOutlets.length > 0
-        ? `Template dilengkapi kolom Stock Awal (otomatis menjadi Saldo Awal di Kartu Stok) dan dropdown Master Cabang (${modalOutlets.length} cabang aktif: ${outletNamesList.slice(0, 50)}${outletNamesList.length > 50 ? '...' : ''}).`
-        : 'Contoh: Cup Dingin 16oz Sablon, Satuan Beli: Slop, Satuan Pakai: pcs, Konversi: 50, Harga: 25000, Stock Awal: 500 pcs, Min: 100 pcs',
+      columns: ['Nama Perlengkapan*', 'Kategori', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Stock Awal (Satuan Pakai)*', 'Stok Minimal'],
+      sampleHint: 'Master perlengkapan terpusat dan otomatis berlaku untuk seluruh cabang usaha. Kolom Stock Awal tercatat sebagai Saldo & Stock Awal di Kartu Stok.',
     },
     MENU: {
       title: 'Master Menu & F&B',
@@ -646,6 +642,7 @@ export default function ImportMasterModal({
 
     if (selectedOutletFilter === 'ALL' || !selectedOutletFilter) return true;
     const rowOutlet = (r.data?.outlet_name || '').trim().toLowerCase();
+    if (!rowOutlet) return true; // Master terpusat otomatis tampil untuk semua cabang
     const filterOutlet = selectedOutletFilter.trim().toLowerCase();
     return rowOutlet.includes(filterOutlet) || filterOutlet.includes(rowOutlet);
   });
@@ -871,8 +868,8 @@ export default function ImportMasterModal({
                 </button>
               </div>
 
-              {/* Master Cabang Filter Dropdown */}
-              {modalOutlets.length > 0 && (
+              {/* Master Cabang Filter Dropdown (Hanya tampil jika ada file khusus cabang) */}
+              {modalOutlets.length > 0 && parsedRows.some(r => !!r.data?.outlet_name) && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Store size={14} style={{ color: 'var(--accent-bright)' }} />
                   <select
@@ -940,9 +937,13 @@ export default function ImportMasterModal({
                       <td style={{ padding: '8px 12px', color: 'var(--text-secondary)', fontSize: '11px' }}>
                         {currentMasterType === 'INGREDIENT' && (
                           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
-                            {row.data.outlet_name && (
+                            {row.data.outlet_name ? (
                               <span style={{ background: 'rgba(139, 92, 246, 0.2)', color: 'var(--accent-bright)', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>
                                 Cabang: {row.data.outlet_name}
+                              </span>
+                            ) : (
+                              <span style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>
+                                🏢 Seluruh Cabang
                               </span>
                             )}
                             <span>
@@ -962,9 +963,13 @@ export default function ImportMasterModal({
                         )}
                         {currentMasterType === 'PERLENGKAPAN' && (
                           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
-                            {row.data.outlet_name && (
+                            {row.data.outlet_name ? (
                               <span style={{ background: 'rgba(139, 92, 246, 0.2)', color: 'var(--accent-bright)', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>
                                 Cabang: {row.data.outlet_name}
+                              </span>
+                            ) : (
+                              <span style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>
+                                🏢 Seluruh Cabang
                               </span>
                             )}
                             <span>
