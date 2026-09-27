@@ -7,7 +7,6 @@ import {
   RefreshCw,
   CheckCircle2,
   AlertCircle,
-  Calendar,
   Building2,
   TrendingUp,
   CreditCard,
@@ -26,45 +25,23 @@ import { exportBalanceSheetToExcel, printBalanceSheetReport } from '../utils/exp
 import toast from 'react-hot-toast';
 
 export default function Neraca() {
-  const { activeOutletId, activeOutlet, currentBusiness } = useOutlet();
+  const { activeOutletId, activeOutlet, currentBusiness, dateFrom, dateTo, dateRange } = useOutlet();
 
-  const [dateFrom, setDateFrom] = useState(() => getMonthStartStr());
-  const [dateTo, setDateTo] = useState(() => getMonthEndStr());
-  const [presetPeriod, setPresetPeriod] = useState('this_month'); // 'this_month' | 'last_month' | 'this_year' | 'custom'
+  const effectiveDateFrom = dateFrom || dateRange?.from || getMonthStartStr();
+  const effectiveDateTo = dateTo || dateRange?.to || getMonthEndStr();
 
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [neracaData, setNeracaData] = useState(null);
   const [viewMode, setViewMode] = useState('stacked'); // 'stacked' | 'two_column'
 
-  // Handle Preset Period Changes
-  const handlePeriodChange = (val) => {
-    setPresetPeriod(val);
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = now.getMonth();
-
-    if (val === 'this_month') {
-      setDateFrom(getMonthStartStr());
-      setDateTo(getMonthEndStr());
-    } else if (val === 'last_month') {
-      const prevStart = new Date(y, m - 1, 1);
-      const prevEnd = new Date(y, m, 0);
-      setDateFrom(prevStart.toISOString().slice(0, 10));
-      setDateTo(prevEnd.toISOString().slice(0, 10));
-    } else if (val === 'this_year') {
-      setDateFrom(`${y}-01-01`);
-      setDateTo(getTodayStr());
-    }
-  };
-
   // Fetch Neraca Data from API
   const fetchNeraca = async () => {
     setLoading(true);
     try {
       const params = {
-        from: dateFrom,
-        to: dateTo,
+        from: effectiveDateFrom,
+        to: effectiveDateTo,
       };
       if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
         params.outlet_id = activeOutletId;
@@ -82,7 +59,7 @@ export default function Neraca() {
 
   useEffect(() => {
     fetchNeraca();
-  }, [dateFrom, dateTo, activeOutletId]);
+  }, [effectiveDateFrom, effectiveDateTo, activeOutletId]);
 
   // Export to Excel
   const handleExportExcel = async () => {
@@ -95,7 +72,7 @@ export default function Neraca() {
 
       await exportBalanceSheetToExcel({
         data: neracaData,
-        period: neracaData.period || { from: dateFrom, to: dateTo },
+        period: neracaData.period || { from: effectiveDateFrom, to: effectiveDateTo },
         businessName,
         outletName,
       });
@@ -117,7 +94,7 @@ export default function Neraca() {
 
     printBalanceSheetReport({
       data: neracaData,
-      period: neracaData.period || { from: dateFrom, to: dateTo },
+      period: neracaData.period || { from: effectiveDateFrom, to: effectiveDateTo },
       businessName,
       outletName,
     });
@@ -127,8 +104,8 @@ export default function Neraca() {
     if (neracaData?.period?.from_formatted && neracaData?.period?.to_formatted) {
       return `Per ${neracaData.period.from_formatted} s/d ${neracaData.period.to_formatted}`;
     }
-    return `Per ${dateFrom} s/d ${dateTo}`;
-  }, [neracaData, dateFrom, dateTo]);
+    return `Per ${effectiveDateFrom} s/d ${effectiveDateTo}`;
+  }, [neracaData, effectiveDateFrom, effectiveDateTo]);
 
   return (
     <div className="fade-in" style={{ paddingBottom: 60 }}>
@@ -208,57 +185,7 @@ export default function Neraca() {
         </div>
       </div>
 
-      {/* 2. Filter & Period Toolbar */}
-      <div className="card mb-4" style={{ padding: '14px 18px' }}>
-        <div className="flex-between flex-wrap gap-3">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 5 }}>
-              <Calendar size={14} color="var(--accent-bright)" />
-              Periode:
-            </span>
-            {[
-              { id: 'this_month', label: 'Bulan Ini' },
-              { id: 'last_month', label: 'Bulan Lalu' },
-              { id: 'this_year', label: 'Tahun Ini' },
-              { id: 'custom', label: 'Kustom' },
-            ].map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => handlePeriodChange(p.id)}
-                className={`btn btn-sm ${presetPeriod === p.id ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ padding: '4px 12px', fontSize: 12 }}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input
-              type="date"
-              className="form-control form-control-sm"
-              style={{ width: 140 }}
-              value={dateFrom}
-              onChange={(e) => {
-                setDateFrom(e.target.value);
-                setPresetPeriod('custom');
-              }}
-            />
-            <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>s/d</span>
-            <input
-              type="date"
-              className="form-control form-control-sm"
-              style={{ width: 140 }}
-              value={dateTo}
-              onChange={(e) => {
-                setDateTo(e.target.value);
-                setPresetPeriod('custom');
-              }}
-            />
-          </div>
-        </div>
-      </div>
 
       {loading ? (
         <LoadingState message="Menghitung posisi aset, liabilitas & modal neraca..." />
