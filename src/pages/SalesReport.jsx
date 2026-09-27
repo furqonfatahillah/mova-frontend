@@ -487,50 +487,9 @@ export default function SalesReport() {
           border: '1px solid var(--border)',
         }}
       >
-        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
-          {/* Visual Indicator of Active Scope from Global Navbar */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '6px 14px',
-                borderRadius: 8,
-                background: 'rgba(56, 189, 248, 0.08)',
-                border: '1px solid rgba(56, 189, 248, 0.2)',
-                fontSize: 12,
-                color: '#38bdf8',
-                fontWeight: 600,
-              }}
-              title="Periode sinkron otomatis dengan filter tanggal di navbar"
-            >
-              <Calendar size={14} />
-              <span>Periode Global: <strong>{periodText}</strong></span>
-            </div>
-
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '6px 14px',
-                borderRadius: 8,
-                background: 'rgba(16, 185, 129, 0.08)',
-                border: '1px solid rgba(16, 185, 129, 0.2)',
-                fontSize: 12,
-                color: '#34d399',
-                fontWeight: 600,
-              }}
-              title="Cabang sinkron otomatis dengan pilihan cabang di navbar"
-            >
-              <Store size={14} />
-              <span>Cabang: <strong>{outletName}</strong></span>
-            </div>
-          </div>
-
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-start' }}>
           {/* Themed Search Bar - MOVA Midnight Violet Design System */}
-          <div className="search-box" style={{ minWidth: 280, maxWidth: 380, flex: '1 1 280px' }}>
+          <div className="search-box" style={{ minWidth: 280, maxWidth: 420, flex: '1 1 280px' }}>
             <Search size={15} className="search-box-icon" />
             <input
               type="text"
