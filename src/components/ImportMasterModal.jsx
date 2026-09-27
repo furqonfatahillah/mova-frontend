@@ -126,22 +126,22 @@ export default function ImportMasterModal({
 
   const MASTER_CONFIG = {
     INGREDIENT: {
-      title: 'Master Bahan (Ingredients & Saldo Awal)',
+      title: 'Master Bahan (Bahan Baku & Stock Awal)',
       downloadFn: downloadIngredientTemplate,
       endpoint: '/ingredients/bulk-import',
-      columns: ['Nama Bahan*', 'Cabang (▼)', 'Tipe*', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Stok Awal (Saldo Awal)', 'Stok Minimal'],
+      columns: ['Nama Bahan*', 'Cabang (▼)', 'Tipe*', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Stock Awal (Satuan Pakai)*', 'Stok Minimal'],
       sampleHint: modalOutlets.length > 0
-        ? `Template dilengkapi dropdown Master Cabang usaha Anda (${modalOutlets.length} cabang aktif: ${outletNamesList.slice(0, 50)}${outletNamesList.length > 50 ? '...' : ''}).`
-        : 'Contoh: Tepung Terigu, Satuan Beli: kg, Satuan Pakai: gram, Konversi: 1000, Harga: 14000, Stok Awal: 10000 gram, Min: 2000 gram',
+        ? `Template dilengkapi kolom Stock Awal (otomatis menjadi Saldo Awal di Kartu Stok) dan dropdown Master Cabang (${modalOutlets.length} cabang aktif: ${outletNamesList.slice(0, 50)}${outletNamesList.length > 50 ? '...' : ''}).`
+        : 'Contoh: Tepung Terigu, Satuan Beli: kg, Satuan Pakai: gram, Konversi: 1000, Harga: 14000, Stock Awal: 10000 gram, Min: 2000 gram',
     },
     PERLENGKAPAN: {
-      title: 'Master Perlengkapan & Packaging (Beserta Saldo Awal)',
+      title: 'Master Perlengkapan & Packaging (Stock Awal)',
       downloadFn: downloadPerlengkapanTemplate,
       endpoint: '/perlengkapans/bulk-import',
-      columns: ['Nama Perlengkapan*', 'Cabang (▼)', 'Kategori', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Stok Awal (Saldo Awal)', 'Stok Minimal'],
+      columns: ['Nama Perlengkapan*', 'Cabang (▼)', 'Kategori', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Stock Awal (Satuan Pakai)*', 'Stok Minimal'],
       sampleHint: modalOutlets.length > 0
-        ? `Template dilengkapi dropdown Master Cabang usaha Anda (${modalOutlets.length} cabang aktif: ${outletNamesList.slice(0, 50)}${outletNamesList.length > 50 ? '...' : ''}).`
-        : 'Contoh: Cup Dingin 16oz Sablon, Satuan Beli: Slop, Satuan Pakai: pcs, Konversi: 50, Harga: 25000, Stok Awal: 500 pcs, Min: 100 pcs',
+        ? `Template dilengkapi kolom Stock Awal (otomatis menjadi Saldo Awal di Kartu Stok) dan dropdown Master Cabang (${modalOutlets.length} cabang aktif: ${outletNamesList.slice(0, 50)}${outletNamesList.length > 50 ? '...' : ''}).`
+        : 'Contoh: Cup Dingin 16oz Sablon, Satuan Beli: Slop, Satuan Pakai: pcs, Konversi: 50, Harga: 25000, Stock Awal: 500 pcs, Min: 100 pcs',
     },
     MENU: {
       title: 'Master Menu & F&B',
@@ -238,7 +238,9 @@ export default function ImportMasterModal({
         'nama bahan', 'nama perlengkapan', 'nama menu', 'nama pelanggan', 'nama debitur', 'nama outlet',
         'kode bahan', 'kode perlengkapan', 'kode menu', 'kode outlet',
         'satuan beli', 'satuan pakai', 'tipe bahan', 'tipe item', 'total tagihan',
-        'saldo awal', 'saldo awal fisik', 'nama bahan / item', 'kode bahan / item',
+        'stock awal', 'stok awal', 'stock_awal', 'stok_awal', 'stock awal satuan pakai', 'stok awal satuan pakai',
+        'saldo awal', 'saldo awal fisik', 'saldo awal satuan pakai', 'stock awal fisik', 'stok awal fisik',
+        'nama bahan / item', 'kode bahan / item',
         'harga beli', 'harga jual', 'stok minimal', 'pic manager', 'tipe outlet',
         'faktor konversi', 'konversi'
       ];
@@ -375,7 +377,15 @@ export default function ImportMasterModal({
           const outletName = getVal(row, ['cabangoutletopsional', 'cabangoutlet', 'cabang', 'outlet', 'namaoutlet', 'namacabang']) || '';
           const harga = parseFloat(getVal(row, ['hargabelipersatuanbelirp', 'hargabeli', 'harga', 'hargasatuan', 'cost', 'modal'])) || 0;
           const minStock = parseFloat(getVal(row, ['stokminimalsatuanpakai', 'stokminimal', 'minstok', 'minimumstok', 'minstock'])) || 0;
-          const initialStock = parseFloat(getVal(row, ['saldoawalsatuanpakai', 'saldoawal', 'stokawal', 'stok', 'initialstock', 'saldo', 'stokfisik'])) || 0;
+          const initialStock = parseFloat(getVal(row, [
+            'stockawalsatuanpakai', 'stokawalsatuanpakai',
+            'stockawal', 'stokawal',
+            'stock_awal', 'stok_awal',
+            'saldoawalsatuanpakai', 'saldoawal',
+            'stockawalfisik', 'stokawalfisik', 'saldoawalfisik',
+            'initialstock', 'initial_stock',
+            'saldo', 'stok', 'stock', 'stokfisik', 'stockfisik'
+          ])) || 0;
           const notes = getVal(row, ['catatan', 'keterangan']);
 
           if (!name) errors.push('Nama bahan wajib diisi.');
@@ -393,6 +403,9 @@ export default function ImportMasterModal({
             harga,
             minstok: minStock,
             initial_stock: initialStock,
+            stok_awal: initialStock,
+            stock_awal: initialStock,
+            saldo_awal: initialStock,
             notes,
             _uBeli: uBeli,
             _uPakai: uPakai,
@@ -433,7 +446,15 @@ export default function ImportMasterModal({
 
           const harga = parseFloat(getVal(row, ['hargabelipersatuanbelirp', 'hargabeli', 'harga', 'hargasatuan'])) || 0;
           const minStock = parseFloat(getVal(row, ['stokminimalsatuanpakai', 'stokminimal', 'minstok'])) || 0;
-          const initialStock = parseFloat(getVal(row, ['saldoawalsatuanpakai', 'saldoawal', 'stokawal', 'stok', 'initialstock', 'saldo'])) || 0;
+          const initialStock = parseFloat(getVal(row, [
+            'stockawalsatuanpakai', 'stokawalsatuanpakai',
+            'stockawal', 'stokawal',
+            'stock_awal', 'stok_awal',
+            'saldoawalsatuanpakai', 'saldoawal',
+            'stockawalfisik', 'stokawalfisik', 'saldoawalfisik',
+            'initialstock', 'initial_stock',
+            'saldo', 'stok', 'stock', 'stokfisik', 'stockfisik'
+          ])) || 0;
           const tolerance = parseFloat(getVal(row, ['batastoleransi', 'toleransi', 'tolerance'])) || 5;
           const notes = getVal(row, ['catatan', 'spesifikasi', 'keterangan']);
 
@@ -453,6 +474,9 @@ export default function ImportMasterModal({
             harga,
             minstok: minStock,
             initial_stock: initialStock,
+            stok_awal: initialStock,
+            stock_awal: initialStock,
+            saldo_awal: initialStock,
             tolerance,
             notes: notes || 'Imported Perlengkapan from Excel',
             _uBeli: uBeli,
@@ -922,7 +946,7 @@ export default function ImportMasterModal({
                               </span>
                             )}
                             <span>
-                              {row.data.type} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · Harga: <strong>{rupiah(row.data.harga)}</strong> · Stok Awal: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit_pakai}</strong> (Nilai: <span style={{ color: '#34d399' }}>{rupiah(row.data.initial_stock * (row.data.harga / Math.max(row.data.konversi || 1, 1)))}</span>)
+                              {row.data.type} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · Harga: <strong>{rupiah(row.data.harga)}</strong> · Stock Awal (Saldo): <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit_pakai}</strong> (Nilai: <span style={{ color: '#34d399' }}>{rupiah(row.data.initial_stock * (row.data.harga / Math.max(row.data.konversi || 1, 1)))}</span>)
                             </span>
                             {(row.data._uBeli?.isFixed || row.data._uPakai?.isFixed) && (
                               <span style={{ background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }} title="Typo/singkatan otomatis diperbaiki ke format standar">
@@ -944,7 +968,7 @@ export default function ImportMasterModal({
                               </span>
                             )}
                             <span>
-                              {row.data.category} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · Harga: <strong>{rupiah(row.data.harga)}</strong> · Stok Awal: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit_pakai}</strong> (Nilai: <span style={{ color: '#34d399' }}>{rupiah(row.data.initial_stock * (row.data.harga / Math.max(row.data.konversi || 1, 1)))}</span>)
+                              {row.data.category} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · Harga: <strong>{rupiah(row.data.harga)}</strong> · Stock Awal (Saldo): <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit_pakai}</strong> (Nilai: <span style={{ color: '#34d399' }}>{rupiah(row.data.initial_stock * (row.data.harga / Math.max(row.data.konversi || 1, 1)))}</span>)
                             </span>
                             {(row.data._uBeli?.isFixed || row.data._uPakai?.isFixed) && (
                               <span style={{ background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }} title="Typo/singkatan otomatis diperbaiki ke format standar">

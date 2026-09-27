@@ -152,7 +152,7 @@ export async function downloadIngredientTemplate(outlets = [], businessName = ''
   // Banner Title (Row 1)
   ws.mergeCells('A1:L1');
   const titleCell = ws.getCell('A1');
-  titleCell.value = 'TEMPLATE IMPORT MASTER BAHAN (BESERTA SALDO AWAL KARTU STOK) — MOVA POS';
+  titleCell.value = 'TEMPLATE IMPORT MASTER BAHAN (BESERTA SALDO & STOCK AWAL KARTU STOK) — MOVA POS';
   titleCell.font = { name: 'Segoe UI', size: 13, bold: true, color: { argb: 'FF1E293B' } };
   titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
   titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
@@ -161,7 +161,7 @@ export async function downloadIngredientTemplate(outlets = [], businessName = ''
   // Instructions (Row 2)
   ws.mergeCells('A2:L2');
   const noteCell = ws.getCell('A2');
-  noteCell.value = 'Petunjuk: Kolom bertanda (*) wajib diisi. Kolom Cabang / Outlet menggunakan dropdown (▼) sesuai Master Cabang usaha Anda. Saldo Awal otomatis tercatat di cabang terkait.';
+  noteCell.value = 'Petunjuk: Kolom bertanda (*) wajib diisi. Kolom Cabang / Outlet menggunakan dropdown (▼) sesuai Master Cabang usaha Anda. Kolom Stock Awal otomatis tercatat sebagai Saldo & Stock Awal di Kartu Stok cabang terkait.';
   noteCell.font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF475569' } };
   ws.getRow(2).height = 20;
 
@@ -178,7 +178,7 @@ export async function downloadIngredientTemplate(outlets = [], businessName = ''
     'Satuan Pakai (▼)*',
     'Faktor Konversi*',
     'Harga Beli Per Satuan Beli (Rp)*',
-    'Saldo Awal (Satuan Pakai)*',
+    'Stock Awal (Satuan Pakai)*',
     'Stok Minimal (Satuan Pakai)',
     'Catatan',
   ]);
@@ -186,10 +186,10 @@ export async function downloadIngredientTemplate(outlets = [], businessName = ''
 
   // Rows 5+: Sample Data with Owner's Real Master Cabang
   const sampleData = [
-    ['BHN-001', 'Tepung Terigu Segitiga', mainOutlet.name, 'BAHAN_BAKU', 'RAW', 'kg', 'gram', 1000, 14000, 10000, 2000, 'Kemasan 1 kg (Saldo Awal 10.000 gram masuk ke Kartu Stok)'],
-    ['BHN-002', 'Minyak Goreng Bimoli', mainOutlet.name, 'BAHAN_BAKU', 'RAW', 'liter', 'ml', 1000, 20000, 20000, 5000, 'Kemasan 1 liter (Saldo Awal 20.000 ml masuk ke Kartu Stok)'],
-    ['BHN-003', 'Kopi Arabika Gayo', secondOutlet.name, 'KOPI', 'RAW', 'kg', 'gram', 1000, 120000, 5000, 1000, 'Roast Bean Medium (Saldo Awal 5.000 gram)'],
-    ['BHN-004', 'Saus Keju Special (Olahan)', mainOutlet.name, 'SAUS', 'SEMI_FINISHED', 'liter', 'ml', 1000, 45000, 2000, 1000, 'Buatan Dapur (Saldo Awal 2.000 ml)'],
+    ['BHN-001', 'Tepung Terigu Segitiga', mainOutlet.name, 'BAHAN_BAKU', 'RAW', 'kg', 'gram', 1000, 14000, 10000, 2000, 'Kemasan 1 kg (Stock Awal 10.000 gram otomatis jadi Saldo & Stock Awal di Kartu Stok)'],
+    ['BHN-002', 'Minyak Goreng Bimoli', mainOutlet.name, 'BAHAN_BAKU', 'RAW', 'liter', 'ml', 1000, 20000, 20000, 5000, 'Kemasan 1 liter (Stock Awal 20.000 ml otomatis jadi Saldo & Stock Awal di Kartu Stok)'],
+    ['BHN-003', 'Kopi Arabika Gayo', secondOutlet.name, 'KOPI', 'RAW', 'kg', 'gram', 1000, 120000, 5000, 1000, 'Roast Bean Medium (Stock Awal 5.000 gram masuk ke Kartu Stok)'],
+    ['BHN-004', 'Saus Keju Special (Olahan)', mainOutlet.name, 'SAUS', 'SEMI_FINISHED', 'liter', 'ml', 1000, 45000, 2000, 1000, 'Buatan Dapur (Stock Awal 2.000 ml masuk ke Kartu Stok)'],
   ];
   sampleData.forEach((r) => ws.addRow(r));
 
@@ -250,17 +250,17 @@ export async function downloadIngredientTemplate(outlets = [], businessName = ''
 
   // --- SHEET 3: Panduan Satuan & Konversi ---
   const wsGuide = wb.addWorksheet('PANDUAN_SATUAN_DAN_KONVERSI', { views: [{ showGridLines: true }] });
-  wsGuide.addRow(['PEDOMAN SATUAN STANDAR, KONVERSI & SALDO AWAL MOVA POS']);
+  wsGuide.addRow(['PEDOMAN SATUAN STANDAR, KONVERSI & STOCK AWAL MOVA POS']);
   wsGuide.getRow(1).font = { size: 12, bold: true, color: { argb: 'FF1E293B' } };
-  wsGuide.addRow(['Sheet ini sebagai referensi pasangan satuan beli, satuan pakai, dan saldo awal stok:']);
+  wsGuide.addRow(['Sheet ini sebagai referensi pasangan satuan beli, satuan pakai, dan saldo/stock awal persediaan:']);
   wsGuide.addRow([]);
 
   const guideHeader = wsGuide.addRow(['Parameter / Kolom', 'Ketentuan Format', 'Penjelasan Teknis']);
   applyHeaderStyle(guideHeader, 'FF0F766E'); // Teal Dark
 
   const guideRows = [
-    ['Cabang / Outlet (Opsional)', 'Pilih dari dropdown (▼) Master Cabang Anda', 'Saldo awal dialokasikan ke cabang terpilih. Jika dikosongkan, otomatis masuk ke cabang aktif / pusat.'],
-    ['Saldo Awal (Satuan Pakai)', 'Angka riil stok fisik dalam SATUAN PAKAI (misal: 10000 gram)', 'Otomatis langsung tercatat sebagai Saldo Awal di Kartu Stok & Laporan Persediaan (tidak perlu dobel import).'],
+    ['Cabang / Outlet (Opsional)', 'Pilih dari dropdown (▼) Master Cabang Anda', 'Stock awal dialokasikan ke cabang terpilih. Jika dikosongkan, otomatis masuk ke cabang aktif / pusat.'],
+    ['Stock Awal (Satuan Pakai)*', 'Angka riil stok fisik dalam SATUAN PAKAI (misal: 10000 gram)', 'Otomatis langsung tercatat sebagai Saldo dan Stock Awal di Kartu Stok & Laporan Persediaan (tidak perlu dobel import).'],
     ['Satuan Beli: kg', 'Satuan Pakai: gram', '1 kg = 1.000 gram (Standar tepung, gula, daging, kopi roast bean)'],
     ['Satuan Beli: liter', 'Satuan Pakai: ml', '1 liter = 1.000 ml (Standar susu, sirup, minyak, saus)'],
     ['Satuan Beli: Slop', 'Satuan Pakai: pcs', '1 Slop = 50 pcs (Standar cup plastik 16oz / 22oz)'],
@@ -298,7 +298,7 @@ export async function downloadPerlengkapanTemplate(outlets = [], businessName = 
 
   ws.mergeCells('A1:L1');
   const titleCell = ws.getCell('A1');
-  titleCell.value = 'TEMPLATE IMPORT MASTER PERLENGKAPAN & PACKAGING (BESERTA SALDO AWAL KARTU STOK) — MOVA POS';
+  titleCell.value = 'TEMPLATE IMPORT MASTER PERLENGKAPAN & PACKAGING (BESERTA SALDO & STOCK AWAL KARTU STOK) — MOVA POS';
   titleCell.font = { name: 'Segoe UI', size: 13, bold: true, color: { argb: 'FF1E293B' } };
   titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
   titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
@@ -306,7 +306,7 @@ export async function downloadPerlengkapanTemplate(outlets = [], businessName = 
 
   ws.mergeCells('A2:L2');
   const noteCell = ws.getCell('A2');
-  noteCell.value = 'Petunjuk: Baris bertanda (*) wajib diisi. Kolom Cabang / Outlet menggunakan dropdown (▼) sesuai Master Cabang usaha Anda. Saldo Awal otomatis tercatat di cabang terkait.';
+  noteCell.value = 'Petunjuk: Baris bertanda (*) wajib diisi. Kolom Cabang / Outlet menggunakan dropdown (▼) sesuai Master Cabang usaha Anda. Kolom Stock Awal otomatis tercatat sebagai Saldo & Stock Awal di Kartu Stok cabang terkait.';
   noteCell.font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF475569' } };
   ws.getRow(2).height = 20;
 
@@ -321,7 +321,7 @@ export async function downloadPerlengkapanTemplate(outlets = [], businessName = 
     'Satuan Pakai (▼)*',
     'Faktor Konversi*',
     'Harga Beli Per Satuan Beli (Rp)*',
-    'Saldo Awal (Satuan Pakai)*',
+    'Stock Awal (Satuan Pakai)*',
     'Stok Minimal (Satuan Pakai)',
     'Batas Toleransi (%)',
     'Catatan / Spesifikasi',
@@ -329,11 +329,11 @@ export async function downloadPerlengkapanTemplate(outlets = [], businessName = 
   applyHeaderStyle(headerRow, 'FF1E293B');
 
   const sampleData = [
-    ['PLK-001', 'Cup Dingin 16oz Sablon Logo', mainOutlet.name, 'Cup & Gelas', 'Slop', 'pcs', 50, 25000, 500, 100, 5, 'Sablon logo 2 sisi, 1 slop = 50 pcs (Saldo Awal 500 pcs)'],
-    ['PLK-002', 'Sedotan Boba Steril (Wrap)', mainOutlet.name, 'Sedotan / Pipet', 'Pack', 'pcs', 100, 15000, 1000, 200, 5, 'Sedotan steril bungkus plastik (Saldo Awal 1.000 pcs)'],
-    ['PLK-003', 'Tissue Makan Meja (Lunch Paper)', secondOutlet.name, 'Tissue', 'Pack', 'lembar', 250, 12500, 2500, 500, 5, '1 pack = 250 lembar tissue (Saldo Awal 2.500 lembar)'],
-    ['PLK-004', 'Roll Plastik Sealer Cup Motif', mainOutlet.name, 'Tutup Cup / Sealer', 'Roll', 'pcs', 1200, 75000, 2400, 300, 5, '1 roll estimasi 1.200 cup (Saldo Awal 2.400 pcs)'],
-    ['PLK-005', 'Kantong Plastik Kresek T-Shirt 1 Cup', mainOutlet.name, 'Kantong & Paperbag', 'Pack', 'pcs', 100, 8500, 500, 100, 5, 'Bahan ramah lingkungan bening (Saldo Awal 500 pcs)'],
+    ['PLK-001', 'Cup Dingin 16oz Sablon Logo', mainOutlet.name, 'Cup & Gelas', 'Slop', 'pcs', 50, 25000, 500, 100, 5, 'Sablon logo 2 sisi, 1 slop = 50 pcs (Stock Awal 500 pcs otomatis jadi Saldo & Stock Awal di Kartu Stok)'],
+    ['PLK-002', 'Sedotan Boba Steril (Wrap)', mainOutlet.name, 'Sedotan / Pipet', 'Pack', 'pcs', 100, 15000, 1000, 200, 5, 'Sedotan steril bungkus plastik (Stock Awal 1.000 pcs)'],
+    ['PLK-003', 'Tissue Makan Meja (Lunch Paper)', secondOutlet.name, 'Tissue', 'Pack', 'lembar', 250, 12500, 2500, 500, 5, '1 pack = 250 lembar tissue (Stock Awal 2.500 lembar)'],
+    ['PLK-004', 'Roll Plastik Sealer Cup Motif', mainOutlet.name, 'Tutup Cup / Sealer', 'Roll', 'pcs', 1200, 75000, 2400, 300, 5, '1 roll estimasi 1.200 cup (Stock Awal 2.400 pcs)'],
+    ['PLK-005', 'Kantong Plastik Kresek T-Shirt 1 Cup', mainOutlet.name, 'Kantong & Paperbag', 'Pack', 'pcs', 100, 8500, 500, 100, 5, 'Bahan ramah lingkungan bening (Stock Awal 500 pcs)'],
   ];
   sampleData.forEach((r) => ws.addRow(r));
 

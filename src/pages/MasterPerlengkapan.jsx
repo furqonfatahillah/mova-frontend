@@ -334,6 +334,7 @@ export default function MasterPerlengkapan() {
         category: addForm.category || 'Perlengkapan',
         harga: Number(addForm.harga || 0),
         konversi: Number(addForm.konversi || 1),
+        stok_awal: Number(addForm.stok_awal || 0),
         stok_min: Number(addForm.stok_min || 0),
         tolerance: Number(addForm.tolerance || 0),
       };
