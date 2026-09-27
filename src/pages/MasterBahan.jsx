@@ -113,18 +113,9 @@ export default function MasterBahan() {
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const [dbCategories, setDbCategories] = useState([]);
-  const { activeOutletId, activeOutlet, outlets = [], canSwitchOutlet, currentUser, userOutletName } = useOutlet();
+  const { activeOutletId, activeOutlet, outlets = [], userOutletName } = useOutlet();
 
-  // Branch filter and search term states
-  const [selectedOutletFilter, setSelectedOutletFilter] = useState(() => activeOutletId || 'ALL');
   const [searchTerm, setSearchTerm] = useState('');
-
-  // Synchronize when global outlet selector changes
-  useEffect(() => {
-    if (activeOutletId) {
-      setSelectedOutletFilter(activeOutletId);
-    }
-  }, [activeOutletId]);
 
   const availableCategories = useMemo(() => {
     const fromDb = dbCategories.map(c => c.name).filter(Boolean);
@@ -166,12 +157,13 @@ export default function MasterBahan() {
   }, [ingredients, typeFilter, searchTerm]);
 
   useEffect(() => {
-    fetchIngredients(selectedOutletFilter);
-  }, [selectedOutletFilter]);
+    fetchIngredients();
+  }, [activeOutletId]);
 
-  async function fetchIngredients(outletFilter = selectedOutletFilter) {
+  async function fetchIngredients() {
+    setLoading(true);
     try {
-      const targetOutlet = outletFilter && outletFilter !== 'ALL' && outletFilter !== 'all' ? outletFilter : undefined;
+      const targetOutlet = activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all' ? activeOutletId : undefined;
       const [ingRes, catRes] = await Promise.all([
         api.get('/ingredients', { params: { outlet_id: targetOutlet } }),
         api.get('/categories?type=INGREDIENT').catch(() => ({ data: [] })),
@@ -224,14 +216,14 @@ export default function MasterBahan() {
         tolerance: Number(addForm.tolerance || 0),
         yield_qty: addForm.type === 'SEMI_FINISHED' ? Number(addForm.yield_qty || 1) : null,
         yield_unit: addForm.type === 'SEMI_FINISHED' ? addForm.yield_unit : null,
-        outlet_id: addForm.outlet_id || (selectedOutletFilter !== 'ALL' ? selectedOutletFilter : 'ALL'),
+        outlet_id: addForm.outlet_id || (activeOutletId && activeOutletId !== 'ALL' ? activeOutletId : 'ALL'),
       };
       const { data } = await api.post('/ingredients', payload);
       setIngredients(prev => [...prev, data]);
       setShowAdd(false);
       setAddForm(emptyForm);
       toast.success('Bahan ditambahkan');
-      fetchIngredients(selectedOutletFilter);
+      fetchIngredients();
     } catch (err) {
       const errors = err.response?.data?.errors;
       if (errors) Object.values(errors).flat().forEach(m => toast.error(m));
@@ -516,59 +508,11 @@ export default function MasterBahan() {
           )}
         </div>
 
-        {/* Outlet Filter Selector */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Building2 size={16} style={{ color: 'var(--accent-bright)' }} />
-            <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)' }}>
-              Filter Cabang:
-            </span>
-          </div>
-          {canSwitchOutlet ? (
-            <select
-              className="form-control"
-              style={{
-                height: 38,
-                fontSize: 12.5,
-                minWidth: 220,
-                padding: '0 12px',
-                background: 'var(--bg-card)',
-                color: 'var(--text-primary)',
-                borderColor: 'var(--border-strong)',
-                fontWeight: 600,
-              }}
-              value={selectedOutletFilter}
-              onChange={e => setSelectedOutletFilter(e.target.value)}
-            >
-              <option value="ALL">🏢 Semua Cabang (Konsolidasi Total)</option>
-              {outlets.map(o => (
-                <option key={o.id} value={o.id}>
-                  {o.is_main ? '⭐ (Pusat) ' : '🏪 '} {o.name}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <div
-              className="pill pill-primary"
-              style={{
-                padding: '6px 12px',
-                fontSize: 12.5,
-                fontWeight: 600,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-              }}
-            >
-              <span>🔒 {userOutletName || 'Cabang Penempatan'}</span>
-            </div>
-          )}
-
-          {searchTerm && (
-            <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 4 }}>
-              Ditemukan: <strong>{displayedIngredients.length}</strong> bahan
-            </span>
-          )}
-        </div>
+        {searchTerm && (
+          <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
+            Ditemukan: <strong style={{ color: 'var(--accent-bright)' }}>{displayedIngredients.length}</strong> bahan
+          </span>
+        )}
       </div>
 
       {/* Filter Tabs */}
@@ -753,7 +697,7 @@ export default function MasterBahan() {
                       color: 'var(--text-primary)',
                       borderColor: 'var(--border-strong)',
                     }}
-                    value={addForm.outlet_id ?? (selectedOutletFilter !== 'ALL' ? selectedOutletFilter : 'ALL')}
+                    value={addForm.outlet_id ?? (activeOutletId && activeOutletId !== 'ALL' ? activeOutletId : 'ALL')}
                     onChange={e => setAddForm(p => ({ ...p, outlet_id: e.target.value }))}
                   >
                     <option value="ALL">🏢 Semua Cabang (Global)</option>
@@ -843,7 +787,7 @@ export default function MasterBahan() {
                   </td>
                   {/* Kolom Cabang / Penempatan */}
                   <td>
-                    {selectedOutletFilter !== 'ALL' ? (
+                    {activeOutletId && activeOutletId !== 'ALL' ? (
                       <span
                         className="pill pill-primary mono"
                         style={{
@@ -858,7 +802,7 @@ export default function MasterBahan() {
                         }}
                       >
                         <Building2 size={12} />
-                        {outlets.find(o => String(o.id) === String(selectedOutletFilter))?.name || userOutletName || 'Cabang Aktif'}
+                        {outlets.find(o => String(o.id) === String(activeOutletId))?.name || userOutletName || 'Cabang Aktif'}
                       </span>
                     ) : (
                       <button
