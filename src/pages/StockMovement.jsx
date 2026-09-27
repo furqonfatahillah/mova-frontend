@@ -2,11 +2,12 @@ import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Plus, Trash2, Filter, Store, TrendingUp, TrendingDown, Sparkles, Calculator, X, ShoppingBag, CheckCircle2, Clock } from 'lucide-react';
 import api from '../api/client';
-import { num, rupiah, fmtQtyVal, LoadingState, PageHeader, AuditInfo, PeriodPicker } from '../components/ui';
+import { num, rupiah, fmtQtyVal, LoadingState, PageHeader, AuditInfo, PeriodPicker, SearchableSelect } from '../components/ui';
 import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 import { ownerConfirmDialog } from '../utils/swal';
+import { getItemClassification } from './KartuStok';
 
 export const WASTE_REASONS = [
   { value: 'SPOILED',         label: 'Basi / Kedaluwarsa',        badgeColor: '#f43f5e', bg: 'rgba(244, 63, 94, 0.15)' },
@@ -45,7 +46,7 @@ export default function StockMovement({ defaultFilterType }) {
   const [movements, setMovements] = useState([]);
   const [ingredients, setIngredients] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filterIng, setFilterIng] = useState('ALL');
+  const [filterIng, setFilterIng] = useState(searchParams.get('ingredient_id') || 'ALL');
   const [filterType, setFilterType] = useState(initialType);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -107,6 +108,93 @@ export default function StockMovement({ defaultFilterType }) {
       setForm(f => ({ ...f, payment_type: 'CASH' }));
     }
   }, [isFormHolding, form.payment_type]);
+
+  // Grouped options for SearchableSelect filter & modal
+  const filterIngredientOptions = useMemo(() => {
+    const allOption = {
+      value: 'ALL',
+      label: 'Semua Bahan',
+      sublabel: '',
+      group: '',
+    };
+
+    if (!ingredients || !ingredients.length) return [allOption];
+
+    const mentah = [];
+    const olahan = [];
+    const perlengkapan = [];
+
+    ingredients.forEach(i => {
+      const cls = getItemClassification(i);
+      const isPerlengkapan = cls === 'PERLENGKAPAN';
+      const isOlahan = cls === 'SEMI_FINISHED';
+
+      const opt = {
+        value: String(i.id),
+        label: i.name,
+        code: i.code || '',
+        category: i.category || '',
+        badge: isPerlengkapan ? 'Perlengkapan' : (isOlahan ? 'Olahan' : ''),
+        sublabel: i.unit_pakai ? `(${i.unit_pakai})` : '',
+        raw: i,
+      };
+
+      if (isPerlengkapan) {
+        perlengkapan.push(opt);
+      } else if (isOlahan) {
+        olahan.push(opt);
+      } else {
+        mentah.push(opt);
+      }
+    });
+
+    const groups = [];
+    groups.push({ group: '', items: [allOption] });
+    if (mentah.length > 0) groups.push({ group: 'Bahan Baku Mentah', items: mentah });
+    if (olahan.length > 0) groups.push({ group: 'Bahan Olahan (Setengah Jadi / Prep)', items: olahan });
+    if (perlengkapan.length > 0) groups.push({ group: 'Perlengkapan & Kemasan', items: perlengkapan });
+
+    return groups;
+  }, [ingredients]);
+
+  const modalIngredientOptions = useMemo(() => {
+    if (!ingredients || !ingredients.length) return [];
+
+    const mentah = [];
+    const olahan = [];
+    const perlengkapan = [];
+
+    ingredients.forEach(i => {
+      const cls = getItemClassification(i);
+      const isPerlengkapan = cls === 'PERLENGKAPAN';
+      const isOlahan = cls === 'SEMI_FINISHED';
+
+      const opt = {
+        value: String(i.id),
+        label: i.name,
+        code: i.code || '',
+        category: i.category || '',
+        badge: isPerlengkapan ? 'Perlengkapan' : (isOlahan ? 'Olahan' : ''),
+        sublabel: i.unit_pakai ? `(${i.unit_pakai})` : '',
+        raw: i,
+      };
+
+      if (isPerlengkapan) {
+        perlengkapan.push(opt);
+      } else if (isOlahan) {
+        olahan.push(opt);
+      } else {
+        mentah.push(opt);
+      }
+    });
+
+    const groups = [];
+    if (mentah.length > 0) groups.push({ group: 'Bahan Baku Mentah', items: mentah });
+    if (olahan.length > 0) groups.push({ group: 'Bahan Olahan (Setengah Jadi / Prep)', items: olahan });
+    if (perlengkapan.length > 0) groups.push({ group: 'Perlengkapan & Kemasan', items: perlengkapan });
+
+    return groups;
+  }, [ingredients]);
 
   useEffect(() => {
     fetchAll();
@@ -432,11 +520,18 @@ export default function StockMovement({ defaultFilterType }) {
                 <option value="TRANSFER_OUT">Transfer Keluar</option>
               </select>
 
-              <select className="form-control" style={{ width: 'auto', padding: '6px 10px', fontSize: 12 }}
-                value={filterIng} onChange={e => setFilterIng(e.target.value)}>
-                <option value="ALL">Semua Bahan</option>
-                {ingredients.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-              </select>
+              <div style={{ minWidth: 220, maxWidth: 280 }}>
+                <SearchableSelect
+                  value={filterIng}
+                  onChange={val => setFilterIng(val || 'ALL')}
+                  options={filterIngredientOptions}
+                  placeholder="Semua Bahan"
+                  searchPlaceholder="Cari bahan (nama / kode)..."
+                  size="sm"
+                  clearable={filterIng !== 'ALL'}
+                  minDropdownWidth={290}
+                />
+              </div>
             </div>
           </div>
 
@@ -580,11 +675,20 @@ export default function StockMovement({ defaultFilterType }) {
 
             <form onSubmit={handleSubmit}>
               <div className="form-group">
-                <label className="form-label">Bahan Baku</label>
-                <select className="form-control" value={form.ingredient_id}
-                  onChange={e => setForm(f => ({ ...f, ingredient_id: e.target.value }))}>
-                  {ingredients.map(i => <option key={i.id} value={i.id}>{i.name} ({i.unit_pakai})</option>)}
-                </select>
+                <label className="form-label">Bahan Baku / Perlengkapan</label>
+                <SearchableSelect
+                  value={form.ingredient_id}
+                  onChange={(val, item) => setForm(f => ({
+                    ...f,
+                    ingredient_id: val,
+                    unit_price: f.unit_price ? f.unit_price : (item?.raw?.harga || '')
+                  }))}
+                  options={modalIngredientOptions}
+                  placeholder="-- Pilih Bahan Baku / Perlengkapan --"
+                  searchPlaceholder="Cari nama atau kode bahan..."
+                  size="md"
+                  minDropdownWidth={320}
+                />
               </div>
 
               <div className="form-group">
