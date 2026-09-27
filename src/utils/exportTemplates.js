@@ -69,20 +69,28 @@ function autoFitColumns(ws) {
 }
 
 /**
- * Setup Master Cabang Dropdown Data Validation and dedicated Sheet
+ * Extract active outlets and prepare dropdown formula
  */
-function setupOutletValidationAndSheet(wb, ws, outlets = [], businessName = '') {
+function prepareOutletData(outlets = []) {
   const activeOutlets = Array.isArray(outlets) && outlets.length > 0
     ? outlets.filter((o) => o.active !== false && o.active !== 0)
     : [];
 
-  const mainOutlet = activeOutlets.find((o) => o.is_main) || activeOutlets[0] || { name: 'Outlet Pusat' };
+  const mainOutlet = activeOutlets.find((o) => o.is_main) || activeOutlets[0] || { name: 'Outlet Pusat (Gudang Utama)' };
   const secondOutlet = activeOutlets.find((o) => !o.is_main) || activeOutlets[1] || mainOutlet;
   const outletNames = activeOutlets.length > 0
-    ? activeOutlets.map((o) => o.name)
+    ? activeOutlets.map((o) => String(o.name || '').replace(/,/g, ' ').trim()).filter(Boolean)
     : ['Outlet Pusat (Gudang Utama)', 'Outlet Cabang'];
 
-  // 1. Add DAFTAR_CABANG reference worksheet
+  const outletListFormula = `"${outletNames.join(',')}"`;
+
+  return { activeOutlets, mainOutlet, secondOutlet, outletNames, outletListFormula };
+}
+
+/**
+ * Add DAFTAR_CABANG reference worksheet to workbook
+ */
+function addDaftarCabangSheet(wb, activeOutlets = [], businessName = '') {
   const wsOutlets = wb.addWorksheet('DAFTAR_CABANG', { views: [{ showGridLines: true }] });
 
   wsOutlets.mergeCells('A1:E1');
@@ -95,7 +103,7 @@ function setupOutletValidationAndSheet(wb, ws, outlets = [], businessName = '') 
 
   wsOutlets.mergeCells('A2:E2');
   const oDesc = wsOutlets.getCell('A2');
-  oDesc.value = 'Daftar cabang ini terhubung dengan Master Cabang usaha Anda. Pilih nama cabang dari dropdown (▼) di Sheet Master Bahan / Perlengkapan.';
+  oDesc.value = 'Daftar cabang ini terhubung dengan Master Cabang usaha Anda. Anda dapat memilih nama cabang langsung dari dropdown (▼) di kolom Cabang.';
   oDesc.font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF475569' } };
   wsOutlets.getRow(2).height = 20;
 
@@ -118,25 +126,6 @@ function setupOutletValidationAndSheet(wb, ws, outlets = [], businessName = '') 
     wsOutlets.addRow(['OUT-001', 'Outlet Pusat (Gudang Utama)', 'PUSAT / HOLDING', 'Alamat Utama', 'AKTIF']);
   }
   autoFitColumns(wsOutlets);
-
-  // 2. Data Validation formula for column C in the main sheet
-  const joinedNames = outletNames.join(',');
-  const outletFormula = joinedNames.length <= 240
-    ? `"${joinedNames}"`
-    : `'DAFTAR_CABANG'!$B$5:$B$${4 + (activeOutlets.length || 1)}`;
-
-  for (let r = 5; r <= 300; r++) {
-    ws.getCell(`C${r}`).dataValidation = {
-      type: 'list',
-      allowBlank: true,
-      formulae: [outletFormula],
-      showErrorMessage: true,
-      errorTitle: 'Pilihan Cabang / Outlet',
-      error: 'Pilih nama cabang yang terdaftar di Master Cabang Anda.',
-    };
-  }
-
-  return { mainOutlet, secondOutlet, outletNames };
 }
 
 /**
@@ -153,11 +142,14 @@ export async function downloadIngredientTemplate(outlets = [], businessName = ''
   const wb = new ExcelJS.Workbook();
   wb.creator = 'MOVA POS System';
   wb.created = new Date();
+  wb.views = [{ x: 0, y: 0, width: 10000, height: 20000, firstSheet: 0, activeTab: 0, visibility: 'visible' }];
+
+  const { activeOutlets, mainOutlet, secondOutlet, outletListFormula } = prepareOutletData(outlets);
 
   // --- SHEET 1: Master Bahan ---
   const ws = wb.addWorksheet('Master Bahan', { views: [{ showGridLines: true }] });
 
-  // Banner Title
+  // Banner Title (Row 1)
   ws.mergeCells('A1:L1');
   const titleCell = ws.getCell('A1');
   titleCell.value = 'TEMPLATE IMPORT MASTER BAHAN (BESERTA SALDO AWAL KARTU STOK) — MOVA POS';
@@ -166,7 +158,7 @@ export async function downloadIngredientTemplate(outlets = [], businessName = ''
   titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
   ws.getRow(1).height = 28;
 
-  // Instructions
+  // Instructions (Row 2)
   ws.mergeCells('A2:L2');
   const noteCell = ws.getCell('A2');
   noteCell.value = 'Petunjuk: Kolom bertanda (*) wajib diisi. Kolom Cabang / Outlet menggunakan dropdown (▼) sesuai Master Cabang usaha Anda. Saldo Awal otomatis tercatat di cabang terkait.';
@@ -175,10 +167,7 @@ export async function downloadIngredientTemplate(outlets = [], businessName = ''
 
   ws.addRow([]); // Row 3 empty spacer
 
-  // Setup Master Cabang Dropdown & Sheet
-  const { mainOutlet, secondOutlet } = setupOutletValidationAndSheet(wb, ws, outlets, businessName);
-
-  // Row 4: Headers
+  // Row 4: Headers (Created strictly on Row 4)
   const headerRow = ws.addRow([
     'Kode Bahan',
     'Nama Bahan*',
@@ -202,17 +191,27 @@ export async function downloadIngredientTemplate(outlets = [], businessName = ''
     ['BHN-003', 'Kopi Arabika Gayo', secondOutlet.name, 'KOPI', 'RAW', 'kg', 'gram', 1000, 120000, 5000, 1000, 'Roast Bean Medium (Saldo Awal 5.000 gram)'],
     ['BHN-004', 'Saus Keju Special (Olahan)', mainOutlet.name, 'SAUS', 'SEMI_FINISHED', 'liter', 'ml', 1000, 45000, 2000, 1000, 'Buatan Dapur (Saldo Awal 2.000 ml)'],
   ];
-
   sampleData.forEach((r) => ws.addRow(r));
 
   // Enable Auto-Filter on Row 4
   ws.autoFilter = { from: 'A4', to: 'L4' };
 
-  // Apply Dropdown List Validations from row 5 to 300
+  // Dropdown list options
   const SATUAN_BELI_LIST = '"kg,gram,liter,ml,Slop,Pack,Roll,Dus,Botol,pcs,Kaleng,Sachet"';
   const SATUAN_PAKAI_LIST = '"gram,ml,pcs,lembar,buah,porsi,sdm,sdt,roll"';
 
+  // Apply Dropdown List Validations only AFTER rows 4-8 exist
   for (let r = 5; r <= 300; r++) {
+    // Column C: Cabang / Outlet (Dropdown based on owner's master cabang)
+    ws.getCell(`C${r}`).dataValidation = {
+      type: 'list',
+      allowBlank: true,
+      formulae: [outletListFormula],
+      showErrorMessage: true,
+      errorTitle: 'Pilihan Cabang / Outlet',
+      error: 'Pilih nama cabang yang terdaftar di Master Cabang usaha Anda.',
+    };
+
     // Column E: Tipe Bahan (RAW / SEMI_FINISHED)
     ws.getCell(`E${r}`).dataValidation = {
       type: 'list',
@@ -245,6 +244,9 @@ export async function downloadIngredientTemplate(outlets = [], businessName = ''
   }
 
   autoFitColumns(ws);
+
+  // --- SHEET 2: DAFTAR_CABANG ---
+  addDaftarCabangSheet(wb, activeOutlets, businessName);
 
   // --- SHEET 3: Panduan Satuan & Konversi ---
   const wsGuide = wb.addWorksheet('PANDUAN_SATUAN_DAN_KONVERSI', { views: [{ showGridLines: true }] });
@@ -288,6 +290,9 @@ export async function downloadPerlengkapanTemplate(outlets = [], businessName = 
   const wb = new ExcelJS.Workbook();
   wb.creator = 'MOVA POS System';
   wb.created = new Date();
+  wb.views = [{ x: 0, y: 0, width: 10000, height: 20000, firstSheet: 0, activeTab: 0, visibility: 'visible' }];
+
+  const { activeOutlets, mainOutlet, secondOutlet, outletListFormula } = prepareOutletData(outlets);
 
   const ws = wb.addWorksheet('Master Perlengkapan', { views: [{ showGridLines: true }] });
 
@@ -306,9 +311,6 @@ export async function downloadPerlengkapanTemplate(outlets = [], businessName = 
   ws.getRow(2).height = 20;
 
   ws.addRow([]); // Row 3 empty spacer
-
-  // Setup Master Cabang Dropdown & Sheet
-  const { mainOutlet, secondOutlet } = setupOutletValidationAndSheet(wb, ws, outlets, businessName);
 
   const headerRow = ws.addRow([
     'Kode Perlengkapan',
@@ -338,6 +340,16 @@ export async function downloadPerlengkapanTemplate(outlets = [], businessName = 
   ws.autoFilter = { from: 'A4', to: 'L4' };
 
   for (let r = 5; r <= 300; r++) {
+    // Column C: Cabang / Outlet (Dropdown based on owner's master cabang)
+    ws.getCell(`C${r}`).dataValidation = {
+      type: 'list',
+      allowBlank: true,
+      formulae: [outletListFormula],
+      showErrorMessage: true,
+      errorTitle: 'Pilihan Cabang / Outlet',
+      error: 'Pilih nama cabang yang terdaftar di Master Cabang usaha Anda.',
+    };
+
     // Column E: Satuan Beli
     ws.getCell(`E${r}`).dataValidation = {
       type: 'list',
@@ -360,6 +372,9 @@ export async function downloadPerlengkapanTemplate(outlets = [], businessName = 
   }
 
   autoFitColumns(ws);
+
+  // --- SHEET 2: DAFTAR_CABANG ---
+  addDaftarCabangSheet(wb, activeOutlets, businessName);
 
   await saveWorkbook(wb, `Template_Import_Master_Perlengkapan_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
