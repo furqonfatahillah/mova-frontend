@@ -640,24 +640,29 @@ export default function ShiftManagement() {
           </div>
 
           {/* Metric Cards */}
-          <div className="grid-4 gap-3">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
             <MiniCard
               label="Modal Awal Kas"
               value={rupiah(activeShift.initial_cash)}
               color="var(--accent-bright)"
             />
             <MiniCard
-              label="Total Transaksi"
-              value={`${num(activeData.total_transactions)} trx`}
-              color="#ffffff"
-            />
-            <MiniCard
-              label="Total Penjualan"
-              value={rupiah(activeData.total_sales)}
+              label="Penjualan Kas (Tunai)"
+              value={rupiah(activeData.cash_sales || 0)}
               color="var(--ok)"
             />
             <MiniCard
-              label="Estimasi Kas di Laci"
+              label="QRIS / Transfer (Non-Tunai)"
+              value={rupiah(activeData.non_cash_sales || 0)}
+              color="#38bdf8"
+            />
+            <MiniCard
+              label="Total Omzet Penjualan"
+              value={`${rupiah(activeData.total_sales)} (${activeData.total_transactions || 0} trx)`}
+              color="#ffffff"
+            />
+            <MiniCard
+              label="Saldo Kas di Laci"
               value={rupiah(activeData.expected_cash)}
               color="var(--accent-bright)"
             />
@@ -1649,25 +1654,42 @@ export default function ShiftManagement() {
                     padding: '16px',
                     marginBottom: 16
                   }}>
-                    <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 12 }}>
-                      Rekapitulasi Kas Sistem
+                    <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>Rekapitulasi Kas di Laci</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'none' }}>*Hanya menambah kas tunai</span>
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 13 }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>Modal Awal Kasir:</span>
+                      <span style={{ color: 'var(--text-secondary)' }}>Modal Awal Kasir (Kembalian):</span>
                       <span className="mono" style={{ fontWeight: 600 }}>{rupiah(closeSummary?.shift?.initial_cash)}</span>
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 13 }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>Total Penjualan POS ({closeSummary?.total_transactions || 0} transaksi):</span>
-                      <span className="mono" style={{ fontWeight: 600, color: 'var(--ok)' }}>+{rupiah(closeSummary?.total_sales)}</span>
+                      <span style={{ color: 'var(--text-secondary)' }}>
+                        Penjualan Kas / Tunai <span style={{ color: 'var(--ok)', fontSize: 11 }}>(Masuk Laci)</span>:
+                      </span>
+                      <span className="mono" style={{ fontWeight: 600, color: 'var(--ok)' }}>
+                        +{rupiah(closeSummary?.cash_sales ?? (closeSummary?.total_sales || 0))}
+                      </span>
+                    </div>
+
+                    {(closeSummary?.non_cash_sales || 0) > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 12, color: 'var(--text-muted)' }}>
+                        <span>Penjualan QRIS / Transfer / EDC (Masuk Bank):</span>
+                        <span className="mono" style={{ color: '#38bdf8' }}>{rupiah(closeSummary?.non_cash_sales)}</span>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 12, color: 'var(--text-muted)' }}>
+                      <span>Total Omzet Penjualan ({closeSummary?.total_transactions || 0} transaksi):</span>
+                      <span className="mono">{rupiah(closeSummary?.total_sales)}</span>
                     </div>
 
                     <div style={{
                       display: 'flex', justifyContent: 'space-between', paddingTop: 10, marginTop: 8,
                       borderTop: '1px dashed var(--border-strong)', fontSize: 14, fontWeight: 700
                     }}>
-                      <span>Kas Sistem yang Harus Ada:</span>
+                      <span>Kas di Laci yang Harus Ada (Modal + Tunai):</span>
                       <span className="mono" style={{ color: 'var(--accent-bright)' }}>{rupiah(closeSummary?.expected_cash)}</span>
                     </div>
                   </div>
@@ -1703,7 +1725,7 @@ export default function ShiftManagement() {
                         justifyContent: 'space-between',
                         alignItems: 'center'
                       }}>
-                        <span>Selisih Uang Fisik vs Sistem:</span>
+                        <span>Selisih Uang Fisik vs Kas di Laci:</span>
                         <strong className="mono" style={{
                           color: (Number(closeForm.closing_cash) - (closeSummary?.expected_cash || 0)) === 0
                             ? 'var(--ok)' : (Number(closeForm.closing_cash) - (closeSummary?.expected_cash || 0)) > 0
@@ -1841,21 +1863,27 @@ export default function ShiftManagement() {
                     <div style={{ padding: '12px 14px', background: 'rgba(15, 20, 42, 0.6)', border: '1px solid var(--border)', borderRadius: 10 }}>
                       <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Rekapitulasi Keuangan</div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginTop: 4 }}>
-                        <span>Modal Awal:</span>
+                        <span>Modal Awal Kas:</span>
                         <strong className="mono">{rupiah(detailShift.initial_cash)}</strong>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginTop: 2 }}>
-                        <span>Omzet Penjualan:</span>
-                        <strong className="mono" style={{ color: 'var(--ok)' }}>{rupiah(detailShift.system_cash)}</strong>
+                        <span>Penjualan Tunai (Kas):</span>
+                        <strong className="mono" style={{ color: 'var(--ok)' }}>{rupiah(detailData?.summary?.cash_sales ?? detailShift.system_cash)}</strong>
                       </div>
+                      {(detailData?.summary?.non_cash_sales || 0) > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginTop: 2, color: 'var(--text-muted)' }}>
+                          <span>Non-Tunai (QRIS/TRF):</span>
+                          <span className="mono" style={{ color: '#38bdf8' }}>{rupiah(detailData?.summary?.non_cash_sales)}</span>
+                        </div>
+                      )}
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginTop: 2 }}>
-                        <span>Kas Aktual:</span>
+                        <span>Kas Aktual di Laci:</span>
                         <strong className="mono">{detailShift.closing_cash !== null ? rupiah(detailShift.closing_cash) : '—'}</strong>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginTop: 2 }}>
-                        <span>Selisih Kas:</span>
+                        <span>Selisih Kas Fisik:</span>
                         <strong className="mono" style={{ color: (detailShift.cash_difference || 0) < 0 ? 'var(--danger)' : 'var(--ok)' }}>
-                          {detailShift.status === 'CLOSED' ? (detailShift.cash_difference > 0 ? `+${rupiah(detailShift.cash_difference)}` : rupiah(detailShift.cash_difference)) : '—'}
+                          {detailShift.status === 'CLOSED' ? (detailShift.cash_difference > 0 ? `+${rupiah(detailShift.cash_difference)}` : (detailShift.cash_difference === 0 ? 'Pas (Rp 0)' : rupiah(detailShift.cash_difference))) : '—'}
                         </strong>
                       </div>
                     </div>
