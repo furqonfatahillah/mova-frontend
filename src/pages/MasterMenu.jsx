@@ -46,6 +46,7 @@ export default function MasterMenu() {
   // Modal State for Add/Edit Menu
   const [modalOpen, setModalOpen] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [importTarget, setImportTarget] = useState('MENU'); // 'MENU' | 'RECIPE'
   const [modalMode, setModalMode] = useState('create'); // 'create' | 'edit'
   const [editingMenuId, setEditingMenuId] = useState(null);
   const [menuForm, setMenuForm] = useState({
@@ -988,14 +989,30 @@ export default function MasterMenu() {
         title="Master Produk & Menu (Universal POS)"
         subtitle="Kelola produk olahan resep (F&B/BOM), barang jadi retail langsung (stok & modal), dan jasa layanan non-stok."
         action={
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button
               className="btn btn-secondary"
-              onClick={() => setShowImportModal(true)}
+              onClick={() => {
+                setImportTarget('MENU');
+                setShowImportModal(true);
+              }}
               style={{ display: 'flex', alignItems: 'center', gap: 6, borderColor: 'rgba(16, 185, 129, 0.4)', color: '#10b981' }}
+              title="Import data master produk / menu dari file Excel"
             >
               <FileSpreadsheet size={14} />
-              Import Excel
+              Import Menu
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={() => {
+                setImportTarget('RECIPE');
+                setShowImportModal(true);
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, borderColor: 'rgba(168, 85, 247, 0.4)', color: '#c084fc', background: 'rgba(168, 85, 247, 0.1)' }}
+              title="Import resep & gramasi bahan baku / kemasan per-menu dari template Excel"
+            >
+              <FileSpreadsheet size={14} />
+              Import Resep (BOM)
             </button>
             <button className="btn btn-primary" onClick={openCreateModal}>
               + Tambah Produk / Menu
@@ -1835,9 +1852,20 @@ export default function MasterMenu() {
                           </div>
                         </div>
 
-                        <div style={{ display: 'flex', gap: 10 }}>
+                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                           <button className="btn btn-primary" onClick={startEdit}>
                             + Revisi Resep (Versi Baru)
+                          </button>
+                          <button
+                            className="btn btn-secondary"
+                            onClick={() => {
+                              setImportTarget('RECIPE');
+                              setShowImportModal(true);
+                            }}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, borderColor: 'rgba(168, 85, 247, 0.4)', color: '#c084fc' }}
+                            title="Import atau update komposisi resep & gramasi dari file Excel"
+                          >
+                            <FileSpreadsheet size={14} /> Import Resep Excel
                           </button>
                         </div>
                       </>
@@ -2062,9 +2090,22 @@ export default function MasterMenu() {
                         <p style={{ fontSize: 13, color: 'var(--text-secondary)', maxWidth: 420, margin: '0 auto 16px' }}>
                           Tentukan bahan baku dan gramasi standar yang dipakai saat menu ini dipesan pelanggan agar sistem dapat menghitung pemakaian stok otomatis.
                         </p>
-                        <button className="btn btn-primary" onClick={startEdit}>
-                          Tentukan Resep Sekarang
-                        </button>
+                        <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+                          <button className="btn btn-primary" onClick={startEdit}>
+                            Tentukan Resep Sekarang
+                          </button>
+                          <button
+                            className="btn btn-secondary"
+                            onClick={() => {
+                              setImportTarget('RECIPE');
+                              setShowImportModal(true);
+                            }}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, borderColor: 'rgba(168, 85, 247, 0.4)', color: '#c084fc' }}
+                            title="Import komposisi resep & gramasi dari file Excel"
+                          >
+                            <FileSpreadsheet size={14} /> Import Resep Excel
+                          </button>
+                        </div>
                       </div>
                     )}
 
@@ -4094,7 +4135,7 @@ export default function MasterMenu() {
       <ImportMasterModal
         isOpen={showImportModal}
         onClose={() => setShowImportModal(false)}
-        targetMaster="MENU"
+        targetMaster={importTarget}
         onSuccess={() => {
           fetchAll();
         }}

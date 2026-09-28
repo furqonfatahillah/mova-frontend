@@ -668,7 +668,113 @@ export async function downloadOutletTemplate() {
 }
 
 /**
- * 7. Alias for Saldo Awal Template
+ * 7. Download Template Excel Resep & Gramasi Menu (Bill of Materials / BOM)
+ */
+export async function downloadRecipeTemplate(businessName = '') {
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'MOVA POS System';
+  wb.created = new Date();
+
+  // --- SHEET 1: Resep & Gramasi Menu ---
+  const ws = wb.addWorksheet('Resep & Gramasi Menu', { views: [{ showGridLines: true }] });
+
+  ws.mergeCells('A1:H1');
+  const titleCell = ws.getCell('A1');
+  titleCell.value = `TEMPLATE IMPORT RESEP & GRAMASI PER-MENU (BOM) — ${businessName ? businessName.toUpperCase() : 'MOVA POS'}`;
+  titleCell.font = { name: 'Segoe UI', size: 13, bold: true, color: { argb: 'FF1E293B' } };
+  titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
+  titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+  ws.getRow(1).height = 28;
+
+  ws.mergeCells('A2:H2');
+  const noteCell = ws.getCell('A2');
+  noteCell.value = 'Petunjuk: 1 Menu dapat memiliki banyak bahan. Cukup tulis Nama Menu / Kode Menu yang sama di baris-baris berikutnya untuk bahan ke-2, ke-3, dst. Gunakan dropdown pada kolom Satuan Pakai.';
+  noteCell.font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF475569' } };
+  ws.getRow(2).height = 20;
+
+  ws.addRow([]); // Row 3 empty spacer
+
+  const headerRow = ws.addRow([
+    'Kode Menu (Opsional)',
+    'Nama Menu / Produk*',
+    'Kode Bahan (Opsional)',
+    'Nama Bahan / Perlengkapan / Kemasan*',
+    'Gramasi / Kuantitas (Qty)*',
+    'Satuan Pakai (▼)*',
+    'Standar Susut / Waste (%)',
+    'Catatan / Petunjuk Resep',
+  ]);
+  applyHeaderStyle(headerRow, 'FF7C3AED'); // Violet Purple
+
+  const sampleData = [
+    // Menu 1: Es Kopi Susu Gula Aren (Multi-bahan + Kemasan)
+    ['MNU-001', 'Es Kopi Susu Gula Aren', 'BHN-001', 'Espresso Roasted Bean Arabica', 18, 'gram', 0, 'Diseduh double shot espresso 36ml'],
+    ['MNU-001', 'Es Kopi Susu Gula Aren', 'BHN-002', 'Fresh Milk Diamond', 120, 'ml', 0, 'Susu segar dingin'],
+    ['MNU-001', 'Es Kopi Susu Gula Aren', 'BHN-003', 'Gula Aren Cair Organik', 25, 'ml', 0, 'Sirup aren kental murni'],
+    ['MNU-001', 'Es Kopi Susu Gula Aren', 'PLK-001', 'Cup Plastik Dingin 16oz', 1, 'pcs', 0, 'Kemasan take-away'],
+    ['MNU-001', 'Es Kopi Susu Gula Aren', 'PLK-002', 'Sedotan Steril Higienis', 1, 'pcs', 0, 'Sedotan runcing take away'],
+
+    // Menu 2: Matcha Latte Ice
+    ['MNU-002', 'Matcha Latte Ice', 'BHN-004', 'Matcha Powder Pure Uji', 10, 'gram', 0, 'Bubuk matcha murni di-whisk'],
+    ['MNU-002', 'Matcha Latte Ice', 'BHN-002', 'Fresh Milk Diamond', 150, 'ml', 0, 'Susu segar dingin'],
+    ['MNU-002', 'Matcha Latte Ice', 'BHN-005', 'Simple Syrup Cair', 20, 'ml', 0, 'Pemanis gula tebu'],
+    ['MNU-002', 'Matcha Latte Ice', 'PLK-001', 'Cup Plastik Dingin 16oz', 1, 'pcs', 0, 'Kemasan take-away'],
+
+    // Menu 3: Nasi Goreng Spesial (Makanan)
+    ['MNU-003', 'Nasi Goreng Spesial', 'BHN-006', 'Beras Pulen Masak (Nasi Putih)', 180, 'gram', 2, 'Nasi matang porsi standar'],
+    ['MNU-003', 'Nasi Goreng Spesial', 'BHN-007', 'Telur Ayam Negeri', 1, 'butir', 0, 'Diceplok / orak arik'],
+    ['MNU-003', 'Nasi Goreng Spesial', 'BHN-008', 'Daging Ayam Fillet Potong', 40, 'gram', 5, 'Susut saat dimasak 5%'],
+    ['MNU-003', 'Nasi Goreng Spesial', 'BHN-009', 'Minyak Goreng Sawit', 15, 'ml', 0, 'Minyak tumis bumbu'],
+    ['MNU-003', 'Nasi Goreng Spesial', 'PLK-003', 'Kotak Makan / Paper Lunchbox', 1, 'pcs', 0, 'Box kemasan saji'],
+  ];
+  sampleData.forEach((r) => ws.addRow(r));
+
+  ws.autoFilter = { from: 'A4', to: 'H4' };
+
+  const RECIPE_UNITS_LIST = '"gram,ml,shot,pcs,lembar,buah,butir,porsi,sdm,sdt,cup,pack,slop,roll,botol,sachet,can,dus"';
+
+  for (let r = 5; r <= 500; r++) {
+    // Column F: Satuan Pakai Dropdown
+    ws.getCell(`F${r}`).dataValidation = {
+      type: 'list',
+      allowBlank: false,
+      formulae: [RECIPE_UNITS_LIST],
+      showErrorMessage: true,
+      errorTitle: 'Pilihan Satuan Pakai Resep',
+      error: 'Pilih satuan pakai standar: gram, ml, shot, pcs, lembar, buah, butir, porsi, sdm, sdt, cup, dsb.',
+    };
+  }
+
+  autoFitColumns(ws);
+
+  // --- SHEET 2: PANDUAN_RESEP_DAN_GRAMASI ---
+  const wsGuide = wb.addWorksheet('PANDUAN_RESEP_DAN_BOM', { views: [{ showGridLines: true }] });
+  wsGuide.addRow(['PEDOMAN IMPORT RESEP & GRAMASI PER-MENU (BILL OF MATERIALS / BOM)']);
+  wsGuide.getRow(1).font = { size: 12, bold: true, color: { argb: 'FF1E293B' } };
+  wsGuide.addRow(['Petunjuk teknis pengisian resep, gramasi, kemasan, dan kalkulasi HPP otomatis:']);
+  wsGuide.addRow([]);
+
+  const guideHeader = wsGuide.addRow(['Kolom / Parameter', 'Ketentuan Format', 'Penjelasan & Manfaat Otomatisasi']);
+  applyHeaderStyle(guideHeader, 'FF7C3AED');
+
+  const guideRows = [
+    ['Nama Menu / Produk*', 'Nama menu F&B yang dijual ke konsumen', 'Tuliskan nama menu. Jika 1 menu memakai 4 jenis bahan, ulangi Nama Menu yang sama di 4 baris berurutan.'],
+    ['Nama Bahan / Kemasan*', 'Nama bahan baku, bumbu, atau perlengkapan', 'Bahan yang digunakan dalam resep. Bisa berupa bahan baku (kopi, susu, gula), bahan olahan prep, ataupun kemasan (cup, sedotan, box).'],
+    ['Gramasi / Kuantitas (Qty)*', 'Angka kuantitas bahan per 1 porsi menu', 'Jumlah pemakaian bahan per porsi. Contoh: 18 (artinya 18 gram atau 18 ml), 1 (artinya 1 pcs cup).'],
+    ['Satuan Pakai (▼)*', 'Pilih dari dropdown (gram, ml, shot, pcs, lembar, dll)', 'Satuan pemakaian di dapur/barista. Sistem otomatis menghubungkannya dengan Satuan Beli & Faktor Konversi Master Bahan.'],
+    ['Standar Susut / Waste (%)', 'Persentase susut wajar saat pengolahan (0 - 100%)', 'Jika ada penyusutan bahan saat persiapan/memasak (misal 5%), sistem otomatis memperhitungkan tambahan biaya HPP.'],
+    ['Kalkulasi HPP Otomatis', 'Dihitung realtime oleh sistem', 'Setelah resep di-import, MOVA POS otomatis mengalkulasi total HPP per menu & mencatat histori varians versi resep.'],
+    ['Auto-Pendaftaran Item', 'Otomatis dibuat jika belum terdaftar', 'Jika nama menu atau bahan baku belum ada di database, sistem akan otomatis mendaftarkannya ke Master Data.'],
+  ];
+  guideRows.forEach((r) => wsGuide.addRow(r));
+  autoFitColumns(wsGuide);
+
+  await saveWorkbook(wb, `Template_Import_Resep_dan_Gramasi_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+/**
+ * 8. Alias for Saldo Awal Template
  */
 export async function downloadSaldoAwalTemplate(outlets = [], businessName = '') {
   return await downloadIngredientTemplate(outlets, businessName);

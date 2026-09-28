@@ -11,6 +11,7 @@ import {
   downloadPerlengkapanTemplate,
   downloadStockAwalGudangTemplate,
   downloadMenuTemplate,
+  downloadRecipeTemplate,
   downloadReceivableTemplate,
   downloadOutletTemplate,
 } from '../utils/exportTemplates';
@@ -164,6 +165,13 @@ export default function ImportMasterModal({
       columns: ['Nama Menu*', 'Kategori*', 'Tipe Item*', 'Harga Jual*', 'HPP (Modal)'],
       sampleHint: 'Contoh: Kopi Aren, Kategori: Minuman, Tipe: RECIPE, Harga Jual: 20000, HPP: 8000',
     },
+    RECIPE: {
+      title: 'Resep & Gramasi Menu (BOM)',
+      downloadFn: downloadRecipeTemplate,
+      endpoint: '/menus/bulk-import-recipes',
+      columns: ['Nama Menu*', 'Nama Bahan / Kemasan*', 'Gramasi / Qty*', 'Satuan Pakai*', 'Standar Susut (%)', 'Catatan Resep'],
+      sampleHint: 'Format Bill of Materials (BOM) per-menu. 1 Menu dapat memiliki banyak baris bahan/kemasan. HPP dihitung otomatis.',
+    },
     RECEIVABLE: {
       title: 'Master Piutang (Kasbon Customer)',
       downloadFn: downloadReceivableTemplate,
@@ -256,7 +264,8 @@ export default function ImportMasterModal({
         'saldo awal', 'saldo awal fisik', 'saldo awal satuan pakai', 'stock awal fisik', 'stok awal fisik',
         'nama bahan / item', 'kode bahan / item',
         'harga beli', 'harga jual', 'stok minimal', 'pic manager', 'tipe outlet',
-        'faktor konversi', 'konversi'
+        'faktor konversi', 'konversi',
+        'nama bahan / perlengkapan / kemasan', 'nama menu / produk', 'gramasi', 'gramasi / kuantitas (qty)', 'standar susut', 'catatan / petunjuk resep'
       ];
 
       let headerRowIndex = 0;
@@ -619,6 +628,42 @@ export default function ImportMasterModal({
 
           mappedData = { code, barcode, name, category, item_type: itemType, price, cost_price: costPrice, description, is_available: !isKosong };
 
+        } else if (currentMasterType === 'RECIPE') {
+          let menuCode = getVal(row, ['kodemenuopsional', 'kodemenu', 'kodemenualias', 'kode', 'code', 'sku']);
+          let menuName = getVal(row, ['namamenuproduk', 'namamenu', 'menu', 'nama', 'namaproduk', 'produk']);
+          let ingCode = getVal(row, ['kodebahanopsional', 'kodebahan', 'kodeperlengkapan', 'kodeitem', 'kode']);
+          let ingName = getVal(row, ['namabahanperlengkapankemasan', 'namabahankemasan', 'namabahanperlengkapan', 'namabahan', 'bahan', 'namaperlengkapan', 'perlengkapan', 'kemasan', 'namakemasan', 'itemname', 'item']);
+
+          if (!menuName && keys[1] && keys[1].toLowerCase().includes('menu')) {
+            menuName = String(row[keys[1]] || '').trim();
+          }
+          if (!ingName && keys[3] && (keys[3].toLowerCase().includes('bahan') || keys[3].toLowerCase().includes('kemasan') || keys[3].toLowerCase().includes('perlengkapan'))) {
+            ingName = String(row[keys[3]] || '').trim();
+          }
+
+          const qty = parseFloat(getVal(row, ['gramasikuantitasqty', 'gramasi', 'kuantitas', 'qty', 'jumlah', 'porsi', 'takaran'])) || 0;
+          const rawUnit = getVal(row, ['satuanpakai', 'satuan', 'unit', 'unitpakai']);
+          const uUnit = normalizeUnitClient(rawUnit, 'gram');
+          const wasteStd = parseFloat(getVal(row, ['standarsusutwaste', 'standarsusut', 'susut', 'waste', 'toleransisusut'])) || 0;
+          const notes = getVal(row, ['catatanpetunjukresep', 'catatanresep', 'catatan', 'keterangan', 'petunjuk']);
+
+          if (!menuName && !menuCode) errors.push('Nama atau Kode Menu wajib diisi.');
+          if (!ingName && !ingCode) errors.push('Nama atau Kode Bahan/Kemasan wajib diisi.');
+          if (qty <= 0) errors.push('Gramasi / Kuantitas (Qty) harus lebih dari 0.');
+
+          mappedData = {
+            menu_code: menuCode,
+            menu_name: menuName,
+            ingredient_code: ingCode,
+            ingredient_name: ingName,
+            qty,
+            unit: uUnit.symbol,
+            waste_std: wasteStd,
+            notes,
+            name: `${menuName || menuCode} ➔ ${ingName || ingCode} (${qty} ${uUnit.symbol})`,
+            _uRaw: uUnit,
+          };
+
         } else if (currentMasterType === 'RECEIVABLE') {
           let customerName = getVal(row, ['namapelanggan', 'namadebitur', 'nama', 'customer', 'pelanggan']);
           if (!customerName) {
@@ -673,7 +718,7 @@ export default function ImportMasterModal({
         };
       }).filter(item => {
         const d = item.data;
-        const name = (d.name || d.customer_name || '').trim();
+        const name = (d.name || d.customer_name || d.menu_name || '').trim();
         const lower = name.toLowerCase();
         if (
           !name ||
@@ -683,10 +728,11 @@ export default function ImportMasterModal({
           lower.includes('data bahan') ||
           lower.includes('daftar perlengkapan') ||
           lower.includes('daftar menu') ||
+          lower.includes('daftar resep') ||
           lower.includes('tagihan piutang') ||
           lower.includes('daftar outlet') ||
           lower.includes('saldo awal stok') ||
-          ['kode bahan', 'nama bahan', 'nama bahan*', 'kode perlengkapan', 'nama perlengkapan', 'kode menu', 'nama menu', 'nama pelanggan', 'kode bahan / item', 'nama bahan / item', 'nama bahan / item*'].includes(lower)
+          ['kode bahan', 'nama bahan', 'nama bahan*', 'kode perlengkapan', 'nama perlengkapan', 'kode menu', 'nama menu', 'nama pelanggan', 'kode bahan / item', 'nama bahan / item', 'nama bahan / item*', 'nama menu / produk', 'nama menu / produk*'].includes(lower)
         ) {
           return false;
         }
@@ -791,6 +837,7 @@ export default function ImportMasterModal({
             { key: 'PERLENGKAPAN', label: 'Master Perlengkapan & Saldo Awal' },
             { key: 'STOCK_AWAL_GUDANG', label: 'Stock Awal per Gudang' },
             { key: 'MENU', label: 'Master Menu' },
+            { key: 'RECIPE', label: 'Resep & Gramasi (BOM)' },
             { key: 'RECEIVABLE', label: 'Kasbon / Piutang' },
             { key: 'OUTLET', label: 'Outlet & Gudang' },
           ].map(m => (
@@ -1118,6 +1165,36 @@ export default function ImportMasterModal({
                           </div>
                         )}
                         {currentMasterType === 'MENU' && `${row.data.category} · ${row.data.item_type} · ${rupiah(row.data.price)}`}
+                        {currentMasterType === 'RECIPE' && (
+                          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '5px' }}>
+                            <span style={{ background: 'rgba(124, 58, 237, 0.2)', color: '#c084fc', fontSize: '10.5px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>
+                              🍽 {row.data.menu_name || row.data.menu_code}
+                            </span>
+                            <span style={{ color: 'var(--text-muted)' }}>➔</span>
+                            <span style={{ fontWeight: 700, color: '#ffffff' }}>
+                              {row.data.ingredient_name || row.data.ingredient_code}
+                            </span>
+                            <span style={{ color: 'var(--text-muted)' }}>·</span>
+                            <span className="mono" style={{ color: 'var(--accent-bright)', fontWeight: 700 }}>
+                              {num(row.data.qty)} {row.data.unit}
+                            </span>
+                            {row.data.waste_std > 0 && (
+                              <span style={{ color: '#f59e0b', fontSize: '10px' }}>
+                                (Susut {row.data.waste_std}%)
+                              </span>
+                            )}
+                            {row.data.notes && (
+                              <span style={{ color: 'var(--text-muted)', fontSize: '10.5px', fontStyle: 'italic' }}>
+                                • {row.data.notes}
+                              </span>
+                            )}
+                            {row.data._uRaw?.isFixed && (
+                              <span style={{ background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }} title="Typo/singkatan otomatis diperbaiki ke format standar">
+                                ✓ Auto-Fix ({row.data._uRaw.original})
+                              </span>
+                            )}
+                          </div>
+                        )}
                         {currentMasterType === 'RECEIVABLE' && `Total: ${rupiah(row.data.total_amount)} · DP: ${rupiah(row.data.initial_paid)}`}
                         {currentMasterType === 'OUTLET' && `${row.data.type} · PIC: ${row.data.pic_name || '—'} · ${row.data.phone || ''}`}
                       </td>
