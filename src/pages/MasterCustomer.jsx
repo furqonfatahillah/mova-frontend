@@ -88,9 +88,16 @@ export default function MasterCustomer() {
   const filteredCustomers = useMemo(() => {
     return customers.filter(c => {
       const q = searchQuery.toLowerCase().trim();
-      const matchSearch = !q ||
-        c.name?.toLowerCase().includes(q) ||
+      if (!q) {
+        return filterStatus === 'ALL' || (filterStatus === 'ACTIVE' && c.active) || (filterStatus === 'INACTIVE' && !c.active);
+      }
+      const numQ = q.replace(/[^0-9]/g, '');
+      const custPhoneClean = (c.phone || '').replace(/[^0-9]/g, '');
+
+      const matchSearch =
+        (numQ.length >= 2 && custPhoneClean.includes(numQ)) ||
         c.phone?.toLowerCase().includes(q) ||
+        c.name?.toLowerCase().includes(q) ||
         c.code?.toLowerCase().includes(q) ||
         c.email?.toLowerCase().includes(q) ||
         c.notes?.toLowerCase().includes(q);
@@ -436,7 +443,7 @@ export default function MasterCustomer() {
           <input
             type="text"
             className="form-control"
-            placeholder="Cari nama, kode member, no HP (WA), email..."
+            placeholder="📱 Cari No. HP (WA), Nama, atau Kode Member..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             style={{ paddingLeft: 36, fontSize: 13, borderRadius: 8 }}

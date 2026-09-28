@@ -3223,12 +3223,12 @@ export default function POS() {
                   </div>
                 )}
 
-                {/* Member / Customer Selection Bar */}
+                {/* Member / Customer Selection Bar (Prioritize Phone Number Search) */}
                 <div style={{ position: 'relative', marginBottom: 6 }}>
                   {selectedCustomer ? (
                     <div style={{
-                      background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.16) 0%, rgba(168, 85, 247, 0.12) 100%)',
-                      border: '1px solid rgba(99, 102, 241, 0.35)',
+                      background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.12) 0%, rgba(99, 102, 241, 0.15) 100%)',
+                      border: '1px solid rgba(56, 189, 248, 0.35)',
                       borderRadius: 8,
                       padding: '7px 10px',
                       display: 'flex',
@@ -3239,22 +3239,25 @@ export default function POS() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
                         <div style={{
                           width: 28, height: 28, borderRadius: '50%',
-                          background: 'rgba(99, 102, 241, 0.25)',
+                          background: 'rgba(56, 189, 248, 0.2)',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          color: '#c084fc', flexShrink: 0
+                          color: '#38bdf8', flexShrink: 0
                         }}>
-                          <UserCheck size={15} />
+                          <Phone size={14} />
                         </div>
                         <div style={{ overflow: 'hidden' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                            <strong style={{ fontSize: 12, color: '#ffffff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {selectedCustomer.name}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                            <strong className="mono" style={{ fontSize: 13, color: '#38bdf8', fontWeight: 800 }}>
+                              {selectedCustomer.phone}
                             </strong>
-                            <span className="mono" style={{ fontSize: 9.5, background: 'rgba(99,102,241,0.2)', color: '#a5b4fc', padding: '0 4px', borderRadius: 3 }}>
+                            <span style={{ fontSize: 11.5, color: '#ffffff', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              ({selectedCustomer.name})
+                            </span>
+                            <span className="mono" style={{ fontSize: 9, background: 'rgba(99,102,241,0.2)', color: '#a5b4fc', padding: '0 4px', borderRadius: 3 }}>
                               {selectedCustomer.code}
                             </span>
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, marginTop: 1 }}>
                             <span style={{ color: '#fbbf24', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                               <Coins size={11} /> {num(selectedCustomer.total_points || 0)} Poin
                             </span>
@@ -3277,23 +3280,37 @@ export default function POS() {
                   ) : (
                     <div style={{ display: 'flex', gap: 6 }}>
                       <div style={{ position: 'relative', flex: 1 }}>
-                        <input
-                          type="text"
-                          className="form-control"
-                          placeholder="Pelanggan / Cari No HP Member..."
-                          value={customerName}
-                          onFocus={() => {
-                            setMemberSearchOpen(true);
-                            searchMembers(customerName);
-                          }}
-                          onChange={e => {
-                            const val = e.target.value;
-                            setCustomerName(val);
-                            setMemberSearchOpen(true);
-                            searchMembers(val);
-                          }}
-                          style={{ fontSize: 12, padding: '7px 10px', borderRadius: 8 }}
-                        />
+                        <div style={{ position: 'relative' }}>
+                          <Phone size={13} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--accent-bright)', pointerEvents: 'none' }} />
+                          <input
+                            type="text"
+                            className="form-control"
+                            placeholder="📱 Ketik No. HP Member (cth: 0812...)"
+                            value={customerName}
+                            onFocus={() => {
+                              setMemberSearchOpen(true);
+                              searchMembers(customerName);
+                            }}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                if (memberSearchResults.length === 1) {
+                                  handleSelectCustomer(memberSearchResults[0]);
+                                } else if (memberSearchResults.length > 0) {
+                                  // Pick first matching
+                                  handleSelectCustomer(memberSearchResults[0]);
+                                }
+                              }
+                            }}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setCustomerName(val);
+                              setMemberSearchOpen(true);
+                              searchMembers(val);
+                            }}
+                            style={{ fontSize: 12, paddingLeft: 28, paddingRight: 24, borderRadius: 8 }}
+                          />
+                        </div>
                         {customerName && (
                           <button
                             type="button"
@@ -3318,39 +3335,47 @@ export default function POS() {
                             zIndex: 100,
                             marginTop: 4,
                             background: '#161c38',
-                            border: '1px solid rgba(99, 102, 241, 0.3)',
+                            border: '1px solid rgba(56, 189, 248, 0.4)',
                             borderRadius: 8,
-                            boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
-                            maxHeight: 220,
+                            boxShadow: '0 12px 30px rgba(0,0,0,0.6)',
+                            maxHeight: 240,
                             overflowY: 'auto'
                           }}>
-                            <div style={{ padding: '6px 10px', fontSize: 10.5, color: 'var(--text-muted)', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between' }}>
-                              <span>PILIH MEMBER TERDAFTAR</span>
+                            <div style={{ padding: '6px 10px', fontSize: 10.5, color: '#38bdf8', fontWeight: 700, borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(56, 189, 248, 0.08)' }}>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <Phone size={11} /> HASIL PENCARIAN NOMOR HP MEMBER
+                              </span>
                               <button
                                 type="button"
                                 onClick={() => setMemberSearchOpen(false)}
                                 style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 10 }}
                               >
-                                Tutup
+                                Tutup [Esc]
                               </button>
                             </div>
                             {searchingMembers ? (
-                              <div style={{ padding: '12px', textAlign: 'center', fontSize: 11.5, color: 'var(--text-muted)' }}>
-                                Mencari member...
+                              <div style={{ padding: '14px', textAlign: 'center', fontSize: 11.5, color: 'var(--text-muted)' }}>
+                                Mencari no. HP member...
                               </div>
                             ) : memberSearchResults.length === 0 ? (
-                              <div style={{ padding: '12px 10px', textAlign: 'center', fontSize: 11.5, color: 'var(--text-muted)' }}>
-                                Tidak ada member ditemukan.
+                              <div style={{ padding: '14px 10px', textAlign: 'center', fontSize: 11.5, color: 'var(--text-muted)' }}>
+                                <div>Tidak ada member dengan no. HP ini.</div>
                                 <button
                                   type="button"
                                   onClick={() => {
                                     setMemberSearchOpen(false);
-                                    setQuickMemberModal({ open: true, name: customerName, phone: '', saving: false });
+                                    const isDigit = /^[0-9+\-\s]+$/.test(customerName.trim());
+                                    setQuickMemberModal({
+                                      open: true,
+                                      name: isDigit ? '' : customerName,
+                                      phone: isDigit ? customerName.replace(/[^0-9]/g, '') : '',
+                                      saving: false
+                                    });
                                   }}
                                   className="btn btn-ghost btn-sm"
-                                  style={{ color: '#34d399', fontSize: 11, display: 'block', margin: '4px auto 0' }}
+                                  style={{ color: '#34d399', fontSize: 11.5, fontWeight: 700, margin: '6px auto 0', display: 'inline-flex', alignItems: 'center', gap: 4 }}
                                 >
-                                  + Daftarkan "{customerName || 'Pelanggan'}" Jadi Member
+                                  <UserPlus size={12} /> + Daftarkan "{customerName || 'No HP Ini'}" Jadi Member
                                 </button>
                               </div>
                             ) : (
@@ -3359,7 +3384,7 @@ export default function POS() {
                                   key={m.id}
                                   onClick={() => handleSelectCustomer(m)}
                                   style={{
-                                    padding: '8px 10px',
+                                    padding: '8px 12px',
                                     borderBottom: '1px solid rgba(255,255,255,0.04)',
                                     cursor: 'pointer',
                                     display: 'flex',
@@ -3370,23 +3395,34 @@ export default function POS() {
                                   className="table-row-hover"
                                 >
                                   <div>
-                                    <div style={{ fontWeight: 700, color: '#ffffff', fontSize: 12 }}>
-                                      {m.name} <span className="mono" style={{ fontSize: 9.5, color: '#a5b4fc', marginLeft: 4 }}>({m.code})</span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                      <span className="mono" style={{ fontWeight: 800, color: '#38bdf8', fontSize: 13 }}>
+                                        📱 {m.phone}
+                                      </span>
+                                      <span className="mono" style={{ fontSize: 9.5, color: '#a5b4fc', background: 'rgba(99,102,241,0.2)', padding: '1px 5px', borderRadius: 4 }}>
+                                        {m.code}
+                                      </span>
                                     </div>
-                                    <div style={{ fontSize: 10.5, color: 'var(--text-secondary)' }}>
-                                      {m.phone}
+                                    <div style={{ fontSize: 11.5, fontWeight: 600, color: '#ffffff', marginTop: 2 }}>
+                                      👤 {m.name}
                                     </div>
                                   </div>
-                                  <span style={{
-                                    fontSize: 10.5,
-                                    fontWeight: 800,
-                                    color: '#fbbf24',
-                                    background: 'rgba(245, 158, 11, 0.12)',
-                                    padding: '2px 6px',
-                                    borderRadius: 4
-                                  }}>
-                                    {num(m.total_points || 0)} Poin
-                                  </span>
+                                  <div style={{ textAlign: 'right' }}>
+                                    <span style={{
+                                      fontSize: 11,
+                                      fontWeight: 800,
+                                      color: '#fbbf24',
+                                      background: 'rgba(245, 158, 11, 0.12)',
+                                      border: '1px solid rgba(245, 158, 11, 0.3)',
+                                      padding: '2px 7px',
+                                      borderRadius: 4,
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 3
+                                    }}>
+                                      <Coins size={11} /> {num(m.total_points || 0)} Poin
+                                    </span>
+                                  </div>
                                 </div>
                               ))
                             )}
@@ -3397,8 +3433,16 @@ export default function POS() {
                       <button
                         type="button"
                         className="btn btn-secondary btn-sm"
-                        onClick={() => setQuickMemberModal({ open: true, name: customerName, phone: '', saving: false })}
-                        title="Daftar Member Baru (+1 Poin Transaksi)"
+                        onClick={() => {
+                          const isDigit = /^[0-9+\-\s]+$/.test((customerName || '').trim());
+                          setQuickMemberModal({
+                            open: true,
+                            name: isDigit ? '' : customerName,
+                            phone: isDigit ? customerName.replace(/[^0-9]/g, '') : '',
+                            saving: false
+                          });
+                        }}
+                        title="Daftar Member Baru Berdasarkan Nomor HP (+1 Poin Transaksi)"
                         style={{
                           fontSize: 11,
                           padding: '0 8px',
@@ -6931,8 +6975,27 @@ export default function POS() {
                 </div>
 
                 <div className="form-group mb-0">
+                  <label className="form-label" style={{ fontSize: 12, fontWeight: 700, color: '#38bdf8' }}>
+                    📱 Nomor WhatsApp / HP Pelanggan <span style={{ color: '#f87171' }}>*</span>
+                  </label>
+                  <input
+                    type="tel"
+                    className="form-control mono"
+                    placeholder="Contoh: 081234567890"
+                    value={quickMemberModal.phone}
+                    onChange={e => setQuickMemberModal(p => ({ ...p, phone: e.target.value }))}
+                    autoFocus
+                    required
+                    style={{ fontSize: 14, fontWeight: 700 }}
+                  />
+                  <span style={{ fontSize: 10.5, color: 'var(--text-secondary)', marginTop: 2, display: 'block' }}>
+                    Nomor HP digunakan sebagai identitas utama pencarian member di kasir.
+                  </span>
+                </div>
+
+                <div className="form-group mb-0">
                   <label className="form-label" style={{ fontSize: 12, fontWeight: 600 }}>
-                    Nama Lengkap Pelanggan <span style={{ color: '#f87171' }}>*</span>
+                    👤 Nama Lengkap Pelanggan <span style={{ color: '#f87171' }}>*</span>
                   </label>
                   <input
                     type="text"
@@ -6940,22 +7003,6 @@ export default function POS() {
                     placeholder="Contoh: Budi Santoso"
                     value={quickMemberModal.name}
                     onChange={e => setQuickMemberModal(p => ({ ...p, name: e.target.value }))}
-                    autoFocus
-                    required
-                    style={{ fontSize: 13 }}
-                  />
-                </div>
-
-                <div className="form-group mb-0">
-                  <label className="form-label" style={{ fontSize: 12, fontWeight: 600 }}>
-                    Nomor WhatsApp / HP <span style={{ color: '#f87171' }}>*</span>
-                  </label>
-                  <input
-                    type="tel"
-                    className="form-control"
-                    placeholder="Contoh: 081234567890"
-                    value={quickMemberModal.phone}
-                    onChange={e => setQuickMemberModal(p => ({ ...p, phone: e.target.value }))}
                     required
                     style={{ fontSize: 13 }}
                   />
