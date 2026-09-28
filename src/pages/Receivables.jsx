@@ -6,7 +6,8 @@ import {
   ChevronRight, X, User, Phone, MapPin, CreditCard,
   Trash2, Edit3, ArrowRight, ShieldAlert, Receipt, Send, Check,
   Users, CheckSquare, Square, Layers, Sparkles, History,
-  Landmark, Building2, QrCode, ShoppingCart, ArrowDownToLine
+  Landmark, Building2, Building, QrCode, ShoppingCart, ArrowDownToLine,
+  CheckCheck, Info
 } from 'lucide-react';
 import api from '../api/client';
 import {
@@ -294,8 +295,8 @@ export default function Receivables() {
     let rows = merchantAllRows;
     if (merchantFilter === 'QRIS') rows = rows.filter(r => r.ar_type === 'MERCHANT_QRIS');
     else if (merchantFilter === 'ECOMMERCE') rows = rows.filter(r => r.ar_type === 'MERCHANT_ECOMMERCE');
-    else if (merchantFilter === 'UNSETTLED') rows = rows.filter(r => r.settlement_status !== 'SETTLED');
-    else if (merchantFilter === 'SETTLED') rows = rows.filter(r => r.settlement_status === 'SETTLED');
+    else if (merchantFilter === 'UNSETTLED') rows = rows.filter(r => r.ar_type === 'MERCHANT_QRIS' && r.settlement_status !== 'SETTLED');
+    else if (merchantFilter === 'SETTLED') rows = rows.filter(r => r.ar_type === 'MERCHANT_QRIS' && r.settlement_status === 'SETTLED');
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
@@ -309,19 +310,25 @@ export default function Receivables() {
     return rows;
   }, [merchantAllRows, merchantFilter, searchQuery]);
 
+  // Count only unsettled QRIS transactions (E-Commerce is settled directly by respective apps)
   const merchantUnsettledCount = useMemo(() => {
-    return merchantAllRows.filter(r => r.settlement_status !== 'SETTLED').length;
+    return merchantAllRows.filter(r => r.ar_type === 'MERCHANT_QRIS' && r.settlement_status !== 'SETTLED').length;
   }, [merchantAllRows]);
 
   function toggleSelectMerchant(id) {
+    const target = merchantAllRows.find(r => r.id === id);
+    if (target && target.ar_type === 'MERCHANT_ECOMMERCE') {
+      toast('AR E-Commerce tidak memiliki opsi pencairan manual di POS karena dicairkan langsung dari apk.', { icon: 'ℹ️' });
+      return;
+    }
     setSelectedMerchantIds(prev =>
       prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
     );
   }
 
   function toggleSelectAllMerchants() {
-    const unsettled = filteredMerchantRows.filter(r => r.settlement_status !== 'SETTLED');
-    const unsettledIds = unsettled.map(r => r.id);
+    const unsettledQris = filteredMerchantRows.filter(r => r.ar_type === 'MERCHANT_QRIS' && r.settlement_status !== 'SETTLED');
+    const unsettledIds = unsettledQris.map(r => r.id);
     const allSelected = unsettledIds.length > 0 && unsettledIds.every(id => selectedMerchantIds.includes(id));
     if (allSelected) {
       setSelectedMerchantIds(prev => prev.filter(id => !unsettledIds.includes(id)));
@@ -1605,10 +1612,10 @@ export default function Receivables() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '20px' }}>
             {[
               { key: 'ALL', label: 'Semua', icon: <Layers size={13} /> },
-              { key: 'QRIS', label: 'QRIS', icon: <QrCode size={13} /> },
-              { key: 'ECOMMERCE', label: 'E-Commerce', icon: <ShoppingCart size={13} /> },
-              { key: 'UNSETTLED', label: 'Belum Cair', icon: <Clock size={13} />, color: '#ef4444' },
-              { key: 'SETTLED', label: 'Sudah Cair', icon: <CheckCircle2 size={13} />, color: '#22c55e' },
+              { key: 'QRIS', label: 'QRIS (Settlement POS)', icon: <QrCode size={13} /> },
+              { key: 'ECOMMERCE', label: 'E-Commerce (Cross-check Apk)', icon: <ShoppingCart size={13} />, color: '#f97316' },
+              { key: 'UNSETTLED', label: 'QRIS Belum Cair', icon: <Clock size={13} />, color: '#ef4444' },
+              { key: 'SETTLED', label: 'QRIS Sudah Cair', icon: <CheckCircle2 size={13} />, color: '#22c55e' },
             ].map(f => (
               <button
                 key={f.key}
@@ -1644,6 +1651,33 @@ export default function Receivables() {
               <RefreshCw size={13} className={merchantLoading ? 'spin' : ''} /> Refresh
             </button>
           </div>
+
+          {/* E-Commerce Explanation Banner */}
+          {(merchantFilter === 'ECOMMERCE' || merchantFilter === 'ALL') && (
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.12), rgba(234, 88, 12, 0.04))',
+              border: '1px solid rgba(249, 115, 22, 0.28)',
+              borderRadius: '12px',
+              padding: '14px 18px',
+              marginBottom: '20px',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '12px',
+              fontSize: '12.5px',
+              color: '#fed7aa',
+              lineHeight: 1.5,
+            }}>
+              <Info size={19} style={{ color: '#fb923c', marginTop: '2px', flexShrink: 0 }} />
+              <div>
+                <div style={{ fontWeight: 800, color: '#ffffff', marginBottom: '2px', fontSize: '13px' }}>
+                  Buku Rekonsiliasi Piutang E-Commerce
+                </div>
+                <div>
+                  Khusus transaksi channel e-commerce (GoFood, GrabFood, ShopeeFood, TikTok Shop, dll), buku piutang ini berfungsi untuk <strong>meng-crosscheck besaran transaksi POS dengan laporan di aplikasi e-commerce</strong>. Tidak ada opsi pencairan manual di POS karena dana otomatis dicairkan oleh sistem aplikasi masing-masing ke rekening bank Anda.
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* KPI Summary Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', marginBottom: '20px' }}>
@@ -1682,25 +1716,25 @@ export default function Receivables() {
               border: '1px solid rgba(251, 191, 36, 0.3)',
               borderRadius: '12px', padding: '16px',
             }}>
-              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: '4px' }}>Belum Cair</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: '4px' }}>QRIS Belum Cair</div>
               <div style={{ fontSize: '18px', fontWeight: 900, color: '#fbbf24' }}>
-                {Number(merchantSummary.unsettled_count || 0)} trx
+                {Number(merchantSummary.unsettled_count || merchantAllRows.filter(r => r.ar_type === 'MERCHANT_QRIS' && r.settlement_status !== 'SETTLED').length)} trx
               </div>
               <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                {Number(merchantSummary.unsettled_amount || 0).toLocaleString('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 })}
+                {Number(merchantSummary.unsettled_amount || merchantAllRows.filter(r => r.ar_type === 'MERCHANT_QRIS' && r.settlement_status !== 'SETTLED').reduce((s, r) => s + Number(r.net_amount || 0), 0)).toLocaleString('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 })}
               </div>
             </div>
             <div style={{
-              background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(22, 163, 74, 0.08))',
-              border: '1px solid rgba(34, 197, 94, 0.3)',
+              background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.15), rgba(234, 88, 12, 0.08))',
+              border: '1px solid rgba(249, 115, 22, 0.3)',
               borderRadius: '12px', padding: '16px',
             }}>
-              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: '4px' }}>Sudah Cair</div>
-              <div style={{ fontSize: '18px', fontWeight: 900, color: '#22c55e' }}>
-                {Number(merchantSummary.settled_count || 0)} trx
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: '4px' }}>Cross-check E-Commerce</div>
+              <div style={{ fontSize: '18px', fontWeight: 900, color: '#fb923c' }}>
+                {Number(merchantSummary.ecom_count || merchantAllRows.filter(r => r.ar_type === 'MERCHANT_ECOMMERCE').length)} trx
               </div>
               <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                {Number(merchantSummary.settled_amount || 0).toLocaleString('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 })}
+                {Number(merchantSummary.ecom_net || merchantAllRows.filter(r => r.ar_type === 'MERCHANT_ECOMMERCE').reduce((s, r) => s + Number(r.net_amount || 0), 0)).toLocaleString('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 })}
               </div>
             </div>
           </div>
@@ -1725,16 +1759,20 @@ export default function Receivables() {
                 <thead>
                   <tr style={{ background: 'rgba(255, 255, 255, 0.04)' }}>
                     <th style={{ padding: '10px 12px', textAlign: 'center', width: '40px' }}>
-                      <button
-                        onClick={toggleSelectAllMerchants}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '2px' }}
-                        title="Pilih Semua Belum Cair"
-                      >
-                        {filteredMerchantRows.filter(r => r.settlement_status !== 'SETTLED').length > 0 &&
-                         filteredMerchantRows.filter(r => r.settlement_status !== 'SETTLED').every(r => selectedMerchantIds.includes(r.id))
-                          ? <CheckSquare size={16} style={{ color: 'var(--primary)' }} />
-                          : <Square size={16} />}
-                      </button>
+                      {filteredMerchantRows.some(r => r.ar_type === 'MERCHANT_QRIS' && r.settlement_status !== 'SETTLED') ? (
+                        <button
+                          onClick={toggleSelectAllMerchants}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '2px' }}
+                          title="Pilih Semua QRIS Belum Cair"
+                        >
+                          {filteredMerchantRows.filter(r => r.ar_type === 'MERCHANT_QRIS' && r.settlement_status !== 'SETTLED').length > 0 &&
+                           filteredMerchantRows.filter(r => r.ar_type === 'MERCHANT_QRIS' && r.settlement_status !== 'SETTLED').every(r => selectedMerchantIds.includes(r.id))
+                            ? <CheckSquare size={16} style={{ color: 'var(--primary)' }} />
+                            : <Square size={16} />}
+                        </button>
+                      ) : (
+                        <span style={{ color: 'var(--text-secondary)', fontSize: '11px', opacity: 0.5 }}>#</span>
+                      )}
                     </th>
                     <th style={{ padding: '10px 12px', textAlign: 'left', color: 'var(--text-secondary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Tanggal / Nota</th>
                     <th style={{ padding: '10px 12px', textAlign: 'center', color: 'var(--text-secondary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Channel</th>
@@ -1758,20 +1796,27 @@ export default function Receivables() {
                         style={{
                           borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
                           background: isSelected ? 'rgba(99, 102, 241, 0.08)' : (idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)'),
-                          opacity: isSettled ? 0.6 : 1,
+                          opacity: (isSettled || !isQris) ? 0.85 : 1,
                           transition: 'background 0.15s ease',
                         }}
                       >
                         <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                          {!isSettled ? (
-                            <button
-                              onClick={() => toggleSelectMerchant(row.id)}
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: isSelected ? 'var(--primary)' : 'var(--text-secondary)', padding: '2px' }}
-                            >
-                              {isSelected ? <CheckSquare size={16} /> : <Square size={16} />}
-                            </button>
+                          {isQris ? (
+                            !isSettled ? (
+                              <button
+                                onClick={() => toggleSelectMerchant(row.id)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: isSelected ? 'var(--primary)' : 'var(--text-secondary)', padding: '2px' }}
+                                title="Pilih transaksi QRIS untuk pencairan"
+                              >
+                                {isSelected ? <CheckSquare size={16} style={{ color: 'var(--primary)' }} /> : <Square size={16} />}
+                              </button>
+                            ) : (
+                              <CheckCircle2 size={14} style={{ color: '#22c55e' }} title="Sudah dicairkan ke bank" />
+                            )
                           ) : (
-                            <CheckCircle2 size={14} style={{ color: '#22c55e' }} />
+                            <span title="Buku Rekonsiliasi E-Commerce (Pencairan Otomatis via Apk)">
+                              <ShoppingCart size={13} style={{ color: '#fb923c', opacity: 0.7 }} />
+                            </span>
                           )}
                         </td>
                         <td style={{ padding: '10px 12px' }}>
@@ -1812,29 +1857,53 @@ export default function Receivables() {
                           {Number(row.net_amount || row.remaining_amount || 0).toLocaleString('id-ID')}
                         </td>
                         <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                          {isSettled ? (
-                            <span className="pill pill-ok" style={{ fontSize: '10px', fontWeight: 700, gap: '4px' }}>
-                              <CheckCircle2 size={11} /> Cair
-                            </span>
+                          {isQris ? (
+                            isSettled ? (
+                              <span className="pill pill-ok" style={{ fontSize: '10px', fontWeight: 700, gap: '4px' }}>
+                                <CheckCircle2 size={11} /> Cair
+                              </span>
+                            ) : (
+                              <span className="pill pill-warning" style={{ fontSize: '10px', fontWeight: 700, gap: '4px' }}>
+                                <Clock size={11} /> Belum Cair
+                              </span>
+                            )
                           ) : (
-                            <span className="pill pill-warning" style={{ fontSize: '10px', fontWeight: 700, gap: '4px' }}>
-                              <Clock size={11} /> Pending
+                            <span style={{
+                              display: 'inline-flex', alignItems: 'center', gap: '4px',
+                              padding: '3px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: 700,
+                              background: 'rgba(249, 115, 22, 0.15)', color: '#fdba74',
+                              border: '1px solid rgba(249, 115, 22, 0.3)'
+                            }} title="Pencairan diproses langsung oleh aplikasi e-commerce terkait">
+                              <Building size={10} /> Auto via Apk
                             </span>
                           )}
                         </td>
                         <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                          {!isSettled && (
-                            <button
-                              className="btn btn-primary btn-sm"
-                              style={{ fontSize: '11px', padding: '4px 10px', gap: '4px' }}
-                              onClick={() => setSettleModal({
-                                open: true, mode: 'single', items: [row],
-                                settlement_bank: '', settlement_ref: '', settled_at: getTodayStr(),
-                              })}
-                              title="Cairkan AR ini"
-                            >
-                              <ArrowDownToLine size={12} /> Cairkan
-                            </button>
+                          {isQris ? (
+                            !isSettled ? (
+                              <button
+                                className="btn btn-primary btn-sm"
+                                style={{ fontSize: '11px', padding: '4px 10px', gap: '4px' }}
+                                onClick={() => setSettleModal({
+                                  open: true, mode: 'single', items: [row],
+                                  settlement_bank: '', settlement_ref: '', settled_at: getTodayStr(),
+                                })}
+                                title="Cairkan AR QRIS ini"
+                              >
+                                <ArrowDownToLine size={12} /> Cairkan
+                              </button>
+                            ) : (
+                              <span style={{ fontSize: '11px', color: '#22c55e', fontWeight: 600 }}>
+                                Tercatat di Bank
+                              </span>
+                            )
+                          ) : (
+                            <span style={{
+                              fontSize: '11px', color: 'var(--text-secondary)',
+                              display: 'inline-flex', alignItems: 'center', gap: '4px'
+                            }} title="Buku piutang khusus untuk cross-check besaran transaksi POS dengan aplikasi e-commerce">
+                              <CheckCheck size={13} style={{ color: '#fb923c' }} /> Cross-check Apk
+                            </span>
                           )}
                         </td>
                       </tr>
@@ -1845,7 +1914,7 @@ export default function Receivables() {
             </div>
           )}
 
-          {/* Bulk Settlement Floating Action Bar */}
+          {/* Bulk Settlement Floating Action Bar (Only for QRIS) */}
           {selectedMerchantIds.length > 0 && (
             <div style={{
               position: 'sticky', bottom: '12px',
@@ -1857,11 +1926,11 @@ export default function Receivables() {
             }}>
               <div style={{ color: '#ffffff', fontSize: '13px', fontWeight: 700 }}>
                 <CheckSquare size={15} style={{ verticalAlign: 'middle', marginRight: '6px' }} />
-                {selectedMerchantIds.length} transaksi dipilih
+                {selectedMerchantIds.length} transaksi QRIS dipilih
                 <span style={{ marginLeft: '12px', opacity: 0.8 }}>
                   Total Net: {
                     merchantAllRows
-                      .filter(r => selectedMerchantIds.includes(r.id))
+                      .filter(r => selectedMerchantIds.includes(r.id) && r.ar_type === 'MERCHANT_QRIS')
                       .reduce((sum, r) => sum + Number(r.net_amount || r.remaining_amount || 0), 0)
                       .toLocaleString('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 })
                   }
@@ -1882,8 +1951,11 @@ export default function Receivables() {
                     fontSize: '12px', gap: '6px', border: 'none',
                   }}
                   onClick={() => {
-                    const selectedRows = merchantAllRows.filter(r => selectedMerchantIds.includes(r.id) && r.settlement_status !== 'SETTLED');
-                    if (selectedRows.length === 0) return;
+                    const selectedRows = merchantAllRows.filter(r => selectedMerchantIds.includes(r.id) && r.ar_type === 'MERCHANT_QRIS' && r.settlement_status !== 'SETTLED');
+                    if (selectedRows.length === 0) {
+                      toast.error('Tidak ada transaksi AR QRIS belum cair yang dipilih');
+                      return;
+                    }
                     setSettleModal({
                       open: true, mode: 'bulk', items: selectedRows,
                       settlement_bank: '', settlement_ref: '', settled_at: getTodayStr(),
