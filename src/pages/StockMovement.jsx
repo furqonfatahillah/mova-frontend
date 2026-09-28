@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Plus, Trash2, Filter, Store, TrendingUp, TrendingDown, Sparkles, Calculator, X, ShoppingBag, CheckCircle2, Clock } from 'lucide-react';
+import { Plus, Trash2, Filter, Store, TrendingUp, TrendingDown, Sparkles, Calculator, X, ShoppingBag, CheckCircle2, Clock, CreditCard } from 'lucide-react';
 import api from '../api/client';
 import { num, rupiah, fmtQtyVal, LoadingState, PageHeader, AuditInfo, PeriodPicker, SearchableSelect } from '../components/ui';
 import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
