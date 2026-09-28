@@ -1946,7 +1946,7 @@ export default function ShiftManagement() {
                   {/* Daftar Transaksi */}
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: '#ffffff' }}>
-                      Daftar Transaksi Kasir ({detailData?.transactions?.length || 0} transaksi)
+                      Daftar Pesanan & Item Menu Kasir ({detailData?.summary?.total_transactions || new Set(detailData?.transactions?.map(t => t.order_number || t.id)).size} transaksi / {detailData?.transactions?.length || 0} item)
                     </div>
                     {detailData?.transactions?.length > 0 ? (
                       <div className="table-wrap" style={{ maxHeight: 240, overflowY: 'auto' }}>
