@@ -419,6 +419,8 @@ export default function ImportMasterModal({
           let initialBalance = parseFloat(initialBalanceRaw);
           if (isNaN(initialBalance) || initialBalance === null || initialBalance === undefined) {
             initialBalance = Math.round(initialStock * unitPricePakai);
+          } else {
+            initialBalance = Math.round(initialBalance);
           }
 
           const tolerance = parseFloat(getVal(row, ['batastoleransi', 'toleransi', 'tolerance'])) || 5;
@@ -504,6 +506,8 @@ export default function ImportMasterModal({
           let initialBalance = parseFloat(initialBalanceRaw);
           if (isNaN(initialBalance) || initialBalance === null || initialBalance === undefined) {
             initialBalance = Math.round(initialStock * unitPricePakai);
+          } else {
+            initialBalance = Math.round(initialBalance);
           }
 
           const tolerance = parseFloat(getVal(row, ['batastoleransi', 'toleransi', 'tolerance'])) || 5;
@@ -1106,7 +1110,7 @@ export default function ImportMasterModal({
                               </span>
                             )}
                             <span>
-                              {row.data.type} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · Harga: <strong>{rupiah(row.data.harga)}</strong> · Stock Awal: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit_pakai}</strong> · Saldo Awal: <span style={{ color: '#34d399', fontWeight: 700 }}>{rupiah(row.data.initial_balance)}</span> · Toleransi: <strong>{row.data.tolerance ?? 5}%</strong>
+                              {row.data.type} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · Harga: <strong>{rupiah(row.data.harga)}</strong> · Stock Awal: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit_pakai}</strong> · Saldo Awal: <span style={{ color: '#34d399', fontWeight: 700 }}>{rupiah(Math.round(row.data.initial_balance || 0))}</span> · Toleransi: <strong>{row.data.tolerance ?? 5}%</strong>
                             </span>
                             {(row.data._uBeli?.isFixed || row.data._uPakai?.isFixed) && (
                               <span style={{ background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }} title="Typo/singkatan otomatis diperbaiki ke format standar">
@@ -1132,7 +1136,7 @@ export default function ImportMasterModal({
                               </span>
                             )}
                             <span>
-                              {row.data.category} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · Harga: <strong>{rupiah(row.data.harga)}</strong> · Stock Awal: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit_pakai}</strong> · Saldo Awal: <span style={{ color: '#34d399', fontWeight: 700 }}>{rupiah(row.data.initial_balance)}</span> · Toleransi: <strong>{row.data.tolerance ?? 5}%</strong>
+                              {row.data.category} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · Harga: <strong>{rupiah(row.data.harga)}</strong> · Stock Awal: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit_pakai}</strong> · Saldo Awal: <span style={{ color: '#34d399', fontWeight: 700 }}>{rupiah(Math.round(row.data.initial_balance || 0))}</span> · Toleransi: <strong>{row.data.tolerance ?? 5}%</strong>
                             </span>
                             {(row.data._uBeli?.isFixed || row.data._uPakai?.isFixed) && (
                               <span style={{ background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }} title="Typo/singkatan otomatis diperbaiki ke format standar">
