@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../api/client';
-import { pct, rupiah, StatusPill, LoadingState, PeriodPicker, PageHeader } from '../components/ui';
-import { FileSpreadsheet, Printer } from 'lucide-react';
+import { num, pct, rupiah, StatusPill, LoadingState, PeriodPicker, PageHeader, MiniCard } from '../components/ui';
+import { FileSpreadsheet, Printer, Eye, X, Utensils, Layers, HelpCircle, CheckCircle2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 import { exportVarianceMenuToExcel } from '../utils/exportReport';
@@ -10,6 +10,7 @@ import { printElement } from '../utils/print';
 export default function VarianceMenu() {
   const [menuData, setMenuData] = useState([]);
   const [drill, setDrill] = useState(null);
+  const [showDrillModal, setShowDrillModal] = useState(false);
   const [rankBy, setRankBy] = useState('value');
   const [loading, setLoading] = useState(true);
 
@@ -63,7 +64,7 @@ export default function VarianceMenu() {
   });
 
   const total = menuData.reduce((s, r) => s + (r.variance_value || 0), 0);
-  const drillRow = drill ? menuData.find(r => r.menu?.id === drill) : null;
+  const drillRow = drill ? menuData.find(r => String(r.menu?.id) === String(drill)) : null;
 
   const maxQty = Math.max(...menuData.map(r => r.qty_terjual), 1);
   const maxPct = Math.max(...menuData.map(r => r.weighted_pct || 0), 1);
@@ -73,7 +74,7 @@ export default function VarianceMenu() {
   return (
     <div className="fade-in">
       <div className="flex-between mb-4 flex-wrap gap-3">
-        <PageHeader title="Variance per Menu" subtitle="Menu mana yang paling besar menyebabkan variance bahan baku." />
+        <PageHeader title="Variance per Menu" subtitle="Identifikasi menu yang paling berkontribusi terhadap variansi & selisih bahan baku." />
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <button
             className="btn btn-secondary btn-sm"
@@ -131,27 +132,235 @@ export default function VarianceMenu() {
             </tr>
           </thead>
           <tbody>
-            {sorted.map(row => (
-              <tr key={row.menu?.id} className={drill === row.menu?.id ? 'selected' : ''}>
-                <td style={{ fontWeight: 500 }}>{row.menu?.name}</td>
-                <td className="mono right">{row.qty_terjual}</td>
-                <td className="mono right">{pct(row.weighted_pct)}</td>
-                <td className="mono right" style={{ color: row.variance_value > 0 ? 'var(--danger)' : 'var(--ok)' }}>
-                  {rupiah(row.variance_value)}
-                </td>
-                <td className="mono right">
-                  {total !== 0 ? `${((row.variance_value / total) * 100).toFixed(0)}%` : '—'}
-                </td>
-                <td>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setDrill(d => d === row.menu?.id ? null : row.menu?.id)}>
-                    {drill === row.menu?.id ? 'Tutup' : 'Drill →'}
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {sorted.map(row => {
+              const isSelected = String(drill) === String(row.menu?.id);
+              return (
+                <tr key={row.menu?.id} className={isSelected ? 'selected' : ''}>
+                  <td style={{ fontWeight: 600 }}>{row.menu?.name}</td>
+                  <td className="mono right">{row.qty_terjual}</td>
+                  <td className="mono right">{pct(row.weighted_pct)}</td>
+                  <td className="mono right" style={{ color: row.variance_value > 0 ? 'var(--danger)' : 'var(--ok)', fontWeight: 600 }}>
+                    {rupiah(row.variance_value)}
+                  </td>
+                  <td className="mono right">
+                    {total !== 0 ? `${((row.variance_value / total) * 100).toFixed(0)}%` : '—'}
+                  </td>
+                  <td>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        background: isSelected ? 'var(--accent)' : 'rgba(99, 102, 241, 0.1)',
+                        color: isSelected ? '#fff' : 'var(--accent-bright)',
+                        borderColor: 'rgba(99, 102, 241, 0.3)'
+                      }}
+                      onClick={() => {
+                        setDrill(row.menu?.id);
+                        setShowDrillModal(true);
+                      }}
+                    >
+                      <Eye size={13} /> Drill →
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
+
+      {/* Drill-down Modal Detail */}
+      {showDrillModal && drillRow && (
+        <div
+          className="modal-overlay"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(5, 8, 20, 0.85)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1100,
+            padding: 16
+          }}
+          onClick={() => setShowDrillModal(false)}
+        >
+          <div
+            className="modal-card"
+            style={{
+              width: '100%',
+              maxWidth: 960,
+              maxHeight: '92vh',
+              background: '#0f172a',
+              border: '1px solid rgba(165, 180, 252, 0.3)',
+              borderRadius: 14,
+              boxShadow: '0 25px 60px rgba(0, 0, 0, 0.9)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '14px 20px',
+                borderBottom: '1px solid var(--border)',
+                background: 'rgba(255,255,255,0.03)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(99, 102, 241, 0.15)', color: 'var(--accent-bright)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Utensils size={18} />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--text-primary)' }}>
+                    {drillRow.menu?.name} — Breakdown Variansi Resep Bahan
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                    Periode {period.from} s/d {period.to} · Kategori: {drillRow.menu?.category || 'Menu'}
+                  </div>
+                </div>
+              </div>
+              <button
+                className="btn btn-ghost btn-icon btn-sm"
+                onClick={() => setShowDrillModal(false)}
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: 20, overflowY: 'auto', flex: 1 }}>
+              {/* Mini Cards Summary */}
+              <div className="grid-4 gap-3 mb-4">
+                <MiniCard
+                  label="Penjualan (Qty Terjual)"
+                  value={`${drillRow.qty_terjual || 0} Porsi`}
+                />
+                <MiniCard
+                  label="Weighted Variance %"
+                  value={pct(drillRow.weighted_pct)}
+                  color={drillRow.weighted_pct > 5 ? 'var(--danger)' : 'inherit'}
+                />
+                <MiniCard
+                  label="Alokasi Nilai Variansi"
+                  value={rupiah(drillRow.variance_value)}
+                  color={drillRow.variance_value > 0 ? 'var(--danger)' : 'var(--ok)'}
+                />
+                <MiniCard
+                  label="Kontribusi thd Total Variansi"
+                  value={total !== 0 ? `${((drillRow.variance_value / total) * 100).toFixed(1)}%` : '—'}
+                />
+              </div>
+
+              {/* Recipe Breakdown Table */}
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Layers size={16} /> Komposisi Bahan dalam Resep & Alokasi Selisih
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Bahan Baku</th>
+                      <th className="right">Share Pemakaian</th>
+                      <th className="right">Variance % Bahan</th>
+                      <th className="right">Alokasi Nilai Selisih</th>
+                      <th className="right">Status Bahan</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {drillRow.items && drillRow.items.length > 0 ? (
+                      [...drillRow.items].sort((a, b) => Math.abs(b.alloc_value) - Math.abs(a.alloc_value)).map((it, i) => (
+                        <tr key={i}>
+                          <td style={{ fontWeight: 600 }}>{it.ingredient?.name}</td>
+                          <td className="mono right">{((it.share || 0) * 100).toFixed(1)}%</td>
+                          <td className="mono right">{it.variance_pct !== null ? pct(it.variance_pct) : '—'}</td>
+                          <td className="mono right" style={{ color: it.alloc_value > 0 ? 'var(--danger)' : 'var(--ok)', fontWeight: 600 }}>
+                            {rupiah(it.alloc_value)}
+                          </td>
+                          <td className="right"><StatusPill status={it.status} /></td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 18 }}>
+                          Tidak ada bahan terkait resep menu ini pada data variansi periode terpilih.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', background: 'rgba(255,255,255,0.02)' }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => setShowDrillModal(false)}>
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Inline Drill-down Card (Right below table) */}
+      {drillRow && (
+        <div className="card fade-in mb-4" style={{ border: '1px solid var(--accent-border)' }}>
+          <div className="flex-between mb-2">
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>{drillRow.menu?.name} — Breakdown per Bahan Baku</div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                Bahan dalam resep menu ini yang paling menyumbang variance ({drillRow.qty_terjual} porsi terjual).
+              </div>
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={() => setDrill(null)}>Tutup Detail</button>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Bahan</th>
+                  <th className="right">Share Pemakaian</th>
+                  <th className="right">Variance %</th>
+                  <th className="right">Alokasi Value</th>
+                  <th className="right">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {drillRow.items && drillRow.items.length > 0 ? (
+                  [...drillRow.items].sort((a, b) => Math.abs(b.alloc_value) - Math.abs(a.alloc_value)).map((it, i) => (
+                    <tr key={i}>
+                      <td style={{ fontWeight: 500 }}>{it.ingredient?.name}</td>
+                      <td className="mono right">{((it.share || 0) * 100).toFixed(0)}%</td>
+                      <td className="mono right">{it.variance_pct !== null ? pct(it.variance_pct) : '—'}</td>
+                      <td className="mono right" style={{ color: it.alloc_value > 0 ? 'var(--danger)' : 'var(--ok)', fontWeight: 600 }}>
+                        {rupiah(it.alloc_value)}
+                      </td>
+                      <td className="right"><StatusPill status={it.status} /></td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 14 }}>
+                      Tidak ada detail komposisi bahan dalam periode ini.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Matrix chart */}
       <div className="card" style={{ marginBottom: 16 }}>
@@ -181,40 +390,6 @@ export default function VarianceMenu() {
           <span>● <span style={{ color: 'var(--warn)' }}>Kuning</span> = tinggi/rendah (evaluasi recipe)</span>
         </div>
       </div>
-
-      {/* Drill-down */}
-      {drillRow && (
-        <div className="card fade-in">
-          <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>{drillRow.menu?.name} — Breakdown per Bahan</div>
-          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14 }}>Bahan dalam resep ini yang paling menyumbang variance.</div>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Bahan</th>
-                  <th className="right">Share Pemakaian</th>
-                  <th className="right">Variance %</th>
-                  <th className="right">Alokasi Value</th>
-                  <th className="right">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(drillRow.items || []).sort((a, b) => Math.abs(b.alloc_value) - Math.abs(a.alloc_value)).map((it, i) => (
-                  <tr key={i}>
-                    <td style={{ fontWeight: 500 }}>{it.ingredient?.name}</td>
-                    <td className="mono right">{((it.share || 0) * 100).toFixed(0)}%</td>
-                    <td className="mono right">{it.variance_pct !== null ? pct(it.variance_pct) : '—'}</td>
-                    <td className="mono right" style={{ color: it.alloc_value > 0 ? 'var(--danger)' : 'var(--ok)' }}>
-                      {rupiah(it.alloc_value)}
-                    </td>
-                    <td className="right"><StatusPill status={it.status} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       {/* Hidden Printable Container for PDF Export */}
       <div id="printable-variance-menu-report" style={{ display: 'none' }}>

@@ -11,6 +11,7 @@ import { printElement } from '../utils/print';
 export default function VarianceBahan() {
   const [varData, setVarData] = useState([]);
   const [drill, setDrill] = useState(null);
+  const [showDrillModal, setShowDrillModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState('cost_control'); // 'standard' | 'cost_control'
   const [showReportModal, setShowReportModal] = useState(false);
@@ -58,7 +59,7 @@ export default function VarianceBahan() {
     );
   }
 
-  const drillData = drill ? varData.find(iv => iv.ingredient?.id === drill) : null;
+  const drillData = drill ? varData.find(iv => String(iv.ingredient?.id) === String(drill)) : null;
 
   // Aggregate totals
   const totalWasteLoss = varData.reduce((acc, iv) => acc + (iv.waste_value || 0), 0);
@@ -241,8 +242,24 @@ export default function VarianceBahan() {
                     </td>
                     <td className="right"><StatusPill status={iv.status} /></td>
                     <td>
-                      <button className="btn btn-ghost btn-sm" onClick={() => setDrill(d => d === iv.ingredient?.id ? null : iv.ingredient?.id)}>
-                        {isSelected ? 'Tutup' : 'Drill →'}
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          fontSize: 12,
+                          fontWeight: 600,
+                          background: isSelected ? 'var(--accent)' : 'rgba(99, 102, 241, 0.1)',
+                          color: isSelected ? '#fff' : 'var(--accent-bright)',
+                          borderColor: 'rgba(99, 102, 241, 0.3)'
+                        }}
+                        onClick={() => {
+                          setDrill(iv.ingredient?.id);
+                          setShowDrillModal(true);
+                        }}
+                      >
+                        <Eye size={13} /> Drill →
                       </button>
                     </td>
                   </tr>
@@ -262,8 +279,24 @@ export default function VarianceBahan() {
                   </td>
                   <td className="right"><StatusPill status={iv.status} /></td>
                   <td>
-                    <button className="btn btn-ghost btn-sm" onClick={() => setDrill(d => d === iv.ingredient?.id ? null : iv.ingredient?.id)}>
-                      {isSelected ? 'Tutup' : 'Drill →'}
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        background: isSelected ? 'var(--accent)' : 'rgba(99, 102, 241, 0.1)',
+                        color: isSelected ? '#fff' : 'var(--accent-bright)',
+                        borderColor: 'rgba(99, 102, 241, 0.3)'
+                      }}
+                      onClick={() => {
+                        setDrill(iv.ingredient?.id);
+                        setShowDrillModal(true);
+                      }}
+                    >
+                      <Eye size={13} /> Drill →
                     </button>
                   </td>
                 </tr>
@@ -272,6 +305,195 @@ export default function VarianceBahan() {
           </tbody>
         </table>
       </div>
+
+      {/* Drill-down Detail Modal */}
+      {showDrillModal && drillData && (
+        <div
+          className="modal-overlay"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(5, 8, 20, 0.85)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1100,
+            padding: 16
+          }}
+          onClick={() => setShowDrillModal(false)}
+        >
+          <div
+            className="modal-card"
+            style={{
+              width: '100%',
+              maxWidth: 960,
+              maxHeight: '92vh',
+              background: '#0f172a',
+              border: '1px solid rgba(165, 180, 252, 0.3)',
+              borderRadius: 14,
+              boxShadow: '0 25px 60px rgba(0, 0, 0, 0.9)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal Top Bar */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '14px 20px',
+                borderBottom: '1px solid var(--border)',
+                background: 'rgba(255,255,255,0.03)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(99, 102, 241, 0.15)', color: 'var(--accent-bright)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Layers size={18} />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--text-primary)' }}>
+                    {drillData.ingredient?.name} — Analisis Pemisahan Cost Control & Waste
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                    Periode {period.from} s/d {period.to} · Toleransi Standar: {drillData.ingredient?.tolerance}%
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <StatusPill status={drillData.status} />
+                <button
+                  className="btn btn-ghost btn-icon btn-sm"
+                  onClick={() => setShowDrillModal(false)}
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: 20, overflowY: 'auto', flex: 1 }}>
+              {/* Mini Cards Grid */}
+              <div className="grid-4 gap-3 mb-4">
+                <MiniCard
+                  label="Pemakaian Teoritis (Resep POS)"
+                  value={`${num(drillData.pemakaian_teoritis)} ${drillData.ingredient?.unit_pakai}`}
+                />
+                <MiniCard
+                  label="Pemakaian Aktual (Fisik)"
+                  value={drillData.pemakaian_aktual !== null ? `${num(drillData.pemakaian_aktual)} ${drillData.ingredient?.unit_pakai}` : '—'}
+                />
+                <MiniCard
+                  label="Kerugian Waste Tercatat"
+                  value={drillData.waste_value > 0 ? `${num(drillData.waste_qty)} ${drillData.ingredient?.unit_pakai} (${rupiah(drillData.waste_value)})` : 'Rp 0'}
+                  color="#fb923c"
+                />
+                <MiniCard
+                  label="Selisih Tak Terjelaskan (Shrinkage)"
+                  value={drillData.variance_value !== null ? `${num(drillData.unaccounted_qty)} ${drillData.ingredient?.unit_pakai} (${rupiah(drillData.variance_value)})` : '—'}
+                  color={drillData.variance_value > 0 ? 'var(--danger)' : 'var(--ok)'}
+                />
+              </div>
+
+              {/* Waste vs Shrinkage Breakdown Explanation Bar */}
+              <div style={{
+                background: 'var(--bg-secondary)',
+                borderRadius: 8,
+                padding: '12px 16px',
+                marginBottom: 18,
+                border: '1px solid var(--border-color)',
+                fontSize: 12.5
+              }}>
+                <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--text-primary)' }}>
+                  🔎 Evaluasi Cost Control:
+                </div>
+                {drillData.waste_value > 0 ? (
+                  <div style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                    Dari selisih fisik kotor sebesar <strong>{num(drillData.variance_gross_qty)} {drillData.ingredient?.unit_pakai}</strong>,
+                    sebanyak <strong style={{ color: '#fb923c' }}>{num(drillData.waste_qty)} {drillData.ingredient?.unit_pakai} ({rupiah(drillData.waste_value)})</strong> merupakan kerusakan bahan resmi yang terdokumentasi (waste).
+                    Sisa selisih murni sebesar <strong style={{ color: drillData.variance_value > 0 ? 'var(--danger)' : 'var(--ok)' }}>
+                      {num(drillData.unaccounted_qty)} {drillData.ingredient?.unit_pakai} ({rupiah(drillData.variance_value)})
+                    </strong> adalah selisih tak terjelaskan yang memerlukan evaluasi tim koki / audit takaran porsi.
+                  </div>
+                ) : (
+                  <div style={{ color: 'var(--text-secondary)' }}>
+                    Tidak ada laporan kerusakan bahan (waste) tercatat untuk bahan ini pada periode berjalan. Seluruh selisih fisik murni berasal dari perbedaan takaran porsi atau kesalahan pencatatan.
+                  </div>
+                )}
+              </div>
+
+              {/* Documented Waste Events Log */}
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6, color: '#fb923c' }}>
+                  <Trash2 size={16} /> Riwayat Log Kejadian Kerusakan / Waste Tercatat
+                </div>
+
+                {drillData.waste_records && drillData.waste_records.length > 0 ? (
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Tanggal</th>
+                          <th>Alasan Kerusakan</th>
+                          <th className="right">Qty Rusak</th>
+                          <th className="right">Nilai Kerugian</th>
+                          <th>Petugas Pelapor</th>
+                          <th>Keterangan Dapur</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {drillData.waste_records.map(wr => {
+                          const reasonInfo = getWasteReason(wr.waste_reason);
+                          return (
+                            <tr key={wr.id}>
+                              <td className="mono" style={{ fontSize: 12 }}>{wr.date}</td>
+                              <td>
+                                <span style={{
+                                  fontSize: 11,
+                                  color: reasonInfo.badgeColor,
+                                  background: reasonInfo.bg,
+                                  padding: '2px 8px',
+                                  borderRadius: 4,
+                                  fontWeight: 600
+                                }}>
+                                  {reasonInfo.label}
+                                </span>
+                              </td>
+                              <td className="mono right" style={{ color: '#fb923c', fontWeight: 600 }}>
+                                {num(wr.qty)} {drillData.ingredient?.unit_pakai}
+                              </td>
+                              <td className="mono right" style={{ color: '#fb923c' }}>
+                                {rupiah(wr.value)}
+                              </td>
+                              <td style={{ fontSize: 12 }}>{wr.created_by_name}</td>
+                              <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{wr.note || '—'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '10px 0' }}>
+                    Tidak ada kejadian waste tercatat untuk bahan ini dalam periode {period.from} s/d {period.to}.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', background: 'rgba(255,255,255,0.02)' }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => setShowDrillModal(false)}>
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Drill-down Detail */}
       {drillData && (
