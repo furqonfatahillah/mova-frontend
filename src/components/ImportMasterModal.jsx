@@ -9,6 +9,7 @@ import { useOutlet } from '../context/OutletContext';
 import {
   downloadIngredientTemplate,
   downloadPerlengkapanTemplate,
+  downloadStockAwalGudangTemplate,
   downloadMenuTemplate,
   downloadReceivableTemplate,
   downloadOutletTemplate,
@@ -91,7 +92,7 @@ export function normalizeUnitClient(raw, fallback = 'pcs') {
 export default function ImportMasterModal({
   isOpen,
   onClose,
-  targetMaster = 'INGREDIENT', // 'INGREDIENT' | 'PERLENGKAPAN' | 'MENU' | 'RECEIVABLE' | 'OUTLET'
+  targetMaster = 'INGREDIENT', // 'INGREDIENT' | 'PERLENGKAPAN' | 'STOCK_AWAL_GUDANG' | 'MENU' | 'RECEIVABLE' | 'OUTLET'
   onSuccess,
 }) {
   const { outlets = [], currentBusiness, currentUser } = useOutlet();
@@ -106,6 +107,16 @@ export default function ImportMasterModal({
   const [importResult, setImportResult] = useState(null);
   const [previewFilter, setPreviewFilter] = useState('ALL');
   const fileInputRef = useRef(null);
+
+  // Sync selectedMaster when targetMaster or isOpen changes
+  useEffect(() => {
+    if (targetMaster) {
+      setSelectedMaster(targetMaster);
+      setFile(null);
+      setParsedRows([]);
+      setImportResult(null);
+    }
+  }, [targetMaster, isOpen]);
 
   // Fetch or sync outlets from master cabang
   useEffect(() => {
@@ -126,18 +137,25 @@ export default function ImportMasterModal({
 
   const MASTER_CONFIG = {
     INGREDIENT: {
-      title: 'Master Bahan (Bahan Baku, Stock Awal & Saldo Awal)',
+      title: 'Master Bahan & Saldo Awal (Terpusat)',
       downloadFn: downloadIngredientTemplate,
       endpoint: '/ingredients/bulk-import',
-      columns: ['Nama Bahan*', 'Kategori', 'Tipe*', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Stock Awal (Satuan Pakai)*', 'Saldo Awal (Rp)*', 'Stok Minimal', 'Batas Toleransi (%)'],
-      sampleHint: 'Master bahan terpusat untuk seluruh cabang usaha. Kolom "Stock Awal" (Kuantitas) & "Saldo Awal (Rp)" (Nominal) terpisah dan otomatis tercatat di Kartu Stok.',
+      columns: ['Nama Bahan*', 'Kategori', 'Tipe*', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Saldo Awal (Rp)*', 'Stok Minimal', 'Batas Toleransi (%)'],
+      sampleHint: 'Master bahan terpusat untuk seluruh cabang usaha beserta Saldo Awal Nilai Buku (HPP Master). Untuk stok fisik per cabang/gudang, gunakan opsi Stock Awal per Gudang.',
     },
     PERLENGKAPAN: {
-      title: 'Master Perlengkapan & Packaging (Stock Awal & Saldo Awal)',
+      title: 'Master Perlengkapan & Saldo Awal (Terpusat)',
       downloadFn: downloadPerlengkapanTemplate,
       endpoint: '/perlengkapans/bulk-import',
-      columns: ['Nama Perlengkapan*', 'Kategori', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Stock Awal (Satuan Pakai)*', 'Saldo Awal (Rp)*', 'Stok Minimal', 'Batas Toleransi (%)'],
-      sampleHint: 'Master perlengkapan terpusat untuk seluruh cabang usaha. Kolom "Stock Awal" (Kuantitas) & "Saldo Awal (Rp)" (Nominal) terpisah dan otomatis tercatat di Kartu Stok.',
+      columns: ['Nama Perlengkapan*', 'Kategori', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Saldo Awal (Rp)*', 'Stok Minimal', 'Batas Toleransi (%)'],
+      sampleHint: 'Master perlengkapan & packaging terpusat beserta Saldo Awal Nilai Buku.',
+    },
+    STOCK_AWAL_GUDANG: {
+      title: 'Stock Awal per Gudang / Cabang (Alokasi Multi-Gudang)',
+      downloadFn: downloadStockAwalGudangTemplate,
+      endpoint: '/stock-card/bulk-import-initial',
+      columns: ['Cabang / Gudang*', 'Nama Bahan / Item*', 'Kategori', 'Tipe Satuan*', 'Satuan*', 'Stock Awal Fisik*', 'Harga/Modal Satuan', 'Stok Minimal', 'Tanggal Efektif'],
+      sampleHint: 'Alokasikan stok fisik awal spesifik per cabang atau gudang (Gudang Utama, Cabang A, Cabang B). Stok langsung tercatat di Kartu Stok masing-masing cabang.',
     },
     MENU: {
       title: 'Master Menu & F&B',
@@ -509,6 +527,69 @@ export default function ImportMasterModal({
             _uPakai: uPakai,
           };
 
+        } else if (currentMasterType === 'STOCK_AWAL_GUDANG') {
+          let outletName = getVal(row, ['namacabanggudang', 'namacabang', 'cabanggudang', 'cabang', 'namaoutlet', 'outlet', 'gudang', 'namagudang']);
+          let code = getVal(row, ['kodebahanperlengkapan', 'kodebahan', 'kodeitem', 'kodeperlengkapan', 'kode', 'code', 'sku']);
+          let name = getVal(row, ['namabahanitempersediaan', 'namabahan', 'namaitem', 'namabarang', 'namaperlengkapan', 'nama', 'bahan', 'item']);
+
+          if (!code && keys[1] && keys[1].toLowerCase().includes('kode')) {
+            code = String(row[keys[1]] || '').trim();
+          }
+          if (!name && keys[2] && keys[2].toLowerCase().includes('nama')) {
+            name = String(row[keys[2]] || '').trim();
+          }
+          if (!name) {
+            const nameKey = keys.find(k => {
+              const cl = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+              return cl.includes('nama') || cl.includes('bahan') || cl.includes('barang') || cl.includes('item');
+            });
+            if (nameKey) name = String(row[nameKey] || '').trim();
+          }
+
+          const category = getVal(row, ['kategoriopsional', 'kategori', 'category']) || '';
+          const unitTypeRaw = getVal(row, ['tipesatuaninput', 'tipesatuan', 'unittype', 'tipe']).toUpperCase();
+          const unitType = unitTypeRaw.includes('BELI') ? 'BELI' : 'PAKAI';
+          const rawUnit = getVal(row, ['satuan', 'unit', 'satuaninput']);
+          const uUnit = normalizeUnitClient(rawUnit, unitType === 'BELI' ? 'kg' : 'gram');
+
+          const initialStock = parseFloat(getVal(row, [
+            'kuantitasstockawalfisik', 'kuantitasstokawalfisik', 'stockawalfisik', 'stokawalfisik',
+            'stockawal', 'stokawal', 'stock_awal', 'stok_awal', 'qty', 'kuantitas', 'jumlahstok', 'jumlah'
+          ])) || 0;
+
+          const harga = parseFloat(getVal(row, [
+            'harganilaimodalsatuanrp', 'harganilaimodalsatuan', 'harganilaimodal', 'hargasatuan', 'hargamodal', 'harga', 'hargabeli', 'modal', 'cost'
+          ])) || 0;
+
+          const minStock = parseFloat(getVal(row, [
+            'stokminimalgudang', 'stokminimal', 'stokmin', 'minstok', 'minimumstok', 'minstock'
+          ])) || 0;
+
+          const effectiveDate = getVal(row, ['tanggalefektif', 'tanggal', 'date']) || new Date().toISOString().slice(0, 10);
+          const notes = getVal(row, ['catatanketerangan', 'catatan', 'keterangan']);
+
+          if (!name) errors.push('Nama bahan / item wajib diisi.');
+          if (initialStock <= 0) errors.push('Kuantitas stock awal fisik harus lebih dari 0.');
+          if (harga < 0) errors.push('Harga/modal tidak boleh negatif.');
+
+          mappedData = {
+            outlet_name: outletName,
+            code,
+            name,
+            category,
+            unit_type: unitType,
+            unit: uUnit.symbol,
+            initial_stock: initialStock,
+            stok_awal: initialStock,
+            qty: initialStock,
+            harga,
+            unit_price: harga,
+            stok_min: minStock,
+            date: effectiveDate,
+            notes: notes || `Stock awal fisik per gudang: ${outletName || 'Gudang Utama'}`,
+            _uRaw: uUnit,
+          };
+
         } else if (currentMasterType === 'MENU') {
           let code = getVal(row, ['kodemenu', 'kode', 'code', 'sku']);
           let name = getVal(row, ['namamenu', 'nama', 'itemname', 'menu']);
@@ -708,6 +789,7 @@ export default function ImportMasterModal({
           {[
             { key: 'INGREDIENT', label: 'Master Bahan & Saldo Awal' },
             { key: 'PERLENGKAPAN', label: 'Master Perlengkapan & Saldo Awal' },
+            { key: 'STOCK_AWAL_GUDANG', label: 'Stock Awal per Gudang' },
             { key: 'MENU', label: 'Master Menu' },
             { key: 'RECEIVABLE', label: 'Kasbon / Piutang' },
             { key: 'OUTLET', label: 'Outlet & Gudang' },
@@ -1013,6 +1095,24 @@ export default function ImportMasterModal({
                             {(row.data._uBeli?.isNew || row.data._uPakai?.isNew) && (
                               <span style={{ background: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }} title="Satuan baru otomatis didaftarkan ke Master Satuan">
                                 ✨ Satuan Baru
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {currentMasterType === 'STOCK_AWAL_GUDANG' && (
+                          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+                            <span style={{ background: 'rgba(14, 165, 233, 0.2)', color: '#38bdf8', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>
+                              📍 {row.data.outlet_name || 'Gudang Utama'}
+                            </span>
+                            <span>
+                              Stock Awal: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit}</strong> ({row.data.unit_type === 'BELI' ? 'Satuan Beli' : 'Satuan Pakai'})
+                              {row.data.harga > 0 ? ` · Modal/Harga: ${rupiah(row.data.harga)}` : ''}
+                              {row.data.stok_min > 0 ? ` · Min: ${num(row.data.stok_min)}` : ''}
+                              {row.data.date ? ` · Tgl: ${row.data.date}` : ''}
+                            </span>
+                            {row.data._uRaw?.isFixed && (
+                              <span style={{ background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }} title="Typo/singkatan otomatis diperbaiki ke format standar">
+                                ✓ Auto-Fix ({row.data._uRaw.original})
                               </span>
                             )}
                           </div>

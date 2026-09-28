@@ -28,7 +28,9 @@ export default function MasterMenu() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('recipe'); // 'recipe' | 'modifiers' | 'hpp-history'
-  const [selectedType, setSelectedType] = useState('ALL'); // 'ALL' | 'RECIPE' | 'DIRECT' | 'SERVICE'
+  const [selectedType, setSelectedType] = useState('ALL'); // 'ALL' | 'RECIPE' | 'DIRECT' | 'SERVICE' | 'BUNDLE'
+  const [searchTerm, setSearchTerm] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('ALL');
 
   // State Riwayat HPP (Weighted Moving Average)
   const [hppHistoryData, setHppHistoryData] = useState(null);
@@ -45,19 +47,22 @@ export default function MasterMenu() {
   const [modalOpen, setModalOpen] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [modalMode, setModalMode] = useState('create'); // 'create' | 'edit'
+  const [editingMenuId, setEditingMenuId] = useState(null);
   const [menuForm, setMenuForm] = useState({
     code: '',
     barcode: '',
     name: '',
     description: '',
     category: 'Main',
-    item_type: 'RECIPE', // 'RECIPE' | 'DIRECT' | 'SERVICE'
+    item_type: 'RECIPE', // 'RECIPE' | 'DIRECT' | 'SERVICE' | 'BUNDLE'
     track_stock: true,
     stock: 0,
     min_stock: 5,
     price: '',
     cost_price: '',
     unit: 'porsi',
+    active: true,
+    bundle_items: [],
   });
 
   // Modal State for Modifier Group
@@ -73,6 +78,13 @@ export default function MasterMenu() {
       { name: '', price: 0, ingredient_id: '', qty: 0, unit: 'gram' }
     ]
   });
+
+  const availableMenuCategories = useMemo(() => {
+    const fromDb = (categories || []).filter(c => c.type === 'MENU' || !c.type || c.type === 'GENERAL').map(c => c.name).filter(Boolean);
+    const fromMenus = (menus || []).map(m => m.category).filter(Boolean);
+    const standard = ['Main', 'Minuman', 'Snack', 'Retail', 'Jasa', 'Dessert', 'Paket', 'Lainnya'];
+    return Array.from(new Set([...standard, ...fromDb, ...fromMenus]));
+  }, [categories, menus]);
 
   const perlengkapanIngredients = useMemo(() => {
     return (ingredients || []).filter(i => {
@@ -273,14 +285,16 @@ export default function MasterMenu() {
 
   async function fetchAll(selectId = null) {
     try {
-      const [m, i, mg] = await Promise.all([
+      const [m, i, mg, c] = await Promise.all([
         api.get('/menus'),
         api.get('/ingredients'),
-        api.get('/modifier-groups')
+        api.get('/modifier-groups'),
+        api.get('/categories?type=MENU').catch(() => ({ data: [] }))
       ]);
       setMenus(m.data);
       setIngredients(i.data);
       setModifierGroups(mg.data || []);
+      setCategories(c.data || []);
       if (selectId) {
         const found = m.data.find(item => item.id === selectId);
         if (found) setSelected(found);
@@ -311,6 +325,7 @@ export default function MasterMenu() {
 
   function openCreateModal() {
     setModalMode('create');
+    setEditingMenuId(null);
     setMenuForm({
       code: getNextMenuCode(),
       barcode: '',
@@ -324,6 +339,7 @@ export default function MasterMenu() {
       price: '',
       cost_price: '',
       unit: 'porsi',
+      active: true,
       bundle_items: [],
     });
     setModalOpen(true);
@@ -331,19 +347,21 @@ export default function MasterMenu() {
 
   function openEditModal(menu) {
     setModalMode('edit');
+    setEditingMenuId(menu.id);
     setMenuForm({
-      code: menu.code,
+      code: menu.code || '',
       barcode: menu.barcode || '',
-      name: menu.name,
+      name: menu.name || '',
       description: menu.description || '',
       category: menu.category || 'Main',
       item_type: menu.item_type || 'RECIPE',
       track_stock: menu.track_stock !== false,
       stock: menu.stock ?? 0,
       min_stock: menu.min_stock ?? 5,
-      price: menu.price,
+      price: menu.price ?? '',
       cost_price: menu.cost_price ?? '',
       unit: menu.unit || (menu.item_type === 'DIRECT' ? 'pcs' : (menu.item_type === 'SERVICE' ? 'layanan' : (menu.item_type === 'BUNDLE' ? 'paket' : 'porsi'))),
+      active: menu.active !== false,
       bundle_items: (menu.bundle_items || menu.bundleItems || []).map(bi => ({
         bundled_menu_id: bi.bundled_menu_id || bi.bundledMenu?.id || '',
         ingredient_id: bi.ingredient_id || '',
@@ -354,8 +372,22 @@ export default function MasterMenu() {
     setModalOpen(true);
   }
 
+  async function handleToggleMenuStatus(menu) {
+    try {
+      const res = await api.patch(`/menus/${menu.id}/toggle-active`);
+      const newActive = res.data.active;
+      toast.success(res.data.message || `Status menu diperbarui`);
+      setMenus(prev => prev.map(item => item.id === menu.id ? { ...item, active: newActive } : item));
+      if (selected?.id === menu.id) {
+        setSelected(prev => ({ ...prev, active: newActive }));
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal mengubah status aktif produk');
+    }
+  }
+
   function addBundleItem() {
-    const firstOther = menus.find(m => m.id !== selected?.id) || menus[0];
+    const firstOther = menus.find(m => m.id !== (editingMenuId || selected?.id)) || menus[0];
     setMenuForm(f => ({
       ...f,
       bundle_items: [
@@ -414,10 +446,13 @@ export default function MasterMenu() {
     try {
       const payload = {
         ...menuForm,
+        code: menuForm.code.trim().toUpperCase(),
+        name: menuForm.name.trim(),
         price: Number(menuForm.price),
         cost_price: menuForm.cost_price !== '' ? Number(menuForm.cost_price) : 0,
         stock: Number(menuForm.stock) || 0,
         min_stock: Number(menuForm.min_stock) || 0,
+        active: Boolean(menuForm.active),
         bundle_items: menuForm.item_type === 'BUNDLE' ? (menuForm.bundle_items || []).map(bi => ({
           bundled_menu_id: bi.bundled_menu_id ? Number(bi.bundled_menu_id) : null,
           ingredient_id: bi.ingredient_id ? Number(bi.ingredient_id) : null,
@@ -436,7 +471,8 @@ export default function MasterMenu() {
           setDraft([{ ingredient_id: ingredients[0]?.id || 1, qty: 100, unit: ingredients[0]?.unit_pakai || 'gram', waste_std: 0 }]);
         }
       } else {
-        const { data } = await api.put(`/menus/${selected.id}`, payload);
+        const targetId = editingMenuId || selected?.id;
+        const { data } = await api.put(`/menus/${targetId}`, payload);
         toast.success(`Produk "${data.name}" berhasil diperbarui!`);
         setModalOpen(false);
         await fetchAll(data.id);
@@ -531,13 +567,31 @@ export default function MasterMenu() {
     }
   }
 
-  // Filtered menus
+  // Filtered menus with Type, Category, and Search Term
   const filteredMenus = useMemo(() => {
-    return menus.filter(m => {
-      if (selectedType === 'ALL') return true;
-      return (m.item_type || 'RECIPE') === selectedType;
+    return (menus || []).filter(m => {
+      // 1. Type Filter
+      if (selectedType !== 'ALL' && (m.item_type || 'RECIPE') !== selectedType) {
+        return false;
+      }
+      // 2. Category Filter
+      if (categoryFilter !== 'ALL' && (m.category || 'Main') !== categoryFilter) {
+        return false;
+      }
+      // 3. Search Term (Keyword: name, code, barcode, category)
+      if (searchTerm.trim()) {
+        const q = searchTerm.toLowerCase().trim();
+        const matchName = (m.name || '').toLowerCase().includes(q);
+        const matchCode = (m.code || '').toLowerCase().includes(q);
+        const matchBarcode = (m.barcode || '').toLowerCase().includes(q);
+        const matchCat = (m.category || '').toLowerCase().includes(q);
+        if (!matchName && !matchCode && !matchBarcode && !matchCat) {
+          return false;
+        }
+      }
+      return true;
     });
-  }, [menus, selectedType]);
+  }, [menus, selectedType, categoryFilter, searchTerm]);
 
   // Bulk selection state & handlers for menus
   const [selectedMenuIds, setSelectedMenuIds] = useState([]);
@@ -954,7 +1008,7 @@ export default function MasterMenu() {
         {/* Menu List */}
         <div>
           {/* Type Filter Tabs */}
-          <div style={{ display: 'flex', gap: 4, marginBottom: 10, background: 'rgba(255,255,255,0.03)', padding: 3, borderRadius: 8, border: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', gap: 4, marginBottom: 8, background: 'rgba(255,255,255,0.03)', padding: 3, borderRadius: 8, border: '1px solid var(--border)' }}>
             {[
               { id: 'ALL', label: 'Semua' },
               { id: 'RECIPE', label: 'Resep' },
@@ -982,6 +1036,56 @@ export default function MasterMenu() {
                 {t.label}
               </button>
             ))}
+          </div>
+
+          {/* Search Bar & Category Filter */}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+            <div style={{ position: 'relative', flex: 1 }}>
+              <Search size={13} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+              <input
+                type="text"
+                className="form-control"
+                style={{ paddingLeft: 26, paddingRight: searchTerm ? 24 : 8, fontSize: 11.5, height: 32 }}
+                placeholder="Cari nama, kode, barcode..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  style={{
+                    position: 'absolute',
+                    right: 6,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    padding: 2,
+                    display: 'flex',
+                    alignItems: 'center',
+                  }}
+                  title="Hapus pencarian"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+
+            <select
+              className="form-control"
+              style={{ width: 110, fontSize: 11.5, height: 32, padding: '2px 6px' }}
+              value={categoryFilter}
+              onChange={e => setCategoryFilter(e.target.value)}
+              title="Filter Kategori"
+            >
+              <option value="ALL">Semua Kat.</option>
+              {availableMenuCategories.map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, padding: '0 4px' }}>
@@ -1049,148 +1153,195 @@ export default function MasterMenu() {
           )}
 
           <div className="recipe-list">
-            {filteredMenus.map(m => {
-              const mIsDirect = m.item_type === 'DIRECT';
-              const mIsService = m.item_type === 'SERVICE';
-              const mStock = m.current_stock ?? m.stock ?? 0;
-              const isMenuSelected = selectedMenuIds.includes(m.id);
+            {filteredMenus.length === 0 ? (
+              <div style={{ padding: '24px 12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                {searchTerm || categoryFilter !== 'ALL'
+                  ? 'Tidak ada produk yang cocok dengan filter pencarian.'
+                  : 'Belum ada produk. Klik "+ Tambah Produk / Menu" di atas.'}
+              </div>
+            ) : (
+              filteredMenus.map(m => {
+                const mIsDirect = m.item_type === 'DIRECT';
+                const mIsService = m.item_type === 'SERVICE';
+                const mStock = m.current_stock ?? m.stock ?? 0;
+                const isMenuSelected = selectedMenuIds.includes(m.id);
+                const isInactive = m.active === false;
 
-              return (
-                <button
-                  key={m.id}
-                  className={`recipe-item${selected?.id === m.id ? ' active' : ''}`}
-                  onClick={() => { setSelected(m); setDraft(null); }}
-                  style={isMenuSelected ? { borderColor: 'rgba(225, 29, 72, 0.5)', background: 'rgba(225, 29, 72, 0.06)' } : {}}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div className="recipe-item-name" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <input
-                        type="checkbox"
-                        checked={isMenuSelected}
-                        onClick={e => e.stopPropagation()}
-                        onChange={() => toggleSelectMenu(m.id)}
-                        style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--primary)', flexShrink: 0 }}
-                      />
-                      {mIsDirect && <Package size={13} color="#60a5fa" />}
-                      {mIsService && <Scissors size={13} color="#c084fc" />}
-                      {m.item_type === 'BUNDLE' && <Layers size={13} color="#f43f5e" />}
-                      {!mIsDirect && !mIsService && m.item_type !== 'BUNDLE' && <UtensilsCrossed size={13} color="#34d399" />}
-                      <span>{m.name}</span>
-                    </div>
-                    <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.05)', padding: '1px 5px', borderRadius: 4 }}>
-                      {m.code}
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
-                    <span className="recipe-item-price">{rupiah(m.price)}</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      {mIsDirect && (
-                        <span style={{
-                          fontSize: 9.5,
-                          background: mStock <= (m.min_stock || 0) ? 'rgba(244, 63, 94, 0.15)' : 'rgba(59, 130, 246, 0.15)',
-                          color: mStock <= (m.min_stock || 0) ? '#f43f5e' : '#93c5fd',
-                          border: `1px solid ${mStock <= (m.min_stock || 0) ? 'rgba(244, 63, 94, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
-                          padding: '0 4px',
-                          borderRadius: 4
-                        }}>
-                          Stok: {num(mStock)} {m.unit || 'pcs'}
-                        </span>
-                      )}
-                      {mIsService && (
-                        <span style={{
-                          fontSize: 9.5,
-                          background: 'rgba(168, 85, 247, 0.15)',
-                          color: '#e9d5ff',
-                          border: '1px solid rgba(168, 85, 247, 0.3)',
-                          padding: '0 4px',
-                          borderRadius: 4
-                        }}>
-                          Jasa
-                        </span>
-                      )}
-                      {m.item_type === 'BUNDLE' && (
-                        <span style={{
-                          fontSize: 9.5,
-                          background: 'rgba(244, 63, 94, 0.15)',
-                          color: '#fda4af',
-                          border: '1px solid rgba(244, 63, 94, 0.3)',
-                          padding: '0 4px',
-                          borderRadius: 4
-                        }}>
-                          🎁 Bundling
-                        </span>
-                      )}
-                      {!mIsDirect && !mIsService && m.item_type !== 'BUNDLE' && (
-                        <span style={{
-                          fontSize: 9.5,
-                          background: 'rgba(16, 185, 129, 0.15)',
-                          color: '#6ee7b7',
-                          border: '1px solid rgba(16, 185, 129, 0.3)',
-                          padding: '0 4px',
-                          borderRadius: 4
-                        }}>
-                          Resep
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Secondary Comparative Row: Estimasi HPP vs BOM HPP */}
-                  {!mIsService && (
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      marginTop: 5,
-                      paddingTop: 4,
-                      borderTop: '1px dashed rgba(255, 255, 255, 0.06)',
-                      fontSize: 10.5,
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <span style={{ color: 'var(--text-muted)' }} title="Estimasi HPP Dasar Target">
-                          Est: <strong style={{ color: '#93c5fd' }}>{m.cost_price > 0 ? rupiah(m.cost_price) : '-'}</strong>
-                        </span>
-                        <span style={{ color: 'rgba(255, 255, 255, 0.2)' }}>·</span>
-                        <span style={{ color: 'var(--text-muted)' }} title="HPP Resep (Kalkulasi BOM)">
-                          BOM: <strong style={{ color: 'var(--accent-bright)' }}>
-                            {(() => {
-                              const r = m.recipes?.[0];
-                              if (!r) return m.cost_price > 0 ? rupiah(m.cost_price) : '-';
-                              const bCost = (r.items || []).reduce((s, it) => {
-                                const ing = ingredients.find(i => i.id === it.ingredient_id);
-                                return ing ? s + (Number(it.qty) || 0) * (Number(ing.harga || 0) / Math.max(Number(ing.konversi || 1), 1)) : s;
-                              }, 0);
-                              return rupiah(bCost);
-                            })()}
-                          </strong>
+                return (
+                  <button
+                    key={m.id}
+                    className={`recipe-item${selected?.id === m.id ? ' active' : ''}`}
+                    onClick={() => { setSelected(m); setDraft(null); }}
+                    style={{
+                      ...(isMenuSelected ? { borderColor: 'rgba(225, 29, 72, 0.5)', background: 'rgba(225, 29, 72, 0.06)' } : {}),
+                      ...(isInactive ? { opacity: 0.65 } : {})
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div className="recipe-item-name" style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
+                        <input
+                          type="checkbox"
+                          checked={isMenuSelected}
+                          onClick={e => e.stopPropagation()}
+                          onChange={() => toggleSelectMenu(m.id)}
+                          style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--primary)', flexShrink: 0 }}
+                        />
+                        {mIsDirect && <Package size={13} color="#60a5fa" style={{ flexShrink: 0 }} />}
+                        {mIsService && <Scissors size={13} color="#c084fc" style={{ flexShrink: 0 }} />}
+                        {m.item_type === 'BUNDLE' && <Layers size={13} color="#f43f5e" style={{ flexShrink: 0 }} />}
+                        {!mIsDirect && !mIsService && m.item_type !== 'BUNDLE' && <UtensilsCrossed size={13} color="#34d399" style={{ flexShrink: 0 }} />}
+                        <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{m.name}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                        {isInactive && (
+                          <span style={{ fontSize: 9, color: '#fb7185', background: 'rgba(244, 63, 94, 0.15)', border: '1px solid rgba(244, 63, 94, 0.3)', padding: '0 4px', borderRadius: 4, fontWeight: 700 }}>
+                            Off
+                          </span>
+                        )}
+                        <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.05)', padding: '1px 5px', borderRadius: 4 }}>
+                          {m.code}
                         </span>
                       </div>
-                      {m.cost_price > 0 && m.recipes?.[0] && (() => {
-                        const r = m.recipes[0];
-                        const bCost = (r.items || []).reduce((s, it) => {
-                          const ing = ingredients.find(i => i.id === it.ingredient_id);
-                          return ing ? s + (Number(it.qty) || 0) * (Number(ing.harga || 0) / Math.max(Number(ing.konversi || 1), 1)) : s;
-                        }, 0);
-                        const isHemat = bCost <= Number(m.cost_price);
-                        return (
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                      <span className="recipe-item-price">{rupiah(m.price)}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {mIsDirect && (
                           <span style={{
                             fontSize: 9.5,
-                            fontWeight: 700,
-                            padding: '1px 5px',
-                            borderRadius: 4,
-                            background: isHemat ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)',
-                            color: isHemat ? '#34d399' : '#fb7185',
-                            border: `1px solid ${isHemat ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)'}`,
+                            background: mStock <= (m.min_stock || 0) ? 'rgba(244, 63, 94, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                            color: mStock <= (m.min_stock || 0) ? '#f43f5e' : '#93c5fd',
+                            border: `1px solid ${mStock <= (m.min_stock || 0) ? 'rgba(244, 63, 94, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
+                            padding: '0 4px',
+                            borderRadius: 4
                           }}>
-                            {isHemat ? 'Hemat' : 'Over'}
+                            Stok: {num(mStock)} {m.unit || 'pcs'}
                           </span>
-                        );
-                      })()}
+                        )}
+                        {mIsService && (
+                          <span style={{
+                            fontSize: 9.5,
+                            background: 'rgba(168, 85, 247, 0.15)',
+                            color: '#e9d5ff',
+                            border: '1px solid rgba(168, 85, 247, 0.3)',
+                            padding: '0 4px',
+                            borderRadius: 4
+                          }}>
+                            Jasa
+                          </span>
+                        )}
+                        {m.item_type === 'BUNDLE' && (
+                          <span style={{
+                            fontSize: 9.5,
+                            background: 'rgba(244, 63, 94, 0.15)',
+                            color: '#fda4af',
+                            border: '1px solid rgba(244, 63, 94, 0.3)',
+                            padding: '0 4px',
+                            borderRadius: 4
+                          }}>
+                            🎁 Paket
+                          </span>
+                        )}
+                        {!mIsDirect && !mIsService && m.item_type !== 'BUNDLE' && (
+                          <span style={{
+                            fontSize: 9.5,
+                            background: 'rgba(16, 185, 129, 0.15)',
+                            color: '#6ee7b7',
+                            border: '1px solid rgba(16, 185, 129, 0.3)',
+                            padding: '0 4px',
+                            borderRadius: 4
+                          }}>
+                            Resep
+                          </span>
+                        )}
+
+                        {/* Quick Edit Action Button directly on list card */}
+                        <span
+                          role="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelected(m);
+                            openEditModal(m);
+                          }}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 3,
+                            fontSize: 10,
+                            fontWeight: 700,
+                            color: '#a5b4fc',
+                            background: 'rgba(99, 102, 241, 0.12)',
+                            border: '1px solid rgba(99, 102, 241, 0.35)',
+                            borderRadius: 4,
+                            padding: '1px 6px',
+                            cursor: 'pointer',
+                            marginLeft: 2,
+                            transition: 'all 0.15s ease'
+                          }}
+                          title="Edit produk ini"
+                        >
+                          <Edit2 size={10} /> Edit
+                        </span>
+                      </div>
                     </div>
-                  )}
-                </button>
-              );
-            })}
+
+                    {/* Secondary Comparative Row: Estimasi HPP vs BOM HPP */}
+                    {!mIsService && (
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginTop: 5,
+                        paddingTop: 4,
+                        borderTop: '1px dashed rgba(255, 255, 255, 0.06)',
+                        fontSize: 10.5,
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                          <span style={{ color: 'var(--text-muted)' }} title="Estimasi HPP Dasar Target">
+                            Est: <strong style={{ color: '#93c5fd' }}>{m.cost_price > 0 ? rupiah(m.cost_price) : '-'}</strong>
+                          </span>
+                          <span style={{ color: 'rgba(255, 255, 255, 0.2)' }}>·</span>
+                          <span style={{ color: 'var(--text-muted)' }} title="HPP Resep (Kalkulasi BOM)">
+                            BOM: <strong style={{ color: 'var(--accent-bright)' }}>
+                              {(() => {
+                                const r = m.recipes?.[0];
+                                if (!r) return m.cost_price > 0 ? rupiah(m.cost_price) : '-';
+                                const bCost = (r.items || []).reduce((s, it) => {
+                                  const ing = ingredients.find(i => i.id === it.ingredient_id);
+                                  return ing ? s + (Number(it.qty) || 0) * (Number(ing.harga || 0) / Math.max(Number(ing.konversi || 1), 1)) : s;
+                                }, 0);
+                                return rupiah(bCost);
+                              })()}
+                            </strong>
+                          </span>
+                        </div>
+                        {m.cost_price > 0 && m.recipes?.[0] && (() => {
+                          const r = m.recipes[0];
+                          const bCost = (r.items || []).reduce((s, it) => {
+                            const ing = ingredients.find(i => i.id === it.ingredient_id);
+                            return ing ? s + (Number(it.qty) || 0) * (Number(ing.harga || 0) / Math.max(Number(ing.konversi || 1), 1)) : s;
+                          }, 0);
+                          const isHemat = bCost <= Number(m.cost_price);
+                          return (
+                            <span style={{
+                              fontSize: 9.5,
+                              fontWeight: 700,
+                              padding: '1px 5px',
+                              borderRadius: 4,
+                              background: isHemat ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)',
+                              color: isHemat ? '#34d399' : '#fb7185',
+                              border: `1px solid ${isHemat ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)'}`,
+                            }}>
+                              {isHemat ? 'Hemat' : 'Over'}
+                            </span>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </button>
+                );
+              })
+            )}
           </div>
         </div>
 
@@ -1199,23 +1350,54 @@ export default function MasterMenu() {
           <div className="card">
             <div className="flex-between mb-4" style={{ alignItems: 'flex-start' }}>
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <div style={{ fontWeight: 700, fontSize: 18 }}>{selected.name}</div>
                   <button
-                    className="btn btn-ghost btn-sm"
-                    style={{ padding: '4px 8px', fontSize: 11 }}
+                    className="btn btn-primary btn-sm"
+                    style={{ padding: '4px 10px', fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 5, fontWeight: 700 }}
                     onClick={() => openEditModal(selected)}
-                    title="Edit info menu"
+                    title="Edit info, harga, dan pengaturan produk"
                   >
-                    Edit Menu
+                    <Edit2 size={12} /> Edit Menu
                   </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: selected.active !== false ? '#34d399' : '#f43f5e',
+                      border: `1px solid ${selected.active !== false ? 'rgba(52, 211, 153, 0.3)' : 'rgba(244, 63, 94, 0.3)'}`,
+                      background: selected.active !== false ? 'rgba(52, 211, 153, 0.1)' : 'rgba(244, 63, 94, 0.1)'
+                    }}
+                    onClick={() => handleToggleMenuStatus(selected)}
+                    title="Klik untuk aktifkan/nonaktifkan menu di layar POS kasir"
+                  >
+                    {selected.active !== false ? '✓ Aktif di POS' : '✕ Nonaktif di POS'}
+                  </button>
+                  {isDirect && (
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      style={{ padding: '4px 8px', fontSize: 11, color: '#60a5fa', borderColor: 'rgba(96, 165, 250, 0.4)' }}
+                      onClick={() => {
+                        setRestockQty(10);
+                        setRestockCost(selected.cost_price || '');
+                        setRestockTotalCost('');
+                        setRestockModalOpen(true);
+                      }}
+                      title="Tambah stok retail masuk"
+                    >
+                      <Package size={12} /> Restock
+                    </button>
+                  )}
                   <button
                     className="btn btn-ghost btn-sm"
                     style={{ padding: '4px 8px', fontSize: 11, color: 'var(--danger)' }}
                     onClick={() => handleDeleteMenu(selected)}
                     title="Hapus menu"
                   >
-                    Hapus
+                    <Trash2 size={12} /> Hapus
                   </button>
                 </div>
                 <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 4 }}>
@@ -2868,10 +3050,18 @@ export default function MasterMenu() {
       {/* Modal Tambah / Edit Menu */}
       {modalOpen && (
         <div className="modal-overlay" onClick={() => setModalOpen(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 640, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
             <div className="modal-header">
-              <div className="modal-title">
-                {modalMode === 'create' ? 'Tambah Menu Baru' : `Edit Menu — ${menuForm.code}`}
+              <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <Edit2 size={18} color="var(--accent)" />
+                <span>
+                  {modalMode === 'create' ? 'Tambah Produk & Menu Baru' : `Edit Produk: ${menuForm.name || 'Menu'}`}
+                </span>
+                {modalMode === 'edit' && menuForm.code && (
+                  <span style={{ fontSize: 11, background: 'rgba(99, 102, 241, 0.2)', color: 'var(--accent-bright)', padding: '2px 8px', borderRadius: 6, fontWeight: 700, fontFamily: 'monospace' }}>
+                    {menuForm.code}
+                  </span>
+                )}
               </div>
               <button
                 className="btn btn-ghost btn-sm"
@@ -2882,17 +3072,17 @@ export default function MasterMenu() {
               </button>
             </div>
 
-            <form onSubmit={handleSaveMenu}>
-              <div className="modal-body">
+            <form onSubmit={handleSaveMenu} style={{ overflowY: 'auto', flex: 1, paddingRight: 4 }}>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 {/* Product Type Selector */}
-                <div className="form-group mb-3">
+                <div className="form-group">
                   <label className="form-label" style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
                     <Sparkles size={14} color="var(--accent)" /> Tipe Produk / Penjualan
                   </label>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginTop: 4 }}>
                     <button
                       type="button"
-                      onClick={() => setMenuForm(f => ({ ...f, item_type: 'RECIPE', unit: 'porsi' }))}
+                      onClick={() => setMenuForm(f => ({ ...f, item_type: 'RECIPE', unit: f.unit || 'porsi' }))}
                       style={{
                         padding: '10px 6px',
                         borderRadius: 8,
@@ -2906,6 +3096,7 @@ export default function MasterMenu() {
                         flexDirection: 'column',
                         alignItems: 'center',
                         gap: 4,
+                        transition: 'all 0.15s ease'
                       }}
                     >
                       <UtensilsCrossed size={16} />
@@ -2914,7 +3105,7 @@ export default function MasterMenu() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setMenuForm(f => ({ ...f, item_type: 'DIRECT', unit: 'pcs' }))}
+                      onClick={() => setMenuForm(f => ({ ...f, item_type: 'DIRECT', unit: f.unit === 'porsi' ? 'pcs' : f.unit }))}
                       style={{
                         padding: '10px 6px',
                         borderRadius: 8,
@@ -2928,6 +3119,7 @@ export default function MasterMenu() {
                         flexDirection: 'column',
                         alignItems: 'center',
                         gap: 4,
+                        transition: 'all 0.15s ease'
                       }}
                     >
                       <Package size={16} />
@@ -2936,7 +3128,7 @@ export default function MasterMenu() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setMenuForm(f => ({ ...f, item_type: 'SERVICE', unit: 'layanan' }))}
+                      onClick={() => setMenuForm(f => ({ ...f, item_type: 'SERVICE', unit: f.unit === 'porsi' || f.unit === 'pcs' ? 'layanan' : f.unit }))}
                       style={{
                         padding: '10px 6px',
                         borderRadius: 8,
@@ -2950,6 +3142,7 @@ export default function MasterMenu() {
                         flexDirection: 'column',
                         alignItems: 'center',
                         gap: 4,
+                        transition: 'all 0.15s ease'
                       }}
                     >
                       <Scissors size={16} />
@@ -2972,6 +3165,7 @@ export default function MasterMenu() {
                         flexDirection: 'column',
                         alignItems: 'center',
                         gap: 4,
+                        transition: 'all 0.15s ease'
                       }}
                     >
                       <Layers size={16} />
@@ -2982,7 +3176,7 @@ export default function MasterMenu() {
                 </div>
 
                 {menuForm.item_type === 'BUNDLE' && (
-                  <div className="card mb-4" style={{ padding: 14, background: 'rgba(244, 63, 94, 0.05)', border: '1px solid rgba(244, 63, 94, 0.25)' }}>
+                  <div className="card" style={{ padding: 14, background: 'rgba(244, 63, 94, 0.05)', border: '1px solid rgba(244, 63, 94, 0.25)' }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: '#ffffff', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
                       <Layers size={15} color="#f43f5e" /> Rincian Isi Paket Bundling / Buy 1 Get 1
                     </div>
@@ -3018,7 +3212,7 @@ export default function MasterMenu() {
                                     onChange={e => updateBundleItem(idx, 'bundled_menu_id', e.target.value)}
                                   >
                                     <option value="">-- Pilih Menu Disertakan --</option>
-                                    {menus.filter(m => m.id !== selected?.id && m.item_type !== 'BUNDLE').map(m => (
+                                    {menus.filter(m => m.id !== (editingMenuId || selected?.id) && m.item_type !== 'BUNDLE').map(m => (
                                       <option key={m.id} value={m.id}>
                                         {m.code} - {m.name} ({rupiah(m.price)})
                                       </option>
@@ -3082,13 +3276,13 @@ export default function MasterMenu() {
                       className="form-control mono"
                       value={menuForm.barcode}
                       onChange={e => setMenuForm(f => ({ ...f, barcode: e.target.value }))}
-                      placeholder="Contoh: 8991234567"
+                      placeholder="Scan atau ketik SKU"
                     />
                   </div>
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Nama Produk / Menu</label>
+                  <label className="form-label">Nama Produk / Menu <span style={{ color: 'var(--danger)' }}>*</span></label>
                   <input
                     type="text"
                     className="form-control"
@@ -3103,20 +3297,19 @@ export default function MasterMenu() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 12 }}>
                   <div className="form-group">
                     <label className="form-label">Kategori</label>
-                    <select
+                    <input
+                      type="text"
+                      list="menu-categories-list"
                       className="form-control"
                       value={menuForm.category}
                       onChange={e => setMenuForm(f => ({ ...f, category: e.target.value }))}
-                    >
-                      <option value="Main">Makanan Utama (Main Course)</option>
-                      <option value="Minuman">Minuman (Beverage)</option>
-                      <option value="Snack">Snack / Cemilan / Retail</option>
-                      <option value="Retail">Barang Jadi / Retail</option>
-                      <option value="Jasa">Jasa & Layanan</option>
-                      <option value="Dessert">Dessert</option>
-                      <option value="Paket">Paket Hemat</option>
-                      <option value="Lainnya">Lainnya</option>
-                    </select>
+                      placeholder="Pilih atau ketik kategori baru"
+                    />
+                    <datalist id="menu-categories-list">
+                      {availableMenuCategories.map(cat => (
+                        <option key={cat} value={cat} />
+                      ))}
+                    </datalist>
                   </div>
                   <div className="form-group">
                     <label className="form-label">Satuan Jual</label>
@@ -3132,7 +3325,9 @@ export default function MasterMenu() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <div className="form-group">
-                    <label className="form-label" style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Harga Jual Kasir (Rp)</label>
+                    <label className="form-label" style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                      Harga Jual Kasir (Rp) <span style={{ color: 'var(--danger)' }}>*</span>
+                    </label>
                     <input
                       type="number"
                       className="form-control mono"
@@ -3152,7 +3347,7 @@ export default function MasterMenu() {
 
                   <div className="form-group">
                     <label className="form-label" style={{ color: '#60a5fa', fontWeight: 600 }}>
-                      {menuForm.item_type === 'DIRECT' ? 'Harga Beli Modal / HPP (Rp)' : (menuForm.item_type === 'SERVICE' ? 'Biaya Modal Jasa (Rp)' : 'Estimasi HPP Dasar (Rp)')}
+                      {menuForm.item_type === 'DIRECT' ? 'Harga Beli Modal (HPP Satuan)' : (menuForm.item_type === 'SERVICE' ? 'Biaya Modal Jasa (Rp)' : 'Estimasi HPP Dasar Target (Rp)')}
                     </label>
                     <input
                       type="number"
@@ -3169,6 +3364,91 @@ export default function MasterMenu() {
                       </span>
                     )}
                   </div>
+                </div>
+
+                {/* Real-time Live Margin & Gross Profit Calculator Banner */}
+                {Number(menuForm.price) > 0 && (
+                  <div style={{
+                    padding: '10px 14px',
+                    borderRadius: 8,
+                    background: (Number(menuForm.price) - Number(menuForm.cost_price || 0)) >= 0 ? 'rgba(16, 185, 129, 0.08)' : 'rgba(244, 63, 94, 0.08)',
+                    border: `1px dashed ${(Number(menuForm.price) - Number(menuForm.cost_price || 0)) >= 0 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)'}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: 8,
+                    fontSize: 12,
+                  }}>
+                    <div>
+                      <span style={{ color: 'var(--text-secondary)' }}>💡 Laba Kotor Target: </span>
+                      <strong style={{ color: (Number(menuForm.price) - Number(menuForm.cost_price || 0)) >= 0 ? '#34d399' : '#fb7185', fontSize: 13 }}>
+                        {rupiah(Number(menuForm.price) - Number(menuForm.cost_price || 0))} / {menuForm.unit || 'porsi'}
+                      </strong>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Estimasi Margin:</span>
+                      <span style={{
+                        fontWeight: 800,
+                        padding: '2px 8px',
+                        borderRadius: 6,
+                        background: Math.round(((Number(menuForm.price) - Number(menuForm.cost_price || 0)) / Number(menuForm.price)) * 100) >= 40
+                          ? 'rgba(16, 185, 129, 0.2)'
+                          : (Math.round(((Number(menuForm.price) - Number(menuForm.cost_price || 0)) / Number(menuForm.price)) * 100) >= 20 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(244, 63, 94, 0.2)'),
+                        color: Math.round(((Number(menuForm.price) - Number(menuForm.cost_price || 0)) / Number(menuForm.price)) * 100) >= 40
+                          ? '#34d399'
+                          : (Math.round(((Number(menuForm.price) - Number(menuForm.cost_price || 0)) / Number(menuForm.price)) * 100) >= 20 ? '#fde68a' : '#fda4af'),
+                        border: `1px solid ${Math.round(((Number(menuForm.price) - Number(menuForm.cost_price || 0)) / Number(menuForm.price)) * 100) >= 40
+                          ? 'rgba(16, 185, 129, 0.4)'
+                          : (Math.round(((Number(menuForm.price) - Number(menuForm.cost_price || 0)) / Number(menuForm.price)) * 100) >= 20 ? 'rgba(245, 158, 11, 0.4)' : 'rgba(244, 63, 94, 0.4)')}`,
+                      }}>
+                        {Math.round(((Number(menuForm.price) - Number(menuForm.cost_price || 0)) / Number(menuForm.price)) * 100)}%
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Active Status Checkbox */}
+                <div
+                  onClick={() => setMenuForm(f => ({ ...f, active: !f.active }))}
+                  style={{
+                    background: menuForm.active ? 'rgba(16, 185, 129, 0.08)' : 'rgba(244, 63, 94, 0.08)',
+                    border: `1px solid ${menuForm.active ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)'}`,
+                    borderRadius: 8,
+                    padding: '10px 14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    id="menu_active_chk"
+                    checked={Boolean(menuForm.active)}
+                    onChange={e => setMenuForm(f => ({ ...f, active: e.target.checked }))}
+                    style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--ok)' }}
+                  />
+                  <label htmlFor="menu_active_chk" style={{ fontSize: 12.5, cursor: 'pointer', margin: 0, color: menuForm.active ? '#a7f3d0' : '#fca5a5' }}>
+                    <strong>{menuForm.active ? '✓ Produk Aktif (Tampil di Terminal Kasir POS)' : '✕ Produk Nonaktif (Disembunyikan dari Kasir)'}</strong>
+                    <span style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                      {menuForm.active ? 'Produk ini dapat dicari dan ditambahkan ke keranjang pesanan oleh kasir.' : 'Produk ini dinonaktifkan sementara tanpa menghapus resep dan data historisnya.'}
+                    </span>
+                  </label>
+                </div>
+
+                {/* Description / Notes */}
+                <div className="form-group">
+                  <label className="form-label">Deskripsi / Catatan Menu (Opsional)</label>
+                  <textarea
+                    className="form-control"
+                    rows={2}
+                    value={menuForm.description}
+                    onChange={e => setMenuForm(f => ({ ...f, description: e.target.value }))}
+                    placeholder="Catatan bahan, petunjuk penyajian, atau rincian promo..."
+                    style={{ resize: 'vertical', fontSize: 12 }}
+                  />
                 </div>
 
                 {/* Direct Retail Stock Controls */}
@@ -3218,7 +3498,7 @@ export default function MasterMenu() {
                 )}
               </div>
 
-              <div className="modal-footer">
+              <div className="modal-footer" style={{ borderTop: '1px solid var(--border)', padding: '12px 18px' }}>
                 <button
                   type="button"
                   className="btn btn-ghost"
@@ -3231,8 +3511,9 @@ export default function MasterMenu() {
                   type="submit"
                   className="btn btn-primary"
                   disabled={saving}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
                 >
-                  {saving ? 'Menyimpan...' : (modalMode === 'create' ? 'Simpan Menu' : 'Update Menu')}
+                  {saving ? 'Menyimpan...' : (modalMode === 'create' ? '+ Simpan Produk Baru' : '✓ Simpan Perubahan')}
                 </button>
               </div>
             </form>

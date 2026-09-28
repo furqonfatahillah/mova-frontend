@@ -12,6 +12,7 @@ import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 import { ownerConfirmDialog } from '../utils/swal';
+import ImportMasterModal from '../components/ImportMasterModal';
 
 const MUTATION_TYPES = [
   { value: 'PURCHASE', label: 'Pembelian (PO)', sign: '+', color: 'var(--ok)', bg: 'rgba(16, 217, 122, 0.12)', border: 'rgba(16, 217, 122, 0.3)' },
@@ -140,7 +141,7 @@ export default function KartuStok() {
   // Filters inside detail stock card
   const [typeFilter, setTypeFilter] = useState('ALL'); // 'ALL' | 'IN' | 'OUT' | type
   const [searchTerm, setSearchTerm] = useState('');
-
+  const [showImportStockModal, setShowImportStockModal] = useState(false);
 
   // Modal Add / Edit Mutation
   const [modalOpen, setModalOpen] = useState(false);
@@ -969,6 +970,14 @@ export default function KartuStok() {
                 {recalculating ? 'Menyinkronkan...' : 'Sinkronkan HPP Cabang'}
               </button>
             )}
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowImportStockModal(true)}
+              title="Import Stock Awal Fisik Per Gudang / Cabang (.xlsx)"
+              style={{ color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.4)', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            >
+              <FileSpreadsheet size={14} /> Import Stock Awal Gudang
+            </button>
             <button className="btn btn-secondary" onClick={handlePrint} title="Cetak Laporan">
               <Printer size={14} /> Cetak
             </button>
@@ -3451,6 +3460,18 @@ export default function KartuStok() {
           </div>
         </div>
       )}
+
+      {/* Import Stock Awal Fisik Per Gudang Modal */}
+      <ImportMasterModal
+        isOpen={showImportStockModal}
+        onClose={() => setShowImportStockModal(false)}
+        targetMaster="STOCK_AWAL_GUDANG"
+        onSuccess={() => {
+          fetchSummary();
+          fetchIngredients();
+          if (selectedIngId) fetchStockCard();
+        }}
+      />
 
     </div>
   );
