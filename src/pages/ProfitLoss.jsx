@@ -28,9 +28,8 @@ export const EXPENSE_CATEGORIES = [
 ];
 
 export const PAYMENT_METHODS = [
-  { value: 'CASH',       label: 'Kas Operasional / Tunai' },
+  { value: 'CASH',       label: 'Kas Operasional / Kas Kecil (Tunai)' },
   { value: 'TRANSFER',   label: 'Transfer Bank' },
-  { value: 'PETTY_CASH', label: 'Kas Kecil (Petty Cash)' },
   { value: 'DEBIT',      label: 'Debit / Kartu EDC' },
 ];
 

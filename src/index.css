@@ -860,6 +860,31 @@ textarea.form-control {
   background: rgba(244, 63, 94, 0.22);
 }
 
+.btn-danger.text-white,
+.btn-danger.bg-danger,
+.btn-danger-solid {
+  background: #ef4444 !important;
+  border-color: #dc2626 !important;
+  color: #ffffff !important;
+}
+
+.btn-danger.text-white:hover,
+.btn-danger.bg-danger:hover,
+.btn-danger-solid:hover {
+  background: #dc2626 !important;
+  border-color: #b91c1c !important;
+  color: #ffffff !important;
+}
+
+.text-white {
+  color: #ffffff !important;
+}
+
+.bg-danger {
+  background-color: #ef4444 !important;
+  color: #ffffff !important;
+}
+
 .btn-ghost {
   background: transparent;
   color: var(--text-secondary);
@@ -3065,11 +3090,13 @@ textarea.form-control {
     visibility: hidden;
   }
 
-  /* 5. Unhide printable documents (Berita Acara, Surat Jalan, Document Reports) */
+  /* 5. Unhide printable documents (Berita Acara, Surat Jalan, Kartu Stok, Document Reports) */
   #printable-berita-acara,
   #printable-berita-acara *,
   #printable-surat-jalan,
   #printable-surat-jalan *,
+  #printable-stock-card,
+  #printable-stock-card *,
   .printable-document,
   .printable-document * {
     visibility: visible !important;
@@ -3077,6 +3104,7 @@ textarea.form-control {
 
   #printable-berita-acara,
   #printable-surat-jalan,
+  #printable-stock-card,
   .printable-document {
     position: absolute !important;
     left: 0 !important;
@@ -3359,6 +3387,7 @@ textarea.form-control {
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }

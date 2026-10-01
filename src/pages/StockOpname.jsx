@@ -340,14 +340,27 @@ export default function StockOpname() {
   function getLiveVariance(iv) {
     const ingId = iv.ingredient?.id;
     const actualQty = actuals[ingId] !== '' && actuals[ingId] !== undefined ? Number(actuals[ingId]) : null;
-    if (actualQty === null) return { ...iv };
-
+    const costPerUnit = Number(iv.cost_per_unit || (iv.ingredient?.harga ? iv.ingredient.harga / Math.max(1, Number(iv.ingredient.konversi || 1)) : 0));
     const teoritis = Number(iv.stok_akhir_teoritis ?? 0);
+    const nilaiTeoritis = iv.nilai_teoritis !== undefined ? Number(iv.nilai_teoritis) : Math.round(teoritis * costPerUnit);
+
+    if (actualQty === null) {
+      return {
+        ...iv,
+        cost_per_unit: costPerUnit,
+        nilai_teoritis: nilaiTeoritis,
+        nilai_aktual: null,
+      };
+    }
+
     // Selisih Bersih = Fisik Lapangan - Sisa Teoritis Komputer
     // Fisik == Teoritis => 0 (Sesuai / Pass)
-    // Fisik < Teoritis => Negatif (Stok Kurang/Hilang)
-    // Fisik > Teoritis => Positif (Stok Berlebih/Surplus)
+    // Fisik < Teoritis => Negatif (Stok Kurang/Hilang -> mengurangi persediaan)
+    // Fisik > Teoritis => Positif (Stok Berlebih/Surplus -> menambah persediaan)
     const varianceQty = Number((actualQty - teoritis).toFixed(4));
+    const varianceValue = Math.round(varianceQty * costPerUnit);
+    const nilaiAktual = Math.round(actualQty * costPerUnit);
+
     const denom = teoritis !== 0 ? Math.abs(teoritis) : (actualQty !== 0 ? Math.abs(actualQty) : 1);
     const variancePct = Number(((varianceQty / denom) * 100).toFixed(1));
     const tol = iv.ingredient?.tolerance || 5;
@@ -360,9 +373,13 @@ export default function StockOpname() {
 
     return {
       ...iv,
+      cost_per_unit: costPerUnit,
+      nilai_teoritis: nilaiTeoritis,
       stok_akhir_aktual: actualQty,
+      nilai_aktual: nilaiAktual,
       variance_qty: varianceQty,
       variance_pct: variancePct,
+      variance_value: varianceValue,
       status
     };
   }
@@ -424,6 +441,51 @@ export default function StockOpname() {
       unfilled,
       filled,
       hasVariance,
+    };
+  }, [varData, actuals]);
+
+  // Aggregate live inventory valuation totals for Tab 1
+  const opnameValuationTotals = useMemo(() => {
+    let totalTheoreticalValue = 0;
+    let totalActualCountedValue = 0;
+    let totalVarianceValue = 0;
+    let totalDeficitValue = 0;
+    let totalSurplusValue = 0;
+    let filledCount = 0;
+
+    varData.forEach(ivRaw => {
+      const ingId = ivRaw.ingredient?.id;
+      const costPerUnit = Number(ivRaw.cost_per_unit || (ivRaw.ingredient?.harga ? ivRaw.ingredient.harga / Math.max(1, Number(ivRaw.ingredient.konversi || 1)) : 0));
+      const stokTeoritis = Number(ivRaw.stok_akhir_teoritis ?? 0);
+      const teoVal = ivRaw.nilai_teoritis !== undefined ? Number(ivRaw.nilai_teoritis) : Math.round(stokTeoritis * costPerUnit);
+      totalTheoreticalValue += teoVal;
+
+      const actVal = actuals[ingId];
+      if (actVal !== '' && actVal !== undefined) {
+        filledCount++;
+        const actQty = Number(actVal);
+        const actualVal = Math.round(actQty * costPerUnit);
+        totalActualCountedValue += actualVal;
+
+        const diffQty = Number((actQty - stokTeoritis).toFixed(4));
+        const diffVal = Math.round(diffQty * costPerUnit);
+        totalVarianceValue += diffVal;
+
+        if (diffVal < -0.0001) {
+          totalDeficitValue += Math.abs(diffVal);
+        } else if (diffVal > 0.0001) {
+          totalSurplusValue += diffVal;
+        }
+      }
+    });
+
+    return {
+      totalTheoreticalValue,
+      totalActualCountedValue,
+      totalVarianceValue,
+      totalDeficitValue,
+      totalSurplusValue,
+      filledCount,
     };
   }, [varData, actuals]);
 
@@ -556,9 +618,11 @@ export default function StockOpname() {
     });
   }, [sessions, historyOutlet, historySearch]);
 
-  const totalSessionsCount = sessions.length;
-  const totalItemsChecked = sessions.reduce((acc, s) => acc + (s.items_counted || 0), 0);
-  const totalNetVarianceValue = sessions.reduce((acc, s) => acc + (s.net_variance_value || 0), 0);
+  const totalSessionsCount = filteredSessions.length;
+  const totalItemsChecked = filteredSessions.reduce((acc, s) => acc + (s.items_counted || 0), 0);
+  const totalNetVarianceValue = filteredSessions.reduce((acc, s) => acc + (s.net_variance_value || 0), 0);
+  const totalTheoreticalValHistory = filteredSessions.reduce((acc, s) => acc + (s.total_theoretical_value || 0), 0);
+  const totalActualValHistory = filteredSessions.reduce((acc, s) => acc + (s.total_actual_value || 0), 0);
 
   return (
     <div className="fade-in">
@@ -810,36 +874,67 @@ export default function StockOpname() {
               </div>
             </div>
 
-            {/* Quick KPI Summary Bar for Filter Context */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 16 }}>
+            {/* Quick KPI Summary Bar for Filter Context & Live Valuation */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, marginBottom: 16 }}>
               <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px' }}>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Total Master Bahan</div>
                 <div style={{ fontSize: 16, fontWeight: 800, color: '#ffffff', marginTop: 2 }}>
                   {filterCounts.all} <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)' }}>Item</span>
                 </div>
               </div>
+
               <div style={{ background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.25)', borderRadius: 10, padding: '10px 14px' }}>
-                <div style={{ fontSize: 11, color: '#a5b4fc', fontWeight: 600 }}>Bahan Aktif Cabang</div>
+                <div style={{ fontSize: 11, color: '#a5b4fc', fontWeight: 600 }}>Total Nilai Sisa Teoritis</div>
                 <div style={{ fontSize: 16, fontWeight: 800, color: '#818cf8', marginTop: 2 }}>
-                  {filterCounts.activeOutlet} <span style={{ fontSize: 11, fontWeight: 500 }}>Item Bergerak</span>
+                  {rupiah(opnameValuationTotals.totalTheoreticalValue)}
+                </div>
+                <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                  {filterCounts.activeOutlet} item bergerak di cabang
                 </div>
               </div>
-              <div style={{ background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: 10, padding: '10px 14px' }}>
-                <div style={{ fontSize: 11, color: '#7dd3fc', fontWeight: 600 }}>Ada In (+) / Out (-)</div>
-                <div style={{ fontSize: 16, fontWeight: 800, color: '#38bdf8', marginTop: 2 }}>
-                  +{filterCounts.hasIn} <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>/</span> -{filterCounts.hasOut}
-                </div>
-              </div>
+
               <div style={{ background: 'rgba(34, 197, 94, 0.08)', border: '1px solid rgba(34, 197, 94, 0.25)', borderRadius: 10, padding: '10px 14px' }}>
                 <div style={{ fontSize: 11, color: '#86efac', fontWeight: 600 }}>Progress Hitung Fisik</div>
                 <div style={{ fontSize: 16, fontWeight: 800, color: '#4ade80', marginTop: 2 }}>
                   {filterCounts.filled} <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500 }}>/ {filterCounts.all} ({filterCounts.unfilled} Belum)</span>
                 </div>
               </div>
-              <div style={{ background: filterCounts.hasVariance > 0 ? 'rgba(239, 68, 68, 0.08)' : 'rgba(255, 255, 255, 0.03)', border: filterCounts.hasVariance > 0 ? '1px solid rgba(239, 68, 68, 0.25)' : '1px solid var(--border)', borderRadius: 10, padding: '10px 14px' }}>
-                <div style={{ fontSize: 11, color: filterCounts.hasVariance > 0 ? '#fca5a5' : 'var(--text-muted)', fontWeight: 600 }}>Ada Selisih Fisik</div>
-                <div style={{ fontSize: 16, fontWeight: 800, color: filterCounts.hasVariance > 0 ? '#f87171' : 'var(--text-secondary)', marginTop: 2 }}>
-                  {filterCounts.hasVariance} <span style={{ fontSize: 11, fontWeight: 500 }}>Item Beda</span>
+
+              <div style={{
+                background: opnameValuationTotals.totalDeficitValue > 0 ? 'rgba(239, 68, 68, 0.08)' : 'rgba(255, 255, 255, 0.03)',
+                border: opnameValuationTotals.totalDeficitValue > 0 ? '1px solid rgba(239, 68, 68, 0.25)' : '1px solid var(--border)',
+                borderRadius: 10,
+                padding: '10px 14px'
+              }}>
+                <div style={{ fontSize: 11, color: opnameValuationTotals.totalDeficitValue > 0 ? '#fca5a5' : 'var(--text-muted)', fontWeight: 600 }}>
+                  Total Defisit Persediaan (-)
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: opnameValuationTotals.totalDeficitValue > 0 ? '#f87171' : 'var(--text-secondary)', marginTop: 2 }}>
+                  {opnameValuationTotals.totalDeficitValue > 0 ? `-${rupiah(opnameValuationTotals.totalDeficitValue)}` : 'Rp0'}
+                </div>
+                <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                  Stok hilang/kurang timbangan
+                </div>
+              </div>
+
+              <div style={{
+                background: opnameValuationTotals.totalVarianceValue !== 0
+                  ? (opnameValuationTotals.totalVarianceValue >= 0 ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)')
+                  : 'rgba(255, 255, 255, 0.03)',
+                border: opnameValuationTotals.totalVarianceValue !== 0
+                  ? (opnameValuationTotals.totalVarianceValue >= 0 ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid rgba(239, 68, 68, 0.25)')
+                  : '1px solid var(--border)',
+                borderRadius: 10,
+                padding: '10px 14px'
+              }}>
+                <div style={{ fontSize: 11, color: opnameValuationTotals.totalVarianceValue > 0 ? '#86efac' : opnameValuationTotals.totalVarianceValue < 0 ? '#fca5a5' : 'var(--text-muted)', fontWeight: 600 }}>
+                  Net Penyesuaian Nilai
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: opnameValuationTotals.totalVarianceValue > 0 ? '#34d399' : opnameValuationTotals.totalVarianceValue < 0 ? '#f87171' : 'var(--text-secondary)', marginTop: 2 }}>
+                  {opnameValuationTotals.totalVarianceValue > 0 ? '+' : ''}{rupiah(opnameValuationTotals.totalVarianceValue)}
+                </div>
+                <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                  {opnameValuationTotals.totalVarianceValue < 0 ? 'Mengurangi persediaan' : opnameValuationTotals.totalVarianceValue > 0 ? 'Menambah persediaan' : 'Sesuai buku'}
                 </div>
               </div>
             </div>
@@ -1141,9 +1236,18 @@ export default function StockOpname() {
                   </tbody>
                   <tfoot>
                     <tr style={{ fontWeight: 800, background: 'rgba(255, 255, 255, 0.04)', borderTop: '2px solid var(--border)' }}>
-                      <td>Menampilkan {filteredVarData.length} dari {varData.length} Bahan</td>
-                      <td colSpan={10} style={{ textAlign: 'right', color: 'var(--text-secondary)', fontSize: 12 }}>
-                        Total Terisi: <strong style={{ color: '#34d399' }}>{filterCounts.filled}</strong> | Belum Terisi: <strong style={{ color: '#fbbf24' }}>{filterCounts.unfilled}</strong>
+                      <td colSpan={5}>Menampilkan {filteredVarData.length} dari {varData.length} Bahan</td>
+                      <td className="mono right" style={{ color: 'var(--accent-bright)', fontWeight: 800 }}>
+                        {rupiah(opnameValuationTotals.totalTheoreticalValue)}
+                      </td>
+                      <td style={{ textAlign: 'right', fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                        {filterCounts.filled}/{filterCounts.all} Terisi
+                      </td>
+                      <td className="mono right" style={{ color: opnameValuationTotals.totalVarianceValue >= 0 ? 'var(--ok)' : 'var(--danger)', fontWeight: 800 }}>
+                        {opnameValuationTotals.totalVarianceValue > 0 ? '+' : ''}{rupiah(opnameValuationTotals.totalVarianceValue)}
+                      </td>
+                      <td colSpan={3} style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        {opnameValuationTotals.totalVarianceValue < 0 ? '⚠️ Selisih minus mengurangi nilai persediaan' : opnameValuationTotals.totalVarianceValue > 0 ? '⚡ Selisih plus menambah nilai persediaan' : 'Persediaan sesuai buku'}
                       </td>
                     </tr>
                   </tfoot>
@@ -1191,19 +1295,21 @@ export default function StockOpname() {
             </div>
 
             <div className="stat-card">
-              <div className="stat-label">Total Bahan Terverifikasi</div>
+              <div className="stat-label">Total Nilai Sisa Teoritis</div>
               <div className="stat-value">
-                {totalItemsChecked} <span style={{ fontSize: 14, fontWeight: 500 }}>Item</span>
+                {rupiah(totalTheoreticalValHistory)}
               </div>
-              <div className="stat-sub">Bahan yang telah dihitung fisik</div>
+              <div className="stat-sub">{totalItemsChecked} item bahan terverifikasi</div>
             </div>
 
-            <div className="stat-card ok">
-              <div className="stat-label">Total Net Variance Seluruh Sesi</div>
-              <div className="stat-value ok">
-                {rupiah(totalNetVarianceValue)}
+            <div className={`stat-card ${totalNetVarianceValue >= 0 ? 'ok' : 'danger'}`}>
+              <div className={`stat-label ${totalNetVarianceValue < 0 ? 'text-danger' : ''}`}>Total Net Penyesuaian Nilai</div>
+              <div className={`stat-value ${totalNetVarianceValue >= 0 ? 'ok' : 'danger'}`}>
+                {totalNetVarianceValue > 0 ? '+' : ''}{rupiah(totalNetVarianceValue)}
               </div>
-              <div className="stat-sub">Akumulasi selisih nilai rupiah</div>
+              <div className="stat-sub">
+                {totalNetVarianceValue < 0 ? 'Defisit: Mengurangi nilai persediaan' : totalNetVarianceValue > 0 ? 'Surplus: Menambah nilai persediaan' : 'Sesuai catatan buku'}
+              </div>
             </div>
           </div>
 
@@ -1504,80 +1610,109 @@ export default function StockOpname() {
                 </div>
 
                 {/* Summary Variance Cards */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 18, textAlign: 'center' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, marginBottom: 18, textAlign: 'center' }}>
                   <div style={{ padding: '8px 10px', background: '#f1f5f9', borderRadius: 6, border: '1px solid #cbd5e1' }}>
-                    <div style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase' }}>Bahan Diperiksa</div>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: '#0f172a', marginTop: 2 }}>
+                    <div style={{ fontSize: 10.5, color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>Bahan Diperiksa</div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: '#0f172a', marginTop: 2 }}>
                       {sessionDetail.summary?.items_counted} / {sessionDetail.summary?.total_items}
                     </div>
+                    <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>Item Terhitung</div>
                   </div>
 
-                  <div style={{ padding: '8px 10px', background: '#ecfdf5', borderRadius: 6, border: '1px solid #a7f3d0' }}>
-                    <div style={{ fontSize: 11, color: '#047857', textTransform: 'uppercase' }}>Total Surplus (+)</div>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: '#059669', marginTop: 2 }}>
-                      +{rupiah(sessionDetail.summary?.total_surplus_value)}
+                  <div style={{ padding: '8px 10px', background: '#eef2ff', borderRadius: 6, border: '1px solid #c7d2fe' }}>
+                    <div style={{ fontSize: 10.5, color: '#4338ca', textTransform: 'uppercase', fontWeight: 700 }}>Nilai Sisa Teoritis</div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: '#3730a3', marginTop: 2 }}>
+                      {rupiah(sessionDetail.summary?.total_theoretical_value)}
                     </div>
+                    <div style={{ fontSize: 10, color: '#6366f1', marginTop: 2 }}>Nilai Catatan Buku</div>
+                  </div>
+
+                  <div style={{ padding: '8px 10px', background: '#f0fdf4', borderRadius: 6, border: '1px solid #bbf7d0' }}>
+                    <div style={{ fontSize: 10.5, color: '#15803d', textTransform: 'uppercase', fontWeight: 700 }}>Nilai Sisa Fisik</div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: '#166534', marginTop: 2 }}>
+                      {rupiah(sessionDetail.summary?.total_actual_value)}
+                    </div>
+                    <div style={{ fontSize: 10, color: '#15803d', marginTop: 2 }}>Hasil Timbangan Riil</div>
                   </div>
 
                   <div style={{ padding: '8px 10px', background: '#fff1f2', borderRadius: 6, border: '1px solid #fecdd3' }}>
-                    <div style={{ fontSize: 11, color: '#b91c1c', textTransform: 'uppercase' }}>Total Defisit (-)</div>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: '#e11d48', marginTop: 2 }}>
+                    <div style={{ fontSize: 10.5, color: '#b91c1c', textTransform: 'uppercase', fontWeight: 700 }}>Total Defisit (-)</div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: '#e11d48', marginTop: 2 }}>
                       -{rupiah(sessionDetail.summary?.total_deficit_value)}
                     </div>
+                    <div style={{ fontSize: 10, color: '#e11d48', marginTop: 2 }}>Stok Kurang / Hilang</div>
                   </div>
 
                   <div style={{ padding: '8px 10px', background: '#f8fafc', borderRadius: 6, border: '1px solid #cbd5e1' }}>
-                    <div style={{ fontSize: 11, color: '#475569', textTransform: 'uppercase' }}>Net Selisih (Rp)</div>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: sessionDetail.summary?.total_variance_value >= 0 ? '#059669' : '#e11d48', marginTop: 2 }}>
-                      {rupiah(sessionDetail.summary?.total_variance_value)}
+                    <div style={{ fontSize: 10.5, color: '#475569', textTransform: 'uppercase', fontWeight: 700 }}>Net Selisih (Rp)</div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: sessionDetail.summary?.total_variance_value >= 0 ? '#059669' : '#e11d48', marginTop: 2 }}>
+                      {sessionDetail.summary?.total_variance_value > 0 ? '+' : ''}{rupiah(sessionDetail.summary?.total_variance_value)}
+                    </div>
+                    <div style={{ fontSize: 10, color: sessionDetail.summary?.total_variance_value < 0 ? '#e11d48' : '#64748b', marginTop: 2 }}>
+                      {sessionDetail.summary?.total_variance_value < 0 ? 'Mengurangi Persediaan' : sessionDetail.summary?.total_variance_value > 0 ? 'Menambah Persediaan' : 'Sesuai Standar'}
                     </div>
                   </div>
                 </div>
 
                 {/* Items Table */}
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, marginBottom: 20 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, marginBottom: 20 }}>
                   <thead>
                     <tr style={{ background: '#0f172a', color: '#ffffff' }}>
-                      <th style={{ padding: '6px 8px', textAlign: 'center', width: 30 }}>No</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'left', width: 75 }}>Kode</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'left' }}>Nama Bahan</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'right' }}>Awal</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'right' }}>Masuk</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'right' }}>Teori POS</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'right' }}>Waste</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'right' }}>Sisa Teori</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 800, background: '#1e1b4b' }}>Sisa Fisik</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'right' }}>Selisih Net</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'right' }}>Nilai Rp</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'center', width: 70 }}>Status</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'left' }}>Catatan</th>
+                      <th style={{ padding: '6px 6px', textAlign: 'center', width: 28 }}>No</th>
+                      <th style={{ padding: '6px 6px', textAlign: 'left', width: 65 }}>Kode</th>
+                      <th style={{ padding: '6px 6px', textAlign: 'left' }}>Nama Bahan</th>
+                      <th style={{ padding: '6px 6px', textAlign: 'right' }}>Awal</th>
+                      <th style={{ padding: '6px 6px', textAlign: 'right' }}>Masuk</th>
+                      <th style={{ padding: '6px 6px', textAlign: 'right' }}>Keluar</th>
+                      <th style={{ padding: '6px 6px', textAlign: 'right' }}>Waste</th>
+                      <th style={{ padding: '6px 6px', textAlign: 'right', background: '#1e1b4b', color: '#a5b4fc' }}>Sisa Teoritis</th>
+                      <th style={{ padding: '6px 6px', textAlign: 'right', fontWeight: 800, background: '#1e293b' }}>Sisa Fisik</th>
+                      <th style={{ padding: '6px 6px', textAlign: 'right' }}>Selisih Qty</th>
+                      <th style={{ padding: '6px 6px', textAlign: 'right' }}>Nilai Selisih (Rp)</th>
+                      <th style={{ padding: '6px 6px', textAlign: 'center', width: 65 }}>Status</th>
+                      <th style={{ padding: '6px 6px', textAlign: 'left' }}>Catatan</th>
                     </tr>
                   </thead>
                   <tbody>
                     {sessionDetail.items?.map((it, idx) => (
                       <tr key={it.ingredient_id || idx} style={{ borderBottom: '1px solid #e2e8f0', background: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
-                        <td style={{ padding: '6px 8px', textAlign: 'center', color: '#64748b' }}>{idx + 1}</td>
-                        <td style={{ padding: '6px 8px', fontFamily: 'monospace', fontWeight: 600, color: '#4f46e5' }}>{it.code}</td>
-                        <td style={{ padding: '6px 8px', fontWeight: 700, color: '#0f172a' }}>{it.name}</td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace' }}>{num(it.stok_awal_periode)}</td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace' }}>+{num(it.pembelian + (it.transfer_in || 0))}</td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace' }}>-{num(it.pemakaian_teoritis)}</td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace', color: '#ea580c' }}>{num(it.waste)}</td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{num(it.stok_akhir_teoritis)}</td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 800, background: '#f1f5f9', color: '#0f172a' }}>
-                          {it.stok_akhir_aktual !== null ? `${num(it.stok_akhir_aktual)} ${it.unit_pakai}` : '—'}
+                        <td style={{ padding: '5px 6px', textAlign: 'center', color: '#64748b' }}>{idx + 1}</td>
+                        <td style={{ padding: '5px 6px', fontFamily: 'monospace', fontWeight: 600, color: '#4f46e5' }}>{it.code}</td>
+                        <td style={{ padding: '5px 6px', fontWeight: 700, color: '#0f172a' }}>{it.name}</td>
+                        <td style={{ padding: '5px 6px', textAlign: 'right', fontFamily: 'monospace' }}>{num(it.stok_awal_periode)}</td>
+                        <td style={{ padding: '5px 6px', textAlign: 'right', fontFamily: 'monospace', color: '#059669' }}>+{num(it.pembelian + (it.transfer_in || 0))}</td>
+                        <td style={{ padding: '5px 6px', textAlign: 'right', fontFamily: 'monospace', color: '#ea580c' }}>-{num(it.pemakaian_teoritis)}</td>
+                        <td style={{ padding: '5px 6px', textAlign: 'right', fontFamily: 'monospace', color: '#dc2626' }}>{it.waste > 0 ? `-${num(it.waste)}` : '0'}</td>
+                        <td style={{ padding: '5px 6px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, background: '#f5f3ff' }}>
+                          <div>{num(it.stok_akhir_teoritis)} {it.unit_pakai}</div>
+                          <div style={{ fontSize: 9.5, color: '#6366f1', fontWeight: 600 }}>{rupiah(it.nilai_teoritis)}</div>
                         </td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: it.variance_qty > 0 ? '#059669' : it.variance_qty < 0 ? '#e11d48' : '#64748b' }}>
+                        <td style={{ padding: '5px 6px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 800, background: '#f1f5f9', color: '#0f172a' }}>
+                          {it.stok_akhir_aktual !== null ? (
+                            <>
+                              <div>{num(it.stok_akhir_aktual)} {it.unit_pakai}</div>
+                              <div style={{ fontSize: 9.5, color: '#0f172a', fontWeight: 700 }}>{rupiah(it.nilai_aktual)}</div>
+                            </>
+                          ) : '—'}
+                        </td>
+                        <td style={{ padding: '5px 6px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: it.variance_qty > 0 ? '#059669' : it.variance_qty < 0 ? '#e11d48' : '#64748b' }}>
                           {it.variance_qty !== null ? `${it.variance_qty > 0 ? '+' : ''}${num(it.variance_qty)} (${pct(it.variance_pct)})` : '—'}
                         </td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: it.variance_value > 0 ? '#059669' : it.variance_value < 0 ? '#e11d48' : '#64748b' }}>
-                          {it.variance_value !== null ? rupiah(it.variance_value) : '—'}
+                        <td style={{ padding: '5px 6px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: it.variance_value > 0 ? '#059669' : it.variance_value < 0 ? '#e11d48' : '#64748b' }}>
+                          {it.variance_value !== null ? (
+                            <>
+                              <div>{it.variance_value > 0 ? '+' : ''}{rupiah(it.variance_value)}</div>
+                              <div style={{ fontSize: 9, fontWeight: 500, opacity: 0.85 }}>
+                                {it.variance_value < 0 ? '(Kurang Nilai)' : it.variance_value > 0 ? '(Tambah Nilai)' : '(Pas)'}
+                              </div>
+                            </>
+                          ) : '—'}
                         </td>
-                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                        <td style={{ padding: '5px 6px', textAlign: 'center' }}>
                           <span
                             style={{
-                              fontSize: 9.5,
-                              padding: '2px 5px',
+                              fontSize: 9,
+                              padding: '2px 4px',
                               borderRadius: 4,
                               fontWeight: 700,
                               color: it.status === 'NORMAL' ? '#059669' : it.status === 'WASPADA' ? '#d97706' : '#dc2626',
@@ -1587,12 +1722,34 @@ export default function StockOpname() {
                             {it.status || '—'}
                           </span>
                         </td>
-                        <td style={{ padding: '6px 8px', color: '#64748b', fontSize: 11 }}>
+                        <td style={{ padding: '5px 6px', color: '#64748b', fontSize: 10.5 }}>
                           {it.reason || '—'}
                         </td>
                       </tr>
                     ))}
                   </tbody>
+                  <tfoot>
+                    <tr style={{ background: '#f8fafc', fontWeight: 800, borderTop: '2px solid #0f172a', borderBottom: '2px solid #0f172a' }}>
+                      <td colSpan={7} style={{ padding: '8px 8px', textAlign: 'right', textTransform: 'uppercase', fontSize: 11, color: '#0f172a' }}>
+                        TOTAL REKONSILIASI PERSEDIAAN:
+                      </td>
+                      <td style={{ padding: '8px 6px', textAlign: 'right', fontFamily: 'monospace', color: '#4338ca', fontSize: 11.5 }}>
+                        {rupiah(sessionDetail.summary?.total_theoretical_value)}
+                      </td>
+                      <td style={{ padding: '8px 6px', textAlign: 'right', fontFamily: 'monospace', color: '#0f172a', fontSize: 11.5 }}>
+                        {rupiah(sessionDetail.summary?.total_actual_value)}
+                      </td>
+                      <td style={{ padding: '8px 6px', textAlign: 'center', fontSize: 10.5, color: '#64748b' }}>
+                        —
+                      </td>
+                      <td style={{ padding: '8px 6px', textAlign: 'right', fontFamily: 'monospace', fontSize: 11.5, color: sessionDetail.summary?.total_variance_value >= 0 ? '#059669' : '#e11d48' }}>
+                        {sessionDetail.summary?.total_variance_value > 0 ? '+' : ''}{rupiah(sessionDetail.summary?.total_variance_value)}
+                      </td>
+                      <td colSpan={2} style={{ padding: '8px 6px', fontSize: 10, color: '#64748b' }}>
+                        {sessionDetail.summary?.total_variance_value < 0 ? 'Defisit mengurang persediaan' : sessionDetail.summary?.total_variance_value > 0 ? 'Surplus menambah persediaan' : 'Sesuai standar'}
+                      </td>
+                    </tr>
+                  </tfoot>
                 </table>
 
                 {/* General Notes */}

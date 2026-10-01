@@ -10,6 +10,7 @@ import { printElement } from '../utils/print';
 export default function VarianceMenu() {
   const [menuData, setMenuData] = useState([]);
   const [drill, setDrill] = useState(null);
+  const [selectedDrillMenu, setSelectedDrillMenu] = useState(null);
   const [showDrillModal, setShowDrillModal] = useState(false);
   const [rankBy, setRankBy] = useState('value');
   const [loading, setLoading] = useState(true);
@@ -28,7 +29,7 @@ export default function VarianceMenu() {
       const { data } = await api.get('/reports/variance/menus', {
         params: { from: period.from, to: period.to, outlet_id: targetOutlet }
       });
-      setMenuData(data);
+      setMenuData(Array.isArray(data) ? data : []);
     } catch { toast.error('Gagal memuat data'); }
     finally { setLoading(false); }
   }
@@ -57,6 +58,12 @@ export default function VarianceMenu() {
     );
   }
 
+  const handleCloseDrill = () => {
+    setShowDrillModal(false);
+    setSelectedDrillMenu(null);
+    setDrill(null);
+  };
+
   const sorted = [...menuData].sort((a, b) => {
     if (rankBy === 'value') return Math.abs(b.variance_value) - Math.abs(a.variance_value);
     if (rankBy === 'pct')   return b.weighted_pct - a.weighted_pct;
@@ -64,7 +71,7 @@ export default function VarianceMenu() {
   });
 
   const total = menuData.reduce((s, r) => s + (r.variance_value || 0), 0);
-  const drillRow = drill ? menuData.find(r => String(r.menu?.id) === String(drill)) : null;
+  const drillRow = selectedDrillMenu || (drill ? menuData.find(r => String(r.menu?.id ?? r.menu_id ?? r.id) === String(drill)) : null);
 
   const maxQty = Math.max(...menuData.map(r => r.qty_terjual), 1);
   const maxPct = Math.max(...menuData.map(r => r.weighted_pct || 0), 1);
@@ -133,9 +140,10 @@ export default function VarianceMenu() {
           </thead>
           <tbody>
             {sorted.map(row => {
-              const isSelected = String(drill) === String(row.menu?.id);
+              const menuId = row.menu?.id ?? row.menu_id ?? row.id;
+              const isSelected = String(drill) === String(menuId) || (selectedDrillMenu && String(selectedDrillMenu.menu?.id ?? selectedDrillMenu.menu_id ?? selectedDrillMenu.id) === String(menuId));
               return (
-                <tr key={row.menu?.id} className={isSelected ? 'selected' : ''}>
+                <tr key={menuId} className={isSelected ? 'selected' : ''}>
                   <td style={{ fontWeight: 600 }}>{row.menu?.name}</td>
                   <td className="mono right">{row.qty_terjual}</td>
                   <td className="mono right">{pct(row.weighted_pct)}</td>
@@ -159,7 +167,9 @@ export default function VarianceMenu() {
                         borderColor: 'rgba(99, 102, 241, 0.3)'
                       }}
                       onClick={() => {
-                        setDrill(row.menu?.id);
+                        const targetId = row.menu?.id ?? row.menu_id ?? row.id;
+                        setDrill(targetId);
+                        setSelectedDrillMenu(row);
                         setShowDrillModal(true);
                       }}
                     >
@@ -188,7 +198,7 @@ export default function VarianceMenu() {
             zIndex: 1100,
             padding: 16
           }}
-          onClick={() => setShowDrillModal(false)}
+          onClick={handleCloseDrill}
         >
           <div
             className="modal-card"
@@ -232,7 +242,7 @@ export default function VarianceMenu() {
               </div>
               <button
                 className="btn btn-ghost btn-icon btn-sm"
-                onClick={() => setShowDrillModal(false)}
+                onClick={handleCloseDrill}
                 style={{ color: 'var(--text-muted)' }}
               >
                 <X size={18} />
@@ -305,7 +315,7 @@ export default function VarianceMenu() {
 
             {/* Modal Footer */}
             <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', background: 'rgba(255,255,255,0.02)' }}>
-              <button className="btn btn-secondary btn-sm" onClick={() => setShowDrillModal(false)}>
+              <button className="btn btn-secondary btn-sm" onClick={handleCloseDrill}>
                 Tutup
               </button>
             </div>
@@ -323,7 +333,7 @@ export default function VarianceMenu() {
                 Bahan dalam resep menu ini yang paling menyumbang variance ({drillRow.qty_terjual} porsi terjual).
               </div>
             </div>
-            <button className="btn btn-ghost btn-sm" onClick={() => setDrill(null)}>Tutup Detail</button>
+            <button className="btn btn-ghost btn-sm" onClick={handleCloseDrill}>Tutup Detail</button>
           </div>
           <div className="table-wrap">
             <table>

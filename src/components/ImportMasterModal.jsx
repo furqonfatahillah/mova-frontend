@@ -1,7 +1,10 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import {
   FileSpreadsheet, Upload, X, CheckCircle2, AlertCircle,
-  Download, RefreshCw, AlertOctagon, Check, ArrowRight, Table, Store
+  Download, RefreshCw, AlertOctagon, Check, ArrowRight, ArrowLeft,
+  Table, Store, Layers, Package, Boxes, Scale, Utensils,
+  FlaskConical, CreditCard, ChevronRight, HelpCircle, Info, Sparkles,
+  ListOrdered, LayoutGrid
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, num, LoadingState } from './ui';
@@ -9,6 +12,8 @@ import { useOutlet } from '../context/OutletContext';
 import {
   downloadIngredientTemplate,
   downloadPerlengkapanTemplate,
+  downloadStockAwalBahanTemplate,
+  downloadStockAwalPerlengkapanTemplate,
   downloadStockAwalGudangTemplate,
   downloadMenuTemplate,
   downloadRecipeTemplate,
@@ -83,8 +88,164 @@ export function normalizeUnitClient(raw, fallback = 'pcs') {
     }
   }
 
-  // New custom unit
   return { symbol: clean, original, isFixed: false, isNew: true };
+}
+
+export function parseDecimal(val, fallback = 0) {
+  if (val === null || val === undefined || val === '') return fallback;
+  if (typeof val === 'number') return isNaN(val) ? fallback : val;
+  const str = String(val).trim().replace(',', '.').replace(/[^0-9.-]/g, '');
+  const n = parseFloat(str);
+  return isNaN(n) ? fallback : n;
+}
+
+export function parseExcelDate(val) {
+  if (val === null || val === undefined || val === '') {
+    return new Date().toISOString().slice(0, 10);
+  }
+  // If Date object
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    const year = val.getFullYear();
+    const month = String(val.getMonth() + 1).padStart(2, '0');
+    const day = String(val.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  // If Excel serial number (numeric, e.g. 45564 or "45564")
+  const numVal = Number(val);
+  if (!isNaN(numVal) && numVal > 20000 && numVal < 80000) {
+    const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+    const d = new Date(excelEpoch.getTime() + numVal * 86400000);
+    if (!isNaN(d.getTime())) {
+      const year = d.getUTCFullYear();
+      const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(d.getUTCDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+  }
+  const s = String(val).trim();
+  // YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // YYYY/MM/DD
+  if (/^\d{4}\/\d{2}\/\d{2}$/.test(s)) return s.replace(/\//g, '-');
+  // DD/MM/YYYY or DD-MM-YYYY
+  const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (dmy) {
+    const day = dmy[1].padStart(2, '0');
+    const month = dmy[2].padStart(2, '0');
+    const year = dmy[3];
+    return `${year}-${month}-${day}`;
+  }
+  // MM/DD/YYYY
+  const mdy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (mdy && Number(mdy[1]) <= 12 && Number(mdy[2]) > 12) {
+    const month = mdy[1].padStart(2, '0');
+    const day = mdy[2].padStart(2, '0');
+    const year = mdy[3];
+    return `${year}-${month}-${day}`;
+  }
+  // Standard parse
+  const parsed = new Date(s);
+  if (!isNaN(parsed.getTime())) {
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, '0');
+    const day = String(parsed.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  return new Date().toISOString().slice(0, 10);
+}
+
+export const IMPORT_STEPS = [
+  {
+    stepNumber: 1,
+    id: 'OUTLET',
+    name: 'Outlet & Gudang',
+    category: 'Fondasi Lokasi',
+    icon: Store,
+    badge: 'Langkah 1 (Wajib Pertama)',
+    description: 'Daftarkan seluruh cabang, outlet kasir, atau gudang penyimpanan fisik bisnis Anda.',
+    whyNeeded: 'Fondasi utama alur sistem. Seluruh alokasi saldo stok gudang dan transaksi kasir memerlukan cabang yang terdaftar.',
+    dependencyNote: 'Langkah pertama & fondasi awal (Tidak memerlukan data sebelumnya).',
+    subItems: [
+      { key: 'OUTLET', label: 'Master Outlet & Gudang Cabang', badge: 'Fondasi Lokasi', icon: Store }
+    ]
+  },
+  {
+    stepNumber: 2,
+    id: 'ITEMS',
+    name: 'Bahan & Kemasan',
+    category: 'Katalog Terpusat',
+    icon: Layers,
+    badge: 'Langkah 2 (Katalog Item)',
+    description: 'Daftarkan katalog bahan baku mentah, bahan setengah jadi (olahan), serta perlengkapan & packaging terpusat.',
+    whyNeeded: 'Menjadi standar katalog item terpusat dengan satuan beli, satuan pakai, dan faktor konversi yang berlaku di semua cabang.',
+    dependencyNote: 'Katalog terpusat mandiri. Menjadi prasyarat mutlak untuk Saldo Awal Gudang (Langkah 3) dan Resep BOM (Langkah 5).',
+    subItems: [
+      { key: 'INGREDIENT', label: 'Master Bahan Baku', badge: 'Mentah & Olahan', icon: Layers },
+      { key: 'PERLENGKAPAN', label: 'Master Perlengkapan & Packaging', badge: 'Kemasan / Cup / Dus', icon: Package }
+    ]
+  },
+  {
+    stepNumber: 3,
+    id: 'INITIAL_STOCK',
+    name: 'Saldo Awal Gudang',
+    category: 'Inisialisasi Stok',
+    icon: Boxes,
+    badge: 'Langkah 3 (Stok per Cabang)',
+    description: 'Alokasikan kuantitas stok fisik awal persediaan dan harga modal per masing-masing cabang / gudang langsung ke Kartu Stok.',
+    whyNeeded: 'Mengisi persediaan riil awal di setiap cabang agar stok sistem sinkron dengan stok fisik di gudang/outlet.',
+    dependencyNote: 'Memerlukan Outlet & Gudang (Langkah 1) dan Master Bahan/Kemasan (Langkah 2) agar alokasi stok ke cabang valid.',
+    subItems: [
+      { key: 'STOCK_AWAL_BAHAN', label: 'Saldo Awal Bahan Baku per Cabang', badge: 'Kartu Stok Bahan', icon: Scale },
+      { key: 'STOCK_AWAL_PERLENGKAPAN', label: 'Saldo Awal Perlengkapan per Cabang', badge: 'Kartu Stok Kemasan', icon: Boxes }
+    ]
+  },
+  {
+    stepNumber: 4,
+    id: 'MENU',
+    name: 'Master Menu POS',
+    category: 'Katalog Kasir',
+    icon: Utensils,
+    badge: 'Langkah 4 (Produk Penjualan)',
+    description: 'Daftarkan seluruh menu makanan, minuman, dan produk retail yang dijual di kasir POS beserta harga jualnya.',
+    whyNeeded: 'Katalog produk kasir yang akan ditransaksikan dan dihubungkan ke resep bahan baku di Langkah 5.',
+    dependencyNote: 'Katalog mandiri. Menjadi prasyarat untuk Resep & Gramasi BOM (Langkah 5).',
+    subItems: [
+      { key: 'MENU', label: 'Master Menu & F&B (Kasir POS)', badge: 'Produk Kasir', icon: Utensils }
+    ]
+  },
+  {
+    stepNumber: 5,
+    id: 'RECIPE',
+    name: 'Resep & BOM',
+    category: 'HPP & Komposisi',
+    icon: FlaskConical,
+    badge: 'Langkah 5 (Komposisi & HPP)',
+    description: 'Hubungkan setiap menu makanan/minuman dengan bahan baku & kemasannya (Bill of Materials) beserta gramasi takaran & susut.',
+    whyNeeded: 'Kunci otomatisasi: Menghitung HPP modal riil secara otomatis dan memotong stok bahan baku secara otomatis setiap kasir menjual menu.',
+    dependencyNote: 'Memerlukan Master Bahan (Langkah 2) dan Master Menu (Langkah 4) agar menu dan bahan pada resep otomatis terhubung.',
+    subItems: [
+      { key: 'RECIPE', label: 'Resep & Gramasi Menu (BOM)', badge: 'Kalkulasi HPP Otomatis', icon: FlaskConical }
+    ]
+  },
+  {
+    stepNumber: 6,
+    id: 'RECEIVABLE',
+    name: 'Kasbon & Piutang',
+    category: 'Migrasi Keuangan',
+    icon: CreditCard,
+    badge: 'Langkah 6 (Buku Piutang)',
+    description: 'Import saldo piutang / kasbon berjalan pelanggan lama untuk pencatatan buku piutang saat migrasi ke sistem MOVA POS.',
+    whyNeeded: 'Membawa riwayat tagihan piutang pelanggan berjalan agar pelunasan di masa mendatang tetap tercatat rapi.',
+    dependencyNote: 'Opsional. Dapat diimport kapan saja untuk melanjutkan riwayat kasbon pelanggan lama.',
+    subItems: [
+      { key: 'RECEIVABLE', label: 'Master Piutang / Kasbon Customer', badge: 'Buku Piutang', icon: CreditCard }
+    ]
+  }
+];
+
+export function getStepIndexForMasterKey(key) {
+  const idx = IMPORT_STEPS.findIndex(s => s.subItems.some(sub => sub.key === key));
+  return idx >= 0 ? idx : 0;
 }
 
 /**
@@ -93,11 +254,14 @@ export function normalizeUnitClient(raw, fallback = 'pcs') {
 export default function ImportMasterModal({
   isOpen,
   onClose,
-  targetMaster = 'INGREDIENT', // 'INGREDIENT' | 'PERLENGKAPAN' | 'STOCK_AWAL_GUDANG' | 'MENU' | 'RECEIVABLE' | 'OUTLET'
+  targetMaster = 'INGREDIENT', // 'INGREDIENT' | 'PERLENGKAPAN' | 'STOCK_AWAL_BAHAN' | 'STOCK_AWAL_PERLENGKAPAN' | 'STOCK_AWAL_GUDANG' | 'MENU' | 'RECIPE' | 'RECEIVABLE' | 'OUTLET'
   onSuccess,
 }) {
   const { outlets = [], currentBusiness, currentUser } = useOutlet();
+  const [viewMode, setViewMode] = useState('STEPPER'); // 'STEPPER' | 'QUICK'
   const [modalOutlets, setModalOutlets] = useState([]);
+  const [modalIngredients, setModalIngredients] = useState([]);
+  const [modalMenus, setModalMenus] = useState([]);
   const [selectedOutletFilter, setSelectedOutletFilter] = useState('ALL');
   const [selectedMaster, setSelectedMaster] = useState(targetMaster);
   const [file, setFile] = useState(null);
@@ -114,23 +278,69 @@ export default function ImportMasterModal({
     if (targetMaster) {
       setSelectedMaster(targetMaster);
       setFile(null);
+      setFileName('');
       setParsedRows([]);
       setImportResult(null);
     }
   }, [targetMaster, isOpen]);
 
-  // Fetch or sync outlets from master cabang
+  // Current Step Calculation
+  const currentStepIndex = useMemo(() => getStepIndexForMasterKey(selectedMaster), [selectedMaster]);
+  const activeStep = IMPORT_STEPS[currentStepIndex] || IMPORT_STEPS[0];
+
+  function handleSelectStep(stepIdx) {
+    const target = IMPORT_STEPS[stepIdx];
+    if (!target) return;
+    const defaultSubKey = target.subItems[0]?.key || 'INGREDIENT';
+    setSelectedMaster(defaultSubKey);
+    setFile(null);
+    setFileName('');
+    setParsedRows([]);
+    setImportResult(null);
+    if (fileInputRef.current) fileInputRef.current.value = null;
+  }
+
+  function handleSelectSubItem(masterKey) {
+    setSelectedMaster(masterKey);
+    setFile(null);
+    setFileName('');
+    setParsedRows([]);
+    setImportResult(null);
+    if (fileInputRef.current) fileInputRef.current.value = null;
+  }
+
+  function handleNextStep() {
+    if (currentStepIndex < IMPORT_STEPS.length - 1) {
+      handleSelectStep(currentStepIndex + 1);
+    }
+  }
+
+  function handlePrevStep() {
+    if (currentStepIndex > 0) {
+      handleSelectStep(currentStepIndex - 1);
+    }
+  }
+
+  // Fetch or sync outlets, master ingredients, and master menus
   useEffect(() => {
-    if (outlets && outlets.length > 0) {
-      setModalOutlets(outlets);
-    } else {
-      api.get('/outlets')
-        .then(res => setModalOutlets(Array.isArray(res.data) ? res.data : (res.data?.data || [])))
+    if (isOpen) {
+      if (outlets && outlets.length > 0) {
+        setModalOutlets(outlets);
+      } else {
+        api.get('/outlets')
+          .then(res => setModalOutlets(Array.isArray(res.data) ? res.data : (res.data?.data || [])))
+          .catch(() => { });
+      }
+
+      api.get('/ingredients')
+        .then(res => setModalIngredients(Array.isArray(res.data) ? res.data : (res.data?.data || [])))
+        .catch(() => { });
+
+      api.get('/menus')
+        .then(res => setModalMenus(Array.isArray(res.data) ? res.data : (res.data?.data || [])))
         .catch(() => { });
     }
-  }, [outlets]);
-
-  if (!isOpen) return null;
+  }, [outlets, isOpen]);
 
   const currentMasterType = selectedMaster || targetMaster;
   const businessName = currentBusiness?.name || currentUser?.business?.name || '';
@@ -138,31 +348,45 @@ export default function ImportMasterModal({
 
   const MASTER_CONFIG = {
     INGREDIENT: {
-      title: 'Master Bahan & Saldo Awal (Terpusat)',
+      title: 'Master Bahan Baku (Terpusat)',
       downloadFn: downloadIngredientTemplate,
       endpoint: '/ingredients/bulk-import',
-      columns: ['Nama Bahan*', 'Kategori', 'Tipe*', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Saldo Awal (Rp)*', 'Stok Minimal', 'Batas Toleransi (%)'],
-      sampleHint: 'Master bahan terpusat untuk seluruh cabang usaha beserta Saldo Awal Nilai Buku (HPP Master). Untuk stok fisik per cabang/gudang, gunakan opsi Stock Awal per Gudang.',
+      columns: ['Kode Bahan', 'Nama Bahan*', 'Kategori', 'Tipe Bahan*', 'Satuan Beli*', 'Satuan Pakai*', 'Faktor Konversi*', 'Stok Minimal (Satuan Pakai)', 'Batas Toleransi (%)', 'Catatan'],
+      sampleHint: 'Master bahan baku terpusat berlaku di semua cabang. Stok Minimal hanya batas peringatan menipis (bukan stok awal). Input saldo awal fisik dilakukan via template "Saldo Awal Bahan per Gudang".',
     },
     PERLENGKAPAN: {
-      title: 'Master Perlengkapan & Saldo Awal (Terpusat)',
+      title: 'Master Perlengkapan & Packaging (Terpusat)',
       downloadFn: downloadPerlengkapanTemplate,
       endpoint: '/perlengkapans/bulk-import',
-      columns: ['Nama Perlengkapan*', 'Kategori', 'Satuan Beli*', 'Satuan Pakai*', 'Konversi*', 'Harga Beli*', 'Saldo Awal (Rp)*', 'Stok Minimal', 'Batas Toleransi (%)'],
-      sampleHint: 'Master perlengkapan & packaging terpusat beserta Saldo Awal Nilai Buku.',
+      columns: ['Kode Perlengkapan', 'Nama Perlengkapan*', 'Kategori', 'Satuan Beli*', 'Satuan Pakai*', 'Faktor Konversi*', 'Stok Minimal (Satuan Pakai)', 'Batas Toleransi (%)', 'Catatan'],
+      sampleHint: 'Master perlengkapan & kemasan terpusat. Stok Minimal hanya batas peringatan menipis. Input saldo awal fisik dilakukan via template "Saldo Awal Perlengkapan per Gudang".',
+    },
+    STOCK_AWAL_BAHAN: {
+      title: 'Saldo Awal Bahan Baku per Gudang / Cabang',
+      downloadFn: downloadStockAwalBahanTemplate,
+      endpoint: '/stock-card/bulk-import-initial',
+      columns: ['Cabang / Gudang*', 'Kode Bahan', 'Nama Bahan Baku*', 'Kategori', 'Tipe Satuan*', 'Satuan*', 'Saldo Awal Fisik*', 'Harga/Modal Satuan', 'Stok Minimal', 'Tanggal Efektif'],
+      sampleHint: 'Alokasikan saldo awal fisik BAHAN BAKU spesifik per cabang atau gudang (Gudang Utama, Cabang A, Cabang B). Langsung tercatat di Kartu Stok masing-masing cabang.',
+    },
+    STOCK_AWAL_PERLENGKAPAN: {
+      title: 'Saldo Awal Perlengkapan & Packaging per Gudang / Cabang',
+      downloadFn: downloadStockAwalPerlengkapanTemplate,
+      endpoint: '/stock-card/bulk-import-initial',
+      columns: ['Cabang / Gudang*', 'Kode Perlengkapan', 'Nama Perlengkapan*', 'Kategori', 'Tipe Satuan*', 'Satuan*', 'Saldo Awal Fisik*', 'Harga/Modal Satuan', 'Stok Minimal', 'Tanggal Efektif'],
+      sampleHint: 'Alokasikan saldo awal fisik PERLENGKAPAN & PACKAGING spesifik per cabang atau gudang. Langsung tercatat di Kartu Stok masing-masing cabang.',
     },
     STOCK_AWAL_GUDANG: {
-      title: 'Stock Awal per Gudang / Cabang (Alokasi Multi-Gudang)',
-      downloadFn: downloadStockAwalGudangTemplate,
+      title: 'Saldo Awal Bahan Baku per Gudang / Cabang',
+      downloadFn: downloadStockAwalBahanTemplate,
       endpoint: '/stock-card/bulk-import-initial',
-      columns: ['Cabang / Gudang*', 'Nama Bahan / Item*', 'Kategori', 'Tipe Satuan*', 'Satuan*', 'Stock Awal Fisik*', 'Harga/Modal Satuan', 'Stok Minimal', 'Tanggal Efektif'],
-      sampleHint: 'Alokasikan stok fisik awal spesifik per cabang atau gudang (Gudang Utama, Cabang A, Cabang B). Stok langsung tercatat di Kartu Stok masing-masing cabang.',
+      columns: ['Cabang / Gudang*', 'Kode Bahan', 'Nama Bahan Baku*', 'Kategori', 'Tipe Satuan*', 'Satuan*', 'Saldo Awal Fisik*', 'Harga/Modal Satuan', 'Stok Minimal', 'Tanggal Efektif'],
+      sampleHint: 'Alokasikan saldo awal fisik spesifik per cabang atau gudang. Langsung tercatat di Kartu Stok masing-masing cabang.',
     },
     MENU: {
       title: 'Master Menu & F&B',
       downloadFn: downloadMenuTemplate,
       endpoint: '/menus/bulk-import',
-      columns: ['Nama Menu*', 'Kategori*', 'Tipe Item*', 'Harga Jual*', 'HPP (Modal)'],
+      columns: ['Kode Menu', 'Barcode', 'Nama Menu*', 'Kategori*', 'Tipe Item*', 'Harga Jual*', 'HPP (Modal)', 'Deskripsi'],
       sampleHint: 'Contoh: Kopi Aren, Kategori: Minuman, Tipe: RECIPE, Harga Jual: 20000, HPP: 8000',
     },
     RECIPE: {
@@ -190,11 +414,15 @@ export default function ImportMasterModal({
 
   const activeConfig = MASTER_CONFIG[currentMasterType] || MASTER_CONFIG.INGREDIENT;
 
-  // Handle template download with Owner's Master Cabang
+  // Handle template download with Owner's Master Cabang, Master Menu & Master Bahan
   async function handleDownloadTemplate() {
     try {
       const effectiveOutlets = modalOutlets.length > 0 ? modalOutlets : outlets;
-      await activeConfig.downloadFn(effectiveOutlets, businessName);
+      if (currentMasterType === 'RECIPE') {
+        await activeConfig.downloadFn(modalMenus, modalIngredients, businessName);
+      } else {
+        await activeConfig.downloadFn(effectiveOutlets, businessName);
+      }
       toast.success(`Template Excel ${activeConfig.title} berhasil terunduh!`);
     } catch (err) {
       console.error(err);
@@ -265,7 +493,7 @@ export default function ImportMasterModal({
         'nama bahan / item', 'kode bahan / item',
         'harga beli', 'harga jual', 'stok minimal', 'pic manager', 'tipe outlet',
         'faktor konversi', 'konversi',
-        'nama bahan / perlengkapan / kemasan', 'nama menu / produk', 'gramasi', 'gramasi / kuantitas (qty)', 'standar susut', 'catatan / petunjuk resep'
+        'nama bahan / perlengkapan / kemasan', 'nama bahan / perlengkapan', 'nama menu / produk', 'gramasi', 'gramasi / qty', 'gramasi / kuantitas (qty)', 'standar susut', 'standar susut / waste', 'catatan / petunjuk resep'
       ];
 
       let headerRowIndex = 0;
@@ -346,8 +574,8 @@ export default function ImportMasterModal({
         const firstVal = (values[0] || '').toLowerCase();
         const secondVal = (values[1] || '').toLowerCase();
         if (
-          ['kode bahan', 'nama bahan', 'nama bahan*', 'kode perlengkapan', 'nama perlengkapan', 'kode menu', 'nama menu', 'nama pelanggan', 'kode outlet', 'nama outlet'].includes(firstVal) ||
-          ['nama bahan', 'nama bahan*', 'nama perlengkapan', 'nama menu', 'nama pelanggan', 'nama outlet'].includes(secondVal)
+          ['kode bahan', 'nama bahan', 'nama bahan*', 'kode perlengkapan', 'nama perlengkapan', 'kode menu', 'nama menu', 'nama pelanggan', 'kode outlet', 'nama outlet', 'kode menu (otomatis)', 'kode bahan (otomatis)'].includes(firstVal) ||
+          ['nama bahan', 'nama bahan*', 'nama perlengkapan', 'nama menu', 'nama pelanggan', 'nama outlet', 'nama menu / produk (▼)*', 'nama menu / produk', 'nama bahan / perlengkapan (▼)*'].includes(secondVal)
         ) {
           return false;
         }
@@ -388,7 +616,7 @@ export default function ImportMasterModal({
           const uBeli = normalizeUnitClient(rawUnitBeli, 'kg');
           const uPakai = normalizeUnitClient(rawUnitPakai, 'gram');
 
-          let konversi = parseFloat(getVal(row, ['faktorkonversi', 'konversi', 'isipack', 'isi'])) || 0;
+          let konversi = parseDecimal(getVal(row, ['faktorkonversi', 'konversi', 'isipack', 'isi']), 0);
           if (konversi <= 0 || (konversi === 1 && uBeli.symbol !== uPakai.symbol)) {
             if (uBeli.symbol === 'kg' && uPakai.symbol === 'gram') konversi = 1000;
             else if (uBeli.symbol === 'liter' && uPakai.symbol === 'ml') konversi = 1000;
@@ -397,64 +625,40 @@ export default function ImportMasterModal({
             else if (konversi <= 0) konversi = 1;
           }
 
-          const outletName = getVal(row, ['cabangoutletopsional', 'cabangoutlet', 'cabang', 'outlet', 'namaoutlet', 'namacabang']) || '';
-          const harga = parseFloat(getVal(row, ['hargabelipersatuanbelirp', 'hargabeli', 'harga', 'hargasatuan', 'cost', 'modal'])) || 0;
-          const minStock = parseFloat(getVal(row, ['stokminimalsatuanpakai', 'stokminimal', 'minstok', 'minimumstok', 'minstock', 'stokmin', 'stockmin'])) || 0;
-          const initialStock = parseFloat(getVal(row, [
-            'stockawalsatuanpakai', 'stokawalsatuanpakai',
-            'stockawal', 'stokawal',
-            'stock_awal', 'stok_awal',
-            'saldodanstockawalsatuanpakai', 'saldostockawalsatuanpakai', 'saldoawalstockawalsatuanpakai',
-            'saldodanstockawal', 'saldostockawal',
-            'stockawalfisik', 'stokawalfisik',
-            'initialstock', 'initial_stock',
-            'stok', 'stock', 'stokfisik', 'stockfisik'
-          ])) || 0;
-
-          const unitPricePakai = harga / Math.max(konversi || 1, 1);
-          let initialBalanceRaw = getVal(row, [
-            'saldoawalrp', 'saldoawalrupiah', 'saldoawalnominal', 'saldoawal', 'saldo_awal',
-            'initialbalance', 'openingbalance', 'saldorp'
-          ]);
-          let initialBalance = parseFloat(initialBalanceRaw);
-          if (isNaN(initialBalance) || initialBalance === null || initialBalance === undefined) {
-            initialBalance = Math.round(initialStock * unitPricePakai);
-          } else {
-            initialBalance = Math.round(initialBalance);
-          }
-
-          const tolerance = parseFloat(getVal(row, ['batastoleransi', 'toleransi', 'tolerance'])) || 5;
-          const notes = getVal(row, ['catatan', 'keterangan']);
+          // Stok minimal murni sebagai batas par-level warning (bukan stok awal)
+          const minStock = parseDecimal(getVal(row, ['stokminimalsatuanpakai', 'stokminimal', 'minstok', 'minimumstok', 'minstock', 'stokmin', 'stockmin']), 0);
+          const tolerance = parseDecimal(getVal(row, ['batastoleransi', 'toleransi', 'tolerance']), 5);
+          const notes = getVal(row, ['catatan', 'spesifikasi', 'keterangan']);
 
           if (!name) errors.push('Nama bahan wajib diisi.');
-          if (harga < 0) errors.push('Harga beli tidak boleh negatif.');
+          if (konversi <= 0) errors.push('Faktor konversi harus lebih dari 0.');
 
           mappedData = {
             code,
             name,
-            outlet_name: outletName,
             category,
             type,
             unit_beli: uBeli.symbol,
             unit_pakai: uPakai.symbol,
             konversi,
-            harga,
+            harga: 0,
             minstok: minStock,
-            initial_stock: initialStock,
-            stok_awal: initialStock,
-            stock_awal: initialStock,
-            initial_balance: initialBalance,
-            saldo_awal_nominal: initialBalance,
-            saldo_awal: initialBalance || initialStock,
+            stok_min: minStock,
+            initial_stock: 0,
+            stok_awal: 0,
+            stock_awal: 0,
+            initial_balance: 0,
+            saldo_awal_nominal: 0,
+            saldo_awal: 0,
             tolerance,
-            notes,
+            notes: notes || 'Master Bahan Terpusat',
             _uBeli: uBeli,
             _uPakai: uPakai,
           };
 
         } else if (currentMasterType === 'PERLENGKAPAN') {
           let code = getVal(row, ['kodeperlengkapan', 'kode', 'code', 'sku', 'itemcode']);
-          let name = getVal(row, ['namaperlengkapan', 'namabarang', 'nama', 'itemname', 'perlengkapan']);
+          let name = getVal(row, ['namaperlengkapan', 'namabarang', 'nama', 'itemname', 'perlengkapan', 'kemasan']);
 
           if (!code && keys[0] && keys[0].toLowerCase().includes('kode')) {
             code = String(row[keys[0]] || '').trim();
@@ -465,19 +669,18 @@ export default function ImportMasterModal({
           if (!name) {
             const nameKey = keys.find(k => {
               const cl = k.toLowerCase().replace(/[^a-z0-9]/g, '');
-              return cl.includes('nama') || cl.includes('perlengkapan') || cl.includes('barang');
+              return cl.includes('nama') || cl.includes('perlengkapan') || cl.includes('barang') || cl.includes('kemasan');
             });
             if (nameKey) name = String(row[nameKey] || '').trim();
           }
 
-          const outletName = getVal(row, ['cabangoutletopsional', 'cabangoutlet', 'cabang', 'outlet', 'namaoutlet', 'namacabang']) || '';
           const category = getVal(row, ['kategori', 'category']) || 'Perlengkapan';
           const rawUnitBeli = getVal(row, ['satuanbeli', 'unitbeli']);
           const rawUnitPakai = getVal(row, ['satuanpakai', 'unitpakai']);
           const uBeli = normalizeUnitClient(rawUnitBeli, 'Slop');
           const uPakai = normalizeUnitClient(rawUnitPakai, 'pcs');
 
-          let konversi = parseFloat(getVal(row, ['faktorkonversi', 'konversi'])) || 0;
+          let konversi = parseDecimal(getVal(row, ['faktorkonversi', 'konversi']), 0);
           if (konversi <= 0 || (konversi === 1 && uBeli.symbol !== uPakai.symbol)) {
             if (uBeli.symbol === 'slop' && uPakai.symbol === 'pcs') konversi = 50;
             else if (uBeli.symbol === 'pack' && (uPakai.symbol === 'pcs' || uPakai.symbol === 'lembar')) konversi = uPakai.symbol === 'lembar' ? 200 : 100;
@@ -485,65 +688,45 @@ export default function ImportMasterModal({
             else if (konversi <= 0) konversi = 1;
           }
 
-          const harga = parseFloat(getVal(row, ['hargabelipersatuanbelirp', 'hargabeli', 'harga', 'hargasatuan'])) || 0;
-          const minStock = parseFloat(getVal(row, ['stokminimalsatuanpakai', 'stokminimal', 'minstok', 'minimumstok', 'minstock', 'stokmin', 'stockmin'])) || 0;
-          const initialStock = parseFloat(getVal(row, [
-            'stockawalsatuanpakai', 'stokawalsatuanpakai',
-            'stockawal', 'stokawal',
-            'stock_awal', 'stok_awal',
-            'saldodanstockawalsatuanpakai', 'saldostockawalsatuanpakai', 'saldoawalstockawalsatuanpakai',
-            'saldodanstockawal', 'saldostockawal',
-            'stockawalfisik', 'stokawalfisik',
-            'initialstock', 'initial_stock',
-            'stok', 'stock', 'stokfisik', 'stockfisik'
-          ])) || 0;
-
-          const unitPricePakai = harga / Math.max(konversi || 1, 1);
-          let initialBalanceRaw = getVal(row, [
-            'saldoawalrp', 'saldoawalrupiah', 'saldoawalnominal', 'saldoawal', 'saldo_awal',
-            'initialbalance', 'openingbalance', 'saldorp'
-          ]);
-          let initialBalance = parseFloat(initialBalanceRaw);
-          if (isNaN(initialBalance) || initialBalance === null || initialBalance === undefined) {
-            initialBalance = Math.round(initialStock * unitPricePakai);
-          } else {
-            initialBalance = Math.round(initialBalance);
-          }
-
-          const tolerance = parseFloat(getVal(row, ['batastoleransi', 'toleransi', 'tolerance'])) || 5;
+          // Stok minimal murni sebagai batas par-level warning (bukan stok awal)
+          const minStock = parseDecimal(getVal(row, ['stokminimalsatuanpakai', 'stokminimal', 'minstok', 'minimumstok', 'minstock', 'stokmin', 'stockmin']), 0);
+          const tolerance = parseDecimal(getVal(row, ['batastoleransi', 'toleransi', 'tolerance']), 5);
           const notes = getVal(row, ['catatan', 'spesifikasi', 'keterangan']);
 
           if (!name) errors.push('Nama perlengkapan wajib diisi.');
-          if (harga < 0) errors.push('Harga beli tidak boleh negatif.');
           if (konversi <= 0) errors.push('Faktor konversi harus lebih dari 0.');
 
           mappedData = {
             code,
             name,
-            outlet_name: outletName,
             category,
             type: 'RAW',
             unit_beli: uBeli.symbol,
             unit_pakai: uPakai.symbol,
             konversi,
-            harga,
+            harga: 0,
             minstok: minStock,
-            initial_stock: initialStock,
-            stok_awal: initialStock,
-            stock_awal: initialStock,
-            initial_balance: initialBalance,
-            saldo_awal_nominal: initialBalance,
-            saldo_awal: initialBalance || initialStock,
+            stok_min: minStock,
+            initial_stock: 0,
+            stok_awal: 0,
+            stock_awal: 0,
+            initial_balance: 0,
+            saldo_awal_nominal: 0,
+            saldo_awal: 0,
             tolerance,
-            notes: notes || 'Imported Perlengkapan from Excel',
+            notes: notes || 'Master Perlengkapan Terpusat',
             _uBeli: uBeli,
             _uPakai: uPakai,
           };
 
-        } else if (currentMasterType === 'STOCK_AWAL_GUDANG') {
+        } else if (
+          currentMasterType === 'STOCK_AWAL_BAHAN' ||
+          currentMasterType === 'STOCK_AWAL_PERLENGKAPAN' ||
+          currentMasterType === 'STOCK_AWAL_GUDANG'
+        ) {
           let outletName = getVal(row, ['namacabanggudang', 'namacabang', 'cabanggudang', 'cabang', 'namaoutlet', 'outlet', 'gudang', 'namagudang']);
           let code = getVal(row, ['kodebahanperlengkapan', 'kodebahan', 'kodeitem', 'kodeperlengkapan', 'kode', 'code', 'sku']);
-          let name = getVal(row, ['namabahanitempersediaan', 'namabahan', 'namaitem', 'namabarang', 'namaperlengkapan', 'nama', 'bahan', 'item']);
+          let name = getVal(row, ['namabahanitempersediaan', 'namabahan', 'namaperlengkapan', 'namaitem', 'namabarang', 'namabahankemasan', 'nama', 'bahan', 'item']);
 
           if (!code && keys[1] && keys[1].toLowerCase().includes('kode')) {
             code = String(row[keys[1]] || '').trim();
@@ -554,35 +737,38 @@ export default function ImportMasterModal({
           if (!name) {
             const nameKey = keys.find(k => {
               const cl = k.toLowerCase().replace(/[^a-z0-9]/g, '');
-              return cl.includes('nama') || cl.includes('bahan') || cl.includes('barang') || cl.includes('item');
+              return cl.includes('nama') || cl.includes('bahan') || cl.includes('barang') || cl.includes('item') || cl.includes('perlengkapan');
             });
             if (nameKey) name = String(row[nameKey] || '').trim();
           }
 
-          const category = getVal(row, ['kategoriopsional', 'kategori', 'category']) || '';
+          const defaultCategory = currentMasterType === 'STOCK_AWAL_PERLENGKAPAN' ? 'Perlengkapan' : 'BAHAN_BAKU';
+          const category = getVal(row, ['kategoriopsional', 'kategori', 'category']) || defaultCategory;
           const unitTypeRaw = getVal(row, ['tipesatuaninput', 'tipesatuan', 'unittype', 'tipe']).toUpperCase();
           const unitType = unitTypeRaw.includes('BELI') ? 'BELI' : 'PAKAI';
           const rawUnit = getVal(row, ['satuan', 'unit', 'satuaninput']);
-          const uUnit = normalizeUnitClient(rawUnit, unitType === 'BELI' ? 'kg' : 'gram');
+          const defaultFallbackUnit = currentMasterType === 'STOCK_AWAL_PERLENGKAPAN' ? (unitType === 'BELI' ? 'Slop' : 'pcs') : (unitType === 'BELI' ? 'kg' : 'gram');
+          const uUnit = normalizeUnitClient(rawUnit, defaultFallbackUnit);
 
-          const initialStock = parseFloat(getVal(row, [
-            'kuantitasstockawalfisik', 'kuantitasstokawalfisik', 'stockawalfisik', 'stokawalfisik',
+          const initialStock = parseDecimal(getVal(row, [
+            'kuantitassaldoawalfisik', 'kuantitasstockawalfisik', 'kuantitasstokawalfisik', 'saldoawalfisik', 'stockawalfisik', 'stokawalfisik',
             'stockawal', 'stokawal', 'stock_awal', 'stok_awal', 'qty', 'kuantitas', 'jumlahstok', 'jumlah'
-          ])) || 0;
+          ]), 0);
 
-          const harga = parseFloat(getVal(row, [
+          const harga = parseDecimal(getVal(row, [
             'harganilaimodalsatuanrp', 'harganilaimodalsatuan', 'harganilaimodal', 'hargasatuan', 'hargamodal', 'harga', 'hargabeli', 'modal', 'cost'
-          ])) || 0;
+          ]), 0);
 
-          const minStock = parseFloat(getVal(row, [
+          const minStock = parseDecimal(getVal(row, [
             'stokminimalgudang', 'stokminimal', 'stokmin', 'minstok', 'minimumstok', 'minstock'
-          ])) || 0;
+          ]), 0);
 
-          const effectiveDate = getVal(row, ['tanggalefektif', 'tanggal', 'date']) || new Date().toISOString().slice(0, 10);
+          const rawEffectiveDate = getVal(row, ['tanggalefektif', 'tanggalefektifyyyymmdd', 'tanggal', 'date', 'tgl', 'efektif']);
+          const effectiveDate = parseExcelDate(rawEffectiveDate);
           const notes = getVal(row, ['catatanketerangan', 'catatan', 'keterangan']);
 
-          if (!name) errors.push('Nama bahan / item wajib diisi.');
-          if (initialStock <= 0) errors.push('Kuantitas stock awal fisik harus lebih dari 0.');
+          if (!name) errors.push('Nama item wajib diisi.');
+          if (initialStock <= 0) errors.push('Kuantitas saldo awal fisik harus lebih dari 0.');
           if (harga < 0) errors.push('Harga/modal tidak boleh negatif.');
 
           mappedData = {
@@ -599,7 +785,7 @@ export default function ImportMasterModal({
             unit_price: harga,
             stok_min: minStock,
             date: effectiveDate,
-            notes: notes || `Stock awal fisik per gudang: ${outletName || 'Gudang Utama'}`,
+            notes: notes || `Saldo awal fisik per gudang: ${outletName || 'Gudang Utama'}`,
             _uRaw: uUnit,
           };
 
@@ -621,8 +807,8 @@ export default function ImportMasterModal({
           const category = getVal(row, ['kategori', 'category']) || 'Umum';
           const typeRaw = getVal(row, ['tipeitem', 'tipe', 'type']).toUpperCase();
           const itemType = ['RECIPE', 'DIRECT', 'SERVICE', 'BUNDLE'].includes(typeRaw) ? typeRaw : 'RECIPE';
-          const price = parseFloat(getVal(row, ['hargajualrp', 'hargajual', 'harga', 'price'])) || 0;
-          const costPrice = parseFloat(getVal(row, ['hppmodalrp', 'hpp', 'modal', 'cost', 'hppmodal'])) || 0;
+          const price = parseDecimal(getVal(row, ['hargajualrp', 'hargajual', 'harga', 'price']), 0);
+          const costPrice = parseDecimal(getVal(row, ['hppmodalrp', 'hpp', 'modal', 'cost', 'hppmodal']), 0);
           const description = getVal(row, ['deskripsi', 'keterangan']);
           const statusRaw = getVal(row, ['status']);
           const isKosong = statusRaw && statusRaw.toUpperCase().includes('KOSONG');
@@ -633,27 +819,71 @@ export default function ImportMasterModal({
           mappedData = { code, barcode, name, category, item_type: itemType, price, cost_price: costPrice, description, is_available: !isKosong };
 
         } else if (currentMasterType === 'RECIPE') {
-          let menuCode = getVal(row, ['kodemenuopsional', 'kodemenu', 'kodemenualias', 'kode', 'code', 'sku']);
-          let menuName = getVal(row, ['namamenuproduk', 'namamenu', 'menu', 'nama', 'namaproduk', 'produk']);
-          let ingCode = getVal(row, ['kodebahanopsional', 'kodebahan', 'kodeperlengkapan', 'kodeitem', 'kode']);
-          let ingName = getVal(row, ['namabahanperlengkapankemasan', 'namabahankemasan', 'namabahanperlengkapan', 'namabahan', 'bahan', 'namaperlengkapan', 'perlengkapan', 'kemasan', 'namakemasan', 'itemname', 'item']);
+          let menuCode = getVal(row, ['kodemenuotomatis', 'kodemenuopsional', 'kodemenu', 'kodemenualias', 'kode', 'code', 'sku', 'kodemenupos', 'kodemenuresep']);
+          let menuName = getVal(row, ['namamenuproduk', 'namamenu', 'menu', 'nama', 'namaproduk', 'produk', 'namamenupos', 'namamenuresep', 'menuproduk']);
+          let ingCode = getVal(row, ['kodebahanotomatis', 'kodebahanopsional', 'kodebahan', 'kodeperlengkapan', 'kodeitem', 'kode', 'code', 'skubahan']);
+          let ingName = getVal(row, ['namabahanperlengkapan', 'namabahanperlengkapankemasan', 'namabahankemasan', 'namabahan', 'bahan', 'namaperlengkapan', 'perlengkapan', 'kemasan', 'namakemasan', 'itemname', 'item', 'namabarang', 'namabahanbaku']);
 
-          if (!menuName && keys[1] && keys[1].toLowerCase().includes('menu')) {
+          // Fallback by column position if header key matching missed
+          if (!menuCode && keys[0] && keys[0].toLowerCase().includes('kode')) {
+            menuCode = String(row[keys[0]] || '').trim();
+          }
+          if (!menuName && keys[1] && (keys[1].toLowerCase().includes('menu') || keys[1].toLowerCase().includes('produk') || keys[1].toLowerCase().includes('nama'))) {
             menuName = String(row[keys[1]] || '').trim();
           }
-          if (!ingName && keys[3] && (keys[3].toLowerCase().includes('bahan') || keys[3].toLowerCase().includes('kemasan') || keys[3].toLowerCase().includes('perlengkapan'))) {
+          if (!ingCode && keys[2] && keys[2].toLowerCase().includes('kode')) {
+            ingCode = String(row[keys[2]] || '').trim();
+          }
+          if (!ingName && keys[3] && (keys[3].toLowerCase().includes('bahan') || keys[3].toLowerCase().includes('kemasan') || keys[3].toLowerCase().includes('perlengkapan') || keys[3].toLowerCase().includes('nama'))) {
             ingName = String(row[keys[3]] || '').trim();
           }
 
-          const qty = parseFloat(getVal(row, ['gramasikuantitasqty', 'gramasi', 'kuantitas', 'qty', 'jumlah', 'porsi', 'takaran'])) || 0;
-          const rawUnit = getVal(row, ['satuanpakai', 'satuan', 'unit', 'unitpakai']);
+          const rawQtyStr = getVal(row, ['gramasiqty', 'gramasi', 'gramasikuantitasqty', 'kuantitas', 'qty', 'jumlah', 'porsi', 'takaran', 'gramasitakaran', 'quantity', 'takaranresep', 'gramasiresep', 'gramasiqtytakaran']);
+          const qty = parseDecimal(rawQtyStr || (keys[4] ? row[keys[4]] : 0), 0);
+          const rawUnit = getVal(row, ['satuanpakaiotomatis', 'satuanpakai', 'satuan', 'unit', 'unitpakai', 'satuanresep']) || (keys[5] ? String(row[keys[5]] || '').trim() : '');
           const uUnit = normalizeUnitClient(rawUnit, 'gram');
-          const wasteStd = parseFloat(getVal(row, ['standarsusutwaste', 'standarsusut', 'susut', 'waste', 'toleransisusut'])) || 0;
-          const notes = getVal(row, ['catatanpetunjukresep', 'catatanresep', 'catatan', 'keterangan', 'petunjuk']);
+          const wasteStd = parseDecimal(getVal(row, ['standarsusutwaste', 'standarsusut', 'susut', 'waste', 'toleransisusut', 'persensusut', 'susutpersen', 'wastepersen']) || (keys[6] ? row[keys[6]] : 0), 0);
+          const notes = getVal(row, ['catatanpetunjukresep', 'catatanresep', 'catatan', 'keterangan', 'petunjuk', 'notes', 'instruksi']) || (keys[7] ? String(row[keys[7]] || '').trim() : '');
+
+          // If menu and ingredient are both completely blank (empty placeholder from template), flag to skip
+          if (!menuName && !menuCode && !ingName && !ingCode && qty <= 0) {
+            return {
+              rowNumber: idx + headerRowIndex + 2,
+              original: row,
+              data: { name: '', _isEmptyPlaceholder: true },
+              isValid: false,
+              errors: ['Baris kosong template'],
+            };
+          }
+
+          // Otomatis mencocokkan & menarik data dari Master Menu jika sudah terdaftar
+          const matchedMenu = modalMenus.find(m =>
+            (menuCode && m.code && String(m.code).trim().toLowerCase() === String(menuCode).trim().toLowerCase()) ||
+            (menuName && m.name && String(m.name).trim().toLowerCase() === String(menuName).trim().toLowerCase())
+          );
+          if (matchedMenu) {
+            if (!menuCode && matchedMenu.code) menuCode = matchedMenu.code;
+            if (!menuName && matchedMenu.name) menuName = matchedMenu.name;
+          }
+
+          // Otomatis mencocokkan & menarik Kode serta mengunci Satuan Pakai resmi dari Master Bahan
+          const matchedIng = modalIngredients.find(i =>
+            (ingCode && i.code && String(i.code).trim().toLowerCase() === String(ingCode).trim().toLowerCase()) ||
+            (ingName && i.name && String(i.name).trim().toLowerCase() === String(ingName).trim().toLowerCase())
+          );
+          if (matchedIng) {
+            if (!ingCode && matchedIng.code) ingCode = matchedIng.code;
+            if (!ingName && matchedIng.name) ingName = matchedIng.name;
+          }
+          const finalUnit = matchedIng?.unit_pakai || uUnit.symbol || 'gram';
 
           if (!menuName && !menuCode) errors.push('Nama atau Kode Menu wajib diisi.');
           if (!ingName && !ingCode) errors.push('Nama atau Kode Bahan/Kemasan wajib diisi.');
-          if (qty <= 0) errors.push('Gramasi / Kuantitas (Qty) harus lebih dari 0.');
+          if (qty <= 0) errors.push('Gramasi / Qty harus lebih dari 0.');
+
+          const displayName = (menuName || menuCode) && (ingName || ingCode)
+            ? `${menuName || menuCode} ➔ ${ingName || ingCode} (${qty} ${finalUnit})`
+            : '';
 
           mappedData = {
             menu_code: menuCode,
@@ -661,10 +891,10 @@ export default function ImportMasterModal({
             ingredient_code: ingCode,
             ingredient_name: ingName,
             qty,
-            unit: uUnit.symbol,
+            unit: finalUnit,
             waste_std: wasteStd,
             notes,
-            name: `${menuName || menuCode} ➔ ${ingName || ingCode} (${qty} ${uUnit.symbol})`,
+            name: displayName,
             _uRaw: uUnit,
           };
 
@@ -679,8 +909,8 @@ export default function ImportMasterModal({
           }
           const phone = getVal(row, ['nomorhp', 'phone', 'telepon', 'hp']);
           const address = getVal(row, ['alamatpelanggan', 'alamat', 'address']);
-          const totalAmount = parseFloat(getVal(row, ['totaltagihankasbonrp', 'totaltagihan', 'total', 'nominal', 'tagihan'])) || 0;
-          const initialPaid = parseFloat(getVal(row, ['nominaldpuangmuka', 'nominaldp', 'uangmuka', 'dp'])) || 0;
+          const totalAmount = parseDecimal(getVal(row, ['totaltagihankasbonrp', 'totaltagihan', 'total', 'nominal', 'tagihan']), 0);
+          const initialPaid = parseDecimal(getVal(row, ['nominaldpuangmuka', 'nominaldp', 'uangmuka', 'dp']), 0);
           const issueDate = getVal(row, ['tanggalterbityyyymmdd', 'tanggalterbit', 'terbit', 'issuedate']) || new Date().toISOString().slice(0, 10);
           const dueDate = getVal(row, ['tanggaljatuhtempoyyyymmdd', 'tanggaljatuhtempo', 'tanggaljatuh', 'jatuhtempo', 'duedate']) || new Date().toISOString().slice(0, 10);
           const notes = getVal(row, ['catatan', 'keterangan']);
@@ -722,6 +952,7 @@ export default function ImportMasterModal({
         };
       }).filter(item => {
         const d = item.data;
+        if (d._isEmptyPlaceholder) return false;
         const name = (d.name || d.customer_name || d.menu_name || '').trim();
         const lower = name.toLowerCase();
         if (
@@ -736,7 +967,7 @@ export default function ImportMasterModal({
           lower.includes('tagihan piutang') ||
           lower.includes('daftar outlet') ||
           lower.includes('saldo awal stok') ||
-          ['kode bahan', 'nama bahan', 'nama bahan*', 'kode perlengkapan', 'nama perlengkapan', 'kode menu', 'nama menu', 'nama pelanggan', 'kode bahan / item', 'nama bahan / item', 'nama bahan / item*', 'nama menu / produk', 'nama menu / produk*'].includes(lower)
+          ['kode menu (otomatis)', 'nama menu / produk (▼)*', 'kode bahan (otomatis)', 'nama bahan / perlengkapan (▼)*', 'gramasi / qty*', 'satuan pakai (otomatis / ▼)*', 'standar susut / waste (%)', 'catatan / petunjuk resep', 'kode bahan', 'nama bahan', 'nama bahan*', 'kode perlengkapan', 'nama perlengkapan', 'kode menu', 'nama menu', 'nama pelanggan', 'kode bahan / item', 'nama bahan / item', 'nama bahan / item*', 'nama menu / produk', 'nama menu / produk*'].includes(lower)
         ) {
           return false;
         }
@@ -777,6 +1008,11 @@ export default function ImportMasterModal({
         count: importedCount,
       });
 
+      // Refetch master lists so subsequent steps get fresh data immediately
+      api.get('/outlets').then(r => setModalOutlets(Array.isArray(r.data) ? r.data : (r.data?.data || []))).catch(() => { });
+      api.get('/ingredients').then(r => setModalIngredients(Array.isArray(r.data) ? r.data : (r.data?.data || []))).catch(() => { });
+      api.get('/menus').then(r => setModalMenus(Array.isArray(r.data) ? r.data : (r.data?.data || []))).catch(() => { });
+
       toast.success(`Import berhasil! ${importedCount} data tersimpan.`);
       onSuccess?.();
     } catch (err) {
@@ -808,69 +1044,376 @@ export default function ImportMasterModal({
     return rowOutlet.includes(filterOutlet) || filterOutlet.includes(rowOutlet);
   });
 
+  const hasOutlets = modalOutlets.length > 0;
+  const hasIngredients = modalIngredients.length > 0;
+  const hasMenus = modalMenus.length > 0;
+
+  // Realtime dependency checks for the active step
+  const dependencyChecks = useMemo(() => {
+    if (activeStep.id === 'INITIAL_STOCK') {
+      return [
+        { name: 'Outlet & Gudang', ready: hasOutlets, count: modalOutlets.length, unit: 'Cabang', targetStepIdx: 0 },
+        { name: 'Master Bahan / Kemasan', ready: hasIngredients, count: modalIngredients.length, unit: 'Item Master', targetStepIdx: 1 },
+      ];
+    }
+    if (activeStep.id === 'RECIPE') {
+      return [
+        { name: 'Master Menu POS', ready: hasMenus, count: modalMenus.length, unit: 'Menu', targetStepIdx: 3 },
+        { name: 'Master Bahan Baku', ready: hasIngredients, count: modalIngredients.length, unit: 'Bahan Baku', targetStepIdx: 1 },
+      ];
+    }
+    return [];
+  }, [activeStep.id, hasOutlets, hasIngredients, hasMenus, modalOutlets.length, modalIngredients.length, modalMenus.length]);
+
+  if (!isOpen) return null;
+
   return (
     <div className="modal-backdrop fade-in" style={{
       position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-      background: 'rgba(4, 7, 18, 0.85)', backdropFilter: 'blur(12px)',
+      background: 'rgba(4, 7, 18, 0.88)', backdropFilter: 'blur(14px)',
       zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px'
     }}>
       <div className="card modal-content" style={{
-        maxWidth: '780px', width: '100%', maxHeight: '90vh', overflowY: 'auto',
-        padding: '24px', borderRadius: '18px', background: '#11162d', border: '1px solid var(--border-strong)'
+        maxWidth: '880px', width: '100%', maxHeight: '92vh', overflowY: 'auto',
+        padding: '24px', borderRadius: '20px', background: '#11162d', border: '1px solid var(--border-strong)',
+        boxShadow: '0 25px 60px rgba(0, 0, 0, 0.7)'
       }}>
         {/* Modal Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', gap: '12px' }}>
           <div>
             <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
               <FileSpreadsheet size={22} color="var(--primary)" />
               Import Data Master Excel & Template Hub
             </h3>
             <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-              Unggah file Excel (.xlsx / .csv) untuk meng-import data secara instan
+              Panduan impor data bertahap untuk menjamin keterkaitan data (Outlet ➔ Bahan ➔ Stok ➔ Menu ➔ Resep/HPP) berjalan akurat.
             </span>
           </div>
-          <button className="btn btn-ghost btn-icon" onClick={onClose}>
-            <X size={18} />
-          </button>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {/* View Mode Switcher */}
+            <div style={{
+              display: 'inline-flex',
+              padding: '3px',
+              background: 'rgba(255, 255, 255, 0.05)',
+              borderRadius: '10px',
+              border: '1px solid var(--border)'
+            }}>
+              <button
+                type="button"
+                onClick={() => setViewMode('STEPPER')}
+                style={{
+                  padding: '5px 12px',
+                  borderRadius: '7px',
+                  border: 'none',
+                  background: viewMode === 'STEPPER' ? 'var(--primary)' : 'transparent',
+                  color: '#ffffff',
+                  fontSize: '11.5px',
+                  fontWeight: viewMode === 'STEPPER' ? 700 : 500,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <ListOrdered size={13} />
+                Step-by-Step
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('QUICK')}
+                style={{
+                  padding: '5px 12px',
+                  borderRadius: '7px',
+                  border: 'none',
+                  background: viewMode === 'QUICK' ? 'var(--primary)' : 'transparent',
+                  color: '#ffffff',
+                  fontSize: '11.5px',
+                  fontWeight: viewMode === 'QUICK' ? 700 : 500,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <LayoutGrid size={13} />
+                Mode Cepat
+              </button>
+            </div>
+
+            <button className="btn btn-ghost btn-icon" onClick={onClose} title="Tutup Modal">
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
-        {/* Master Type Selector Pills */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '18px', flexWrap: 'wrap' }}>
-          {[
-            { key: 'INGREDIENT', label: 'Master Bahan & Saldo Awal' },
-            { key: 'PERLENGKAPAN', label: 'Master Perlengkapan & Saldo Awal' },
-            { key: 'STOCK_AWAL_GUDANG', label: 'Stock Awal per Gudang' },
-            { key: 'MENU', label: 'Master Menu' },
-            { key: 'RECIPE', label: 'Resep & Gramasi (BOM)' },
-            { key: 'RECEIVABLE', label: 'Kasbon / Piutang' },
-            { key: 'OUTLET', label: 'Outlet & Gudang' },
-          ].map(m => (
-            <button
-              key={m.key}
-              type="button"
-              onClick={() => {
-                setSelectedMaster(m.key);
-                setFile(null);
-                setParsedRows([]);
-                setImportResult(null);
-              }}
-              style={{
-                padding: '8px 14px',
-                borderRadius: '8px',
-                border: '1px solid',
-                borderColor: selectedMaster === m.key ? 'var(--primary)' : 'var(--border)',
-                background: selectedMaster === m.key ? 'var(--primary)' : 'rgba(255,255,255,0.04)',
-                color: '#ffffff',
-                fontSize: '12.5px',
-                fontWeight: selectedMaster === m.key ? 700 : 500,
-                cursor: 'pointer',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              {m.label}
-            </button>
-          ))}
+        {/* STEPPER TIMELINE BAR (When viewMode === 'STEPPER') */}
+        {viewMode === 'STEPPER' && (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(125px, 1fr))',
+            gap: '8px',
+            marginBottom: '16px',
+            background: 'rgba(0, 0, 0, 0.25)',
+            padding: '10px',
+            borderRadius: '14px',
+            border: '1px solid rgba(255, 255, 255, 0.07)'
+          }}>
+            {IMPORT_STEPS.map((step, idx) => {
+              const StepIcon = step.icon;
+              const isActive = currentStepIndex === idx;
+              const isPast = currentStepIndex > idx;
+
+              return (
+                <div
+                  key={step.id}
+                  onClick={() => handleSelectStep(idx)}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    textAlign: 'center',
+                    padding: '10px 6px',
+                    borderRadius: '10px',
+                    cursor: 'pointer',
+                    border: '1px solid',
+                    borderColor: isActive ? 'var(--primary)' : (isPast ? 'rgba(34, 197, 94, 0.35)' : 'rgba(255, 255, 255, 0.06)'),
+                    background: isActive
+                      ? 'linear-gradient(180deg, rgba(124, 58, 237, 0.28) 0%, rgba(79, 70, 229, 0.18) 100%)'
+                      : (isPast ? 'rgba(34, 197, 94, 0.06)' : 'rgba(255, 255, 255, 0.02)'),
+                    boxShadow: isActive ? '0 4px 15px rgba(124, 58, 237, 0.3)' : 'none',
+                    transition: 'all 0.2s ease',
+                    position: 'relative'
+                  }}
+                  title={`Klik untuk membuka Step ${step.stepNumber}: ${step.name}`}
+                >
+                  {/* Step Number Badge */}
+                  <div style={{
+                    width: '26px',
+                    height: '26px',
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: isActive ? 'var(--primary)' : (isPast ? 'rgba(34, 197, 94, 0.25)' : 'rgba(255, 255, 255, 0.08)'),
+                    color: isActive ? '#ffffff' : (isPast ? '#4ade80' : 'var(--text-secondary)'),
+                    fontWeight: 800,
+                    fontSize: '11.5px',
+                    marginBottom: '5px'
+                  }}>
+                    {isPast ? <Check size={14} /> : step.stepNumber}
+                  </div>
+
+                  <div style={{
+                    fontSize: '11.5px',
+                    fontWeight: isActive ? 800 : 600,
+                    color: isActive ? '#ffffff' : (isPast ? '#e2e8f0' : 'var(--text-secondary)'),
+                    lineHeight: '1.2'
+                  }}>
+                    {step.name}
+                  </div>
+
+                  <div style={{
+                    fontSize: '9.5px',
+                    color: isActive ? 'var(--accent-bright)' : (isPast ? '#4ade80' : 'var(--text-muted)'),
+                    marginTop: '3px',
+                    fontWeight: 600
+                  }}>
+                    {step.category}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* QUICK MODE TAB PILLS (When viewMode === 'QUICK') */}
+        {viewMode === 'QUICK' && (
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+            {[
+              { key: 'OUTLET', label: '1. Outlet & Cabang' },
+              { key: 'INGREDIENT', label: '2. Bahan Baku' },
+              { key: 'PERLENGKAPAN', label: '2. Perlengkapan' },
+              { key: 'STOCK_AWAL_BAHAN', label: '3. Saldo Awal Bahan' },
+              { key: 'STOCK_AWAL_PERLENGKAPAN', label: '3. Saldo Awal Perlengkapan' },
+              { key: 'MENU', label: '4. Master Menu' },
+              { key: 'RECIPE', label: '5. Resep & BOM' },
+              { key: 'RECEIVABLE', label: '6. Kasbon / Piutang' },
+            ].map(m => (
+              <button
+                key={m.key}
+                type="button"
+                onClick={() => {
+                  setSelectedMaster(m.key);
+                  setFile(null);
+                  setFileName('');
+                  setParsedRows([]);
+                  setImportResult(null);
+                  if (fileInputRef.current) fileInputRef.current.value = null;
+                }}
+                style={{
+                  padding: '7px 12px',
+                  borderRadius: '8px',
+                  border: '1px solid',
+                  borderColor: selectedMaster === m.key ? 'var(--primary)' : 'var(--border)',
+                  background: selectedMaster === m.key ? 'var(--primary)' : 'rgba(255,255,255,0.04)',
+                  color: '#ffffff',
+                  fontSize: '12px',
+                  fontWeight: selectedMaster === m.key ? 700 : 500,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* STEP GUIDANCE & DATA DEPENDENCY CARD */}
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(17, 24, 39, 0.85) 100%)',
+          border: '1px solid rgba(148, 163, 184, 0.2)',
+          borderRadius: '14px',
+          padding: '14px 18px',
+          marginBottom: '16px',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+            <div style={{ flex: 1, minWidth: '240px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                <span style={{
+                  background: 'var(--primary)',
+                  color: '#ffffff',
+                  fontSize: '10.5px',
+                  fontWeight: 800,
+                  padding: '2px 8px',
+                  borderRadius: '6px',
+                  letterSpacing: '0.3px'
+                }}>
+                  TAHAP {activeStep.stepNumber} DARI 6
+                </span>
+                <span style={{ fontSize: '14.5px', fontWeight: 800, color: '#ffffff' }}>
+                  {activeStep.name}
+                </span>
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                {activeStep.description}
+              </div>
+            </div>
+
+            {/* Realtime Master Counts Badge */}
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '7px', padding: '3px 8px', fontSize: '10.5px' }}>
+                🏢 Cabang: <strong style={{ color: modalOutlets.length > 0 ? '#4ade80' : '#f59e0b' }}>{modalOutlets.length}</strong>
+              </div>
+              <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '7px', padding: '3px 8px', fontSize: '10.5px' }}>
+                🥬 Bahan: <strong style={{ color: modalIngredients.length > 0 ? '#4ade80' : '#f59e0b' }}>{modalIngredients.length}</strong>
+              </div>
+              <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '7px', padding: '3px 8px', fontSize: '10.5px' }}>
+                🍽️ Menu: <strong style={{ color: modalMenus.length > 0 ? '#4ade80' : '#f59e0b' }}>{modalMenus.length}</strong>
+              </div>
+            </div>
+          </div>
+
+          {/* Dependency Info & Prerequisite Badges */}
+          <div style={{
+            marginTop: '10px',
+            padding: '8px 12px',
+            borderRadius: '9px',
+            background: dependencyChecks.some(d => !d.ready) ? 'rgba(245, 158, 11, 0.1)' : 'rgba(59, 130, 246, 0.08)',
+            border: `1px solid ${dependencyChecks.some(d => !d.ready) ? 'rgba(245, 158, 11, 0.35)' : 'rgba(59, 130, 246, 0.25)'}`,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '5px'
+          }}>
+            <div style={{ fontSize: '11.5px', color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
+              <Info size={14} style={{ color: dependencyChecks.some(d => !d.ready) ? '#fbbf24' : '#60a5fa', flexShrink: 0 }} />
+              <span>{activeStep.dependencyNote}</span>
+            </div>
+
+            {/* Dependency Prerequisite Clickable Badges */}
+            {dependencyChecks.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: '2px' }}>
+                <span style={{ fontSize: '10.5px', color: 'var(--text-muted)', fontWeight: 600 }}>Status Prasyarat:</span>
+                {dependencyChecks.map((dep, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => handleSelectStep(dep.targetStepIdx)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '2px 8px',
+                      borderRadius: '6px',
+                      fontSize: '10.5px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      border: '1px solid',
+                      background: dep.ready ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                      borderColor: dep.ready ? 'rgba(34, 197, 94, 0.4)' : 'rgba(239, 68, 68, 0.4)',
+                      color: dep.ready ? '#4ade80' : '#f87171'
+                    }}
+                    title={dep.ready ? 'Prasyarat siap' : `Klik untuk berpindah ke Step ${dep.targetStepIdx + 1}`}
+                  >
+                    {dep.ready ? <Check size={11} /> : <AlertCircle size={11} />}
+                    {dep.name}: {dep.ready ? `${dep.count} ${dep.unit} ✓` : 'Belum Ada (Klik untuk Import) ➔'}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* SUB-ITEM SEGMENTED CONTROL (If step has multiple master categories) */}
+        {activeStep.subItems.length > 1 && (
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+            {activeStep.subItems.map(sub => {
+              const SubIcon = sub.icon;
+              const isSelected = selectedMaster === sub.key;
+              return (
+                <button
+                  key={sub.key}
+                  type="button"
+                  onClick={() => handleSelectSubItem(sub.key)}
+                  style={{
+                    flex: 1,
+                    minWidth: '220px',
+                    padding: '10px 14px',
+                    borderRadius: '10px',
+                    border: '1px solid',
+                    borderColor: isSelected ? 'var(--primary)' : 'rgba(255, 255, 255, 0.1)',
+                    background: isSelected ? 'var(--primary)' : 'rgba(255, 255, 255, 0.04)',
+                    color: '#ffffff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    boxShadow: isSelected ? '0 4px 12px rgba(124, 58, 237, 0.35)' : 'none'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {SubIcon && <SubIcon size={16} />}
+                    <span style={{ fontSize: '12.5px', fontWeight: isSelected ? 800 : 600 }}>{sub.label}</span>
+                  </div>
+                  <span style={{
+                    fontSize: '10px',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    background: isSelected ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.08)',
+                    color: '#ffffff',
+                    fontWeight: 700
+                  }}>
+                    {sub.badge}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Template Download Banner */}
         <div style={{
@@ -878,7 +1421,7 @@ export default function ImportMasterModal({
           border: '1px solid rgba(139, 92, 246, 0.35)',
           borderRadius: '12px',
           padding: '14px 18px',
-          marginBottom: '20px',
+          marginBottom: '18px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -909,17 +1452,17 @@ export default function ImportMasterModal({
           style={{
             border: '2px dashed var(--border-strong)',
             borderRadius: '14px',
-            padding: '24px 16px',
+            padding: '22px 16px',
             textAlign: 'center',
             background: 'rgba(0, 0, 0, 0.2)',
-            marginBottom: '20px',
+            marginBottom: '18px',
             cursor: 'pointer',
             transition: 'all 0.2s ease'
           }}
         >
-          <Upload size={32} style={{ color: 'var(--primary)', margin: '0 auto 8px' }} />
-          <div style={{ fontSize: '14px', fontWeight: 700, color: '#ffffff' }}>
-            {fileName ? `File Terpilih: ${fileName}` : 'Pilih atau Drag & Drop File Excel (.xlsx / .csv)'}
+          <Upload size={30} style={{ color: 'var(--primary)', margin: '0 auto 8px' }} />
+          <div style={{ fontSize: '13.5px', fontWeight: 700, color: '#ffffff' }}>
+            {fileName ? `File Terpilih: ${fileName}` : `Unggah File Excel untuk ${activeConfig.title}`}
           </div>
           <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '4px' }}>
             Format didukung: .xlsx, .xls, .csv (Maksimal 5.000 baris per sekali import)
@@ -930,47 +1473,65 @@ export default function ImportMasterModal({
             accept=".xlsx, .xls, .csv"
             onChange={handleFileUpload}
             onClick={(e) => { e.stopPropagation(); e.target.value = null; }}
-            style={{ marginTop: '12px', fontSize: '12px', color: 'var(--text-secondary)' }}
+            style={{ marginTop: '10px', fontSize: '12px', color: 'var(--text-secondary)' }}
           />
         </div>
 
         {/* Loading File Indicator */}
         {loadingFile && <LoadingState message="Membaca & Memvalidasi File Excel..." />}
 
-        {/* Import Result Success Banner */}
+        {/* Import Result Success Banner with Next Step Option */}
         {importResult && (
           <div style={{
             background: 'rgba(34, 197, 94, 0.15)',
             border: '1px solid rgba(34, 197, 94, 0.4)',
             borderRadius: '12px',
-            padding: '14px 18px',
-            marginBottom: '20px',
+            padding: '16px 20px',
+            marginBottom: '18px',
             display: 'flex',
             alignItems: 'center',
-            gap: '10px'
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '12px'
           }}>
-            <CheckCircle2 size={22} color="var(--ok)" />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 800, fontSize: '14px', color: '#ffffff' }}>
-                {importResult.message}
-              </div>
-              <div style={{ fontSize: '12px', color: 'var(--ok)', marginTop: '2px' }}>
-                Data master telah terbarui dan siap digunakan di sistem MOVA POS.
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <CheckCircle2 size={24} color="var(--ok)" style={{ flexShrink: 0 }} />
+              <div>
+                <div style={{ fontWeight: 800, fontSize: '14px', color: '#ffffff' }}>
+                  {importResult.message}
+                </div>
+                <div style={{ fontSize: '12px', color: '#4ade80', marginTop: '2px' }}>
+                  Data {activeConfig.title} telah tersimpan dan siap digunakan untuk tahapan berikutnya.
+                </div>
               </div>
             </div>
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={onClose}
-              style={{ fontWeight: 700 }}
-            >
-              Selesai
-            </button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {currentStepIndex < IMPORT_STEPS.length - 1 ? (
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={handleNextStep}
+                  style={{ fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  Lanjut ke Step {currentStepIndex + 2}: {IMPORT_STEPS[currentStepIndex + 1]?.name} <ArrowRight size={14} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={onClose}
+                  style={{ fontWeight: 800 }}
+                >
+                  Selesai Semua Tahapan ✓
+                </button>
+              )}
+            </div>
           </div>
         )}
 
         {/* Live Parsed Preview Table */}
         {!importResult && parsedRows.length > 0 && (
-          <div style={{ marginBottom: '20px' }}>
+          <div style={{ marginBottom: '18px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
               <div style={{ fontSize: '13px', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Table size={16} color="var(--primary)" />
@@ -1100,17 +1661,11 @@ export default function ImportMasterModal({
                       <td style={{ padding: '8px 12px', color: 'var(--text-secondary)', fontSize: '11px' }}>
                         {currentMasterType === 'INGREDIENT' && (
                           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
-                            {row.data.outlet_name ? (
-                              <span style={{ background: 'rgba(139, 92, 246, 0.2)', color: 'var(--accent-bright)', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>
-                                Cabang: {row.data.outlet_name}
-                              </span>
-                            ) : (
-                              <span style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>
-                                🏢 Seluruh Cabang
-                              </span>
-                            )}
+                            <span style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>
+                              🏢 Terpusat (Semua Cabang)
+                            </span>
                             <span>
-                              {row.data.type} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · Harga: <strong>{rupiah(row.data.harga)}</strong> · Stock Awal: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit_pakai}</strong> · Saldo Awal: <span style={{ color: '#34d399', fontWeight: 700 }}>{rupiah(Math.round(row.data.initial_balance || 0))}</span> · Toleransi: <strong>{row.data.tolerance ?? 5}%</strong>
+                              {row.data.type} · Kategori: <strong>{row.data.category}</strong> · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · Stok Min (Par Level): <strong style={{ color: '#fbbf24' }}>{num(row.data.minstok)} {row.data.unit_pakai}</strong> · Toleransi: <strong>{row.data.tolerance ?? 5}%</strong>
                             </span>
                             {(row.data._uBeli?.isFixed || row.data._uPakai?.isFixed) && (
                               <span style={{ background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }} title="Typo/singkatan otomatis diperbaiki ke format standar">
@@ -1126,17 +1681,11 @@ export default function ImportMasterModal({
                         )}
                         {currentMasterType === 'PERLENGKAPAN' && (
                           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
-                            {row.data.outlet_name ? (
-                              <span style={{ background: 'rgba(139, 92, 246, 0.2)', color: 'var(--accent-bright)', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>
-                                Cabang: {row.data.outlet_name}
-                              </span>
-                            ) : (
-                              <span style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>
-                                🏢 Seluruh Cabang
-                              </span>
-                            )}
+                            <span style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>
+                              🏢 Terpusat (Semua Cabang)
+                            </span>
                             <span>
-                              {row.data.category} · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · Harga: <strong>{rupiah(row.data.harga)}</strong> · Stock Awal: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit_pakai}</strong> · Saldo Awal: <span style={{ color: '#34d399', fontWeight: 700 }}>{rupiah(Math.round(row.data.initial_balance || 0))}</span> · Toleransi: <strong>{row.data.tolerance ?? 5}%</strong>
+                              Kategori: <strong>{row.data.category}</strong> · Satuan: <strong>{row.data.unit_beli} / {row.data.unit_pakai}</strong> (1 {row.data.unit_beli} = {row.data.konversi} {row.data.unit_pakai}) · Stok Min (Par Level): <strong style={{ color: '#fbbf24' }}>{num(row.data.minstok)} {row.data.unit_pakai}</strong> · Toleransi: <strong>{row.data.tolerance ?? 5}%</strong>
                             </span>
                             {(row.data._uBeli?.isFixed || row.data._uPakai?.isFixed) && (
                               <span style={{ background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }} title="Typo/singkatan otomatis diperbaiki ke format standar">
@@ -1150,14 +1699,14 @@ export default function ImportMasterModal({
                             )}
                           </div>
                         )}
-                        {currentMasterType === 'STOCK_AWAL_GUDANG' && (
+                        {(currentMasterType === 'STOCK_AWAL_BAHAN' || currentMasterType === 'STOCK_AWAL_PERLENGKAPAN' || currentMasterType === 'STOCK_AWAL_GUDANG') && (
                           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
                             <span style={{ background: 'rgba(14, 165, 233, 0.2)', color: '#38bdf8', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>
                               📍 {row.data.outlet_name || 'Gudang Utama'}
                             </span>
                             <span>
-                              Stock Awal: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit}</strong> ({row.data.unit_type === 'BELI' ? 'Satuan Beli' : 'Satuan Pakai'})
-                              {row.data.harga > 0 ? ` · Modal/Harga: ${rupiah(row.data.harga)}` : ''}
+                              Saldo Awal Fisik: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit}</strong> ({row.data.unit_type === 'BELI' ? 'Satuan Beli' : 'Satuan Pakai'})
+                              {row.data.harga > 0 ? ` · Modal: ${rupiah(row.data.harga)}` : ''}
                               {row.data.stok_min > 0 ? ` · Min: ${num(row.data.stok_min)}` : ''}
                               {row.data.date ? ` · Tgl: ${row.data.date}` : ''}
                             </span>
@@ -1219,22 +1768,56 @@ export default function ImportMasterModal({
           </div>
         )}
 
-        {/* Modal Actions */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
-            Batal
-          </button>
-          {!importResult && (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={handleSubmitImport}
-              disabled={submitting || validCount === 0}
-              style={{ fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-            >
-              {submitting ? 'Meng-import...' : `Simpan & Import (${validCount} Item Valid)`}
+        {/* WIZARD ACTIONS & FOOTER CONTROLS */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginTop: '16px',
+          paddingTop: '16px',
+          borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+          flexWrap: 'wrap',
+          gap: '10px'
+        }}>
+          <div>
+            {viewMode === 'STEPPER' && currentStepIndex > 0 && (
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={handlePrevStep}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}
+              >
+                <ArrowLeft size={14} /> Step Sebelumnya ({IMPORT_STEPS[currentStepIndex - 1]?.name})
+              </button>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {viewMode === 'STEPPER' && currentStepIndex < IMPORT_STEPS.length - 1 && !importResult && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={handleNextStep}
+                style={{ color: 'var(--text-secondary)', fontSize: '12px' }}
+              >
+                Lewati Langkah Ini ➔
+              </button>
+            )}
+            <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>
+              Tutup
             </button>
-          )}
+            {!importResult && (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={handleSubmitImport}
+                disabled={submitting || validCount === 0}
+                style={{ fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+              >
+                {submitting ? 'Meng-import Data...' : `Simpan & Import (${validCount} Item Valid)`}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

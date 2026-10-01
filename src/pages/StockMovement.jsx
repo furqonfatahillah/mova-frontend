@@ -365,6 +365,15 @@ export default function StockMovement({ defaultFilterType }) {
   async function handleSubmit(e) {
     e.preventDefault();
     if (!form.qty) { toast.error('Qty tidak boleh kosong'); return; }
+
+    if (form.type === 'PURCHASE') {
+      const currentStock = Number(selectedIng?.current_stock ?? selectedIng?.stok_awal ?? 0);
+      if (currentStock < -0.0001) {
+        toast.error(`Stok bahan "${selectedIng?.name || 'Bahan'}" saat ini MINUS (${fmtQtyVal(currentStock)} ${selectedIng?.unit_pakai || ''})! Harap lakukan Penyesuaian Stok (Adjust Stock / Opname) terlebih dahulu sebelum melakukan pembelian.`);
+        return;
+      }
+    }
+
     if (form.type === 'PURCHASE' && form.payment_type === 'HUTANG' && !form.supplier_name?.trim()) {
       toast.error('Harap masukkan nama supplier untuk transaksi hutang/tempo');
       return;
@@ -1100,12 +1109,43 @@ export default function StockMovement({ defaultFilterType }) {
                   onChange={e => setForm(f => ({ ...f, note: e.target.value }))} />
               </div>
 
+              {/* Negative Stock Warning Banner for PURCHASE */}
+              {form.type === 'PURCHASE' && selectedIng && Number(selectedIng.current_stock ?? selectedIng.stok_awal ?? 0) < -0.0001 && (
+                <div style={{
+                  padding: '12px 14px',
+                  borderRadius: 8,
+                  background: 'rgba(239, 68, 68, 0.12)',
+                  border: '1.5px solid rgba(239, 68, 68, 0.45)',
+                  color: '#fca5a5',
+                  marginBottom: 16,
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 10,
+                  fontSize: 12.5,
+                }}>
+                  <span style={{ fontSize: 18, lineHeight: 1 }}>⚠️</span>
+                  <div>
+                    <div style={{ fontWeight: 800, color: '#ef4444', fontSize: 13 }}>
+                      Peringatan: Stok Bahan Saat Ini MINUS ({fmtQtyVal(selectedIng.current_stock ?? selectedIng.stok_awal)} {selectedIng.unit_pakai})!
+                    </div>
+                    <div style={{ marginTop: 3, fontSize: 11.5, color: '#fecaca', lineHeight: 1.4 }}>
+                      Sesuai SOP inventaris, Anda <strong>harus melakukan Penyesuaian Stok (Adjust Stock / Opname)</strong> terlebih dahulu untuk menormalkan saldo minus sebelum mencatat transaksi pembelian baru.
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
                 <button type="button" onClick={() => setIsModalOpen(false)} className="btn btn-secondary">
                   Batal
                 </button>
-                <button type="submit" className={`btn ${form.type === 'WASTE' ? 'btn-danger' : 'btn-primary'}`} disabled={saving} style={{ fontWeight: 700 }}>
-                  <Plus size={14} /> {saving ? 'Menyimpan...' : form.type === 'WASTE' ? 'Catat Waste' : form.type === 'PURCHASE' ? 'Simpan Pembelian & Update Moving Avg' : 'Simpan Mutasi'}
+                <button
+                  type="submit"
+                  className={`btn ${form.type === 'WASTE' ? 'btn-danger' : (form.type === 'PURCHASE' && selectedIng && Number(selectedIng.current_stock ?? selectedIng.stok_awal ?? 0) < -0.0001) ? 'btn-secondary' : 'btn-primary'}`}
+                  disabled={saving || (form.type === 'PURCHASE' && selectedIng && Number(selectedIng.current_stock ?? selectedIng.stok_awal ?? 0) < -0.0001)}
+                  style={{ fontWeight: 700 }}
+                >
+                  <Plus size={14} /> {saving ? 'Menyimpan...' : form.type === 'WASTE' ? 'Catat Waste' : form.type === 'PURCHASE' ? (selectedIng && Number(selectedIng.current_stock ?? selectedIng.stok_awal ?? 0) < -0.0001 ? 'Stok Minus — Wajib Adjust Terlebih Dahulu' : 'Simpan Pembelian & Update Moving Avg') : 'Simpan Mutasi'}
                 </button>
               </div>
             </form>

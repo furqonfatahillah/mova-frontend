@@ -42,6 +42,7 @@ const PurchaseReport = lazy(() => import('./pages/PurchaseReport'));
 const PaymentSettings = lazy(() => import('./pages/PaymentSettings'));
 const Payables = lazy(() => import('./pages/Payables'));
 const Neraca = lazy(() => import('./pages/Neraca'));
+const VoidApproval = lazy(() => import('./pages/VoidApproval'));
 
 function PrivateRoute({ children }) {
   const token = localStorage.getItem('pos_token');
@@ -127,6 +128,7 @@ export default function App() {
               <Route path="kartu-stok"   element={<RoleRoute roles={['pegawai']}><KartuStok /></RoleRoute>} />
 
               {/* Operasional Manajemen (Owner Bisnis & Manager Cabang) */}
+              <Route path="void-approval" element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><VoidApproval /></RoleRoute>} />
               <Route path="diskon"       element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><DiscountManagement /></RoleRoute>} />
               <Route path="movement"     element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><StockMovement /></RoleRoute>} />
               <Route path="opname"       element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><StockOpname /></RoleRoute>} />

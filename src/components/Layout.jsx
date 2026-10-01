@@ -5,13 +5,14 @@ import {
   ArrowUpDown, ClipboardList, BarChart2, TrendingUp, DollarSign,
   AlertTriangle, LogOut, ScrollText, Menu, X, Clock,
   Store, Send, Users, UserCheck, Building2, ChefHat, Trash2, Percent, Landmark, Wallet, Coins, Gift, Copy, Check, Receipt, Headset,
-  AlertOctagon, CreditCard, Boxes, FileSpreadsheet, BookOpen, ChevronDown, ChevronRight, ShoppingBag, Scale
+  AlertOctagon, CreditCard, Boxes, FileSpreadsheet, BookOpen, ChevronDown, ChevronRight, ShoppingBag, Scale, RotateCcw
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
 import { useOutlet as useOutletContext } from '../context/OutletContext';
 import ErrorBoundary from './ErrorBoundary';
 import DateRangePicker from './DateRangePicker';
+import ResetDataModal from './ResetDataModal';
 
 export default function Layout() {
   const navigate = useNavigate();
@@ -21,7 +22,9 @@ export default function Layout() {
     return localStorage.getItem('pos_sidebar_collapsed') === 'true';
   });
   const [pendingCount, setPendingCount] = useState(0);
+  const [pendingVoidCount, setPendingVoidCount] = useState(0);
   const [openDropdowns, setOpenDropdowns] = useState({});
+  const [resetModalOpen, setResetModalOpen] = useState(false);
 
   const toggleDropdown = (id) => {
     setOpenDropdowns(prev => ({
@@ -84,6 +87,17 @@ export default function Layout() {
 
   const user = currentUser || {};
 
+  // Fetch pending void requests count for notification badge
+  useEffect(() => {
+    if (isOwnerBisnis || isOwnerOutlet || isPlatformAdmin) {
+      api.get('/transactions/void-requests', { params: { status: 'VOID_PENDING' } })
+        .then(res => {
+          setPendingVoidCount(res.data?.stats?.pending_count || 0);
+        })
+        .catch(() => {});
+    }
+  }, [isOwnerBisnis, isOwnerOutlet, isPlatformAdmin, location.pathname]);
+
   const navSections = useMemo(() => {
     // 1. Owner Website (Penyedia SaaS / Superadmin Platform)
     if (isPlatformAdmin) {
@@ -119,6 +133,7 @@ export default function Layout() {
               { to: '/rekening', label: 'Rekening & Payment Gateway', icon: Landmark },
               { to: '/pos', label: 'POS / Transaksi', icon: ShoppingCart },
               { to: '/urgent-notes', label: 'Nota Urgent / Manual', icon: AlertOctagon },
+              { to: '/void-approval', label: 'Persetujuan Void Nota', icon: RotateCcw, isVoidApproval: true },
               { to: '/shift', label: 'Kelola Shift', icon: Clock },
               { to: '/batch-prep', label: 'Produksi Batch', icon: ChefHat },
               { to: '/waste', label: 'Bahan Terbuang (Waste)', icon: Trash2 },
@@ -225,6 +240,7 @@ export default function Layout() {
           items: [
             { to: '/pos', label: 'POS / Transaksi', icon: ShoppingCart },
             { to: '/urgent-notes', label: 'Nota Urgent / Manual', icon: AlertOctagon },
+            { to: '/void-approval', label: 'Persetujuan Void Nota', icon: RotateCcw, isVoidApproval: true },
             { to: '/shift', label: 'Kelola Shift Kasir', icon: Clock },
             { to: '/batch-prep', label: 'Produksi Batch (Prep)', icon: ChefHat },
             { to: '/waste', label: 'Bahan Terbuang (Waste)', icon: Trash2 },
@@ -309,6 +325,7 @@ export default function Layout() {
           items: [
             { to: '/pos', label: 'POS Kasir', icon: ShoppingCart },
             { to: '/urgent-notes', label: 'Nota Urgent / Manual', icon: AlertOctagon },
+            { to: '/void-approval', label: 'Persetujuan Void Nota', icon: RotateCcw, isVoidApproval: true },
             { to: '/shift', label: 'Shift Kasir', icon: Clock },
             { to: '/batch-prep', label: 'Batch Prep Dapur', icon: ChefHat },
             { to: '/waste', label: 'Waste Log', icon: Trash2 },
@@ -445,7 +462,16 @@ export default function Layout() {
             {activeOutlet?.name || 'Cabang'}
           </span>
         </div>
-        <div className="mobile-topbar-user">
+        <div className="mobile-topbar-user" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button
+            type="button"
+            onClick={() => setResetModalOpen(true)}
+            className="btn btn-ghost btn-icon"
+            style={{ color: '#f87171', background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', width: 28, height: 28, padding: 0 }}
+            title="Reset Data Testing (Dev)"
+          >
+            <RotateCcw size={14} />
+          </button>
           <div className="sidebar-avatar" style={{ width: 28, height: 28, fontSize: 11 }}>
             {user.name?.[0]?.toUpperCase() || 'A'}
           </div>
@@ -597,6 +623,23 @@ export default function Layout() {
                         title={`${pendingCount} pendaftar menunggu persetujuan`}
                       >
                         {pendingCount}
+                      </span>
+                    )}
+                    {item.isVoidApproval && pendingVoidCount > 0 && (
+                      <span
+                        style={{
+                          background: '#ef4444',
+                          color: '#ffffff',
+                          fontSize: 10,
+                          fontWeight: 900,
+                          padding: '1px 7px',
+                          borderRadius: 10,
+                          lineHeight: '15px',
+                          boxShadow: '0 0 10px rgba(239, 68, 68, 0.6)'
+                        }}
+                        title={`${pendingVoidCount} permohonan void nota menunggu persetujuan`}
+                      >
+                        {pendingVoidCount}
                       </span>
                     )}
                   </NavLink>
@@ -877,6 +920,46 @@ export default function Layout() {
                 />
               </div>
             )}
+
+            {/* Tombol Sementara Reset Data Testing */}
+            <button
+              type="button"
+              onClick={() => setResetModalOpen(true)}
+              className="btn btn-sm"
+              style={{
+                background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.16), rgba(220, 38, 38, 0.28))',
+                border: '1px solid rgba(239, 68, 68, 0.5)',
+                color: '#fca5a5',
+                fontWeight: 700,
+                fontSize: '12px',
+                padding: '5px 12px',
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(239, 68, 68, 0.2)',
+                transition: 'all 0.2s ease',
+              }}
+              title="Tombol Sementara: Reset Data Testing (Kecuali User & Outlet)"
+            >
+              <RotateCcw size={14} style={{ color: '#ef4444' }} />
+              <span style={{ color: '#ffffff' }}>Reset Data</span>
+              <span
+                style={{
+                  fontSize: '9px',
+                  fontWeight: 800,
+                  background: '#ef4444',
+                  color: '#ffffff',
+                  padding: '1px 5px',
+                  borderRadius: '4px',
+                  lineHeight: '1.2',
+                  letterSpacing: '0.04em'
+                }}
+              >
+                DEV
+              </span>
+            </button>
           </div>
         </div>
 
@@ -1005,6 +1088,12 @@ export default function Layout() {
         <ErrorBoundary>
           <Outlet />
         </ErrorBoundary>
+
+        {/* Modal Reset Data Testing */}
+        <ResetDataModal
+          isOpen={resetModalOpen}
+          onClose={() => setResetModalOpen(false)}
+        />
       </main>
     </div>
   );

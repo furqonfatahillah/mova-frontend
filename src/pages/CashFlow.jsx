@@ -3,7 +3,8 @@ import {
   Wallet, DollarSign, TrendingUp, TrendingDown, ArrowDownLeft,
   ArrowUpRight, RefreshCw, Printer, Plus, Search, Filter,
   Building2, Layers, CheckCircle2, AlertCircle, Sparkles,
-  HelpCircle, Store, Edit3, Trash, Info, Package, Landmark, Flame
+  HelpCircle, Store, Edit3, Trash, Info, Package, Landmark, Flame,
+  Clock, CheckSquare, Square, X, SlidersHorizontal, Check, UserCheck, ChevronDown
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, num, pct, LoadingState, PageHeader, PeriodPicker } from '../components/ui';
@@ -45,16 +46,119 @@ export const ACCOUNT_TYPES = [
   { value: 'PETTY_CASH',  label: 'Kas Kecil (Petty Cash)' },
 ];
 
+export const AVAILABLE_PAYMENT_METHODS = [
+  { id: 'CASH',       label: 'Tunai / Kas Laci',   desc: 'Uang fisik tunai kasir & laci toko',   color: '#10b981', icon: Wallet },
+  { id: 'QRIS',       label: 'QRIS',               desc: 'QRIS BCA, GoPay, ShopeePay, Dana',    color: '#06b6d4', icon: Sparkles },
+  { id: 'GRAB',       label: 'Grab / E-Commerce',  desc: 'GrabFood, GoFood, ShopeeFood, TikTok', color: '#f59e0b', icon: Flame },
+  { id: 'TRANSFER',   label: 'Transfer Bank',      desc: 'BCA, Mandiri, BRI & Rekening Giro',   color: '#8b5cf6', icon: Landmark },
+  { id: 'DEBIT',      label: 'Debit / EDC',        desc: 'Kartu Debit & Mesin Gesek EDC',       color: '#ec4899', icon: DollarSign },
+  { id: 'PETTY_CASH', label: 'Kas Kecil (Petty)',  desc: 'Kas operasional & petty cash harian',  color: '#eab308', icon: Package },
+];
+
+export const PAYMENT_METHOD_TABS = [
+  { id: 'ALL',           label: 'Semua Metode',          sub: 'Semua Aliran Kas Gabungan',  color: '#38bdf8', icon: Layers, isPreset: true },
+  { id: 'NON_CASH',      label: 'Gabungan Non-Tunai',    sub: 'QRIS + Grab + Transfer + EDC', color: '#06b6d4', icon: Sparkles, isPreset: true },
+  { id: 'CASH_ALL',      label: 'Gabungan Kas & Petty',  sub: 'Kas Laci + Kas Operasional', color: '#10b981', icon: Wallet, isPreset: true },
+  { id: 'ECOMMERCE_ALL', label: 'Gabungan E-Commerce',   sub: 'Grab + GoFood + ShopeeFood',  color: '#f59e0b', icon: Flame, isPreset: true },
+  { id: 'CASH',          label: 'Tunai (Cash)',          sub: 'Kas Laci Saja',              color: '#10b981', icon: Wallet },
+  { id: 'QRIS',          label: 'QRIS',                  sub: 'BCA, GoPay, Shopee',         color: '#06b6d4', icon: Sparkles },
+  { id: 'GRAB',          label: 'Grab / Delivery',       sub: 'E-Commerce Delivery',        color: '#f59e0b', icon: Flame },
+  { id: 'TRANSFER',      label: 'Transfer Bank',         sub: 'Rekening Bank',              color: '#8b5cf6', icon: Landmark },
+  { id: 'DEBIT',         label: 'Debit / EDC',           sub: 'Kartu Debit & EDC',          color: '#ec4899', icon: DollarSign },
+  { id: 'PETTY_CASH',    label: 'Kas Kecil',             sub: 'Petty Cash Belanja',         color: '#eab308', icon: Package },
+];
+
 export default function CashFlow() {
   const { activeOutletId, activeOutlet, outlets, currentBusiness, dateFrom, dateTo } = useOutlet();
   const currentUser = JSON.parse(localStorage.getItem('pos_user') || '{}');
 
   const todayStr = getTodayStr();
   const [activeTab, setActiveTab] = useState('statement'); // 'statement' | 'reconciliation' | 'journal'
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('ALL');
+  const [selectedShift, setSelectedShift] = useState('ALL'); // 'ALL' | single ID | comma-separated IDs e.g. '1,2'
+
+  // Modals for multi-select / combined filters
+  const [shiftModalOpen, setShiftModalOpen] = useState(false);
+  const [tempShiftIds, setTempShiftIds] = useState([]);
+  const [customPmModalOpen, setCustomPmModalOpen] = useState(false);
+  const [tempPmList, setTempPmList] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [statementData, setStatementData] = useState(null);
   const [journalEntries, setJournalEntries] = useState([]);
+
+  const availableShifts = statementData?.available_shifts || [];
+
+  // Active Payment Method metadata
+  const activePmMeta = useMemo(() => {
+    if (!selectedPaymentMethod || selectedPaymentMethod === 'ALL' || selectedPaymentMethod === 'all') {
+      return { id: 'ALL', label: 'Semua Metode (Gabungan Total)', sub: 'Semua Aliran Kas Gabungan', color: '#38bdf8', icon: Layers, isAll: true };
+    }
+    const predefined = PAYMENT_METHOD_TABS.find(t => t.id === selectedPaymentMethod);
+    if (predefined) return predefined;
+
+    // Custom multi-select comma separated
+    const parts = selectedPaymentMethod.split(',').map(s => s.trim().toUpperCase());
+    const labels = parts.map(p => {
+      const match = AVAILABLE_PAYMENT_METHODS.find(m => m.id === p);
+      return match ? match.label : p;
+    });
+    return {
+      id: selectedPaymentMethod,
+      label: `Gabungan (${labels.join(' + ')})`,
+      sub: `${parts.length} metode pembayaran dipilih`,
+      color: '#a855f7',
+      icon: SlidersHorizontal,
+      isCustomCombined: true,
+      parts,
+    };
+  }, [selectedPaymentMethod]);
+
+  // Active Shift metadata and calculated initial cash
+  const activeShiftMeta = useMemo(() => {
+    const allInitial = (availableShifts || []).reduce((acc, s) => acc + Number(s.initial_cash || 0), 0);
+
+    if (!selectedShift || selectedShift === 'ALL' || selectedShift === 'all') {
+      return {
+        id: 'ALL',
+        label: 'Semua Shift (Gabungan Total)',
+        isAll: true,
+        count: availableShifts.length,
+        initialCashTotal: statementData?.summary?.initial_cash_total ?? allInitial,
+        shiftNames: 'Semua Shift Gabungan',
+      };
+    }
+
+    const ids = selectedShift.toString().split(',').map(id => Number(id.trim())).filter(Boolean);
+    const matchedShifts = (availableShifts || []).filter(s => ids.includes(s.id));
+    const totalInitial = matchedShifts.length > 0
+      ? matchedShifts.reduce((acc, s) => acc + Number(s.initial_cash || 0), 0)
+      : (statementData?.summary?.initial_cash_total ?? 0);
+
+    if (ids.length === 1) {
+      const s = matchedShifts[0] || (availableShifts || []).find(x => x.id === ids[0]);
+      return {
+        id: selectedShift,
+        label: s ? `${s.shift_name} (${s.cashier_name || 'Kasir'})` : `Shift #${ids[0]}`,
+        isSingle: true,
+        count: 1,
+        shift: s,
+        initialCashTotal: s ? Number(s.initial_cash || 0) : totalInitial,
+        shiftNames: s ? s.shift_name : `Shift #${ids[0]}`,
+      };
+    }
+
+    const names = matchedShifts.map(s => s.shift_name).join(', ') || ids.map(i => `#${i}`).join(', ');
+    return {
+      id: selectedShift,
+      label: `Gabungan ${ids.length} Shift (${names})`,
+      isCombined: true,
+      count: ids.length,
+      shifts: matchedShifts,
+      initialCashTotal: totalInitial,
+      shiftNames: names,
+    };
+  }, [selectedShift, availableShifts, statementData]);
 
   // Detail Drilldown Modal State
   const [detailModal, setDetailModal] = useState({
@@ -70,12 +174,23 @@ export default function CashFlow() {
     const targetOutlet = activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all'
       ? activeOutletId
       : undefined;
+    const pm = selectedPaymentMethod !== 'ALL' ? selectedPaymentMethod : undefined;
+    const shift = selectedShift !== 'ALL' ? selectedShift : undefined;
+    const pmLabel = activePmMeta?.label || 'Semua Metode';
+    const shiftLabel = selectedShift !== 'ALL' ? ` [${activeShiftMeta?.label}]` : '';
 
     if (type === 'SALES_INFLOW') {
-      setDetailModal({ open: true, type: 'SALES_INFLOW', title: 'Rincian Kas Masuk dari Penjualan Langsung Kasir (POS)', loading: true, items: [], extraData: statementData?.operating?.inflows });
+      setDetailModal({ 
+        open: true, 
+        type: 'SALES_INFLOW', 
+        title: `Rincian Kas Masuk dari Penjualan Langsung Kasir (${pmLabel}${shiftLabel})`, 
+        loading: true, 
+        items: [], 
+        extraData: statementData?.operating?.inflows 
+      });
       try {
         const res = await api.get('/transactions', {
-          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet, status: 'PAID', exclude_kasbon: 1, limit: 200 }
+          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet, status: 'PAID', exclude_kasbon: 1, payment_method: pm, shift_id: shift, limit: 200 }
         });
         setDetailModal(p => ({ ...p, loading: false, items: res.data?.data || res.data || [] }));
       } catch {
@@ -83,19 +198,37 @@ export default function CashFlow() {
         setDetailModal(p => ({ ...p, loading: false }));
       }
     } else if (type === 'RECEIVABLE_INFLOW') {
+      let filteredPayments = statementData?.operating?.inflows?.receivable_payments || [];
+      if (pm) {
+        filteredPayments = filteredPayments.filter(rp => {
+          const m = (rp.payment_method || '').toUpperCase();
+          if (pm === 'CASH' || pm === 'TUNAI') return m === 'CASH' || m === 'TUNAI';
+          if (pm === 'QRIS') return m.includes('QRIS');
+          if (pm === 'TRANSFER') return m.includes('TRANSFER');
+          if (pm === 'DEBIT' || pm === 'EDC') return m.includes('DEBIT') || m.includes('EDC');
+          return m === pm;
+        });
+      }
       setDetailModal({
         open: true,
         type: 'RECEIVABLE_INFLOW',
-        title: 'Rincian Kas Masuk dari Pembayaran / Pelunasan Kasbon Pelanggan',
+        title: `Rincian Kas Masuk dari Pembayaran / Pelunasan Kasbon Pelanggan (${pmLabel}${shiftLabel})`,
         loading: false,
-        items: statementData?.operating?.inflows?.receivable_payments || [],
+        items: filteredPayments,
         extraData: statementData?.operating?.inflows?.receivable_breakdown,
       });
     } else if (type === 'PURCHASES_OUTFLOW') {
-      setDetailModal({ open: true, type: 'PURCHASES_OUTFLOW', title: 'Rincian Kas Keluar untuk Pembelian Stok Bahan Baku', loading: true, items: [], extraData: statementData?.operating?.top_purchases });
+      setDetailModal({ 
+        open: true, 
+        type: 'PURCHASES_OUTFLOW', 
+        title: `Rincian Kas Keluar untuk Pembelian Stok Bahan Baku (${pmLabel}${shiftLabel})`, 
+        loading: true, 
+        items: [], 
+        extraData: statementData?.operating?.top_purchases 
+      });
       try {
         const res = await api.get('/movements', {
-          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet, type: 'PURCHASE' }
+          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet, type: 'PURCHASE', payment_type: pm, shift_id: shift }
         });
         setDetailModal(p => ({ ...p, loading: false, items: res.data || [] }));
       } catch {
@@ -103,10 +236,16 @@ export default function CashFlow() {
         setDetailModal(p => ({ ...p, loading: false }));
       }
     } else if (type === 'OPEX_OUTFLOW') {
-      setDetailModal({ open: true, type: 'OPEX_OUTFLOW', title: 'Rincian Kas Keluar untuk Beban Operasional Toko (OPEX)', loading: true, items: [] });
+      setDetailModal({ 
+        open: true, 
+        type: 'OPEX_OUTFLOW', 
+        title: `Rincian Kas Keluar untuk Beban Operasional Toko (${pmLabel}${shiftLabel})`, 
+        loading: true, 
+        items: [] 
+      });
       try {
         const res = await api.get('/expenses', {
-          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet }
+          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet, payment_method: pm }
         });
         setDetailModal(p => ({ ...p, loading: false, items: res.data || [] }));
       } catch {
@@ -114,12 +253,18 @@ export default function CashFlow() {
         setDetailModal(p => ({ ...p, loading: false }));
       }
     } else if (type === 'OPERATING') {
-      setDetailModal({ open: true, type: 'OPERATING', title: 'Rincian & Formula Arus Kas Operasi (Operating Cash Flow / OCF)', loading: false, items: [] });
+      setDetailModal({ open: true, type: 'OPERATING', title: `Rincian & Formula Arus Kas Operasi (Operating Cash Flow / OCF) - ${pmLabel}${shiftLabel}`, loading: false, items: [] });
     } else if (type === 'INVESTING') {
-      setDetailModal({ open: true, type: 'INVESTING', title: 'Rincian Belanja Modal & Investasi Aset (CapEx)', loading: true, items: [] });
+      setDetailModal({ 
+        open: true, 
+        type: 'INVESTING', 
+        title: `Rincian Belanja Modal & Investasi Aset (${pmLabel}${shiftLabel})`, 
+        loading: true, 
+        items: [] 
+      });
       try {
         const res = await api.get('/cash-transactions', {
-          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet, activity_type: 'INVESTING' }
+          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet, activity_type: 'INVESTING', payment_method: pm }
         });
         setDetailModal(p => ({ ...p, loading: false, items: res.data || [] }));
       } catch {
@@ -127,10 +272,16 @@ export default function CashFlow() {
         setDetailModal(p => ({ ...p, loading: false }));
       }
     } else if (type === 'FINANCING') {
-      setDetailModal({ open: true, type: 'FINANCING', title: 'Rincian Arus Kas Pendanaan, Modal & Prive Owner', loading: true, items: [] });
+      setDetailModal({ 
+        open: true, 
+        type: 'FINANCING', 
+        title: `Rincian Arus Kas Pendanaan, Modal & Prive Owner (${pmLabel}${shiftLabel})`, 
+        loading: true, 
+        items: [] 
+      });
       try {
         const res = await api.get('/cash-transactions', {
-          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet, activity_type: 'FINANCING' }
+          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet, activity_type: 'FINANCING', payment_method: pm }
         });
         setDetailModal(p => ({ ...p, loading: false, items: res.data || [] }));
       } catch {
@@ -138,7 +289,7 @@ export default function CashFlow() {
         setDetailModal(p => ({ ...p, loading: false }));
       }
     } else if (type === 'NET_CASH') {
-      setDetailModal({ open: true, type: 'NET_CASH', title: 'Jembatan Total Perubahan Bersih Kas Riil (Net Cash Flow)', loading: false, items: [] });
+      setDetailModal({ open: true, type: 'NET_CASH', title: `Jembatan Total Perubahan Bersih Kas Riil (Net Cash Flow) - ${pmLabel}${shiftLabel}`, loading: false, items: [] });
     } else if (type === 'INVENTORY_TRAPPED') {
       setDetailModal({ open: true, type: 'INVENTORY_TRAPPED', title: 'Rincian Analisis Kas Terkunci di Persediaan Bahan Baku', loading: false, items: [] });
     }
@@ -169,7 +320,7 @@ export default function CashFlow() {
 
   useEffect(() => {
     fetchData();
-  }, [dateFrom, dateTo, activeOutletId]);
+  }, [dateFrom, dateTo, activeOutletId, selectedPaymentMethod, selectedShift]);
 
   async function fetchData() {
     setLoading(true);
@@ -177,13 +328,15 @@ export default function CashFlow() {
       const targetOutlet = activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all'
         ? activeOutletId
         : undefined;
+      const pm = selectedPaymentMethod !== 'ALL' ? selectedPaymentMethod : undefined;
+      const shift = selectedShift !== 'ALL' ? selectedShift : undefined;
 
       const [resStatement, resJournal] = await Promise.all([
         api.get('/cash-flow/statement', {
-          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet },
+          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet, payment_method: pm, shift_id: shift },
         }),
         api.get('/cash-transactions', {
-          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet },
+          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet, payment_method: pm, shift_id: shift },
         }),
       ]);
 
@@ -418,6 +571,409 @@ export default function CashFlow() {
         </div>
       </div>
 
+      {/* 1.4 Filter Shift Kasir (Per Shift & Gabungan Shift) */}
+      <div
+        className="card mb-3"
+        style={{
+          padding: '14px 18px',
+          background: 'rgba(15, 23, 42, 0.85)',
+          border: selectedShift !== 'ALL' ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(165, 180, 252, 0.15)',
+          borderRadius: 12,
+          boxShadow: selectedShift !== 'ALL' ? '0 4px 18px rgba(56, 189, 248, 0.08)' : 'none',
+          transition: 'all 0.2s ease',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <div
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: 8,
+                background: 'rgba(56, 189, 248, 0.15)',
+                color: '#38bdf8',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Clock size={16} />
+            </div>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#f8fafc' }}>
+              Filter Sesi Shift Kasir:
+            </span>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              ({availableShifts.length} Sesi Terbuka/Tercatat di Periode Ini)
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            {/* Modal Awal Kas Highlight Pill */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '4px 12px',
+                borderRadius: 20,
+                background: 'rgba(16, 185, 129, 0.12)',
+                border: '1px solid rgba(16, 185, 129, 0.35)',
+                color: '#34d399',
+                fontSize: 12,
+                fontWeight: 700,
+              }}
+              title="Total modal awal kas laci fisik yang dimasukkan kasir saat pembukaan shift untuk filter yang aktif"
+            >
+              <Wallet size={13} />
+              <span>Modal Awal Kas: <strong>{rupiah(activeShiftMeta.initialCashTotal)}</strong></span>
+            </div>
+
+            {selectedShift !== 'ALL' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span
+                  style={{
+                    fontSize: 11,
+                    padding: '3px 10px',
+                    borderRadius: 20,
+                    background: 'rgba(56, 189, 248, 0.18)',
+                    color: '#38bdf8',
+                    border: '1px solid rgba(56, 189, 248, 0.45)',
+                    fontWeight: 700,
+                  }}
+                >
+                  Shift Aktif: {activeShiftMeta.label}
+                </span>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setSelectedShift('ALL')}
+                  style={{ fontSize: 11, padding: '2px 8px', color: 'var(--text-muted)' }}
+                  title="Tampilkan data seluruh shift digabung"
+                >
+                  ✕ Semua Shift
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Shift Buttons Horizontal Bar */}
+        <div
+          style={{
+            display: 'flex',
+            gap: 10,
+            overflowX: 'auto',
+            paddingBottom: 4,
+            scrollbarWidth: 'thin',
+          }}
+        >
+          {/* Button Semua Shift Gabungan */}
+          <button
+            onClick={() => setSelectedShift('ALL')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 9,
+              padding: '8px 14px',
+              borderRadius: 10,
+              border: selectedShift === 'ALL' ? '1.5px solid #38bdf8' : '1px solid rgba(255, 255, 255, 0.08)',
+              background: selectedShift === 'ALL'
+                ? 'linear-gradient(135deg, rgba(56, 189, 248, 0.22) 0%, rgba(15, 23, 42, 0.95) 100%)'
+                : 'rgba(255, 255, 255, 0.03)',
+              boxShadow: selectedShift === 'ALL' ? '0 4px 14px rgba(56, 189, 248, 0.25)' : 'none',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              flexShrink: 0,
+              textAlign: 'left',
+            }}
+          >
+            <div
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: 8,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: selectedShift === 'ALL' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(255, 255, 255, 0.06)',
+                color: selectedShift === 'ALL' ? '#38bdf8' : 'var(--text-muted)',
+              }}
+            >
+              <Layers size={15} />
+            </div>
+            <div>
+              <div style={{ fontSize: 12.5, fontWeight: selectedShift === 'ALL' ? 800 : 600, color: selectedShift === 'ALL' ? '#ffffff' : '#cbd5e1' }}>
+                Semua Shift (Gabungan)
+              </div>
+              <div style={{ fontSize: 10, color: selectedShift === 'ALL' ? '#38bdf8' : 'var(--text-muted)', marginTop: 2 }}>
+                Konsolidasi {availableShifts.length} Sesi
+              </div>
+            </div>
+          </button>
+
+          {/* Individual Shift Buttons */}
+          {availableShifts.map((s) => {
+            const isSelected = selectedShift === s.id.toString() || (selectedShift !== 'ALL' && selectedShift.toString().split(',').includes(s.id.toString()));
+            const isSingleSelected = selectedShift === s.id.toString();
+            const isOpen = s.status === 'OPEN';
+
+            return (
+              <button
+                key={s.id}
+                onClick={() => setSelectedShift(isSingleSelected ? 'ALL' : s.id.toString())}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 9,
+                  padding: '8px 14px',
+                  borderRadius: 10,
+                  border: isSelected ? '1.5px solid #10b981' : '1px solid rgba(255, 255, 255, 0.08)',
+                  background: isSelected
+                    ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.22) 0%, rgba(15, 23, 42, 0.95) 100%)'
+                    : 'rgba(255, 255, 255, 0.03)',
+                  boxShadow: isSelected ? '0 4px 14px rgba(16, 185, 129, 0.2)' : 'none',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  flexShrink: 0,
+                  textAlign: 'left',
+                }}
+              >
+                <div
+                  style={{
+                    width: 30,
+                    height: 30,
+                    borderRadius: 8,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: isSelected ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255, 255, 255, 0.06)',
+                    color: isSelected ? '#10b981' : 'var(--text-muted)',
+                  }}
+                >
+                  <Clock size={15} />
+                </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 12.5, fontWeight: isSelected ? 800 : 600, color: isSelected ? '#ffffff' : '#cbd5e1' }}>
+                      {s.shift_name}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 9.5,
+                        padding: '1px 6px',
+                        borderRadius: 10,
+                        background: isOpen ? 'rgba(16, 185, 129, 0.2)' : 'rgba(148, 163, 184, 0.15)',
+                        color: isOpen ? '#34d399' : '#94a3b8',
+                        fontWeight: 700,
+                      }}
+                    >
+                      {isOpen ? 'AKTIF' : 'TUTUP'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 10, color: isSelected ? '#34d399' : 'var(--text-muted)', marginTop: 2 }}>
+                    {s.cashier_name} • Modal: {rupiah(s.initial_cash)}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+
+          {/* Button Modal Multi-Select Gabungan Shift */}
+          <button
+            onClick={() => {
+              const curIds = selectedShift === 'ALL'
+                ? availableShifts.map(s => s.id)
+                : selectedShift.toString().split(',').map(id => Number(id.trim())).filter(Boolean);
+              setTempShiftIds(curIds);
+              setShiftModalOpen(true);
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 14px',
+              borderRadius: 10,
+              border: '1.5px dashed rgba(168, 85, 247, 0.6)',
+              background: 'rgba(168, 85, 247, 0.08)',
+              color: '#c084fc',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              flexShrink: 0,
+              fontWeight: 700,
+              fontSize: 12,
+            }}
+            title="Pilih kombinasi beberapa shift sekaligus"
+          >
+            <SlidersHorizontal size={15} />
+            <span>+ Gabungan Shift (Multi-Pilih...)</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 1.5 Filter Tab Metode Pembayaran (Per & Gabungan Metode) */}
+      <div
+        className="card mb-4"
+        style={{
+          padding: '14px 18px',
+          background: 'rgba(15, 23, 42, 0.85)',
+          border: selectedPaymentMethod !== 'ALL' ? '1px solid rgba(168, 85, 247, 0.4)' : '1px solid rgba(165, 180, 252, 0.15)',
+          borderRadius: 12,
+          boxShadow: selectedPaymentMethod !== 'ALL' ? '0 4px 18px rgba(168, 85, 247, 0.08)' : 'none',
+          transition: 'all 0.2s ease',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: 8,
+                background: 'rgba(168, 85, 247, 0.15)',
+                color: '#a855f7',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Filter size={16} />
+            </div>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#f8fafc' }}>
+              Filter Arus Kas Berdasarkan Metode Pembayaran:
+            </span>
+          </div>
+          {selectedPaymentMethod !== 'ALL' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span
+                style={{
+                  fontSize: 11,
+                  padding: '3px 10px',
+                  borderRadius: 20,
+                  background: `${activePmMeta?.color || '#38bdf8'}20`,
+                  color: activePmMeta?.color || '#38bdf8',
+                  border: `1px solid ${activePmMeta?.color || '#38bdf8'}45`,
+                  fontWeight: 700,
+                }}
+              >
+                Metode Aktif: {activePmMeta?.label}
+              </span>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setSelectedPaymentMethod('ALL')}
+                style={{ fontSize: 11, padding: '2px 8px', color: 'var(--text-muted)' }}
+              >
+                ✕ Tampilkan Semua
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Tab Buttons Horizontal Bar */}
+        <div
+          style={{
+            display: 'flex',
+            gap: 10,
+            overflowX: 'auto',
+            paddingBottom: 4,
+            scrollbarWidth: 'thin',
+          }}
+        >
+          {PAYMENT_METHOD_TABS.map((pmTab) => {
+            const isSelected = selectedPaymentMethod === pmTab.id;
+            const TabIcon = pmTab.icon;
+            return (
+              <button
+                key={pmTab.id}
+                onClick={() => setSelectedPaymentMethod(pmTab.id)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '9px 14px',
+                  borderRadius: 10,
+                  border: isSelected ? `1.5px solid ${pmTab.color}` : '1px solid rgba(255, 255, 255, 0.08)',
+                  background: isSelected
+                    ? `linear-gradient(135deg, ${pmTab.color}22 0%, rgba(15, 23, 42, 0.95) 100%)`
+                    : 'rgba(255, 255, 255, 0.03)',
+                  boxShadow: isSelected ? `0 4px 14px ${pmTab.color}25` : 'none',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  flexShrink: 0,
+                  textAlign: 'left',
+                }}
+              >
+                <div
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 8,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: isSelected ? `${pmTab.color}30` : 'rgba(255, 255, 255, 0.06)',
+                    color: isSelected ? pmTab.color : 'var(--text-muted)',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <TabIcon size={16} />
+                </div>
+                <div>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: isSelected ? 800 : 600,
+                      color: isSelected ? '#ffffff' : '#cbd5e1',
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    {pmTab.label}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 10.5,
+                      color: isSelected ? pmTab.color : 'var(--text-muted)',
+                      fontWeight: isSelected ? 600 : 400,
+                      marginTop: 2,
+                    }}
+                  >
+                    {pmTab.sub}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+
+          {/* Button Modal Multi-Select Gabungan Metode Pembayaran */}
+          <button
+            onClick={() => {
+              const curMethods = selectedPaymentMethod === 'ALL'
+                ? AVAILABLE_PAYMENT_METHODS.map(m => m.id)
+                : selectedPaymentMethod.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+              setTempPmList(curMethods);
+              setCustomPmModalOpen(true);
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '9px 14px',
+              borderRadius: 10,
+              border: '1.5px dashed rgba(56, 189, 248, 0.6)',
+              background: 'rgba(56, 189, 248, 0.08)',
+              color: '#38bdf8',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              flexShrink: 0,
+              fontWeight: 700,
+              fontSize: 12,
+            }}
+            title="Pilih kombinasi beberapa metode pembayaran sekaligus secara kustom"
+          >
+            <SlidersHorizontal size={16} />
+            <span>+ Gabungan Kustom (Multi-Pilih...)</span>
+          </button>
+        </div>
+      </div>
+
       {/* 2. Top 4 Cash Flow KPI Cards */}
       <div
         style={{
@@ -640,7 +1196,7 @@ export default function CashFlow() {
                   LAPORAN ARUS KAS NYATA (CASH FLOW STATEMENT)
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                  Cabang: <strong>{outletTitle}</strong> &nbsp;|&nbsp; Periode: <strong>{dateFrom}</strong> s/d <strong>{dateTo}</strong>
+                  Cabang: <strong>{outletTitle}</strong> &nbsp;|&nbsp; Periode: <strong>{dateFrom}</strong> s/d <strong>{dateTo}</strong> &nbsp;|&nbsp; Filter Pembayaran: <strong style={{ color: activePmMeta?.color || '#38bdf8' }}>{activePmMeta?.label}</strong>
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
@@ -719,13 +1275,13 @@ export default function CashFlow() {
                     title="Klik untuk melihat rincian transaksi kas masuk penjualan langsung kasir"
                   >
                     <td style={{ padding: '6px 0 6px 16px', color: '#cbd5e1' }}>
-                      Penerimaan Kas dari Penjualan Langsung Kasir (Tunai, QRIS, Transfer, EDC)
+                      Penerimaan Kas dari Penjualan Langsung Kasir (Tunai, QRIS, Grab, Transfer, EDC)
                       <span style={{ fontSize: 11, color: '#38bdf8', marginLeft: 8, background: 'rgba(56, 189, 248, 0.12)', padding: '2px 6px', borderRadius: 4 }}>
                         🔍 Rincian Penjualan Langsung
                       </span>
                     </td>
                     <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 600, color: '#34d399' }}>
-                      {rupiah(op.inflows?.direct_sales_total != null ? op.inflows?.direct_sales_total : (op.inflows?.cash_sales + op.inflows?.qris_sales + op.inflows?.transfer_sales + op.inflows?.debit_sales + (op.inflows?.other_sales || 0)))}
+                      {rupiah(op.inflows?.direct_sales_total != null ? op.inflows?.direct_sales_total : ((op.inflows?.cash_sales || 0) + (op.inflows?.qris_sales || 0) + (op.inflows?.grab_sales || 0) + (op.inflows?.transfer_sales || 0) + (op.inflows?.debit_sales || 0) + (op.inflows?.other_sales || 0)))}
                     </td>
                   </tr>
                   <tr
@@ -1536,7 +2092,7 @@ export default function CashFlow() {
                   {detailModal.type === 'SALES_INFLOW' && (
                     <>
                       {/* Summary Cards */}
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
                         <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
                           <div style={{ fontSize: 11, color: '#a7f3d0' }}>Tunai (Cash)</div>
                           <div style={{ fontSize: 15, fontWeight: 800, color: '#34d399', marginTop: 2 }}>
@@ -1547,6 +2103,12 @@ export default function CashFlow() {
                           <div style={{ fontSize: 11, color: '#bae6fd' }}>QRIS</div>
                           <div style={{ fontSize: 15, fontWeight: 800, color: '#38bdf8', marginTop: 2 }}>
                             {rupiah(op.inflows?.qris_sales)}
+                          </div>
+                        </div>
+                        <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+                          <div style={{ fontSize: 11, color: '#fde68a' }}>Grab / E-Comm</div>
+                          <div style={{ fontSize: 15, fontWeight: 800, color: '#f59e0b', marginTop: 2 }}>
+                            {rupiah(op.inflows?.grab_sales || 0)}
                           </div>
                         </div>
                         <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(168, 85, 247, 0.2)' }}>
@@ -2258,6 +2820,410 @@ export default function CashFlow() {
         </div>
       )}
 
+      {/* MODAL GABUNGAN SHIFT KASIR (MULTI-SELECT) */}
+      {shiftModalOpen && (
+        <div className="modal-backdrop" style={{ zIndex: 1050 }}>
+          <div
+            className="modal-content card"
+            style={{
+              maxWidth: 580,
+              width: '90%',
+              padding: 0,
+              background: '#0f172a',
+              border: '1px solid rgba(168, 85, 247, 0.35)',
+              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.6)',
+              borderRadius: 14,
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              className="modal-header"
+              style={{
+                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                background: 'rgba(168, 85, 247, 0.1)',
+                padding: '16px 20px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 8,
+                    background: 'rgba(168, 85, 247, 0.25)',
+                    color: '#c084fc',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <SlidersHorizontal size={18} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: '#f8fafc' }}>
+                    Pilih Gabungan Shift Kasir
+                  </h3>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                    Centang 2 atau lebih sesi shift untuk melihat akumulasi arus kas gabungan
+                  </div>
+                </div>
+              </div>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setShiftModalOpen(false)}
+                style={{ padding: 4 }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ padding: '18px 20px', maxHeight: '60vh', overflowY: 'auto' }}>
+              {/* Quick selection bar */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setTempShiftIds(availableShifts.map(s => s.id))}
+                  style={{ fontSize: 11, padding: '4px 10px' }}
+                >
+                  ✓ Pilih Semua ({availableShifts.length})
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setTempShiftIds(availableShifts.filter(s => s.status === 'OPEN').map(s => s.id))}
+                  style={{ fontSize: 11, padding: '4px 10px' }}
+                >
+                  Hanya Shift Aktif (OPEN)
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setTempShiftIds(availableShifts.filter(s => s.status === 'CLOSED').map(s => s.id))}
+                  style={{ fontSize: 11, padding: '4px 10px' }}
+                >
+                  Hanya Shift Selesai (CLOSED)
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setTempShiftIds([])}
+                  style={{ fontSize: 11, padding: '4px 8px', color: 'var(--text-muted)' }}
+                >
+                  ✕ Kosongkan
+                </button>
+              </div>
+
+              {/* Shift List with Checkboxes */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {availableShifts.map(s => {
+                  const isChecked = tempShiftIds.includes(s.id);
+                  const isOpen = s.status === 'OPEN';
+                  return (
+                    <div
+                      key={s.id}
+                      onClick={() => {
+                        setTempShiftIds(prev =>
+                          prev.includes(s.id) ? prev.filter(x => x !== s.id) : [...prev, s.id]
+                        );
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 12,
+                        padding: '10px 14px',
+                        borderRadius: 10,
+                        border: isChecked ? '1.5px solid #a855f7' : '1px solid rgba(255, 255, 255, 0.08)',
+                        background: isChecked ? 'rgba(168, 85, 247, 0.12)' : 'rgba(255, 255, 255, 0.02)',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <div style={{ color: isChecked ? '#c084fc' : 'var(--text-muted)' }}>
+                        {isChecked ? <CheckSquare size={18} /> : <Square size={18} />}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
+                          <div style={{ fontWeight: isChecked ? 700 : 500, color: '#f8fafc', fontSize: 13 }}>
+                            {s.shift_name} <span style={{ color: 'var(--text-muted)', fontSize: 11.5 }}>({s.cashier_name})</span>
+                          </div>
+                          <span
+                            style={{
+                              fontSize: 10,
+                              padding: '1px 6px',
+                              borderRadius: 10,
+                              background: isOpen ? 'rgba(16, 185, 129, 0.2)' : 'rgba(148, 163, 184, 0.15)',
+                              color: isOpen ? '#34d399' : '#94a3b8',
+                              fontWeight: 700,
+                            }}
+                          >
+                            {isOpen ? 'AKTIF / OPEN' : 'CLOSED'}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                          <span>Tanggal: {s.date || (s.opened_at ? s.opened_at.slice(0, 10) : '—')}</span>
+                          <span style={{ color: '#34d399', fontWeight: 600 }}>Modal Awal Kas: {rupiah(s.initial_cash)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Live Calculation Box */}
+              <div
+                style={{
+                  marginTop: 14,
+                  padding: 12,
+                  borderRadius: 8,
+                  background: 'rgba(16, 185, 129, 0.08)',
+                  border: '1px solid rgba(16, 185, 129, 0.25)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Shift Dipilih: {tempShiftIds.length} dari {availableShifts.length} Sesi</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#34d399' }}>
+                    Total Modal Awal Kas Gabungan:
+                  </div>
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: '#34d399' }}>
+                  {rupiah(
+                    availableShifts
+                      .filter(s => tempShiftIds.includes(s.id))
+                      .reduce((acc, s) => acc + Number(s.initial_cash || 0), 0)
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div
+              className="modal-footer"
+              style={{
+                borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                background: 'rgba(15, 23, 42, 0.95)',
+                padding: '12px 20px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setShiftModalOpen(false)}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => {
+                  if (tempShiftIds.length === 0 || tempShiftIds.length === availableShifts.length) {
+                    setSelectedShift('ALL');
+                  } else if (tempShiftIds.length === 1) {
+                    setSelectedShift(tempShiftIds[0].toString());
+                  } else {
+                    setSelectedShift(tempShiftIds.join(','));
+                  }
+                  setShiftModalOpen(false);
+                }}
+                style={{ fontWeight: 700 }}
+              >
+                ✓ Terapkan Gabungan ({tempShiftIds.length} Shift)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL GABUNGAN METODE PEMBAYARAN (MULTI-SELECT) */}
+      {customPmModalOpen && (
+        <div className="modal-backdrop" style={{ zIndex: 1050 }}>
+          <div
+            className="modal-content card"
+            style={{
+              maxWidth: 580,
+              width: '90%',
+              padding: 0,
+              background: '#0f172a',
+              border: '1px solid rgba(56, 189, 248, 0.35)',
+              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.6)',
+              borderRadius: 14,
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              className="modal-header"
+              style={{
+                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                background: 'rgba(56, 189, 248, 0.1)',
+                padding: '16px 20px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 8,
+                    background: 'rgba(56, 189, 248, 0.25)',
+                    color: '#38bdf8',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <SlidersHorizontal size={18} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: '#f8fafc' }}>
+                    Pilih Gabungan Metode Pembayaran
+                  </h3>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                    Kombinasikan metode pembayaran secara fleksibel untuk laporan arus kas
+                  </div>
+                </div>
+              </div>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setCustomPmModalOpen(false)}
+                style={{ padding: 4 }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ padding: '18px 20px', maxHeight: '60vh', overflowY: 'auto' }}>
+              {/* Quick Preset Buttons */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setTempPmList(AVAILABLE_PAYMENT_METHODS.map(m => m.id))}
+                  style={{ fontSize: 11, padding: '4px 10px' }}
+                >
+                  ✓ Pilih Semua ({AVAILABLE_PAYMENT_METHODS.length})
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setTempPmList(['QRIS', 'GRAB', 'TRANSFER', 'DEBIT'])}
+                  style={{ fontSize: 11, padding: '4px 10px', color: '#06b6d4' }}
+                >
+                  ⚡ Semua Non-Tunai Saja
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setTempPmList(['CASH', 'PETTY_CASH'])}
+                  style={{ fontSize: 11, padding: '4px 10px', color: '#10b981' }}
+                >
+                  💵 Kas Fisik & Petty Saja
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setTempPmList([])}
+                  style={{ fontSize: 11, padding: '4px 8px', color: 'var(--text-muted)' }}
+                >
+                  ✕ Kosongkan
+                </button>
+              </div>
+
+              {/* Methods Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 10 }}>
+                {AVAILABLE_PAYMENT_METHODS.map(m => {
+                  const isChecked = tempPmList.includes(m.id);
+                  const Icon = m.icon;
+                  return (
+                    <div
+                      key={m.id}
+                      onClick={() => {
+                        setTempPmList(prev =>
+                          prev.includes(m.id) ? prev.filter(x => x !== m.id) : [...prev, m.id]
+                        );
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 12,
+                        padding: '12px 14px',
+                        borderRadius: 10,
+                        border: isChecked ? `1.5px solid ${m.color}` : '1px solid rgba(255, 255, 255, 0.08)',
+                        background: isChecked ? `${m.color}15` : 'rgba(255, 255, 255, 0.02)',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <div style={{ color: isChecked ? m.color : 'var(--text-muted)', marginTop: 2 }}>
+                        {isChecked ? <CheckSquare size={18} /> : <Square size={18} />}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <Icon size={14} color={m.color} />
+                          <span style={{ fontWeight: isChecked ? 800 : 600, color: '#f8fafc', fontSize: 13 }}>
+                            {m.label}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.3 }}>
+                          {m.desc}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div
+              className="modal-footer"
+              style={{
+                borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                background: 'rgba(15, 23, 42, 0.95)',
+                padding: '12px 20px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setCustomPmModalOpen(false)}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => {
+                  if (tempPmList.length === 0 || tempPmList.length === AVAILABLE_PAYMENT_METHODS.length) {
+                    setSelectedPaymentMethod('ALL');
+                  } else if (tempPmList.length === 1) {
+                    setSelectedPaymentMethod(tempPmList[0]);
+                  } else {
+                    setSelectedPaymentMethod(tempPmList.join(','));
+                  }
+                  setCustomPmModalOpen(false);
+                }}
+                style={{ fontWeight: 700 }}
+              >
+                ✓ Terapkan Kombinasi ({tempPmList.length} Metode)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 8. HIDDEN PRINTABLE CONTAINER FOR A4 REPORT */}
       <div id="printable-cashflow-statement" style={{ display: 'none' }}>
         <div style={{ fontFamily: "'Plus Jakarta Sans', Arial, sans-serif", color: '#000000', padding: 20 }}>
@@ -2269,7 +3235,7 @@ export default function CashFlow() {
               LAPORAN ARUS KAS NYATA (CASH FLOW STATEMENT)
             </div>
             <div style={{ fontSize: 11, color: '#333', marginTop: 4 }}>
-              Cabang: {outletTitle} | Periode: {dateFrom} s/d {dateTo} | Dicetak: {new Date().toLocaleString('id-ID')}
+              Cabang: {outletTitle} | Periode: {dateFrom} s/d {dateTo} | Shift: {activeShiftMeta?.label} (Modal Awal: {rupiah(activeShiftMeta?.initialCashTotal || 0)}) | Metode Kas: {activePmMeta?.label || 'Semua Metode'} | Dicetak: {new Date().toLocaleString('id-ID')}
             </div>
           </div>
 

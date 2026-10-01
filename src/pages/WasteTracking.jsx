@@ -137,7 +137,7 @@ export default function WasteTracking() {
         api.get('/waste-logs', { params }),
         api.get('/waste-logs/analytics', { params: { from: dateFrom, to: dateTo, outlet_id: params.outlet_id } }),
         api.get('/ingredients', { params: { outlet_id: params.outlet_id } }),
-        api.get('/menus'),
+        api.get('/menus', { params: { outlet_id: params.outlet_id } }),
       ]);
 
       setWasteLogs(logsRes.data || []);

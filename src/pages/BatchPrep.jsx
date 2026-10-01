@@ -244,6 +244,12 @@ export default function BatchPrep() {
       return;
     }
 
+    if (batchPreview?.has_negative_stock) {
+      const negItems = batchPreview.negative_items?.join(', ') || 'Bahan / Produk Olahan';
+      toast.error(`Stok MINUS terdeteksi pada: ${negItems}.\nHarap lakukan Penyesuaian Stok (Adjust Stock / Opname) terlebih dahulu sebelum memasak batch!`, { duration: 7000 });
+      return;
+    }
+
     setCooking(true);
     try {
       const targetOutlet = selectedCookOutletId || (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all' ? activeOutletId : (outlets[0]?.id || 1));
@@ -1053,6 +1059,31 @@ export default function BatchPrep() {
                     </div>
                   </div>
 
+                  {/* Warning: Negative Stock Detected */}
+                  {batchPreview?.has_negative_stock && (
+                    <div style={{
+                      padding: '12px 16px',
+                      borderRadius: 8,
+                      background: 'rgba(239, 68, 68, 0.15)',
+                      border: '1px solid rgba(239, 68, 68, 0.4)',
+                      marginBottom: 16,
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 12
+                    }}>
+                      <AlertTriangle size={22} style={{ color: '#ef4444', flexShrink: 0, marginTop: 2 }} />
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#f87171' }}>
+                          ⛔ PERINGATAN: STOK MINUS HARUS DI-ADJUST TERLEBIH DAHULU!
+                        </div>
+                        <div style={{ fontSize: 11.5, color: '#fca5a5', marginTop: 4, lineHeight: 1.45 }}>
+                          Terdapat bahan mentah atau produk olahan dengan status stok <strong>MINUS</strong> ({batchPreview.negative_items?.join(', ')}).
+                          Sesuai SOP, Anda wajib melakukan <strong>Penyesuaian Stok (Adjust Stock / Opname)</strong> terlebih dahulu untuk menormalkan saldo stok sebelum melakukan proses masak produksi per-batch.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Live Preview Box */}
                   {previewLoading ? (
                     <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>
@@ -1315,10 +1346,14 @@ export default function BatchPrep() {
                 type="button"
                 className="btn btn-primary"
                 onClick={handleExecuteCook}
-                disabled={cooking}
-                style={{ minWidth: 160 }}
+                disabled={cooking || Boolean(batchPreview?.has_negative_stock)}
+                style={{
+                  minWidth: 160,
+                  background: batchPreview?.has_negative_stock ? '#475569' : undefined,
+                  cursor: batchPreview?.has_negative_stock ? 'not-allowed' : 'pointer'
+                }}
               >
-                {cooking ? 'Memproses...' : <><Check size={14} /> Konfirmasi & Masak</>}
+                {cooking ? 'Memproses...' : batchPreview?.has_negative_stock ? '⚠️ Wajib Adjust Stok' : <><Check size={14} /> Konfirmasi & Masak</>}
               </button>
             </div>
           </div>
@@ -1742,18 +1777,32 @@ export default function BatchPrep() {
                           />
                         </td>
                         <td>
-                          <UnitSelect
-                            value={item.unit}
-                            options={SATUAN_PAKAI_OPTIONS}
-                            style={{ padding: '5px 8px', fontSize: 12 }}
-                            onChange={val => {
-                              setSubRecipeModal(p => {
-                                const newItems = [...p.items];
-                                newItems[idx] = { ...newItems[idx], unit: val };
-                                return { ...p, items: newItems };
-                              });
-                            }}
-                          />
+                          {(() => {
+                            const curIng = rawIngredients.find(i => i.id === Number(item.ingredient_id));
+                            const lockedUnit = curIng?.unit_pakai || item.unit || 'gram';
+                            return (
+                              <div
+                                style={{
+                                  padding: '5px 8px',
+                                  background: 'rgba(99, 102, 241, 0.12)',
+                                  border: '1px solid rgba(99, 102, 241, 0.3)',
+                                  borderRadius: 6,
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  color: '#c7d2fe',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: 4,
+                                  minWidth: 70,
+                                }}
+                                title="Satuan pemakaian terhubung otomatis dari Master Bahan"
+                              >
+                                <span>{item.ingredient_id ? lockedUnit : '-'}</span>
+                                {item.ingredient_id && <span style={{ fontSize: 10, color: 'var(--accent-bright)' }}>🔒</span>}
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td>
                           <input

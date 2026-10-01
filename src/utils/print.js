@@ -12,10 +12,13 @@ export function printElement(elementId, title = 'Dokumen MOVA POS', options = {}
   }
 
   const isThermal = Boolean(options.isThermal);
+  const paperWidth = options.paperWidth || options.width || (isThermal ? '80mm' : null);
   const orientation = options.orientation || 'portrait';
-  const pageSize = options.pageSize || (isThermal ? '80mm auto' : (options.size || `A4 ${orientation}`));
-  const margin = options.margin || (isThermal ? '2mm 2mm' : (orientation === 'landscape' ? '8mm 8mm' : '10mm 10mm'));
-  const maxWidth = options.maxWidth || (isThermal ? '76mm' : '100%');
+  // Note: CSS @page size syntax in Chromium accepts '80mm', '58mm', 'A4 portrait', etc.
+  // '80mm auto' is invalid CSS syntax that causes Chromium to reject @page and fall back to A4!
+  const pageSize = options.pageSize || (isThermal ? (paperWidth || '80mm') : (options.size || `A4 ${orientation}`));
+  const margin = options.margin !== undefined ? options.margin : (isThermal ? '0mm' : (orientation === 'landscape' ? '8mm 8mm' : '10mm 10mm'));
+  const maxWidth = options.maxWidth || (isThermal ? (paperWidth === '58mm' ? '54mm' : '76mm') : '100%');
 
   // Create an isolated hidden iframe to prevent styling bleed-through
   const iframe = document.createElement('iframe');

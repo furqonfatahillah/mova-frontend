@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import api from '../api/client';
 import { num, pct, rupiah, StatusPill, LoadingState, PeriodPicker, PageHeader, MiniCard } from '../components/ui';
 import { getWasteReason } from './StockMovement';
-import { AlertCircle, Trash2, HelpCircle, Layers, Eye, Store, FileSpreadsheet, Printer, X, ShieldCheck } from 'lucide-react';
+import { AlertCircle, Trash2, HelpCircle, Layers, Eye, Store, FileSpreadsheet, Printer, X, ShieldCheck, Utensils, Calculator, Package, TrendingUp } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 import { exportVarianceBahanToExcel } from '../utils/exportReport';
@@ -11,6 +11,7 @@ import { printElement } from '../utils/print';
 export default function VarianceBahan() {
   const [varData, setVarData] = useState([]);
   const [drill, setDrill] = useState(null);
+  const [selectedDrillItem, setSelectedDrillItem] = useState(null);
   const [showDrillModal, setShowDrillModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState('cost_control'); // 'standard' | 'cost_control'
@@ -30,7 +31,7 @@ export default function VarianceBahan() {
       const { data } = await api.get('/reports/variance/ingredients', {
         params: { from: period.from, to: period.to, outlet_id: targetOutlet }
       });
-      setVarData(data);
+      setVarData(Array.isArray(data) ? data : []);
     } catch { toast.error('Gagal memuat data'); }
     finally { setLoading(false); }
   }
@@ -59,7 +60,13 @@ export default function VarianceBahan() {
     );
   }
 
-  const drillData = drill ? varData.find(iv => String(iv.ingredient?.id) === String(drill)) : null;
+  const drillData = selectedDrillItem || (drill ? varData.find(iv => String(iv.ingredient?.id ?? iv.ingredient_id ?? iv.id) === String(drill)) : null);
+
+  const handleCloseDrill = () => {
+    setShowDrillModal(false);
+    setSelectedDrillItem(null);
+    setDrill(null);
+  };
 
   // Aggregate totals
   const totalWasteLoss = varData.reduce((acc, iv) => acc + (iv.waste_value || 0), 0);
@@ -255,7 +262,9 @@ export default function VarianceBahan() {
                           borderColor: 'rgba(99, 102, 241, 0.3)'
                         }}
                         onClick={() => {
-                          setDrill(iv.ingredient?.id);
+                          const ingId = iv.ingredient?.id ?? iv.ingredient_id ?? iv.id;
+                          setDrill(ingId);
+                          setSelectedDrillItem(iv);
                           setShowDrillModal(true);
                         }}
                       >
@@ -268,9 +277,9 @@ export default function VarianceBahan() {
 
               // Standard View
               return (
-                <tr key={iv.ingredient?.id} className={isSelected ? 'selected' : ''}>
-                  <td style={{ fontWeight: 500 }}>{iv.ingredient?.name}</td>
-                  <td className="mono right">{num(iv.pemakaian_teoritis)} {iv.ingredient?.unit_pakai}</td>
+                <tr key={iv.ingredient?.id ?? iv.id} className={isSelected ? 'selected' : ''}>
+                  <td style={{ fontWeight: 500 }}>{iv.ingredient?.name || iv.name}</td>
+                  <td className="mono right">{num(iv.pemakaian_teoritis)} {iv.ingredient?.unit_pakai || iv.unit_pakai}</td>
                   <td className="mono right">{iv.pemakaian_aktual !== null ? num(iv.pemakaian_aktual) : '—'}</td>
                   <td className="mono right">{iv.variance_qty !== null ? num(iv.variance_qty) : '—'}</td>
                   <td className="mono right">{iv.variance_pct !== null ? pct(iv.variance_pct) : '—'}</td>
@@ -292,7 +301,9 @@ export default function VarianceBahan() {
                         borderColor: 'rgba(99, 102, 241, 0.3)'
                       }}
                       onClick={() => {
-                        setDrill(iv.ingredient?.id);
+                        const ingId = iv.ingredient?.id ?? iv.ingredient_id ?? iv.id;
+                        setDrill(ingId);
+                        setSelectedDrillItem(iv);
                         setShowDrillModal(true);
                       }}
                     >
@@ -313,7 +324,7 @@ export default function VarianceBahan() {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(5, 8, 20, 0.85)',
+            background: 'rgba(5, 8, 20, 0.88)',
             backdropFilter: 'blur(8px)',
             display: 'flex',
             alignItems: 'center',
@@ -321,14 +332,14 @@ export default function VarianceBahan() {
             zIndex: 1100,
             padding: 16
           }}
-          onClick={() => setShowDrillModal(false)}
+          onClick={handleCloseDrill}
         >
           <div
             className="modal-card"
             style={{
               width: '100%',
-              maxWidth: 960,
-              maxHeight: '92vh',
+              maxWidth: 1040,
+              maxHeight: '94vh',
               background: '#0f172a',
               border: '1px solid rgba(165, 180, 252, 0.3)',
               borderRadius: 14,
@@ -345,29 +356,32 @@ export default function VarianceBahan() {
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                padding: '14px 20px',
+                padding: '14px 22px',
                 borderBottom: '1px solid var(--border)',
                 background: 'rgba(255,255,255,0.03)'
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(99, 102, 241, 0.15)', color: 'var(--accent-bright)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Layers size={18} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 8, background: 'rgba(99, 102, 241, 0.15)', color: 'var(--accent-bright)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Layers size={20} />
                 </div>
                 <div>
-                  <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--text-primary)' }}>
-                    {drillData.ingredient?.name} — Analisis Pemisahan Cost Control & Waste
+                  <div style={{ fontWeight: 800, fontSize: 17, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {drillData.ingredient?.name}
+                    <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: 4 }}>
+                      {drillData.ingredient?.category || 'Bahan Baku'}
+                    </span>
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-                    Periode {period.from} s/d {period.to} · Toleransi Standar: {drillData.ingredient?.tolerance}%
+                    Periode {period.from} s/d {period.to} · Toleransi Standar: {drillData.ingredient?.tolerance ?? 5}% · Satuan: {drillData.ingredient?.unit_pakai}
                   </div>
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <StatusPill status={drillData.status} />
                 <button
                   className="btn btn-ghost btn-icon btn-sm"
-                  onClick={() => setShowDrillModal(false)}
+                  onClick={handleCloseDrill}
                   style={{ color: 'var(--text-muted)' }}
                 >
                   <X size={18} />
@@ -376,7 +390,7 @@ export default function VarianceBahan() {
             </div>
 
             {/* Modal Body */}
-            <div style={{ padding: 20, overflowY: 'auto', flex: 1 }}>
+            <div style={{ padding: 22, overflowY: 'auto', flex: 1 }}>
               {/* Mini Cards Grid */}
               <div className="grid-4 gap-3 mb-4">
                 <MiniCard
@@ -399,34 +413,199 @@ export default function VarianceBahan() {
                 />
               </div>
 
-              {/* Waste vs Shrinkage Breakdown Explanation Bar */}
-              <div style={{
-                background: 'var(--bg-secondary)',
-                borderRadius: 8,
-                padding: '12px 16px',
-                marginBottom: 18,
-                border: '1px solid var(--border-color)',
-                fontSize: 12.5
-              }}>
-                <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--text-primary)' }}>
-                  🔎 Evaluasi Cost Control:
+              {/* 1. Jembatan Rekonsiliasi Mutasi Stok (Stock Flow Bridge) */}
+              <div className="card mb-4" style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(148, 163, 184, 0.2)' }}>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, color: '#38bdf8' }}>
+                  <Calculator size={16} /> Jembatan Rekonsiliasi Mutasi Stok (Inventory Movement Flow)
                 </div>
-                {drillData.waste_value > 0 ? (
-                  <div style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                    Dari selisih fisik kotor sebesar <strong>{num(drillData.variance_gross_qty)} {drillData.ingredient?.unit_pakai}</strong>,
-                    sebanyak <strong style={{ color: '#fb923c' }}>{num(drillData.waste_qty)} {drillData.ingredient?.unit_pakai} ({rupiah(drillData.waste_value)})</strong> merupakan kerusakan bahan resmi yang terdokumentasi (waste).
-                    Sisa selisih murni sebesar <strong style={{ color: drillData.variance_value > 0 ? 'var(--danger)' : 'var(--ok)' }}>
-                      {num(drillData.unaccounted_qty)} {drillData.ingredient?.unit_pakai} ({rupiah(drillData.variance_value)})
-                    </strong> adalah selisih tak terjelaskan yang memerlukan evaluasi tim koki / audit takaran porsi.
+                <div className="table-wrap">
+                  <table style={{ fontSize: 12.5 }}>
+                    <thead>
+                      <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
+                        <th>Komponen Alur Stok</th>
+                        <th className="right">Kuantitas Gramasi / Unit</th>
+                        <th className="right">Dampak Terhadap Stok</th>
+                        <th className="right">Estimasi Nilai HPP (Rp)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td style={{ fontWeight: 600 }}>Stok Awal Periode</td>
+                        <td className="mono right">{num(drillData.stok_awal_periode)} {drillData.ingredient?.unit_pakai}</td>
+                        <td className="right" style={{ color: 'var(--text-secondary)' }}>Saldo Awal</td>
+                        <td className="mono right">{rupiah(Math.round((drillData.stok_awal_periode || 0) * (drillData.cost_per_unit || 0)))}</td>
+                      </tr>
+                      <tr>
+                        <td>(+) Pembelian Masuk</td>
+                        <td className="mono right" style={{ color: '#34d399' }}>+{num(drillData.pembelian)} {drillData.ingredient?.unit_pakai}</td>
+                        <td className="right" style={{ color: '#34d399' }}>Penambahan (In)</td>
+                        <td className="mono right" style={{ color: '#34d399' }}>+{rupiah(Math.round((drillData.pembelian || 0) * (drillData.cost_per_unit || 0)))}</td>
+                      </tr>
+                      {(drillData.prep_output > 0 || drillData.transfer_in > 0) && (
+                        <tr>
+                          <td>(+) Batch Prep Hasil Jadi & Transfer In</td>
+                          <td className="mono right" style={{ color: '#34d399' }}>+{num((drillData.prep_output || 0) + (drillData.transfer_in || 0))} {drillData.ingredient?.unit_pakai}</td>
+                          <td className="right" style={{ color: '#34d399' }}>Penambahan (In)</td>
+                          <td className="mono right" style={{ color: '#34d399' }}>+{rupiah(Math.round(((drillData.prep_output || 0) + (drillData.transfer_in || 0)) * (drillData.cost_per_unit || 0)))}</td>
+                        </tr>
+                      )}
+                      <tr>
+                        <td>(-) Pemakaian Penjualan POS (Teoritis)</td>
+                        <td className="mono right" style={{ color: '#fb7185' }}>-{num(drillData.pemakaian_teoritis)} {drillData.ingredient?.unit_pakai}</td>
+                        <td className="right" style={{ color: '#fb7185' }}>Pengurangan (Out)</td>
+                        <td className="mono right" style={{ color: '#fb7185' }}>-{rupiah(Math.round((drillData.pemakaian_teoritis || 0) * (drillData.cost_per_unit || 0)))}</td>
+                      </tr>
+                      {(drillData.prep_usage > 0 || drillData.transfer_out > 0) && (
+                        <tr>
+                          <td>(-) Terpakai Produksi Prep & Transfer Out</td>
+                          <td className="mono right" style={{ color: '#fb7185' }}>-{num((drillData.prep_usage || 0) + (drillData.transfer_out || 0))} {drillData.ingredient?.unit_pakai}</td>
+                          <td className="right" style={{ color: '#fb7185' }}>Pengurangan (Out)</td>
+                          <td className="mono right" style={{ color: '#fb7185' }}>-{rupiah(Math.round(((drillData.prep_usage || 0) + (drillData.transfer_out || 0)) * (drillData.cost_per_unit || 0)))}</td>
+                        </tr>
+                      )}
+                      {drillData.waste_qty > 0 && (
+                        <tr>
+                          <td>(-) Kerusakan Bahan / Limbah Waste</td>
+                          <td className="mono right" style={{ color: '#fb923c' }}>-{num(drillData.waste_qty)} {drillData.ingredient?.unit_pakai}</td>
+                          <td className="right" style={{ color: '#fb923c' }}>Limbah Dapur</td>
+                          <td className="mono right" style={{ color: '#fb923c' }}>-{rupiah(drillData.waste_value)}</td>
+                        </tr>
+                      )}
+                      {drillData.adjustment !== 0 && (
+                        <tr>
+                          <td>(+/-) Koreksi / Manual Adjustment</td>
+                          <td className="mono right">{drillData.adjustment > 0 ? `+${num(drillData.adjustment)}` : num(drillData.adjustment)} {drillData.ingredient?.unit_pakai}</td>
+                          <td className="right" style={{ color: 'var(--text-secondary)' }}>Koreksi</td>
+                          <td className="mono right">{rupiah(Math.round((drillData.adjustment || 0) * (drillData.cost_per_unit || 0)))}</td>
+                        </tr>
+                      )}
+                      <tr style={{ background: 'rgba(255,255,255,0.04)', fontWeight: 700, borderTop: '1px solid var(--border)' }}>
+                        <td>🏁 Sisa Stok Teoritis Sistem</td>
+                        <td className="mono right">{num(drillData.stok_akhir_teoritis)} {drillData.ingredient?.unit_pakai}</td>
+                        <td className="right" style={{ color: 'var(--accent-bright)' }}>Target Sistem</td>
+                        <td className="mono right">{rupiah(drillData.nilai_teoritis)}</td>
+                      </tr>
+                      <tr style={{ background: 'rgba(255,255,255,0.06)', fontWeight: 700 }}>
+                        <td>🔍 Sisa Stok Fisik Nyata (Stok Opname)</td>
+                        <td className="mono right" style={{ color: '#38bdf8' }}>
+                          {drillData.stok_akhir_aktual !== null ? `${num(drillData.stok_akhir_aktual)} ${drillData.ingredient?.unit_pakai}` : '—'}
+                        </td>
+                        <td className="right" style={{ color: '#38bdf8' }}>Hasil Opname</td>
+                        <td className="mono right" style={{ color: '#38bdf8' }}>
+                          {drillData.nilai_aktual !== null ? rupiah(drillData.nilai_aktual) : '—'}
+                        </td>
+                      </tr>
+                      <tr style={{ background: drillData.variance_value > 0 ? 'rgba(244, 63, 94, 0.1)' : 'rgba(16, 185, 129, 0.1)', fontWeight: 800 }}>
+                        <td>⚡ Selisih Stok Opname (Fisik - Teoritis)</td>
+                        <td className="mono right" style={{ color: drillData.variance_qty > 0 ? 'var(--danger)' : drillData.variance_qty < 0 ? 'var(--ok)' : 'inherit' }}>
+                          {drillData.variance_qty !== null ? `${num(drillData.variance_qty)} ${drillData.ingredient?.unit_pakai}` : '—'}
+                        </td>
+                        <td className="right">
+                          {drillData.variance_pct !== null ? `${pct(drillData.variance_pct)} Net` : '—'}
+                        </td>
+                        <td className="mono right" style={{ color: drillData.variance_value > 0 ? 'var(--danger)' : 'var(--ok)' }}>
+                          {drillData.variance_value !== null ? rupiah(drillData.variance_value) : '—'}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* 2. Rincian Menu Penjualan yang Menggunakan Bahan Ini */}
+              <div className="card mb-4" style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(148, 163, 184, 0.2)' }}>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, color: '#a78bfa' }}>
+                  <Utensils size={16} /> Rincian Menu Penjualan yang Mengonsumsi Bahan Ini (Resep POS)
+                </div>
+                {drillData.menu_usages && drillData.menu_usages.length > 0 ? (
+                  <div className="table-wrap">
+                    <table style={{ fontSize: 12.5 }}>
+                      <thead>
+                        <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
+                          <th>Menu Penjualan</th>
+                          <th>Kategori</th>
+                          <th className="right">Qty Terjual (Porsi)</th>
+                          <th className="right">Takaran Resep / Porsi</th>
+                          <th className="right">Total Pemakaian POS</th>
+                          <th className="right">Kontribusi Share %</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {drillData.menu_usages.map(mu => {
+                          const sharePct = drillData.pemakaian_teoritis > 0
+                            ? ((mu.total_usage / drillData.pemakaian_teoritis) * 100).toFixed(1)
+                            : '0.0';
+                          return (
+                            <tr key={mu.menu_id}>
+                              <td style={{ fontWeight: 600 }}>{mu.menu_name}</td>
+                              <td><span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{mu.category}</span></td>
+                              <td className="mono right">{mu.qty_sold} Porsi</td>
+                              <td className="mono right">{num(mu.portion_qty)} {drillData.ingredient?.unit_pakai}</td>
+                              <td className="mono right" style={{ fontWeight: 600 }}>{num(mu.total_usage)} {drillData.ingredient?.unit_pakai}</td>
+                              <td className="mono right">{sharePct}%</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr style={{ fontWeight: 700, background: 'rgba(255,255,255,0.04)' }}>
+                          <td colSpan={2}>Total Pemakaian Resep POS</td>
+                          <td className="mono right">{drillData.menu_usages.reduce((s, m) => s + m.qty_sold, 0)} Porsi</td>
+                          <td></td>
+                          <td className="mono right">{num(drillData.pemakaian_teoritis)} {drillData.ingredient?.unit_pakai}</td>
+                          <td className="mono right">100%</td>
+                        </tr>
+                      </tfoot>
+                    </table>
                   </div>
                 ) : (
-                  <div style={{ color: 'var(--text-secondary)' }}>
-                    Tidak ada laporan kerusakan bahan (waste) tercatat untuk bahan ini pada periode berjalan. Seluruh selisih fisik murni berasal dari perbedaan takaran porsi atau kesalahan pencatatan.
+                  <div style={{ fontSize: 12.5, color: 'var(--text-muted)', padding: '12px 14px', background: 'rgba(255,255,255,0.02)', borderRadius: 6 }}>
+                    Belum ada transaksi menu POS yang tercatat mengonsumsi bahan baku ini pada periode terpilih ({period.from} s/d {period.to}).
                   </div>
                 )}
               </div>
 
-              {/* Documented Waste Events Log */}
+              {/* 3. Panduan Investigasi & Evaluasi Cost Control */}
+              <div style={{
+                background: 'var(--bg-secondary)',
+                borderRadius: 8,
+                padding: '14px 18px',
+                marginBottom: 18,
+                border: '1px solid var(--border-color)',
+                fontSize: 12.5
+              }}>
+                <div style={{ fontWeight: 700, marginBottom: 8, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  🔎 Evaluasi & Panduan Investigasi Akar Masalah:
+                </div>
+                {drillData.waste_value > 0 ? (
+                  <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                    Dari selisih fisik kotor sebesar <strong>{num(drillData.variance_gross_qty)} {drillData.ingredient?.unit_pakai}</strong>,
+                    sebanyak <strong style={{ color: '#fb923c' }}>{num(drillData.waste_qty)} {drillData.ingredient?.unit_pakai} ({rupiah(drillData.waste_value)})</strong> merupakan kerusakan bahan resmi yang terdokumentasi (waste dapur).
+                    Sisa selisih murni sebesar <strong style={{ color: drillData.variance_value > 0 ? 'var(--danger)' : 'var(--ok)' }}>
+                      {num(drillData.unaccounted_qty)} {drillData.ingredient?.unit_pakai} ({rupiah(drillData.variance_value)})
+                    </strong> adalah selisih tak terjelaskan (shrinkage).
+                  </div>
+                ) : (
+                  <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                    Tidak ada laporan kerusakan bahan (waste) tercatat untuk bahan ini pada periode berjalan. Seluruh selisih fisik murni berasal dari perbedaan takaran porsi, kalibrasi mesin, tumpahan tak tercatat, atau perbedaan timbangan fisik.
+                  </div>
+                )}
+                {drillData.status === 'TIDAK WAJAR' && (
+                  <div style={{ marginTop: 10, padding: '10px 12px', background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.3)', borderRadius: 6 }}>
+                    <div style={{ fontWeight: 700, color: '#fb7185', marginBottom: 4 }}>
+                      ⚠️ Rekomendasi Tindakan Audit:
+                    </div>
+                    <ul style={{ margin: 0, paddingLeft: 18, color: '#fecdd3', fontSize: 12, lineHeight: 1.5 }}>
+                      <li>Lakukan observasi dan uji takaran (*dosing test*) pada barista/koki saat menyajikan menu-menu terkait di atas.</li>
+                      <li>Periksa kalibrasi grinder/mesin espresso dan pastikan sisa bubuk kalibrasi dicatat di modul Waste Tracking.</li>
+                      <li>Verifikasi kesesuaian SOP resep aktual di bar dengan gramasi yang didaftarkan di Master Resep.</li>
+                      <li>Cek ulang ketelitian timbangan digital pada sesi Stok Opname berikutnya.</li>
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              {/* 4. Documented Waste Events Log */}
               <div style={{ marginTop: 16 }}>
                 <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6, color: '#fb923c' }}>
                   <Trash2 size={16} /> Riwayat Log Kejadian Kerusakan / Waste Tercatat
@@ -487,7 +666,7 @@ export default function VarianceBahan() {
 
             {/* Modal Footer */}
             <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', background: 'rgba(255,255,255,0.02)' }}>
-              <button className="btn btn-secondary btn-sm" onClick={() => setShowDrillModal(false)}>
+              <button className="btn btn-secondary btn-sm" onClick={handleCloseDrill}>
                 Tutup
               </button>
             </div>
@@ -495,19 +674,25 @@ export default function VarianceBahan() {
         </div>
       )}
 
-      {/* Drill-down Detail */}
+      {/* Inline Drill-down Detail */}
       {drillData && (
-        <div className="card fade-in" style={{ border: '1px solid var(--accent-border)' }}>
+        <div className="card fade-in mb-4" style={{ border: '1px solid var(--accent-border)' }}>
           <div className="flex-between mb-2">
             <div>
-              <div style={{ fontWeight: 700, fontSize: 17 }}>
+              <div style={{ fontWeight: 700, fontSize: 17, display: 'flex', alignItems: 'center', gap: 8 }}>
                 {drillData.ingredient?.name} — Analisis Pemisahan Cost Control & Waste
+                <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: 4 }}>
+                  {drillData.ingredient?.category || 'Bahan Baku'}
+                </span>
               </div>
               <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-                Periode {period.from} s/d {period.to} · Toleransi Standar: {drillData.ingredient?.tolerance}%
+                Periode {period.from} s/d {period.to} · Toleransi Standar: {drillData.ingredient?.tolerance ?? 5}% · Satuan: {drillData.ingredient?.unit_pakai}
               </div>
             </div>
-            <StatusPill status={drillData.status} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <StatusPill status={drillData.status} />
+              <button className="btn btn-ghost btn-sm" onClick={handleCloseDrill}>Tutup Detail</button>
+            </div>
           </div>
 
           {/* Mini Cards Grid */}
@@ -531,6 +716,145 @@ export default function VarianceBahan() {
               color={drillData.variance_value > 0 ? 'var(--danger)' : 'var(--ok)'}
             />
           </div>
+
+          {/* Jembatan Mutasi Stok Inline */}
+          <div className="card mb-4" style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(148, 163, 184, 0.2)' }}>
+            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, color: '#38bdf8' }}>
+              <Calculator size={16} /> Jembatan Rekonsiliasi Mutasi Stok (Inventory Movement Flow)
+            </div>
+            <div className="table-wrap">
+              <table style={{ fontSize: 12.5 }}>
+                <thead>
+                  <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
+                    <th>Komponen Alur Stok</th>
+                    <th className="right">Kuantitas Gramasi / Unit</th>
+                    <th className="right">Dampak Terhadap Stok</th>
+                    <th className="right">Estimasi Nilai HPP (Rp)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td style={{ fontWeight: 600 }}>Stok Awal Periode</td>
+                    <td className="mono right">{num(drillData.stok_awal_periode)} {drillData.ingredient?.unit_pakai}</td>
+                    <td className="right" style={{ color: 'var(--text-secondary)' }}>Saldo Awal</td>
+                    <td className="mono right">{rupiah(Math.round((drillData.stok_awal_periode || 0) * (drillData.cost_per_unit || 0)))}</td>
+                  </tr>
+                  <tr>
+                    <td>(+) Pembelian Masuk</td>
+                    <td className="mono right" style={{ color: '#34d399' }}>+{num(drillData.pembelian)} {drillData.ingredient?.unit_pakai}</td>
+                    <td className="right" style={{ color: '#34d399' }}>Penambahan (In)</td>
+                    <td className="mono right" style={{ color: '#34d399' }}>+{rupiah(Math.round((drillData.pembelian || 0) * (drillData.cost_per_unit || 0)))}</td>
+                  </tr>
+                  {(drillData.prep_output > 0 || drillData.transfer_in > 0) && (
+                    <tr>
+                      <td>(+) Batch Prep Hasil Jadi & Transfer In</td>
+                      <td className="mono right" style={{ color: '#34d399' }}>+{num((drillData.prep_output || 0) + (drillData.transfer_in || 0))} {drillData.ingredient?.unit_pakai}</td>
+                      <td className="right" style={{ color: '#34d399' }}>Penambahan (In)</td>
+                      <td className="mono right" style={{ color: '#34d399' }}>+{rupiah(Math.round(((drillData.prep_output || 0) + (drillData.transfer_in || 0)) * (drillData.cost_per_unit || 0)))}</td>
+                    </tr>
+                  )}
+                  <tr>
+                    <td>(-) Pemakaian Penjualan POS (Teoritis)</td>
+                    <td className="mono right" style={{ color: '#fb7185' }}>-{num(drillData.pemakaian_teoritis)} {drillData.ingredient?.unit_pakai}</td>
+                    <td className="right" style={{ color: '#fb7185' }}>Pengurangan (Out)</td>
+                    <td className="mono right" style={{ color: '#fb7185' }}>-{rupiah(Math.round((drillData.pemakaian_teoritis || 0) * (drillData.cost_per_unit || 0)))}</td>
+                  </tr>
+                  {(drillData.prep_usage > 0 || drillData.transfer_out > 0) && (
+                    <tr>
+                      <td>(-) Terpakai Produksi Prep & Transfer Out</td>
+                      <td className="mono right" style={{ color: '#fb7185' }}>-{num((drillData.prep_usage || 0) + (drillData.transfer_out || 0))} {drillData.ingredient?.unit_pakai}</td>
+                      <td className="right" style={{ color: '#fb7185' }}>Pengurangan (Out)</td>
+                      <td className="mono right" style={{ color: '#fb7185' }}>-{rupiah(Math.round(((drillData.prep_usage || 0) + (drillData.transfer_out || 0)) * (drillData.cost_per_unit || 0)))}</td>
+                    </tr>
+                  )}
+                  {drillData.waste_qty > 0 && (
+                    <tr>
+                      <td>(-) Kerusakan Bahan / Limbah Waste</td>
+                      <td className="mono right" style={{ color: '#fb923c' }}>-{num(drillData.waste_qty)} {drillData.ingredient?.unit_pakai}</td>
+                      <td className="right" style={{ color: '#fb923c' }}>Limbah Dapur</td>
+                      <td className="mono right" style={{ color: '#fb923c' }}>-{rupiah(drillData.waste_value)}</td>
+                    </tr>
+                  )}
+                  {drillData.adjustment !== 0 && (
+                    <tr>
+                      <td>(+/-) Koreksi / Manual Adjustment</td>
+                      <td className="mono right">{drillData.adjustment > 0 ? `+${num(drillData.adjustment)}` : num(drillData.adjustment)} {drillData.ingredient?.unit_pakai}</td>
+                      <td className="right" style={{ color: 'var(--text-secondary)' }}>Koreksi</td>
+                      <td className="mono right">{rupiah(Math.round((drillData.adjustment || 0) * (drillData.cost_per_unit || 0)))}</td>
+                    </tr>
+                  )}
+                  <tr style={{ background: 'rgba(255,255,255,0.04)', fontWeight: 700, borderTop: '1px solid var(--border)' }}>
+                    <td>🏁 Sisa Stok Teoritis Sistem</td>
+                    <td className="mono right">{num(drillData.stok_akhir_teoritis)} {drillData.ingredient?.unit_pakai}</td>
+                    <td className="right" style={{ color: 'var(--accent-bright)' }}>Target Sistem</td>
+                    <td className="mono right">{rupiah(drillData.nilai_teoritis)}</td>
+                  </tr>
+                  <tr style={{ background: 'rgba(255,255,255,0.06)', fontWeight: 700 }}>
+                    <td>🔍 Sisa Stok Fisik Nyata (Stok Opname)</td>
+                    <td className="mono right" style={{ color: '#38bdf8' }}>
+                      {drillData.stok_akhir_aktual !== null ? `${num(drillData.stok_akhir_aktual)} ${drillData.ingredient?.unit_pakai}` : '—'}
+                    </td>
+                    <td className="right" style={{ color: '#38bdf8' }}>Hasil Opname</td>
+                    <td className="mono right" style={{ color: '#38bdf8' }}>
+                      {drillData.nilai_aktual !== null ? rupiah(drillData.nilai_aktual) : '—'}
+                    </td>
+                  </tr>
+                  <tr style={{ background: drillData.variance_value > 0 ? 'rgba(244, 63, 94, 0.1)' : 'rgba(16, 185, 129, 0.1)', fontWeight: 800 }}>
+                    <td>⚡ Selisih Stok Opname (Fisik - Teoritis)</td>
+                    <td className="mono right" style={{ color: drillData.variance_qty > 0 ? 'var(--danger)' : drillData.variance_qty < 0 ? 'var(--ok)' : 'inherit' }}>
+                      {drillData.variance_qty !== null ? `${num(drillData.variance_qty)} ${drillData.ingredient?.unit_pakai}` : '—'}
+                    </td>
+                    <td className="right">
+                      {drillData.variance_pct !== null ? `${pct(drillData.variance_pct)} Net` : '—'}
+                    </td>
+                    <td className="mono right" style={{ color: drillData.variance_value > 0 ? 'var(--danger)' : 'var(--ok)' }}>
+                      {drillData.variance_value !== null ? rupiah(drillData.variance_value) : '—'}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Breakdown Menu Penjualan Inline */}
+          {drillData.menu_usages && drillData.menu_usages.length > 0 && (
+            <div className="card mb-4" style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(148, 163, 184, 0.2)' }}>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, color: '#a78bfa' }}>
+                <Utensils size={16} /> Rincian Menu Penjualan yang Mengonsumsi Bahan Ini (Resep POS)
+              </div>
+              <div className="table-wrap">
+                <table style={{ fontSize: 12.5 }}>
+                  <thead>
+                    <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
+                      <th>Menu Penjualan</th>
+                      <th>Kategori</th>
+                      <th className="right">Qty Terjual (Porsi)</th>
+                      <th className="right">Takaran Resep / Porsi</th>
+                      <th className="right">Total Pemakaian POS</th>
+                      <th className="right">Kontribusi Share %</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {drillData.menu_usages.map(mu => {
+                      const sharePct = drillData.pemakaian_teoritis > 0
+                        ? ((mu.total_usage / drillData.pemakaian_teoritis) * 100).toFixed(1)
+                        : '0.0';
+                      return (
+                        <tr key={mu.menu_id}>
+                          <td style={{ fontWeight: 600 }}>{mu.menu_name}</td>
+                          <td><span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{mu.category}</span></td>
+                          <td className="mono right">{mu.qty_sold} Porsi</td>
+                          <td className="mono right">{num(mu.portion_qty)} {drillData.ingredient?.unit_pakai}</td>
+                          <td className="mono right" style={{ fontWeight: 600 }}>{num(mu.total_usage)} {drillData.ingredient?.unit_pakai}</td>
+                          <td className="mono right">{sharePct}%</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Waste vs Shrinkage Breakdown Explanation Bar */}
           <div style={{

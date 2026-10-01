@@ -181,7 +181,9 @@ export default function MasterMenu() {
     ];
   }, [searchableIngredientGroups]);
 
-  useEffect(() => { fetchAll(); }, []);
+  useEffect(() => {
+    fetchAll();
+  }, [activeOutletId]);
 
   const fetchHppHistory = async (menuId = selected?.id, targetOutletId = activeOutletId, from = dateRange?.from, to = dateRange?.to) => {
     if (!menuId) return;
@@ -286,9 +288,10 @@ export default function MasterMenu() {
 
   async function fetchAll(selectId = null) {
     try {
+      const targetOutlet = activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all' ? activeOutletId : undefined;
       const [m, i, mg, c] = await Promise.all([
-        api.get('/menus'),
-        api.get('/ingredients'),
+        api.get('/menus', { params: { outlet_id: targetOutlet } }),
+        api.get('/ingredients', { params: { outlet_id: targetOutlet } }),
         api.get('/modifier-groups'),
         api.get('/categories?type=MENU').catch(() => ({ data: [] }))
       ]);
@@ -951,10 +954,18 @@ export default function MasterMenu() {
   }
 
   function updateDraft(idx, field, val) {
-    setDraft(d => d.map((it, i) => i === idx
-      ? { ...it, [field]: field === 'qty' || field === 'waste_std' ? Number(val) : val }
-      : it
-    ));
+    setDraft(d => d.map((it, i) => {
+      if (i !== idx) return it;
+      const updated = { ...it, [field]: field === 'qty' || field === 'waste_std' ? Number(val) : val };
+      if (field === 'ingredient_id') {
+        const valNum = Number(val);
+        const matchingIng = ingredients.find(ing => ing.id === valNum);
+        if (matchingIng && matchingIng.unit_pakai) {
+          updated.unit = matchingIng.unit_pakai;
+        }
+      }
+      return updated;
+    }));
   }
 
   async function commitRecipe() {
@@ -2214,8 +2225,11 @@ export default function MasterMenu() {
                                   onChange={(selectedId, selectedObj) => {
                                     const val = Number(selectedId);
                                     const ing = selectedObj?.raw || ingredients.find(i => i.id === val);
-                                    updateDraft(idx, 'ingredient_id', val);
-                                    if (ing) updateDraft(idx, 'unit', ing.unit_pakai);
+                                    setDraft(d => d.map((item, i) => i === idx ? {
+                                      ...item,
+                                      ingredient_id: val,
+                                      unit: ing?.unit_pakai || item.unit || 'gram',
+                                    } : item));
                                   }}
                                   options={searchableIngredientGroups}
                                   placeholder="-- Cari Bahan Baku / Perlengkapan --"
@@ -2234,12 +2248,32 @@ export default function MasterMenu() {
                                 />
                               </td>
                               <td>
-                                <UnitSelect
-                                  options={SATUAN_PAKAI_OPTIONS}
-                                  style={{ padding: '6px 10px', fontSize: 12.5, minWidth: 85 }}
-                                  value={it.unit}
-                                  onChange={val => updateDraft(idx, 'unit', val)}
-                                />
+                                {(() => {
+                                  const curIng = ingredients.find(i => i.id === Number(it.ingredient_id));
+                                  const lockedUnit = curIng?.unit_pakai || it.unit || 'gram';
+                                  return (
+                                    <div
+                                      style={{
+                                        padding: '6px 10px',
+                                        background: 'rgba(99, 102, 241, 0.12)',
+                                        border: '1px solid rgba(99, 102, 241, 0.3)',
+                                        borderRadius: 6,
+                                        fontSize: 12,
+                                        fontWeight: 700,
+                                        color: '#c7d2fe',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        gap: 4,
+                                        minWidth: 85,
+                                      }}
+                                      title="Satuan gramasi otomatis terhubung & terkunci dari Master Bahan"
+                                    >
+                                      <span>{lockedUnit}</span>
+                                      <span style={{ fontSize: 10, color: 'var(--accent-bright)' }}>🔒</span>
+                                    </div>
+                                  );
+                                })()}
                               </td>
                               <td>
                                 <input
@@ -3853,15 +3887,31 @@ export default function MasterMenu() {
                               />
                             </td>
                             <td>
-                              <input
-                                type="text"
-                                className="form-control"
-                                style={{ padding: '6px 8px', fontSize: 12 }}
-                                disabled={!opt.ingredient_id}
-                                value={opt.unit}
-                                onChange={e => updateGroupOption(idx, 'unit', e.target.value)}
-                                placeholder={opt.ingredient_id ? "gram" : "-"}
-                              />
+                              {(() => {
+                                const curIng = ingredients.find(i => i.id === Number(opt.ingredient_id));
+                                const lockedUnit = curIng?.unit_pakai || opt.unit || 'gram';
+                                return (
+                                  <div
+                                    style={{
+                                      padding: '6px 8px',
+                                      fontSize: 12,
+                                      fontWeight: 600,
+                                      color: opt.ingredient_id ? '#c7d2fe' : 'var(--text-muted)',
+                                      background: opt.ingredient_id ? 'rgba(99, 102, 241, 0.12)' : 'rgba(255,255,255,0.02)',
+                                      border: '1px solid var(--border)',
+                                      borderRadius: 6,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'space-between',
+                                      minWidth: 70
+                                    }}
+                                    title="Satuan otomatis mengikuti master bahan"
+                                  >
+                                    <span>{opt.ingredient_id ? lockedUnit : '-'}</span>
+                                    {opt.ingredient_id && <span style={{ fontSize: 9.5, color: 'var(--accent-bright)' }}>🔒</span>}
+                                  </div>
+                                );
+                              })()}
                             </td>
                             <td className="center">
                               {groupForm.options.length > 1 && (

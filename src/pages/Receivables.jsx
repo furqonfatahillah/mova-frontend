@@ -3,11 +3,11 @@ import {
   Wallet, PlusCircle, Search, RefreshCw, Eye,
   Printer, FileSpreadsheet, MessageCircle, AlertCircle,
   Calendar, CheckCircle2, AlertOctagon, Clock, DollarSign,
-  ChevronRight, X, User, Phone, MapPin, CreditCard,
+  ChevronRight, ChevronDown, X, User, Phone, MapPin, CreditCard,
   Trash2, Edit3, ArrowRight, ShieldAlert, Receipt, Send, Check,
   Users, CheckSquare, Square, Layers, Sparkles, History,
   Landmark, Building2, Building, QrCode, ShoppingCart, ArrowDownToLine,
-  CheckCheck, Info
+  CheckCheck, Info, Percent, Settings2, Sliders, Tag
 } from 'lucide-react';
 import api from '../api/client';
 import {
@@ -45,7 +45,7 @@ export default function Receivables() {
     return undefined;
   }, [activeOutletId, outlets, canSwitchOutlet, currentUser?.outlet_id]);
 
-  // Tab State: 'CUSTOMERS' | 'RECEIVABLES' | 'PAYMENTS' | 'AR_MERCHANT'
+  // Tab State: 'CUSTOMERS' | 'RECEIVABLES' | 'PAYMENTS' | 'ECOMMERCE' | 'AR_MERCHANT'
   const [activeTab, setActiveTab] = useState('CUSTOMERS');
 
   // Main Data States
@@ -71,6 +71,37 @@ export default function Receivables() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'UNPAID' | 'PARTIAL' | 'PAID' | 'OVERDUE'
   const [dueFilter, setDueFilter] = useState('ALL'); // 'ALL' | 'OVERDUE' | 'TODAY' | 'THIS_WEEK' | 'THIS_MONTH'
+
+  // E-Commerce Grouped Reconciliation States
+  const [ecommerceTree, setEcommerceTree] = useState([]);
+  const [ecommerceSummary, setEcommerceSummary] = useState({});
+  const [ecommerceLoading, setEcommerceLoading] = useState(false);
+  const [expandedDates, setExpandedDates] = useState([]);
+  const [expandedShifts, setExpandedShifts] = useState([]);
+  const [ecomChannelFilter, setEcomChannelFilter] = useState('ALL');
+  const [ecomDateFrom, setEcomDateFrom] = useState('');
+  const [ecomDateTo, setEcomDateTo] = useState('');
+  const [ecomShiftFilterByDate, setEcomShiftFilterByDate] = useState({});
+
+  // Single Item Net Editing State
+  const [editingSingleNetId, setEditingSingleNetId] = useState(null);
+  const [singleNetInput, setSingleNetInput] = useState('');
+  const [savingSingleNet, setSavingSingleNet] = useState(false);
+
+  // Shift Net Modal State
+  const [shiftNetModal, setShiftNetModal] = useState({
+    open: false,
+    shiftKey: '',
+    shiftId: null,
+    shiftName: '',
+    date: '',
+    totalGross: 0,
+    totalOrders: 0,
+    targetNet: '',
+    channel: 'ALL',
+    cashierName: '',
+    isSaving: false,
+  });
 
   // Modal States
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -111,7 +142,7 @@ export default function Receivables() {
 
   // Selected items from Receivables table for multi-select bulk payment
   const selectedUnpaidReceivables = useMemo(() => {
-    return items.filter(i => selectedReceivableIds.includes(i.id) && i.remaining_amount > 0);
+    return items.filter(i => selectedReceivableIds.includes(i.id) && i.remaining_amount > 0 && i.ar_type !== 'MERCHANT_ECOMMERCE');
   }, [items, selectedReceivableIds]);
 
   const selectedTotalRemaining = useMemo(() => {
@@ -156,13 +187,18 @@ export default function Receivables() {
   }, [allPaymentLogs, searchQuery]);
 
   function toggleSelectReceivable(id) {
+    const item = items.find(i => i.id === id);
+    if (item?.ar_type === 'MERCHANT_ECOMMERCE') {
+      toast('AR E-Commerce tidak memiliki opsi pencairan manual di POS karena dicairkan langsung dari apk.', { icon: 'ℹ️' });
+      return;
+    }
     setSelectedReceivableIds(prev =>
       prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
     );
   }
 
   function toggleSelectAllReceivables() {
-    const unpaidItems = filteredItems.filter(i => i.remaining_amount > 0);
+    const unpaidItems = filteredItems.filter(i => i.remaining_amount > 0 && i.ar_type !== 'MERCHANT_ECOMMERCE');
     const unpaidIds = unpaidItems.map(i => i.id);
     const allSelected = unpaidIds.length > 0 && unpaidIds.every(id => selectedReceivableIds.includes(id));
 
@@ -223,13 +259,17 @@ export default function Receivables() {
     fetchData();
     fetchMasterCustomers();
     fetchBankAccounts();
+    fetchEcommerceData();
   }, [targetOutlet, statusFilter, dueFilter]);
 
   useEffect(() => {
     if (activeTab === 'AR_MERCHANT') {
       fetchMerchantData();
     }
-  }, [activeTab, targetOutlet]);
+    if (activeTab === 'ECOMMERCE') {
+      fetchEcommerceData();
+    }
+  }, [activeTab, targetOutlet, ecomChannelFilter, ecomDateFrom, ecomDateTo, searchQuery]);
 
   async function fetchData() {
     setLoading(true);
@@ -287,6 +327,145 @@ export default function Receivables() {
       toast.error('Gagal memuat data AR Merchant');
     } finally {
       setMerchantLoading(false);
+    }
+  }
+
+  async function fetchEcommerceData() {
+    setEcommerceLoading(true);
+    try {
+      const params = {
+        outlet_id: targetOutlet,
+        channel: ecomChannelFilter !== 'ALL' ? ecomChannelFilter : undefined,
+        from: ecomDateFrom || undefined,
+        to: ecomDateTo || undefined,
+        q: searchQuery.trim() || undefined,
+      };
+      const res = await api.get('/receivables/ecommerce-grouped', { params });
+      const tree = res.data?.data || [];
+      setEcommerceTree(tree);
+      setEcommerceSummary(res.data?.summary || {});
+
+      // Auto expand latest date & shifts if empty
+      setExpandedDates(prev => {
+        if (prev.length === 0 && tree.length > 0) {
+          const firstDate = tree[0].date;
+          const firstShifts = (tree[0].shifts || []).map(s => `${firstDate}_${s.shift_key}`);
+          setExpandedShifts(firstShifts);
+          return [firstDate];
+        }
+        return prev;
+      });
+    } catch (err) {
+      console.error('Error fetching ecommerce grouped data:', err);
+    } finally {
+      setEcommerceLoading(false);
+    }
+  }
+
+  function toggleExpandDate(dateKey) {
+    setExpandedDates(prev =>
+      prev.includes(dateKey) ? prev.filter(d => d !== dateKey) : [...prev, dateKey]
+    );
+  }
+
+  function toggleExpandShift(compositeShiftKey) {
+    setExpandedShifts(prev =>
+      prev.includes(compositeShiftKey) ? prev.filter(s => s !== compositeShiftKey) : [...prev, compositeShiftKey]
+    );
+  }
+
+  function toggleExpandAllDates() {
+    if (expandedDates.length === ecommerceTree.length) {
+      setExpandedDates([]);
+      setExpandedShifts([]);
+    } else {
+      const allDates = ecommerceTree.map(d => d.date);
+      const allShifts = [];
+      ecommerceTree.forEach(d => {
+        (d.shifts || []).forEach(s => {
+          allShifts.push(`${d.date}_${s.shift_key}`);
+        });
+      });
+      setExpandedDates(allDates);
+      setExpandedShifts(allShifts);
+    }
+  }
+
+  function handleStartEditSingleNet(item) {
+    setEditingSingleNetId(item.id);
+    setSingleNetInput(String(item.net_amount ?? (item.total_amount - (item.mdr_fee || 0))));
+  }
+
+  function handleCancelEditSingleNet() {
+    setEditingSingleNetId(null);
+    setSingleNetInput('');
+  }
+
+  async function handleSaveSingleNet(item, inputVal) {
+    const netNum = parseFloat(inputVal !== undefined ? inputVal : singleNetInput);
+    if (isNaN(netNum) || netNum < 0) {
+      toast.error('Nominal Net Amount harus berupa angka valid >= 0');
+      return;
+    }
+    setSavingSingleNet(true);
+    try {
+      await api.post(`/receivables/${item.id}/net-amount`, {
+        net_amount: netNum,
+      });
+      toast.success(`Net Amount #${item.order_number || item.receivable_no} berhasil disimpan (${rupiah(netNum)})!`);
+      setEditingSingleNetId(null);
+      setSingleNetInput('');
+      fetchEcommerceData();
+      fetchData();
+      if (activeTab === 'AR_MERCHANT') fetchMerchantData();
+    } catch (err) {
+      console.error(err);
+      toast.error(err.response?.data?.message || 'Gagal memperbarui Net Amount');
+    } finally {
+      setSavingSingleNet(false);
+    }
+  }
+
+  function openShiftNetModal(dateObj, shiftObj) {
+    setShiftNetModal({
+      open: true,
+      shiftKey: shiftObj.shift_key,
+      shiftId: shiftObj.shift_id,
+      shiftName: shiftObj.shift_name,
+      date: dateObj.date,
+      totalGross: shiftObj.total_gross,
+      totalOrders: shiftObj.total_orders,
+      targetNet: String(shiftObj.total_net || shiftObj.total_gross),
+      channel: 'ALL',
+      cashierName: shiftObj.cashier_name,
+      isSaving: false,
+    });
+  }
+
+  async function handleSaveShiftNetModal(e) {
+    e.preventDefault();
+    const targetNetNum = parseFloat(shiftNetModal.targetNet);
+    if (isNaN(targetNetNum) || targetNetNum < 0) {
+      toast.error('Nominal Total Net Amount harus berupa angka valid >= 0');
+      return;
+    }
+    setShiftNetModal(s => ({ ...s, isSaving: true }));
+    try {
+      const res = await api.post('/receivables/shift-net-amount', {
+        shift_id: shiftNetModal.shiftId ?? (shiftNetModal.shiftKey === 'NO_SHIFT' ? 'NO_SHIFT' : undefined),
+        date: shiftNetModal.date,
+        total_net_amount: targetNetNum,
+        merchant_channel: shiftNetModal.channel !== 'ALL' ? shiftNetModal.channel : undefined,
+      });
+      toast.success(res.data?.message || 'Net Amount Total Shift berhasil diperbarui!');
+      setShiftNetModal(s => ({ ...s, open: false, isSaving: false }));
+      fetchEcommerceData();
+      fetchData();
+      if (activeTab === 'AR_MERCHANT') fetchMerchantData();
+    } catch (err) {
+      console.error(err);
+      toast.error(err.response?.data?.message || 'Gagal memperbarui Total Net Shift');
+      setShiftNetModal(s => ({ ...s, isSaving: false }));
     }
   }
 
@@ -702,7 +881,12 @@ export default function Receivables() {
   // Export to Excel
   async function handleExportExcel() {
     try {
-      const exportItems = activeTab === 'AR_MERCHANT' ? filteredMerchantRows : filteredItems;
+      let exportItems = filteredItems;
+      if (activeTab === 'ECOMMERCE') {
+        exportItems = ecommerceTree.flatMap(d => (d.shifts || []).flatMap(s => s.orders || []));
+      } else if (activeTab === 'AR_MERCHANT') {
+        exportItems = filteredMerchantRows;
+      }
       const fname = await exportReceivablesToExcel({
         items: exportItems,
         stats,
@@ -726,15 +910,18 @@ export default function Receivables() {
     );
   }
 
-  // Print Full Receivables Report (LAPORAN BUKU PIUTANG / AR MERCHANT)
+  // Print Full Receivables Report (LAPORAN BUKU PIUTANG / AR MERCHANT / ECOMMERCE)
   function handlePrintReceivablesReport() {
-    const docTitle = activeTab === 'AR_MERCHANT'
-      ? `LAPORAN PIUTANG AR MERCHANT (QRIS & E-COM) - ${businessName}`
-      : `LAPORAN BUKU PIUTANG - ${businessName}`;
+    let docTitle = `LAPORAN BUKU PIUTANG - ${businessName}`;
+    if (activeTab === 'ECOMMERCE') {
+      docTitle = `LAPORAN REKONSILIASI E-COMMERCE (GRAB/GOJEK/SHOPEE) - ${businessName}`;
+    } else if (activeTab === 'AR_MERCHANT') {
+      docTitle = `LAPORAN PIUTANG AR MERCHANT QRIS - ${businessName}`;
+    }
     printElement(
       'printable-receivables-report',
       docTitle,
-      { orientation: activeTab === 'AR_MERCHANT' ? 'landscape' : 'portrait' }
+      { orientation: (activeTab === 'AR_MERCHANT' || activeTab === 'ECOMMERCE') ? 'landscape' : 'portrait' }
     );
   }
 
@@ -870,7 +1057,7 @@ export default function Receivables() {
             </button>
 
             <button
-              onClick={() => setActiveTab('PAYMENTS')}
+              onClick={() => setActiveTab('ECOMMERCE')}
               style={{
                 padding: '7px 16px',
                 borderRadius: '7px',
@@ -878,15 +1065,15 @@ export default function Receivables() {
                 fontSize: '13px',
                 fontWeight: 700,
                 cursor: 'pointer',
-                background: activeTab === 'PAYMENTS' ? 'var(--primary)' : 'transparent',
-                color: activeTab === 'PAYMENTS' ? '#ffffff' : 'var(--text-secondary)',
+                background: activeTab === 'ECOMMERCE' ? 'linear-gradient(135deg, #f97316, #ea580c)' : 'transparent',
+                color: activeTab === 'ECOMMERCE' ? '#ffffff' : 'var(--text-secondary)',
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '8px',
                 transition: 'all 0.2s ease',
               }}
             >
-              <History size={15} /> Riwayat Pelunasan ({allPaymentLogs.length})
+              <ShoppingCart size={15} /> Rekonsiliasi E-Commerce ({ecommerceSummary.total_orders || 0})
             </button>
 
             <button
@@ -907,7 +1094,7 @@ export default function Receivables() {
                 position: 'relative',
               }}
             >
-              <Landmark size={15} /> AR Merchant (QRIS & E-Com)
+              <Landmark size={15} /> AR Merchant QRIS ({merchantUnsettledCount > 0 ? `${merchantUnsettledCount} Belum Cair` : 'QRIS'})
               {merchantUnsettledCount > 0 && (
                 <span style={{
                   background: '#ef4444',
@@ -922,6 +1109,26 @@ export default function Receivables() {
                   {merchantUnsettledCount}
                 </span>
               )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab('PAYMENTS')}
+              style={{
+                padding: '7px 16px',
+                borderRadius: '7px',
+                border: 'none',
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                background: activeTab === 'PAYMENTS' ? 'var(--primary)' : 'transparent',
+                color: activeTab === 'PAYMENTS' ? '#ffffff' : 'var(--text-secondary)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <History size={15} /> Riwayat Pelunasan ({allPaymentLogs.length})
             </button>
           </div>
 
@@ -1142,14 +1349,31 @@ export default function Receivables() {
                                   )}
                                 </td>
                                 <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                                  {item.remaining_amount > 0 && (
-                                    <button
-                                      className="btn btn-secondary btn-sm"
-                                      onClick={() => setPayModal({ open: true, item, amount: String(item.remaining_amount), payment_date: getTodayStr(), payment_method: 'CASH', reference_no: '', notes: '' })}
-                                      style={{ padding: '3px 8px', fontSize: '11px' }}
-                                    >
-                                      Cicil / Bayar
-                                    </button>
+                                  {item.ar_type === 'MERCHANT_ECOMMERCE' ? (
+                                    <span style={{
+                                      fontSize: '10.5px',
+                                      color: '#fdba74',
+                                      background: 'rgba(249, 115, 22, 0.15)',
+                                      border: '1px solid rgba(249, 115, 22, 0.3)',
+                                      padding: '2px 6px',
+                                      borderRadius: '4px',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '3px',
+                                      fontWeight: 600
+                                    }} title="Pencairan langsung dari apk e-commerce (Cross-check Only)">
+                                      <CheckCheck size={11} style={{ color: '#fb923c' }} /> Cross-check Apk
+                                    </span>
+                                  ) : (
+                                    item.remaining_amount > 0 && (
+                                      <button
+                                        className="btn btn-secondary btn-sm"
+                                        onClick={() => setPayModal({ open: true, item, amount: String(item.remaining_amount), payment_date: getTodayStr(), payment_method: 'CASH', reference_no: '', notes: '' })}
+                                        style={{ padding: '3px 8px', fontSize: '11px' }}
+                                      >
+                                        Cicil / Bayar
+                                      </button>
+                                    )
                                   )}
                                 </td>
                               </tr>
@@ -1225,12 +1449,12 @@ export default function Receivables() {
                     <input
                       type="checkbox"
                       checked={
-                        filteredItems.filter(i => i.remaining_amount > 0).length > 0 &&
-                        filteredItems.filter(i => i.remaining_amount > 0).every(i => selectedReceivableIds.includes(i.id))
+                        filteredItems.filter(i => i.remaining_amount > 0 && i.ar_type !== 'MERCHANT_ECOMMERCE').length > 0 &&
+                        filteredItems.filter(i => i.remaining_amount > 0 && i.ar_type !== 'MERCHANT_ECOMMERCE').every(i => selectedReceivableIds.includes(i.id))
                       }
                       onChange={toggleSelectAllReceivables}
                       style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: 'var(--primary)' }}
-                      title="Pilih Semua Nota Belum Lunas"
+                      title="Pilih Semua Nota Belum Lunas (Kecuali E-Commerce)"
                     />
                   </th>
                   <th style={{ padding: '14px 16px', fontWeight: 700 }}>No. Tagihan & Tanggal</th>
@@ -1256,6 +1480,7 @@ export default function Receivables() {
                 ) : (
                   filteredItems.map(item => {
                     const isPaid = item.status === 'PAID';
+                    const isEcommerce = item.ar_type === 'MERCHANT_ECOMMERCE';
                     const isOverdue = item.is_overdue;
                     const daysRem = item.days_remaining;
                     const pctPaid = item.progress_pct ?? (item.total_amount > 0 ? Math.round((item.paid_amount / item.total_amount) * 100) : 0);
@@ -1272,18 +1497,37 @@ export default function Receivables() {
                       >
                         {/* Checkbox Column */}
                         <td style={{ padding: '14px 10px', textAlign: 'center' }}>
-                          <input
-                            type="checkbox"
-                            disabled={isPaid}
-                            checked={isSelected}
-                            onChange={() => toggleSelectReceivable(item.id)}
-                            style={{ width: '16px', height: '16px', cursor: isPaid ? 'not-allowed' : 'pointer', accentColor: 'var(--primary)' }}
-                          />
+                          {isEcommerce ? (
+                            <span title="AR E-Commerce: Pencairan langsung via aplikasi e-commerce (Cross-check Only)">
+                              <ShoppingCart size={13} style={{ color: '#fb923c', opacity: 0.7 }} />
+                            </span>
+                          ) : (
+                            <input
+                              type="checkbox"
+                              disabled={isPaid}
+                              checked={isSelected}
+                              onChange={() => toggleSelectReceivable(item.id)}
+                              style={{ width: '16px', height: '16px', cursor: isPaid ? 'not-allowed' : 'pointer', accentColor: 'var(--primary)' }}
+                            />
+                          )}
                         </td>
                         {/* Invoice & Date */}
                       <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
                         <div style={{ fontWeight: 700, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <span>{item.receivable_no}</span>
+                          {isEcommerce && (
+                            <span style={{
+                              fontSize: '10px',
+                              fontWeight: 700,
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              background: 'rgba(249, 115, 22, 0.2)',
+                              color: '#fdba74',
+                              border: '1px solid rgba(249, 115, 22, 0.35)'
+                            }}>
+                              E-Com
+                            </span>
+                          )}
                         </div>
                         <div className="mono" style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
                           Terbit: {item.issue_date}
@@ -1436,15 +1680,32 @@ export default function Receivables() {
                       {/* Actions */}
                       <td style={{ padding: '12px 16px', textAlign: 'center', width: '220px', minWidth: '220px' }}>
                         <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'nowrap' }}>
-                          {!isPaid && (
-                            <button
-                              className="btn btn-primary btn-sm"
-                              onClick={() => setPayModal({ open: true, item, amount: String(item.remaining_amount), payment_date: getTodayStr(), payment_method: 'CASH', reference_no: '', notes: '' })}
-                              style={{ padding: '5px 10px', fontSize: '11.5px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}
-                              title="Catat Pembayaran / Cicilan"
-                            >
-                              <CreditCard size={12} /> Bayar
-                            </button>
+                          {isEcommerce ? (
+                            <span style={{
+                              fontSize: '11px',
+                              color: '#fdba74',
+                              background: 'rgba(249, 115, 22, 0.15)',
+                              border: '1px solid rgba(249, 115, 22, 0.3)',
+                              padding: '4px 8px',
+                              borderRadius: '6px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              fontWeight: 600
+                            }} title="Pencairan diproses langsung oleh aplikasi e-commerce terkait. Buku piutang ini khusus untuk cross-check besaran transaksi.">
+                              <CheckCheck size={12} style={{ color: '#fb923c' }} /> Cross-check Apk
+                            </span>
+                          ) : (
+                            !isPaid && (
+                              <button
+                                className="btn btn-primary btn-sm"
+                                onClick={() => setPayModal({ open: true, item, amount: String(item.remaining_amount), payment_date: getTodayStr(), payment_method: 'CASH', reference_no: '', notes: '' })}
+                                style={{ padding: '5px 10px', fontSize: '11.5px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}
+                                title="Catat Pembayaran / Cicilan"
+                              >
+                                <CreditCard size={12} /> Bayar
+                              </button>
+                            )
                           )}
 
                           <button
@@ -1604,7 +1865,655 @@ export default function Receivables() {
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 4: AR MERCHANT (QRIS & E-COMMERCE) */}
+      {/* TAB 4: REKONSILIASI E-COMMERCE (GRABFOOD, GOFOOD, SHOPEEFOOD, TIKTOK) */}
+      {/* ========================================================================= */}
+      {activeTab === 'ECOMMERCE' && (
+        <div className="card fade-in" style={{ padding: '24px', borderRadius: '16px' }}>
+          
+          {/* Top Banner with Platform Explanation & Quick Stats */}
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(234, 88, 12, 0.16) 0%, rgba(249, 115, 22, 0.08) 100%)',
+            border: '1px solid rgba(249, 115, 22, 0.35)',
+            borderRadius: '14px',
+            padding: '16px 20px',
+            marginBottom: '22px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '16px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <div style={{
+                width: '46px',
+                height: '46px',
+                borderRadius: '12px',
+                background: 'rgba(249, 115, 22, 0.2)',
+                border: '1px solid rgba(249, 115, 22, 0.4)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#fb923c'
+              }}>
+                <ShoppingCart size={24} />
+              </div>
+              <div>
+                <h3 style={{ fontSize: '16px', fontWeight: 800, color: '#ffffff', marginBottom: '3px' }}>
+                  Buku Rekonsiliasi Piutang E-Commerce (GrabFood, GoFood, ShopeeFood)
+                </h3>
+                <p style={{ fontSize: '12.5px', color: '#fed7aa', margin: 0, maxWidth: '720px', lineHeight: 1.4 }}>
+                  Transaksi dikelompokkan secara bertingkat <strong>Per Tanggal ➔ Sesi Shift ➔ Rincian Nota Pesanan</strong>. Anda dapat menginput <em>Net Amount</em> per transaksi atau langsung <em>Total Net per Shift</em>, sistem akan otomatis menghitung potongan fee platform.
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={toggleExpandAllDates}
+                style={{ fontSize: '12px', gap: '6px' }}
+              >
+                <Layers size={13} /> {expandedDates.length === ecommerceTree.length && ecommerceTree.length > 0 ? 'Tutup Semua' : 'Buka Semua'}
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={fetchEcommerceData}
+                disabled={ecommerceLoading}
+                style={{ fontSize: '12px', gap: '6px' }}
+              >
+                <RefreshCw size={13} className={ecommerceLoading ? 'spin' : ''} /> Refresh
+              </button>
+            </div>
+          </div>
+
+          {/* KPI Summary Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '14px', marginBottom: '22px' }}>
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(139, 92, 246, 0.06))',
+              border: '1px solid rgba(99, 102, 241, 0.28)',
+              borderRadius: '12px', padding: '16px',
+            }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Total Gross (POS)
+              </div>
+              <div style={{ fontSize: '19px', fontWeight: 900, color: '#818cf8' }}>
+                {rupiah(ecommerceSummary.total_gross || 0)}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '3px' }}>
+                Dari {ecommerceSummary.total_orders || 0} pesanan online
+              </div>
+            </div>
+
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.12), rgba(220, 38, 38, 0.06))',
+              border: '1px solid rgba(239, 68, 68, 0.28)',
+              borderRadius: '12px', padding: '16px',
+            }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Total Potongan Fee Platform
+              </div>
+              <div style={{ fontSize: '19px', fontWeight: 900, color: '#f87171' }}>
+                -{rupiah(ecommerceSummary.total_mdr || 0)}
+              </div>
+              <div style={{ fontSize: '11px', color: '#fca5a5', marginTop: '3px', fontWeight: 600 }}>
+                Rata-rata {ecommerceSummary.overall_mdr_pct || 0}% komisi
+              </div>
+            </div>
+
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(22, 163, 74, 0.06))',
+              border: '1px solid rgba(34, 197, 94, 0.35)',
+              borderRadius: '12px', padding: '16px',
+            }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Total Net Cair (Diterima)
+              </div>
+              <div style={{ fontSize: '20px', fontWeight: 900, color: '#4ade80' }}>
+                {rupiah(ecommerceSummary.total_net || 0)}
+              </div>
+              <div style={{ fontSize: '11px', color: '#86efac', marginTop: '3px' }}>
+                Bersih setelah potongan MDR
+              </div>
+            </div>
+
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.12), rgba(234, 88, 12, 0.06))',
+              border: '1px solid rgba(249, 115, 22, 0.28)',
+              borderRadius: '12px', padding: '16px',
+            }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Sesi Operasional
+              </div>
+              <div style={{ fontSize: '19px', fontWeight: 900, color: '#fb923c' }}>
+                {ecommerceTree.reduce((acc, d) => acc + (d.shifts_count || 0), 0)} Shift
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '3px' }}>
+                Tersebar di {ecommerceTree.length} hari
+              </div>
+            </div>
+          </div>
+
+          {/* Filter Bar */}
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            flexWrap: 'wrap', gap: '12px', marginBottom: '20px',
+            background: 'rgba(0,0,0,0.2)', padding: '12px 16px', borderRadius: '10px',
+            border: '1px solid var(--border)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-secondary)' }}>Filter Platform:</span>
+              <div style={{ display: 'inline-flex', gap: '6px', flexWrap: 'wrap' }}>
+                {['ALL', 'GRAB', 'GOFOOD', 'SHOPEE', 'TIKTOK', 'ECOMMERCE'].map(chan => {
+                  const isActive = ecomChannelFilter === chan;
+                  let label = chan === 'ALL' ? 'Semua Platform' : (chan === 'GRAB' ? 'GrabFood' : (chan === 'GOFOOD' ? 'GoFood' : (chan === 'SHOPEE' ? 'ShopeeFood' : (chan === 'TIKTOK' ? 'TikTok' : 'Lainnya'))));
+                  return (
+                    <button
+                      key={chan}
+                      onClick={() => setEcomChannelFilter(chan)}
+                      style={{
+                        padding: '4px 12px',
+                        borderRadius: '16px',
+                        border: isActive ? '1px solid #f97316' : '1px solid rgba(255,255,255,0.1)',
+                        background: isActive ? 'rgba(249, 115, 22, 0.2)' : 'transparent',
+                        color: isActive ? '#fb923c' : 'var(--text-secondary)',
+                        fontSize: '11.5px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Periode:</span>
+              <input
+                type="date"
+                className="form-control form-control-sm mono"
+                value={ecomDateFrom}
+                onChange={e => setEcomDateFrom(e.target.value)}
+                style={{ width: 'auto', fontSize: '12px', padding: '4px 8px' }}
+                placeholder="Dari"
+              />
+              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>-</span>
+              <input
+                type="date"
+                className="form-control form-control-sm mono"
+                value={ecomDateTo}
+                onChange={e => setEcomDateTo(e.target.value)}
+                style={{ width: 'auto', fontSize: '12px', padding: '4px 8px' }}
+                placeholder="Sampai"
+              />
+              {(ecomDateFrom || ecomDateTo) && (
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => { setEcomDateFrom(''); setEcomDateTo(''); }}
+                  style={{ fontSize: '11px', padding: '2px 6px', color: 'var(--text-secondary)' }}
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Tree Rendering */}
+          {ecommerceLoading ? (
+            <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-secondary)' }}>
+              <RefreshCw size={32} className="spin" style={{ margin: '0 auto 12px', color: '#f97316' }} />
+              <div style={{ fontSize: '14px', fontWeight: 600 }}>Memuat Rekonsiliasi E-Commerce...</div>
+            </div>
+          ) : ecommerceTree.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-secondary)' }}>
+              <ShoppingCart size={42} style={{ opacity: 0.35, margin: '0 auto 12px' }} />
+              <div style={{ fontSize: '15px', fontWeight: 700 }}>Belum Ada Transaksi E-Commerce</div>
+              <div style={{ fontSize: '12.5px', marginTop: '4px' }}>
+                Transaksi POS yang menggunakan metode pembayaran GrabFood, GoFood, ShopeeFood, atau E-Commerce otomatis muncul di sini.
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {ecommerceTree.map(dateObj => {
+                const isDateExpanded = expandedDates.includes(dateObj.date);
+
+                return (
+                  <div
+                    key={dateObj.date}
+                    className="card fade-in"
+                    style={{
+                      border: isDateExpanded ? '1px solid rgba(249, 115, 22, 0.4)' : '1px solid var(--border)',
+                      background: isDateExpanded ? 'rgba(249, 115, 22, 0.02)' : 'rgba(255,255,255,0.01)',
+                      borderRadius: '14px',
+                      overflow: 'hidden',
+                      transition: 'border 0.2s ease',
+                    }}
+                  >
+                    {/* LEVEL 1: DATE HEADER */}
+                    <div
+                      onClick={() => toggleExpandDate(dateObj.date)}
+                      style={{
+                        padding: '16px 20px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: '14px',
+                        background: isDateExpanded ? 'rgba(249, 115, 22, 0.08)' : 'rgba(255, 255, 255, 0.03)',
+                        borderBottom: isDateExpanded ? '1px solid rgba(249, 115, 22, 0.2)' : 'none',
+                        userSelect: 'none',
+                      }}
+                    >
+                      {/* Left: Date Title & Channels */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{
+                          width: '36px', height: '36px', borderRadius: '10px',
+                          background: 'rgba(249, 115, 22, 0.2)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          color: '#fb923c'
+                        }}>
+                          <Calendar size={18} />
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '15px', fontWeight: 800, color: '#ffffff' }}>
+                              {dateObj.date}
+                            </span>
+                            <span style={{
+                              fontSize: '11px', fontWeight: 700,
+                              background: 'rgba(255,255,255,0.1)', color: 'var(--text-secondary)',
+                              padding: '2px 8px', borderRadius: '10px'
+                            }}>
+                              {dateObj.shifts_count} Sesi Shift · {dateObj.total_orders} Pesanan
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+                            {(dateObj.channels || []).map((ch, cidx) => (
+                              <span key={cidx} style={{
+                                fontSize: '10.5px', fontWeight: 700,
+                                padding: '1px 7px', borderRadius: '6px',
+                                background: ch.includes('GRAB') ? 'rgba(34, 197, 94, 0.15)' : (ch.includes('GO') ? 'rgba(239, 68, 68, 0.15)' : 'rgba(249, 115, 22, 0.15)'),
+                                color: ch.includes('GRAB') ? '#4ade80' : (ch.includes('GO') ? '#f87171' : '#fdba74'),
+                                border: '1px solid rgba(255,255,255,0.08)'
+                              }}>
+                                {ch}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right: Date Financial Aggregates & Chevron */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Gross POS</div>
+                          <div style={{ fontSize: '14px', fontWeight: 800, color: '#ffffff' }}>{rupiah(dateObj.total_gross)}</div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '11px', color: '#f87171', textTransform: 'uppercase' }}>Fee ({dateObj.mdr_pct}%)</div>
+                          <div style={{ fontSize: '14px', fontWeight: 800, color: '#f87171' }}>-{rupiah(dateObj.total_mdr)}</div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '11px', color: '#4ade80', textTransform: 'uppercase' }}>Net Cair</div>
+                          <div style={{ fontSize: '16px', fontWeight: 900, color: '#4ade80' }}>{rupiah(dateObj.total_net)}</div>
+                        </div>
+                        <div style={{
+                          transform: isDateExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                          transition: 'transform 0.2s ease',
+                          color: isDateExpanded ? '#fb923c' : 'var(--text-secondary)'
+                        }}>
+                          <ChevronRight size={20} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* LEVEL 2: SHIFT GROUPS CONTAINER */}
+                    {isDateExpanded && (
+                      <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '14px', background: 'rgba(0,0,0,0.15)' }}>
+                        {/* Filter Shift on This Date */}
+                        {(dateObj.shifts || []).length > 1 && (
+                          <div style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            background: 'rgba(255,255,255,0.03)', padding: '8px 14px', borderRadius: '10px',
+                            border: '1px solid rgba(255,255,255,0.06)', flexWrap: 'wrap', gap: '8px'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              <Clock size={13} style={{ color: '#fbbf24' }} />
+                              <span style={{ fontSize: '11.5px', fontWeight: 700, color: '#ffffff' }}>
+                                Filter Shift Tanggal {dateObj.date}:
+                              </span>
+                              <div style={{ display: 'inline-flex', gap: '5px', flexWrap: 'wrap' }}>
+                                <button
+                                  onClick={() => setEcomShiftFilterByDate(prev => ({ ...prev, [dateObj.date]: 'ALL' }))}
+                                  style={{
+                                    padding: '3px 9px', borderRadius: '6px', fontSize: '11px', fontWeight: 700,
+                                    background: (ecomShiftFilterByDate[dateObj.date] || 'ALL') === 'ALL' ? 'rgba(249, 115, 22, 0.25)' : 'transparent',
+                                    color: (ecomShiftFilterByDate[dateObj.date] || 'ALL') === 'ALL' ? '#fb923c' : 'var(--text-secondary)',
+                                    border: (ecomShiftFilterByDate[dateObj.date] || 'ALL') === 'ALL' ? '1px solid rgba(249, 115, 22, 0.45)' : '1px solid rgba(255,255,255,0.08)',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  Semua Shift ({dateObj.shifts.length})
+                                </button>
+                                {dateObj.shifts.map(sh => {
+                                  const isSel = ecomShiftFilterByDate[dateObj.date] === sh.shift_key;
+                                  return (
+                                    <button
+                                      key={sh.shift_key}
+                                      onClick={() => setEcomShiftFilterByDate(prev => ({ ...prev, [dateObj.date]: sh.shift_key }))}
+                                      style={{
+                                        padding: '3px 9px', borderRadius: '6px', fontSize: '11px', fontWeight: 700,
+                                        background: isSel ? 'rgba(249, 115, 22, 0.25)' : 'transparent',
+                                        color: isSel ? '#fb923c' : 'var(--text-secondary)',
+                                        border: isSel ? '1px solid rgba(249, 115, 22, 0.45)' : '1px solid rgba(255,255,255,0.08)',
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      {sh.shift_name} ({sh.total_orders} order)
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                            {ecomShiftFilterByDate[dateObj.date] && ecomShiftFilterByDate[dateObj.date] !== 'ALL' && (
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => setEcomShiftFilterByDate(prev => ({ ...prev, [dateObj.date]: 'ALL' }))}
+                                style={{ fontSize: '11px', padding: '2px 6px', color: '#f87171' }}
+                              >
+                                Tampilkan Semua Shift
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        {(dateObj.shifts || [])
+                          .filter(shiftObj => {
+                            const sel = ecomShiftFilterByDate[dateObj.date] || 'ALL';
+                            return sel === 'ALL' || shiftObj.shift_key === sel;
+                          })
+                          .map(shiftObj => {
+                          const compositeKey = `${dateObj.date}_${shiftObj.shift_key}`;
+                          const isShiftExpanded = expandedShifts.includes(compositeKey);
+
+                          return (
+                            <div
+                              key={shiftObj.shift_key}
+                              style={{
+                                border: isShiftExpanded ? '1px solid rgba(99, 102, 241, 0.45)' : '1px solid var(--border)',
+                                background: isShiftExpanded ? 'rgba(99, 102, 241, 0.04)' : 'rgba(255,255,255,0.02)',
+                                borderRadius: '12px',
+                                overflow: 'hidden',
+                                transition: 'all 0.2s ease',
+                              }}
+                            >
+                              {/* SHIFT HEADER */}
+                              <div
+                                style={{
+                                  padding: '14px 18px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  flexWrap: 'wrap',
+                                  gap: '12px',
+                                  background: isShiftExpanded ? 'rgba(99, 102, 241, 0.1)' : 'transparent',
+                                  borderBottom: isShiftExpanded ? '1px solid rgba(99, 102, 241, 0.2)' : 'none',
+                                }}
+                              >
+                                {/* Shift Identity */}
+                                <div
+                                  onClick={() => toggleExpandShift(compositeKey)}
+                                  style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', flex: 1 }}
+                                >
+                                  <div style={{
+                                    transform: isShiftExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                                    transition: 'transform 0.2s ease',
+                                    color: isShiftExpanded ? '#818cf8' : 'var(--text-secondary)'
+                                  }}>
+                                    <ChevronRight size={18} />
+                                  </div>
+                                  <div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      <span style={{ fontSize: '14px', fontWeight: 800, color: '#ffffff' }}>
+                                        {shiftObj.shift_name}
+                                      </span>
+                                      <span style={{
+                                        fontSize: '10px', fontWeight: 700,
+                                        padding: '1px 6px', borderRadius: '4px',
+                                        background: shiftObj.shift_status === 'OPEN' ? 'rgba(34, 197, 94, 0.2)' : 'rgba(255,255,255,0.1)',
+                                        color: shiftObj.shift_status === 'OPEN' ? '#4ade80' : 'var(--text-secondary)'
+                                      }}>
+                                        {shiftObj.shift_status === 'OPEN' ? '🟢 SHIFT AKTIF' : 'SHIFT DITUTUP'}
+                                      </span>
+                                    </div>
+                                    <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                                      <span>👤 Kasir: <strong style={{ color: '#ffffff' }}>{shiftObj.cashier_name}</strong></span>
+                                      {shiftObj.opened_at && <span>⏰ {shiftObj.opened_at.substring(11, 16)} {shiftObj.closed_at ? `- ${shiftObj.closed_at.substring(11, 16)}` : ''}</span>}
+                                      <span>• {shiftObj.total_orders} Pesanan</span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Shift Financials & Modal Awal Kas & Bulk Input Action */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+                                  {/* Tampilan Modal Awal Kas */}
+                                  <div style={{
+                                    textAlign: 'right', padding: '3px 9px',
+                                    borderRadius: '6px', background: 'rgba(245, 158, 11, 0.12)',
+                                    border: '1px solid rgba(245, 158, 11, 0.3)'
+                                  }}>
+                                    <div style={{ fontSize: '10px', color: '#fbbf24', fontWeight: 700, textTransform: 'uppercase' }}>Modal Awal Kas</div>
+                                    <div className="mono" style={{ fontSize: '13px', fontWeight: 800, color: '#fef08a' }}>
+                                      {rupiah(shiftObj.initial_cash || 0)}
+                                    </div>
+                                  </div>
+
+                                  <div style={{ textAlign: 'right' }}>
+                                    <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)' }}>Gross Shift</div>
+                                    <div style={{ fontSize: '13px', fontWeight: 700, color: '#ffffff' }}>{rupiah(shiftObj.total_gross)}</div>
+                                  </div>
+
+                                  <div style={{ textAlign: 'right' }}>
+                                    <div style={{ fontSize: '10.5px', color: '#f87171' }}>Fee ({shiftObj.mdr_pct}%)</div>
+                                    <div style={{ fontSize: '13px', fontWeight: 700, color: '#f87171' }}>-{rupiah(shiftObj.total_mdr)}</div>
+                                  </div>
+
+                                  <div style={{ textAlign: 'right' }}>
+                                    <div style={{ fontSize: '10.5px', color: '#4ade80' }}>Net Shift</div>
+                                    <div style={{ fontSize: '14.5px', fontWeight: 900, color: '#4ade80' }}>{rupiah(shiftObj.total_net)}</div>
+                                  </div>
+
+                                  <button
+                                    className="btn btn-primary btn-sm"
+                                    onClick={() => openShiftNetModal(dateObj, shiftObj)}
+                                    style={{
+                                      padding: '6px 12px', fontSize: '11.5px', fontWeight: 700,
+                                      background: 'linear-gradient(135deg, #ea580c, #f97316)',
+                                      display: 'inline-flex', alignItems: 'center', gap: '5px'
+                                    }}
+                                    title="Input Total Net Amount yang cair untuk shift ini (Fee akan dihitung otomatis & dialokasikan ke semua nota)"
+                                  >
+                                    <Settings2 size={13} /> Input Total Net Shift
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* LEVEL 3: ORDERS TABLE INSIDE SHIFT */}
+                              {isShiftExpanded && (
+                                <div className="table-wrap" style={{ overflowX: 'auto', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                                  <table style={{ width: '100%', minWidth: '860px', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                    <thead>
+                                      <tr style={{ background: 'rgba(0,0,0,0.35)', color: 'var(--text-secondary)' }}>
+                                        <th style={{ padding: '8px 12px', textAlign: 'left' }}>No. Order / Ref</th>
+                                        <th style={{ padding: '8px 12px', textAlign: 'center' }}>Platform Channel</th>
+                                        <th style={{ padding: '8px 12px', textAlign: 'right' }}>Gross POS</th>
+                                        <th style={{ padding: '8px 12px', textAlign: 'right', minWidth: '180px' }}>
+                                          Net Amount Diterima
+                                        </th>
+                                        <th style={{ padding: '8px 12px', textAlign: 'right' }}>Potongan Fee Platform</th>
+                                        <th style={{ padding: '8px 12px', textAlign: 'left' }}>Catatan / Keterangan</th>
+                                        <th style={{ padding: '8px 12px', textAlign: 'center', width: '110px' }}>Aksi</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {shiftObj.orders.map(orderItem => {
+                                        const isEditingThis = editingSingleNetId === orderItem.id;
+                                        const grossVal = Number(orderItem.total_amount || 0);
+                                        const currentNetVal = Number(orderItem.net_amount || (grossVal - (orderItem.mdr_fee || 0)));
+                                        const currentFeeVal = Number(orderItem.mdr_fee || 0);
+                                        const currentRateVal = orderItem.mdr_rate != null ? Number(orderItem.mdr_rate) : (grossVal > 0 ? (currentFeeVal / grossVal) * 100 : 0);
+
+                                        // In edit mode live preview
+                                        const inputNetNum = parseFloat(singleNetInput);
+                                        const previewFee = !isNaN(inputNetNum) ? Math.max(0, grossVal - inputNetNum) : currentFeeVal;
+                                        const previewRate = (!isNaN(inputNetNum) && grossVal > 0) ? ((previewFee / grossVal) * 100).toFixed(1) : currentRateVal.toFixed(1);
+
+                                        return (
+                                          <tr
+                                            key={orderItem.id}
+                                            style={{
+                                              borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                                              background: isEditingThis ? 'rgba(249, 115, 22, 0.08)' : 'transparent',
+                                              transition: 'background 0.15s ease'
+                                            }}
+                                          >
+                                            {/* Order Number & Time */}
+                                            <td style={{ padding: '10px 12px' }}>
+                                              <div style={{ fontWeight: 700, color: '#ffffff' }}>
+                                                #{orderItem.order_number || orderItem.receivable_no}
+                                              </div>
+                                              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                                                {orderItem.created_at ? orderItem.created_at.substring(11, 16) : '-'} · {orderItem.customer_name || 'Pelanggan'}
+                                              </div>
+                                            </td>
+
+                                            {/* Platform Channel Badge */}
+                                            <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                                              <span style={{
+                                                display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                                padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 700,
+                                                background: (orderItem.merchant_channel || '').includes('GRAB')
+                                                  ? 'rgba(34, 197, 94, 0.2)'
+                                                  : ((orderItem.merchant_channel || '').includes('GO')
+                                                    ? 'rgba(239, 68, 68, 0.2)'
+                                                    : 'rgba(249, 115, 22, 0.2)'),
+                                                color: (orderItem.merchant_channel || '').includes('GRAB')
+                                                  ? '#4ade80'
+                                                  : ((orderItem.merchant_channel || '').includes('GO')
+                                                    ? '#f87171'
+                                                    : '#fdba74'),
+                                                border: '1px solid rgba(255, 255, 255, 0.1)'
+                                              }}>
+                                                <ShoppingCart size={11} /> {orderItem.merchant_channel || 'E-Commerce'}
+                                              </span>
+                                            </td>
+
+                                            {/* Gross Amount */}
+                                            <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: '#ffffff' }}>
+                                              {rupiah(grossVal)}
+                                            </td>
+
+                                            {/* Net Amount Editable */}
+                                            <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                                              {isEditingThis ? (
+                                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
+                                                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Rp</span>
+                                                  <input
+                                                    type="number"
+                                                    autoFocus
+                                                    className="form-control form-control-sm mono"
+                                                    value={singleNetInput}
+                                                    onChange={e => setSingleNetInput(e.target.value)}
+                                                    style={{ width: '110px', textAlign: 'right', padding: '3px 6px', fontSize: '12px' }}
+                                                    onKeyDown={e => {
+                                                      if (e.key === 'Enter') handleSaveSingleNet(orderItem, singleNetInput);
+                                                      if (e.key === 'Escape') handleCancelEditSingleNet();
+                                                    }}
+                                                  />
+                                                </div>
+                                              ) : (
+                                                <span style={{ fontWeight: 900, color: '#4ade80', fontSize: '13px' }}>
+                                                  {rupiah(currentNetVal)}
+                                                </span>
+                                              )}
+                                            </td>
+
+                                            {/* Fee (Auto-Calculated) */}
+                                            <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                                              {isEditingThis ? (
+                                                <span style={{ color: '#f87171', fontWeight: 700, fontSize: '11.5px' }}>
+                                                  -{rupiah(previewFee)} ({previewRate}%)
+                                                </span>
+                                              ) : (
+                                                <span style={{ color: '#f87171', fontWeight: 700, fontSize: '11.5px' }}>
+                                                  -{rupiah(currentFeeVal)} ({currentRateVal.toFixed(1)}%)
+                                                </span>
+                                              )}
+                                            </td>
+
+                                            {/* Notes / Order Ref */}
+                                            <td style={{ padding: '10px 12px', color: 'var(--text-secondary)', fontSize: '11.5px' }}>
+                                              {orderItem.notes || '-'}
+                                            </td>
+
+                                            {/* Actions */}
+                                            <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                                              {isEditingThis ? (
+                                                <div style={{ display: 'inline-flex', gap: '4px' }}>
+                                                  <button
+                                                    className="btn btn-primary btn-sm"
+                                                    onClick={() => handleSaveSingleNet(orderItem, singleNetInput)}
+                                                    disabled={savingSingleNet}
+                                                    style={{ padding: '3px 8px', fontSize: '11px' }}
+                                                    title="Simpan Net Amount"
+                                                  >
+                                                    <Check size={12} />
+                                                  </button>
+                                                  <button
+                                                    className="btn btn-ghost btn-sm"
+                                                    onClick={handleCancelEditSingleNet}
+                                                    style={{ padding: '3px 6px', fontSize: '11px' }}
+                                                    title="Batal"
+                                                  >
+                                                    <X size={12} />
+                                                  </button>
+                                                </div>
+                                              ) : (
+                                                <button
+                                                  className="btn btn-secondary btn-sm"
+                                                  onClick={() => handleStartEditSingleNet(orderItem)}
+                                                  style={{ padding: '3px 8px', fontSize: '11px', gap: '4px' }}
+                                                  title="Edit Net Amount transaksi ini"
+                                                >
+                                                  <Edit3 size={11} /> Edit Net
+                                                </button>
+                                              )}
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 5: AR MERCHANT (QRIS & SETTLEMENT) */}
       {/* ========================================================================= */}
       {activeTab === 'AR_MERCHANT' && (
         <div className="card fade-in" style={{ padding: '24px', borderRadius: '16px' }}>
@@ -2098,6 +3007,127 @@ export default function Receivables() {
                 >
                   {submitting ? <RefreshCw size={14} className="spin" /> : <ArrowDownToLine size={14} />}
                   {settleModal.mode === 'bulk' ? 'Cairkan Semua' : 'Cairkan'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: INPUT TOTAL NET AMOUNT PER SHIFT (AUTO PROPORTIONAL FEE) */}
+      {/* ========================================================================= */}
+      {shiftNetModal.open && (
+        <div className="modal-backdrop fade-in" style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.75)', zIndex: 999, display: 'flex',
+          alignItems: 'center', justifyContent: 'center', padding: '16px'
+        }}>
+          <div className="card modal-content" style={{
+            maxWidth: '540px', width: '100%', maxHeight: '90vh',
+            overflowY: 'auto', padding: '24px', borderRadius: '16px'
+          }}>
+            <div className="flex-between mb-3">
+              <h3 style={{ fontSize: '17px', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Settings2 size={18} style={{ color: '#f97316' }} />
+                Input Total Net Amount Shift
+              </h3>
+              <button className="btn btn-ghost btn-icon" onClick={() => setShiftNetModal(s => ({ ...s, open: false }))}>
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Shift Context Card */}
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.12), rgba(99, 102, 241, 0.06))',
+              border: '1px solid rgba(249, 115, 22, 0.3)',
+              borderRadius: '12px', padding: '14px 16px', marginBottom: '18px', fontSize: '12.5px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Sesi Shift:</span>
+                <strong style={{ color: '#ffffff' }}>{shiftNetModal.shiftName} ({shiftNetModal.date})</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Kasir Pelaksana:</span>
+                <strong style={{ color: '#ffffff' }}>{shiftNetModal.cashierName}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Jumlah Pesanan:</span>
+                <strong style={{ color: '#ffffff' }}>{shiftNetModal.totalOrders} Pesanan E-Commerce</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                <span style={{ color: 'var(--text-secondary)', fontWeight: 700 }}>Total Gross POS (Kotor):</span>
+                <strong style={{ color: '#818cf8', fontSize: '14px' }}>{rupiah(shiftNetModal.totalGross)}</strong>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveShiftNetModal}>
+              <div className="form-group mb-3">
+                <label className="form-label" style={{ fontSize: '12.5px', fontWeight: 700 }}>
+                  Nominal Total Net Cair dari Platform (Rp) <span style={{ color: 'var(--danger)' }}>*</span>
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  autoFocus
+                  className="form-control mono"
+                  style={{ fontSize: '15px', fontWeight: 800, color: '#4ade80', padding: '10px 14px' }}
+                  placeholder="Contoh: 450000"
+                  value={shiftNetModal.targetNet}
+                  onChange={e => setShiftNetModal(s => ({ ...s, targetNet: e.target.value }))}
+                  required
+                />
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                  Masukkan total uang bersih yang ditransfer / dicairkan oleh platform e-commerce (Grab/Gojek/Shopee) untuk sesi shift ini.
+                </div>
+              </div>
+
+              {/* Live Calculation Preview */}
+              {(() => {
+                const targetNetNum = parseFloat(shiftNetModal.targetNet);
+                const isValid = !isNaN(targetNetNum) && targetNetNum >= 0;
+                const feeVal = isValid ? Math.max(0, shiftNetModal.totalGross - targetNetNum) : 0;
+                const feeRatePct = (isValid && shiftNetModal.totalGross > 0) ? ((feeVal / shiftNetModal.totalGross) * 100).toFixed(2) : 0;
+
+                return (
+                  <div style={{
+                    background: 'rgba(0,0,0,0.25)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '10px',
+                    padding: '12px 14px',
+                    marginBottom: '18px',
+                    fontSize: '12px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Potongan Komisi Fee Platform:</span>
+                      <strong style={{ color: '#f87171' }}>-{rupiah(feeVal)}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Persentase Fee Platform (MDR):</span>
+                      <strong style={{ color: '#f87171' }}>{feeRatePct}%</strong>
+                    </div>
+                    <div style={{
+                      fontSize: '11px', color: '#93c5fd', background: 'rgba(59, 130, 246, 0.1)',
+                      padding: '6px 10px', borderRadius: '6px', border: '1px solid rgba(59, 130, 246, 0.2)'
+                    }}>
+                      💡 <em>Sistem akan membagi nominal Net Amount & Fee ini secara proporsional ke {shiftNetModal.totalOrders} pesanan di shift ini sesuai porsi gross masing-masing.</em>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setShiftNetModal(s => ({ ...s, open: false }))}>
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={shiftNetModal.isSaving}
+                  style={{ background: 'linear-gradient(135deg, #ea580c, #f97316)', gap: '6px', fontWeight: 700 }}
+                >
+                  {shiftNetModal.isSaving ? <RefreshCw size={14} className="spin" /> : <Check size={14} />}
+                  Terapkan ke Semua Pesanan Shift
                 </button>
               </div>
             </form>

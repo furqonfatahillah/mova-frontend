@@ -10,7 +10,8 @@ import {
   Percent, Tag, Gift, Scissors, Split, Divide,
   ShoppingBag, Briefcase, Barcode, Utensils, Coins,
   Zap, AlertOctagon, Calculator,
-  ChevronDown, Filter, Layers, UserCheck, UserPlus, Star, Award, Wallet, Phone
+  ChevronDown, Filter, Layers, UserCheck, UserPlus, Star, Award, Wallet, Phone,
+  ShieldCheck, KeyRound, Check, HelpCircle, Lock, Play
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, num, LoadingState, PageHeader } from '../components/ui';
@@ -28,6 +29,27 @@ export default function POS() {
   const [urgentCount, setUrgentCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+
+  // Current logged in user & role detection
+  const currentUser = useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem('pos_user') || '{}');
+    } catch {
+      return {};
+    }
+  }, []);
+
+  const isOwnerOrManager = useMemo(() => {
+    const role = (currentUser?.role || '').toLowerCase();
+    return [
+      'owner_bisnis', 'owner_outlet', 'manager_outlet', 'manager',
+      'owner', 'admin', 'superadmin_platform', 'owner_website', 'superadmin'
+    ].includes(role) ||
+      Boolean(currentUser?.is_owner_bisnis) ||
+      Boolean(currentUser?.is_owner_outlet) ||
+      Boolean(currentUser?.is_superadmin_platform) ||
+      Boolean(currentUser?.is_owner_website);
+  }, [currentUser]);
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
@@ -54,6 +76,8 @@ export default function POS() {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [cashReceived, setCashReceived] = useState('');
+  const [dpPaymentMethod, setDpPaymentMethod] = useState('CASH');
+  const [dpReferenceNo, setDpReferenceNo] = useState('');
   const [orderNotes, setOrderNotes] = useState('');
 
   // Midtrans Live Dynamic QRIS State
@@ -71,6 +95,116 @@ export default function POS() {
   });
   const [showStaticQrisFallback, setShowStaticQrisFallback] = useState(false);
 
+  // Quick Open Shift Modal State
+  const [quickOpenShiftModal, setQuickOpenShiftModal] = useState(false);
+  const [openingShift, setOpeningShift] = useState(false);
+  const [shiftSchedules, setShiftSchedules] = useState([]);
+  const [lastClosedShift, setLastClosedShift] = useState(null);
+  const [loadingLastClosed, setLoadingLastClosed] = useState(false);
+  const [openShiftForm, setOpenShiftForm] = useState({
+    shift_name: 'Shift 1 (Pagi)',
+    shift_schedule_id: '',
+    initial_cash: 100000,
+    notes: '',
+  });
+
+  async function handleOpenQuickShiftModal() {
+    setOpenShiftForm({
+      shift_name: 'Shift 1 (Pagi)',
+      shift_schedule_id: '',
+      initial_cash: 100000,
+      notes: '',
+    });
+    setQuickOpenShiftModal(true);
+    setLoadingLastClosed(true);
+    try {
+      const [resScheds, resLastClosed] = await Promise.all([
+        api.get('/shift-schedules', { params: { outlet_id: currentTargetOutlet } }).catch(() => ({ data: [] })),
+        api.get('/shifts/last-closed', { params: { outlet_id: currentTargetOutlet } }).catch(() => ({ data: null })),
+      ]);
+
+      const scheds = Array.isArray(resScheds.data) ? resScheds.data : [];
+      setShiftSchedules(scheds);
+
+      const lastShift = resLastClosed.data || null;
+      setLastClosedShift(lastShift);
+
+      setOpenShiftForm(prev => ({
+        ...prev,
+        shift_schedule_id: scheds.length > 0 ? String(scheds[0].id) : '',
+        shift_name: scheds.length > 0 ? (scheds[0].name || prev.shift_name) : prev.shift_name,
+        initial_cash: lastShift && lastShift.closing_cash != null ? lastShift.closing_cash : 100000,
+      }));
+    } catch {
+      // ignore
+    } finally {
+      setLoadingLastClosed(false);
+    }
+  }
+
+  async function handleQuickOpenShiftSubmit(e) {
+    if (e) e.preventDefault();
+
+    const inputAmt = Number(openShiftForm.initial_cash || 0);
+    const prevRealAmt = lastClosedShift ? Number(lastClosedShift.closing_cash || 0) : null;
+    const hasDiscrepancy = prevRealAmt !== null && inputAmt !== prevRealAmt;
+
+    if (hasDiscrepancy) {
+      const diff = inputAmt - prevRealAmt;
+      const diffFormatted = diff > 0 ? `+${rupiah(diff)} (Lebih)` : `-${rupiah(Math.abs(diff))} (Kurang)`;
+      const confirmed = await confirmDialog({
+        title: '⚠️ Peringatan Selisih Modal Awal Kas',
+        html: `<div style="text-align: left; font-size: 13px; line-height: 1.6;">
+          <p style="margin-bottom: 8px;">Modal awal kas yang Anda masukkan <strong>tidak sesuai</strong> dengan kas fisik riil closing shift sebelumnya:</p>
+          <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px; margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+              <span style="color: var(--text-muted);">Kas Riil Shift Sebelumnya:</span>
+              <strong style="color: #38bdf8;">${rupiah(prevRealAmt)}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+              <span style="color: var(--text-muted);">Modal Awal Diinput:</span>
+              <strong style="color: #fbbf24;">${rupiah(inputAmt)}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 4px;">
+              <span style="font-weight: 700;">Selisih Kas Fisik:</span>
+              <strong style="color: ${diff > 0 ? '#34d399' : '#f87171'}; font-size: 14px;">${diffFormatted}</strong>
+            </div>
+          </div>
+          <p style="margin: 0; color: #fca5a5; font-size: 12px;">Pastikan perbedaan ini sudah disertai keterangan pada kolom Catatan (misal: ada setoran ke bank / kas kecil). Apakah Anda yakin ingin tetap membuka shift?</p>
+        </div>`,
+        confirmText: 'Ya, Tetap Buka Shift',
+        cancelText: 'Periksa Kembali',
+        isDanger: true,
+      });
+      if (!confirmed) return;
+    }
+
+    setOpeningShift(true);
+    try {
+      const payload = {
+        shift_name: openShiftForm.shift_name || 'Shift 1 (Pagi)',
+        shift_schedule_id: openShiftForm.shift_schedule_id ? Number(openShiftForm.shift_schedule_id) : undefined,
+        initial_cash: Number(openShiftForm.initial_cash || 0),
+        notes: openShiftForm.notes || '',
+        outlet_id: currentTargetOutlet,
+      };
+      const { data } = await api.post('/shifts/open', payload);
+      toast.success(`Shift #${data.id} (${data.shift_name}) berhasil dibuka! Mesin kasir siap digunakan.`);
+      setQuickOpenShiftModal(false);
+      // Refresh active shift and open bills
+      const [shiftRes, billRes] = await Promise.all([
+        api.get('/shifts/active', { params: { outlet_id: currentTargetOutlet } }),
+        api.get('/transactions/open-bills', { params: { outlet_id: currentTargetOutlet } }),
+      ]);
+      setActiveShift(shiftRes.data);
+      setOpenBills(billRes.data || []);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal membuka shift kasir.');
+    } finally {
+      setOpeningShift(false);
+    }
+  }
+
   // Receipt Modal State
   const [receiptModalOpen, setReceiptModalOpen] = useState(false);
   const [completedOrder, setCompletedOrder] = useState(null);
@@ -79,10 +213,29 @@ export default function POS() {
   const [showHistory, setShowHistory] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
   const [historyPaymentMethod, setHistoryPaymentMethod] = useState('ALL');
-  const [historyStatus, setHistoryStatus] = useState('PAID'); // 'PAID' | 'HOLD' | 'ALL'
+  const [historyStatus, setHistoryStatus] = useState('ALL'); // 'ALL' | 'PAID' | 'HOLD' | 'CANCELLED' | 'VOID_PENDING'
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyViewMode, setHistoryViewMode] = useState('grouped'); // 'grouped' (per Nota) | 'flat' (rincian item)
+  const [historyViewMode, setHistoryViewMode] = useState('by_shift'); // 'by_shift' (Grup per Shift) | 'grouped' (per Nota) | 'flat' (rincian item)
   const [expandedHistoryOrders, setExpandedHistoryOrders] = useState({});
+  const [expandedShiftGroups, setExpandedShiftGroups] = useState({});
+
+  // Void Paid Transaction Modal State & Supervisor Auth
+  const [voidPaidModal, setVoidPaidModal] = useState({
+    open: false,
+    order: null,
+    reason: '',
+    submitting: false,
+  });
+  const [supervisors, setSupervisors] = useState([]);
+  const [voidAuthMode, setVoidAuthMode] = useState('INSTANT'); // 'INSTANT' (Otorisasi Supervisor di Kasir) | 'ASYNC' (Ajukan Permohonan ke Manajer)
+  const [selectedSupervisorId, setSelectedSupervisorId] = useState('');
+  const [supervisorPassword, setSupervisorPassword] = useState('');
+
+  // Void Receipt Modal State
+  const [voidReceiptModal, setVoidReceiptModal] = useState({
+    open: false,
+    order: null,
+  });
 
   // Modifier Selection Modal State
   const [modifierModal, setModifierModal] = useState({
@@ -175,7 +328,6 @@ export default function POS() {
 
 
 
-  const currentUser = JSON.parse(localStorage.getItem('pos_user') || '{}');
   const {
     activeOutletId,
     activeOutlet,
@@ -225,7 +377,7 @@ export default function POS() {
     setLoading(true);
     try {
       const [m, t, i, s, ob, disc, urg] = await Promise.all([
-        api.get('/menus', { params: { for_pos: true } }),
+        api.get('/menus', { params: { for_pos: true, outlet_id: currentTargetOutlet } }),
         api.get('/transactions', { params: { outlet_id: currentTargetOutlet, status: 'PAID', limit: 30 } }),
         api.get('/ingredients', { params: { outlet_id: currentTargetOutlet } }),
         api.get('/shifts/active', { params: { outlet_id: currentTargetOutlet } }),
@@ -289,6 +441,13 @@ export default function POS() {
     }));
   }
 
+  function toggleShiftGroupExpand(shiftKey) {
+    setExpandedShiftGroups(prev => ({
+      ...prev,
+      [shiftKey]: prev[shiftKey] === false ? true : false,
+    }));
+  }
+
   // Group transactions by order_number for Nota-level view
   const groupedHistory = useMemo(() => {
     const map = new Map();
@@ -305,11 +464,22 @@ export default function POS() {
           table_number: t.table_number || null,
           payment_method: t.payment_method || 'CASH',
           status: t.status || 'PAID',
+          cancellation_reason: t.cancellation_reason || null,
+          cancelled_at: t.cancelled_at || null,
+          cancelled_by_name: t.cancelled_by_name || t.cancelled_by_user?.name || t.updater?.name || null,
           cashier_name: t.user?.name || 'Kasir',
-          shift_name: t.shift?.shift_name || 'Reguler',
+          cashier_id: t.user?.id || t.user_id || null,
+          shift_id: t.shift_id || t.shift?.id || null,
+          shift_name: t.shift?.shift_name || (t.shift_id ? `Shift #${t.shift_id}` : 'Shift Reguler'),
+          shift_opened_at: t.shift?.opened_at || null,
+          shift_closed_at: t.shift?.closed_at || null,
+          shift_status: t.shift?.status || null,
+          shift: t.shift || null,
           outlet_name: t.outlet?.name || '',
           amount_paid: Number(t.amount_paid || 0),
           change_amount: Number(t.change_amount || 0),
+          dp_payment_method: t.dp_payment_method || null,
+          dp_reference_no: t.dp_reference_no || null,
           subtotal: 0,
           discount_amount: 0,
           discount_name: t.discount_name || null,
@@ -333,7 +503,43 @@ export default function POS() {
       order.total_price += itemTotal;
       order.total_qty += itemQty;
 
+      if (t.status === 'CANCELLED') {
+        order.status = 'CANCELLED';
+      } else if (t.status === 'VOID_PENDING') {
+        order.status = 'VOID_PENDING';
+      }
+
+      if (t.cancellation_reason && !order.cancellation_reason) {
+        order.cancellation_reason = t.cancellation_reason;
+      }
+      if (t.cancelled_at && !order.cancelled_at) {
+        order.cancelled_at = t.cancelled_at;
+      }
+      if (t.cancelled_by_name && !order.cancelled_by_name) {
+        order.cancelled_by_name = t.cancelled_by_name;
+      }
+      if (t.void_requested_by_name && !order.void_requested_by_name) {
+        order.void_requested_by_name = t.void_requested_by_name;
+      }
+      if (t.void_requested_at && !order.void_requested_at) {
+        order.void_requested_at = t.void_requested_at;
+      }
+      if (t.void_approved_by_name && !order.void_approved_by_name) {
+        order.void_approved_by_name = t.void_approved_by_name;
+      }
+      if (t.void_approved_at && !order.void_approved_at) {
+        order.void_approved_at = t.void_approved_at;
+      }
+      if (t.void_rejected_by_name && !order.void_rejected_by_name) {
+        order.void_rejected_by_name = t.void_rejected_by_name;
+      }
+      if (t.void_reject_reason && !order.void_reject_reason) {
+        order.void_reject_reason = t.void_reject_reason;
+      }
+
       if (t.is_urgent_note) order.is_urgent_note = true;
+      if (t.dp_payment_method && !order.dp_payment_method) order.dp_payment_method = t.dp_payment_method;
+      if (t.dp_reference_no && !order.dp_reference_no) order.dp_reference_no = t.dp_reference_no;
       if (t.discount_name && !order.discount_name) order.discount_name = t.discount_name;
       if (t.notes && !order.notes) order.notes = t.notes;
 
@@ -350,14 +556,66 @@ export default function POS() {
       if (ord.order_number?.toLowerCase().includes(s)) return true;
       if (ord.customer_name?.toLowerCase().includes(s)) return true;
       if (ord.cashier_name?.toLowerCase().includes(s)) return true;
+      if (ord.shift_name?.toLowerCase().includes(s)) return true;
       if (ord.table_number?.toLowerCase().includes(s)) return true;
       if (ord.notes?.toLowerCase().includes(s)) return true;
+      if (ord.cancellation_reason?.toLowerCase().includes(s)) return true;
       return ord.items.some(it =>
         it.menu?.name?.toLowerCase().includes(s) ||
         it.modifiers?.some(m => m.name?.toLowerCase().includes(s))
       );
     });
   }, [groupedHistory, historySearch]);
+
+  // Group filtered orders by shift session
+  const groupedHistoryByShift = useMemo(() => {
+    const shiftMap = new Map();
+
+    for (const order of filteredGroupedHistory) {
+      const shiftKey = order.shift_id ? `shift_${order.shift_id}` : (order.shift_name ? `name_${order.shift_name}_${order.date}` : 'shift_reguler');
+
+      if (!shiftMap.has(shiftKey)) {
+        shiftMap.set(shiftKey, {
+          key: shiftKey,
+          shift_id: order.shift_id,
+          shift_name: order.shift_name || 'Shift Reguler',
+          shift: order.shift,
+          shift_status: order.shift_status || order.shift?.status || (order.shift_closed_at ? 'CLOSED' : 'OPEN'),
+          opened_at: order.shift_opened_at || order.shift?.opened_at,
+          closed_at: order.shift_closed_at || order.shift?.closed_at,
+          cashier_name: order.cashier_name || 'Kasir',
+          cashier_id: order.cashier_id,
+          date: order.date,
+          total_orders: 0,
+          valid_orders: 0,
+          cancelled_orders: 0,
+          pending_void_orders: 0,
+          total_sales: 0,
+          total_items: 0,
+          payment_breakdown: {},
+          orders: [],
+        });
+      }
+
+      const grp = shiftMap.get(shiftKey);
+      grp.orders.push(order);
+      grp.total_orders += 1;
+      grp.total_items += order.total_qty;
+
+      if (order.status === 'PAID') {
+        grp.valid_orders += 1;
+        grp.total_sales += order.total_price;
+        const method = (order.payment_method || 'CASH').toUpperCase();
+        grp.payment_breakdown[method] = (grp.payment_breakdown[method] || 0) + order.total_price;
+      } else if (order.status === 'CANCELLED') {
+        grp.cancelled_orders += 1;
+      } else if (order.status === 'VOID_PENDING') {
+        grp.pending_void_orders += 1;
+      }
+    }
+
+    return Array.from(shiftMap.values());
+  }, [filteredGroupedHistory]);
 
   const filteredFlatTransactions = useMemo(() => {
     if (!historySearch.trim()) return transactions;
@@ -366,18 +624,33 @@ export default function POS() {
       if (t.order_number?.toLowerCase().includes(s)) return true;
       if (t.customer_name?.toLowerCase().includes(s)) return true;
       if (t.user?.name?.toLowerCase().includes(s)) return true;
+      if (t.shift?.shift_name?.toLowerCase().includes(s)) return true;
       if (t.menu?.name?.toLowerCase().includes(s)) return true;
       if (t.notes?.toLowerCase().includes(s)) return true;
+      if (t.cancellation_reason?.toLowerCase().includes(s)) return true;
       return t.modifiers?.some(m => m.name?.toLowerCase().includes(s));
     });
   }, [transactions, historySearch]);
 
   const historyStats = useMemo(() => {
+    const validOrders = filteredGroupedHistory.filter(ord => ord.status === 'PAID');
+    const cancelledOrders = filteredGroupedHistory.filter(ord => ord.status === 'CANCELLED');
+    const pendingVoidOrders = filteredGroupedHistory.filter(ord => ord.status === 'VOID_PENDING');
     const totalOrders = filteredGroupedHistory.length;
-    const totalOmset = filteredGroupedHistory.reduce((sum, ord) => sum + (ord.total_price || 0), 0);
-    const totalItems = filteredGroupedHistory.reduce((sum, ord) => sum + (ord.total_qty || 0), 0);
-    const aov = totalOrders > 0 ? Math.round(totalOmset / totalOrders) : 0;
-    return { totalOrders, totalOmset, totalItems, aov };
+    const totalOmset = validOrders.reduce((sum, ord) => sum + (ord.total_price || 0), 0);
+    const totalCancelledOmset = cancelledOrders.reduce((sum, ord) => sum + (ord.total_price || 0), 0);
+    const totalItems = validOrders.reduce((sum, ord) => sum + (ord.total_qty || 0), 0);
+    const aov = validOrders.length > 0 ? Math.round(totalOmset / validOrders.length) : 0;
+    return {
+      totalOrders,
+      validOrdersCount: validOrders.length,
+      cancelledOrdersCount: cancelledOrders.length,
+      pendingVoidOrdersCount: pendingVoidOrders.length,
+      totalOmset,
+      totalCancelledOmset,
+      totalItems,
+      aov
+    };
   }, [filteredGroupedHistory]);
 
   // Categories extraction
@@ -770,6 +1043,22 @@ export default function POS() {
     return cart.reduce((sum, item) => sum + item.qty, 0);
   }, [cart]);
 
+  // Items in cart with stock deficit (quantity exceeds physical stock) -> will generate Urgent Notes
+  const cartDeficitItems = useMemo(() => {
+    return cart.map(item => {
+      const status = getMenuStockStatus(item.menu);
+      const available = status.availableServings ?? 0;
+      const deficitQty = Math.max(0, item.qty - available);
+      const isDeficit = (deficitQty > 0 || Boolean(item.isUrgent)) && item.menu.item_type !== 'SERVICE';
+      return {
+        ...item,
+        available,
+        deficitQty: (deficitQty > 0 ? deficitQty : (item.isUrgent ? item.qty : 0)),
+        isDeficit,
+      };
+    }).filter(i => i.isDeficit);
+  }, [cart, menus, ingredients]);
+
   // Total to be paid in payment modal (either active open bill or current cart total)
   const payableTotal = activeOpenBillPayment ? Number(activeOpenBillPayment.total_price) : cartTotal;
 
@@ -875,6 +1164,11 @@ export default function POS() {
 
   // Handle card click
   function handleMenuCardClick(menu, status) {
+    if (!activeShift?.shift) {
+      toast.error('Shift kasir belum dibuka! Silakan buka shift terlebih dahulu.');
+      handleOpenQuickShiftModal();
+      return;
+    }
     const currentStatus = status || getMenuStockStatus(menu);
 
     // If out of stock, trigger quick restock for direct items or ingredient alert for recipes
@@ -1059,23 +1353,52 @@ export default function POS() {
 
   // Add item to cart with modifier & urgent note support
   function addItemToCart(menu, forcedNote = '', selectedModifiers = [], initialQty = 1, isUrgent = false) {
+    if (!activeShift?.shift) {
+      toast.error('Shift kasir belum dibuka! Silakan buka shift terlebih dahulu.');
+      handleOpenQuickShiftModal();
+      return;
+    }
     const sortedModIds = [...(selectedModifiers || [])].map(m => m.id).sort((a, b) => a - b);
     const cartKey = `${menu.id}_${sortedModIds.join('-')}${isUrgent ? '_urgent' : ''}`;
     const extraPrice = (selectedModifiers || []).reduce((sum, m) => sum + (Number(m.price) || 0), 0);
     const unitPrice = Number(menu.price) + extraPrice;
 
+    const currentStatus = getMenuStockStatus(menu);
+    const availableServings = currentStatus.availableServings ?? 0;
+
     setCart(prev => {
       const existingIndex = prev.findIndex(item => (item.cartKey || `${item.menu.id}_`) === cartKey);
       if (existingIndex > -1) {
+        const currentQty = prev[existingIndex].qty;
+        const newQty = currentQty + initialQty;
+        const itemHasDeficit = newQty > availableServings && menu.item_type !== 'SERVICE';
+
+        if (itemHasDeficit) {
+          const deficit = Math.max(0, newQty - availableServings);
+          toast(`⚠️ Stok "${menu.name}" tersisa ${availableServings}. Jumlah menjadi ${newQty} porsi (${deficit} porsi menggantung) & dicatat ke Nota Urgent.`, {
+            icon: '⚡',
+            duration: 4500,
+          });
+        }
+
         const updated = [...prev];
         updated[existingIndex] = {
           ...updated[existingIndex],
-          qty: updated[existingIndex].qty + initialQty,
+          qty: newQty,
           notes: forcedNote || updated[existingIndex].notes,
-          isUrgent: isUrgent || updated[existingIndex].isUrgent,
+          isUrgent: isUrgent || itemHasDeficit || updated[existingIndex].isUrgent,
         };
         return updated;
       } else {
+        const itemHasDeficit = initialQty > availableServings && menu.item_type !== 'SERVICE';
+        if (itemHasDeficit) {
+          const deficit = Math.max(0, initialQty - availableServings);
+          toast(`⚠️ Stok "${menu.name}" tersisa ${availableServings}. Pesanan ${initialQty} porsi (${deficit} porsi menggantung) dicatat ke Nota Urgent.`, {
+            icon: '⚡',
+            duration: 4500,
+          });
+        }
+
         return [...prev, {
           cartKey,
           menu,
@@ -1083,7 +1406,7 @@ export default function POS() {
           notes: forcedNote,
           selectedModifiers: selectedModifiers || [],
           unitPrice,
-          isUrgent: Boolean(isUrgent),
+          isUrgent: Boolean(isUrgent || itemHasDeficit),
         }];
       }
     });
@@ -1257,6 +1580,13 @@ export default function POS() {
       const ing = ingredients.find(i => i.id === Number(restockModal.ingredientId));
       if (!ing) return;
 
+      const currentStock = Number(ing.current_stock ?? ing.stock ?? 0);
+      if (currentStock < -0.0001) {
+        toast.error(`Stok "${ing.name}" saat ini berstatus MINUS (${currentStock} ${ing.unit_pakai}). Harap lakukan Penyesuaian Stok (Adjust Stock / Opname) terlebih dahulu!`, { duration: 6000 });
+        setRestockModal(p => ({ ...p, submitting: false }));
+        return;
+      }
+
       const conversion = Number(ing.konversi) || 1;
       const netQty = restockModal.unitType === 'BELI'
         ? Number(restockModal.qty) * conversion
@@ -1294,7 +1624,7 @@ export default function POS() {
     }
   }
 
-  // Update item quantity
+  // Update item quantity with stock deficit warning
   function updateQty(targetKey, delta) {
     setCart(prev => {
       return prev
@@ -1302,7 +1632,25 @@ export default function POS() {
           const itemKey = item.cartKey || item.menu.id;
           if (itemKey === targetKey || item.menu.id === targetKey) {
             const newQty = item.qty + delta;
-            return newQty > 0 ? { ...item, qty: newQty } : null;
+            if (newQty <= 0) return null;
+
+            const status = getMenuStockStatus(item.menu);
+            const available = status.availableServings ?? 0;
+            const itemHasDeficit = newQty > available && item.menu.item_type !== 'SERVICE';
+
+            if (delta > 0 && itemHasDeficit) {
+              const deficit = Math.max(0, newQty - available);
+              toast(`⚠️ Stok "${item.menu.name}" tersisa ${available}. Kuantitas ${newQty} porsi (${deficit} porsi menggantung) dicatat ke Nota Urgent.`, {
+                icon: '⚡',
+                duration: 4500,
+              });
+            }
+
+            return {
+              ...item,
+              qty: newQty,
+              isUrgent: itemHasDeficit ? true : (item.isUrgent && available <= 0 ? true : false),
+            };
           }
           return item;
         })
@@ -1347,6 +1695,11 @@ export default function POS() {
 
   // Open payment modal for regular cart
   function handleOpenPayment() {
+    if (!activeShift?.shift) {
+      toast.error('Shift kasir belum dibuka! Silakan buka shift terlebih dahulu.');
+      handleOpenQuickShiftModal();
+      return;
+    }
     if (cart.length === 0) {
       toast.error('Keranjang pesanan masih kosong.');
       return;
@@ -1359,6 +1712,11 @@ export default function POS() {
 
   // Open payment modal for an existing open bill
   function handleOpenPayOpenBill(bill) {
+    if (!activeShift?.shift) {
+      toast.error('Shift kasir belum dibuka! Silakan buka shift terlebih dahulu.');
+      handleOpenQuickShiftModal();
+      return;
+    }
     setActiveOpenBillPayment(bill);
     setPaymentMethod('CASH');
     setCashReceived(Number(bill.total_price).toString());
@@ -1368,6 +1726,11 @@ export default function POS() {
 
   // Open Split Bill modal
   function handleOpenSplitBill(bill) {
+    if (!activeShift?.shift) {
+      toast.error('Shift kasir belum dibuka! Silakan buka shift terlebih dahulu.');
+      handleOpenQuickShiftModal();
+      return;
+    }
     const initialQtys = {};
     (bill.items || []).forEach(it => {
       initialQtys[it.id] = 0;
@@ -1605,6 +1968,11 @@ export default function POS() {
 
   // Hold order (Save as Open Bill)
   async function handleHoldOrder() {
+    if (!activeShift?.shift) {
+      toast.error('Shift kasir belum dibuka! Silakan buka shift terlebih dahulu.');
+      handleOpenQuickShiftModal();
+      return;
+    }
     if (cart.length === 0) {
       toast.error('Keranjang pesanan masih kosong.');
       return;
@@ -1625,15 +1993,19 @@ export default function POS() {
         discount_name: appliedDiscount?.name || undefined,
         discount_type: appliedDiscount?.type || undefined,
         discount_rate: appliedDiscount?.value ?? appliedDiscount?.rate ?? undefined,
-        is_urgent_note: cart.some(i => i.isUrgent),
-        items: cart.map(item => ({
-          menu_id: item.menu.id,
-          qty: item.qty,
-          notes: item.notes || undefined,
-          is_urgent: Boolean(item.isUrgent),
-          modifier_option_ids: (item.selectedModifiers || []).map(m => m.id),
-          modifiers: item.selectedModifiers || [],
-        })),
+        is_urgent_note: Boolean(cartDeficitItems.length > 0 || cart.some(i => i.isUrgent)),
+        items: cart.map(item => {
+          const st = getMenuStockStatus(item.menu);
+          const hasDeficit = st.availableServings < item.qty && item.menu.item_type !== 'SERVICE';
+          return {
+            menu_id: item.menu.id,
+            qty: item.qty,
+            notes: item.notes || undefined,
+            is_urgent: Boolean(item.isUrgent || hasDeficit),
+            modifier_option_ids: (item.selectedModifiers || []).map(m => m.id),
+            modifiers: item.selectedModifiers || [],
+          };
+        }),
       };
 
       const { data } = await api.post('/transactions', payload);
@@ -1693,15 +2065,19 @@ export default function POS() {
     setSubmitting(true);
     try {
       const payload = {
-        is_urgent_note: cart.some(i => i.isUrgent),
-        items: cart.map(item => ({
-          menu_id: item.menu.id,
-          qty: item.qty,
-          notes: item.notes || undefined,
-          is_urgent: Boolean(item.isUrgent),
-          modifier_option_ids: (item.selectedModifiers || []).map(m => m.id),
-          modifiers: item.selectedModifiers || [],
-        })),
+        is_urgent_note: Boolean(cartDeficitItems.length > 0 || cart.some(i => i.isUrgent)),
+        items: cart.map(item => {
+          const st = getMenuStockStatus(item.menu);
+          const hasDeficit = st.availableServings < item.qty && item.menu.item_type !== 'SERVICE';
+          return {
+            menu_id: item.menu.id,
+            qty: item.qty,
+            notes: item.notes || undefined,
+            is_urgent: Boolean(item.isUrgent || hasDeficit),
+            modifier_option_ids: (item.selectedModifiers || []).map(m => m.id),
+            modifiers: item.selectedModifiers || [],
+          };
+        }),
       };
 
       const { data } = await api.post(`/transactions/${activeTarget.order_number}/add-items`, payload);
@@ -1868,6 +2244,8 @@ export default function POS() {
         error: null,
       });
       setShowStaticQrisFallback(false);
+      setDpPaymentMethod('CASH');
+      setDpReferenceNo('');
     }
   }, [paymentModalOpen]);
 
@@ -1878,14 +2256,26 @@ export default function POS() {
       return;
     }
 
+    const isKasbon = paymentMethod === 'KASBON' || paymentMethod === 'PIUTANG';
+    if (isKasbon && !customerName?.trim() && !selectedCustomer) {
+      toast.error('Nama Pelanggan/Debitur wajib diisi untuk transaksi Kasbon!');
+      return;
+    }
+    if (isKasbon && parsedCash > payableTotal) {
+      toast.error(`Nominal DP (${rupiah(parsedCash)}) tidak boleh melebihi total tagihan (${rupiah(payableTotal)})!`);
+      return;
+    }
+
     setSubmitting(true);
     try {
       if (activeOpenBillPayment) {
         // Paying an open bill
         const payload = {
           payment_method: paymentMethod,
-          amount_paid: (paymentMethod === 'CASH' || paymentMethod === 'KASBON') ? parsedCash : Number(activeOpenBillPayment.total_price),
+          amount_paid: (paymentMethod === 'CASH' || isKasbon) ? parsedCash : Number(activeOpenBillPayment.total_price),
           change_amount: paymentMethod === 'CASH' ? changeAmount : 0,
+          dp_payment_method: isKasbon && parsedCash > 0 ? dpPaymentMethod : undefined,
+          dp_reference_no: isKasbon && parsedCash > 0 && dpReferenceNo?.trim() ? dpReferenceNo.trim() : undefined,
           notes: orderNotes || undefined,
         };
 
@@ -1896,6 +2286,8 @@ export default function POS() {
           date: data.paid_at || getTodayStr(),
           customer_name: data.customer_name || 'Pelanggan Umum',
           payment_method: data.payment_method,
+          dp_payment_method: data.dp_payment_method || (isKasbon && parsedCash > 0 ? dpPaymentMethod : null),
+          dp_reference_no: data.dp_reference_no || (isKasbon && parsedCash > 0 ? dpReferenceNo : null),
           amount_paid: data.amount_paid,
           change_amount: data.change_amount,
           subtotal: data.subtotal || (Number(data.total_price) + Number(data.discount_amount || 0)),
@@ -1926,8 +2318,10 @@ export default function POS() {
           customer_name: selectedCustomer ? selectedCustomer.name : (customerName || undefined),
           customer_id: selectedCustomer ? selectedCustomer.id : undefined,
           payment_method: paymentMethod,
-          amount_paid: (paymentMethod === 'CASH' || paymentMethod === 'KASBON') ? parsedCash : cartTotal,
+          amount_paid: (paymentMethod === 'CASH' || isKasbon) ? parsedCash : cartTotal,
           change_amount: paymentMethod === 'CASH' ? changeAmount : 0,
+          dp_payment_method: isKasbon && parsedCash > 0 ? dpPaymentMethod : undefined,
+          dp_reference_no: isKasbon && parsedCash > 0 && dpReferenceNo?.trim() ? dpReferenceNo.trim() : undefined,
           notes: orderNotes || undefined,
           shift_id: activeShift?.shift?.id || undefined,
           outlet_id: currentTargetOutlet,
@@ -1936,15 +2330,19 @@ export default function POS() {
           discount_name: appliedDiscount?.name || undefined,
           discount_type: appliedDiscount?.type || undefined,
           discount_rate: appliedDiscount?.value ?? appliedDiscount?.rate ?? undefined,
-          is_urgent_note: cart.some(i => i.isUrgent),
-          items: cart.map(item => ({
-            menu_id: item.menu.id,
-            qty: item.qty,
-            notes: item.notes || undefined,
-            is_urgent: Boolean(item.isUrgent),
-            modifier_option_ids: (item.selectedModifiers || []).map(m => m.id),
-            modifiers: item.selectedModifiers || [],
-          })),
+          is_urgent_note: Boolean(cartDeficitItems.length > 0 || cart.some(i => i.isUrgent)),
+          items: cart.map(item => {
+            const st = getMenuStockStatus(item.menu);
+            const hasDeficit = st.availableServings < item.qty && item.menu.item_type !== 'SERVICE';
+            return {
+              menu_id: item.menu.id,
+              qty: item.qty,
+              notes: item.notes || undefined,
+              is_urgent: Boolean(item.isUrgent || hasDeficit),
+              modifier_option_ids: (item.selectedModifiers || []).map(m => m.id),
+              modifiers: item.selectedModifiers || [],
+            };
+          }),
         };
 
         const { data } = await api.post('/transactions', payload);
@@ -1956,6 +2354,8 @@ export default function POS() {
           customer: data.customer || selectedCustomer || null,
           earned_points: (data.customer || selectedCustomer) ? 1 : 0,
           payment_method: data.payment_method,
+          dp_payment_method: data.dp_payment_method || (isKasbon && parsedCash > 0 ? dpPaymentMethod : null),
+          dp_reference_no: data.dp_reference_no || (isKasbon && parsedCash > 0 ? dpReferenceNo : null),
           amount_paid: data.amount_paid,
           change_amount: data.change_amount,
           subtotal: data.subtotal || cartGrossSubtotal,
@@ -1980,6 +2380,8 @@ export default function POS() {
         setOrderNotes('');
         setAppliedDiscount(null);
         setPromoCodeInput('');
+        setDpPaymentMethod('CASH');
+        setDpReferenceNo('');
         setPaymentModalOpen(false);
         setReceiptModalOpen(true);
 
@@ -1998,13 +2400,180 @@ export default function POS() {
   function handlePrintReceipt() {
     printElement('printable-thermal-receipt', `Struk - ${completedOrder?.order_number || ''}`, {
       isThermal: true,
-      pageSize: '80mm auto'
+      paperWidth: '80mm'
     });
+  }
+
+  // Print Void Receipt (Nota Dibatalkan)
+  function handlePrintVoidReceipt(order) {
+    if (!order) return;
+    const items = (order.items && order.items.length > 0)
+      ? order.items.map(t => ({
+          menu_name: t.menu?.name || t.menu_name || 'Menu',
+          price: (t.menu?.price || t.price || (t.qty ? t.total_price / t.qty : t.total_price)),
+          qty: t.qty || 1,
+          total_price: t.total_price || 0,
+          notes: t.notes,
+          modifiers: t.modifiers || [],
+        }))
+      : [{
+          menu_name: order.menu?.name || order.menu_name || 'Menu',
+          price: order.total_price,
+          qty: order.qty || 1,
+          total_price: order.total_price,
+          modifiers: order.modifiers || []
+        }];
+
+    setVoidReceiptModal({
+      open: true,
+      order: {
+        order_number: order.order_number || (order.id ? `TRX-${order.id}` : '-'),
+        date: order.date || getTodayStr(),
+        customer_name: order.customer_name || 'Pelanggan Umum',
+        order_type: order.order_type || 'DINE_IN',
+        table_number: order.table_number || null,
+        payment_method: order.payment_method || 'CASH',
+        amount_paid: order.amount_paid || order.total_price,
+        change_amount: order.change_amount || 0,
+        subtotal: order.subtotal || order.total_price,
+        discount_amount: order.discount_amount || 0,
+        discount_name: order.discount_name || null,
+        total_price: order.total_price,
+        cancellation_reason: order.cancellation_reason || order.notes || 'Pembatalan transaksi oleh kasir/manager',
+        cancelled_at: order.cancelled_at || order.created_at || new Date().toLocaleString('id-ID'),
+        cancelled_by_name: order.cancelled_by_name || order.cashier_name || currentUser.name || 'Kasir',
+        cashier_name: order.cashier_name || currentUser.name || 'Kasir',
+        shift_name: order.shift_name || 'Reguler',
+        outlet_name: activeOutlet?.name || order.outlet_name || currentUser.outlet_name || 'Outlet',
+        items,
+      }
+    });
+  }
+
+  function doPrintVoidReceipt() {
+    printElement('printable-void-thermal-receipt', `Struk-VOID-${voidReceiptModal.order?.order_number || ''}`, {
+      isThermal: true,
+      paperWidth: '80mm'
+    });
+  }
+
+  // Fetch supervisors when opening void modal if non-manager
+  useEffect(() => {
+    if (voidPaidModal.open && !isOwnerOrManager && supervisors.length === 0) {
+      api.get('/transactions/supervisors')
+        .then(res => {
+          const list = res.data || [];
+          setSupervisors(list);
+          if (list.length > 0) {
+            setSelectedSupervisorId(list[0].id);
+          }
+        })
+        .catch(err => console.error('Failed fetching supervisors', err));
+    }
+  }, [voidPaidModal.open, isOwnerOrManager]);
+
+  // Confirm voiding a completed (PAID) transaction or submitting request to Manager / Owner
+  async function handleConfirmVoidPaidOrder() {
+    if (!voidPaidModal.order) return;
+    if (!voidPaidModal.reason.trim()) {
+      toast.error('Alasan pembatalan (void) wajib diisi!');
+      return;
+    }
+
+    setVoidPaidModal(p => ({ ...p, submitting: true }));
+    try {
+      const orderNum = voidPaidModal.order.order_number || voidPaidModal.order.id;
+      const payload = {
+        reason: voidPaidModal.reason,
+      };
+
+      const { data } = await api.post(`/transactions/${orderNum}/void`, payload);
+
+      if (data.status === 'VOID_PENDING' || data.is_pending_approval) {
+        toast.success(data.message || 'Permohonan void nota berhasil diajukan ke Manajer/Owner!');
+        setVoidPaidModal({ open: false, order: null, reason: '', submitting: false });
+        if (showHistory) fetchHistory();
+        fetchAll();
+        return;
+      }
+
+      toast.success(data.message || 'Nota transaksi berhasil di-void / dibatalkan!');
+
+      const voidedOrder = {
+        ...voidPaidModal.order,
+        status: 'CANCELLED',
+        cancellation_reason: voidPaidModal.reason,
+        cancelled_at: data.cancelled_at || new Date().toLocaleString('id-ID'),
+        cancelled_by_name: data.void_approved_by || data.cancelled_by_name || currentUser.name || 'Kasir',
+      };
+
+      setVoidPaidModal({ open: false, order: null, reason: '', submitting: false });
+      if (showHistory) {
+        fetchHistory();
+      }
+      fetchAll();
+      handlePrintVoidReceipt(voidedOrder);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal memproses permohonan pembatalan transaksi.');
+      setVoidPaidModal(p => ({ ...p, submitting: false }));
+    }
+  }
+
+  // Approve a pending void request (Manager / Owner)
+  async function handleApproveVoid(order) {
+    if (!order) return;
+    const ok = await confirmDialog(
+      `Setujui Void Nota #${order.order_number}?`,
+      `Seluruh stok bahan baku resep (${order.items.length} item) akan otomatis dikembalikan ke Kartu Stok (ADJUSTMENT_IN) dan transaksi berstatus DIBATALKAN.`,
+      'Ya, Setujui & Kembalikan Stok',
+      true
+    );
+    if (!ok) return;
+
+    try {
+      const { data } = await api.post(`/transactions/${order.order_number}/void-approve`, {
+        reason: order.cancellation_reason || 'Disetujui Manajer/Owner'
+      });
+      toast.success(data.message || 'Void nota berhasil disetujui dan stok bahan telah dikembalikan!');
+      fetchHistory();
+      fetchAll();
+      handlePrintVoidReceipt({
+        ...order,
+        status: 'CANCELLED',
+        cancelled_at: data.void_approved_at || new Date().toLocaleString('id-ID'),
+        cancelled_by_name: data.void_approved_by || currentUser.name || 'Manajer'
+      });
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal menyetujui void.');
+    }
+  }
+
+  // Reject a pending void request (Manager / Owner)
+  async function handleRejectVoid(order) {
+    if (!order) return;
+    const reason = prompt('Masukkan alasan penolakan void:', 'Permohonan void tidak disetujui');
+    if (reason === null) return;
+
+    try {
+      const { data } = await api.post(`/transactions/${order.order_number}/void-reject`, {
+        reason: reason.trim() || 'Ditolak Manajer/Owner'
+      });
+      toast.success(data.message || 'Permohonan void telah ditolak. Transaksi tetap berstatus LUNAS.');
+      fetchHistory();
+      fetchAll();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal menolak void.');
+    }
   }
 
   // Reprint full order from history
   function handleReprintOrder(order) {
     if (!order) return;
+    if (order.status === 'CANCELLED') {
+      handlePrintVoidReceipt(order);
+      return;
+    }
+
     setCompletedOrder({
       order_number: order.order_number,
       date: order.date,
@@ -2035,6 +2604,11 @@ export default function POS() {
 
   // Reprint from flat history row
   function handleReprint(trx) {
+    if (trx.status === 'CANCELLED') {
+      handlePrintVoidReceipt(trx);
+      return;
+    }
+
     const ordNumber = trx.order_number || `TRX-${trx.id}`;
     const matchingItems = transactions.filter(t => (t.order_number || `TRX-${t.id}`) === ordNumber);
     const itemsToPrint = matchingItems.length > 0 ? matchingItems : [trx];
@@ -2216,9 +2790,14 @@ export default function POS() {
               </p>
             </div>
           </div>
-          <Link to="/shift" className="btn btn-primary btn-sm">
-            Buka Shift Sekarang
-          </Link>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={handleOpenQuickShiftModal}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
+          >
+            <Play size={13} fill="currentColor" /> Buka Shift Sekarang
+          </button>
         </div>
       )}
 
@@ -2291,7 +2870,7 @@ export default function POS() {
             </div>
 
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              {/* View Mode Toggle: Grup per Nota vs Rincian Item */}
+              {/* View Mode Toggle: Grup per Shift vs Grup per Nota vs Rincian Item */}
               <div style={{
                 display: 'inline-flex',
                 background: 'rgba(0, 0, 0, 0.3)',
@@ -2301,12 +2880,22 @@ export default function POS() {
               }}>
                 <button
                   type="button"
+                  onClick={() => setHistoryViewMode('by_shift')}
+                  className={`btn btn-sm ${historyViewMode === 'by_shift' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ fontSize: 11.5, padding: '4px 10px', height: 32, display: 'flex', alignItems: 'center', gap: 5 }}
+                  title="Tampilan dikelompokkan berdasarkan Shift Kasir"
+                >
+                  <Layers size={13} />
+                  <span>Grup per Shift</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => setHistoryViewMode('grouped')}
                   className={`btn btn-sm ${historyViewMode === 'grouped' ? 'btn-primary' : 'btn-ghost'}`}
                   style={{ fontSize: 11.5, padding: '4px 10px', height: 32, display: 'flex', alignItems: 'center', gap: 5 }}
                   title="Tampilan dikelompokkan per Nota / Transaksi"
                 >
-                  <Layers size={13} />
+                  <Receipt size={13} />
                   <span>Grup per Nota</span>
                 </button>
                 <button
@@ -2465,14 +3054,41 @@ export default function POS() {
               </div>
 
               {/* Status Filter Tabs */}
-              <div style={{ display: 'flex', gap: 5, background: 'rgba(0,0,0,0.3)', padding: 3, borderRadius: 8, border: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', gap: 5, background: 'rgba(0,0,0,0.3)', padding: 3, borderRadius: 8, border: '1px solid var(--border)', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => setHistoryStatus('ALL')}
+                  className={`btn btn-sm ${historyStatus === 'ALL' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ fontSize: 11.5, padding: '3px 10px', height: 28 }}
+                >
+                  Semua ({historyStats.totalOrders})
+                </button>
                 <button
                   type="button"
                   onClick={() => setHistoryStatus('PAID')}
                   className={`btn btn-sm ${historyStatus === 'PAID' ? 'btn-primary' : 'btn-ghost'}`}
                   style={{ fontSize: 11.5, padding: '3px 10px', height: 28 }}
                 >
-                  ✓ Lunas (PAID)
+                  ✓ Lunas ({historyStats.validOrdersCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHistoryStatus('VOID_PENDING')}
+                  className={`btn btn-sm ${historyStatus === 'VOID_PENDING' ? 'btn-warning' : 'btn-ghost'}`}
+                  style={{
+                    fontSize: 11.5, padding: '3px 10px', height: 28,
+                    ...(historyStatus !== 'VOID_PENDING' && historyStats.pendingVoidOrdersCount > 0 ? { color: '#fbbf24', fontWeight: 800 } : {})
+                  }}
+                >
+                  ⏳ Menunggu Approval ({historyStats.pendingVoidOrdersCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHistoryStatus('CANCELLED')}
+                  className={`btn btn-sm ${historyStatus === 'CANCELLED' ? 'btn-danger' : 'btn-ghost'}`}
+                  style={{ fontSize: 11.5, padding: '3px 10px', height: 28, ...(historyStatus !== 'CANCELLED' && historyStats.cancelledOrdersCount > 0 ? { color: '#fb7185' } : {}) }}
+                >
+                  ✕ Void / Batal ({historyStats.cancelledOrdersCount})
                 </button>
                 <button
                   type="button"
@@ -2481,14 +3097,6 @@ export default function POS() {
                   style={{ fontSize: 11.5, padding: '3px 10px', height: 28 }}
                 >
                   ⏳ Tertunda (HOLD)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setHistoryStatus('ALL')}
-                  className={`btn btn-sm ${historyStatus === 'ALL' ? 'btn-primary' : 'btn-ghost'}`}
-                  style={{ fontSize: 11.5, padding: '3px 10px', height: 28 }}
-                >
-                  Semua Status
                 </button>
               </div>
             </div>
@@ -2514,17 +3122,528 @@ export default function POS() {
                 {historySearch ? ` dengan pencarian "${historySearch}"` : ''}.
               </p>
             </div>
+          ) : historyViewMode === 'by_shift' ? (
+            /* GROUPED VIEW: PER SHIFT */
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {groupedHistoryByShift.map((shiftGrp) => {
+                const isShiftExpanded = expandedShiftGroups[shiftGrp.key] !== false; // default expanded
+                const isShiftOpen = shiftGrp.shift_status === 'OPEN';
+
+                return (
+                  <div
+                    key={shiftGrp.key}
+                    style={{
+                      background: 'rgba(15, 20, 42, 0.75)',
+                      border: isShiftOpen ? '1.5px solid rgba(16, 185, 129, 0.45)' : '1px solid var(--border)',
+                      borderRadius: 14,
+                      overflow: 'hidden',
+                      boxShadow: '0 4px 20px rgba(0, 0, 0, 0.25)'
+                    }}
+                  >
+                    {/* Shift Header Summary Bar */}
+                    <div
+                      onClick={() => toggleShiftGroupExpand(shiftGrp.key)}
+                      style={{
+                        padding: '16px 20px',
+                        background: isShiftOpen
+                          ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(15, 23, 42, 0.6) 100%)'
+                          : 'linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(15, 23, 42, 0.4) 100%)',
+                        borderBottom: isShiftExpanded ? '1px solid var(--border)' : 'none',
+                        cursor: 'pointer',
+                        userSelect: 'none',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: 12
+                      }}
+                    >
+                      {/* Shift Title, Cashier & Meta */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                        <div style={{
+                          width: 34, height: 34, borderRadius: 8,
+                          background: isShiftOpen ? 'rgba(16, 185, 129, 0.2)' : 'rgba(99, 102, 241, 0.15)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          color: isShiftOpen ? '#34d399' : '#818cf8',
+                          transform: isShiftExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                          transition: 'transform 0.2s ease'
+                        }}>
+                          <ChevronDown size={18} />
+                        </div>
+
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: 16, fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <Layers size={16} style={{ color: isShiftOpen ? '#34d399' : '#a5b4fc' }} />
+                              {shiftGrp.shift_name} {shiftGrp.shift_id ? `(#${shiftGrp.shift_id})` : ''}
+                            </span>
+
+                            <span
+                              className={`badge ${isShiftOpen ? 'badge-success' : 'badge-neutral'}`}
+                              style={{
+                                fontSize: 11,
+                                fontWeight: 800,
+                                ...(isShiftOpen ? { background: 'rgba(16, 185, 129, 0.25)', color: '#34d399', borderColor: '#10b981' } : {})
+                              }}
+                            >
+                              {isShiftOpen ? '🟢 Sesi Shift Aktif' : '⚪ Sesi Shift Selesai'}
+                            </span>
+
+                            <span
+                              className="badge"
+                              style={{
+                                fontSize: 11.5,
+                                fontWeight: 700,
+                                background: 'rgba(245, 158, 11, 0.18)',
+                                color: '#fde047',
+                                border: '1px solid rgba(245, 158, 11, 0.4)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4
+                              }}
+                            >
+                              <User size={12} />
+                              <span>Petugas Kasir: <strong>{shiftGrp.cashier_name}</strong></span>
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'flex', gap: 14, fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4, flexWrap: 'wrap' }}>
+                            <span>
+                              Buka: <strong>{shiftGrp.opened_at ? formatLocalDisplay(shiftGrp.opened_at, true) : (shiftGrp.date || '-')}</strong>
+                            </span>
+                            {shiftGrp.closed_at ? (
+                              <span>Tutup: <strong>{formatLocalDisplay(shiftGrp.closed_at, true)}</strong></span>
+                            ) : (
+                              <span style={{ color: '#34d399', fontWeight: 600 }}>• Masih Terbuka</span>
+                            )}
+                            <span>
+                              Total: <strong>{shiftGrp.total_orders} Nota</strong> ({shiftGrp.valid_orders} Lunas{shiftGrp.cancelled_orders > 0 ? `, ${shiftGrp.cancelled_orders} Void` : ''}) · <strong>{shiftGrp.total_items}</strong> porsi
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Shift Financial Overview & Payment Breakdown */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                        {/* Payment pills */}
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {Object.entries(shiftGrp.payment_breakdown).map(([mth, amt]) => (
+                            <span
+                              key={mth}
+                              className="badge badge-neutral mono"
+                              style={{ fontSize: 10.5, padding: '3px 7px', background: 'rgba(0, 0, 0, 0.4)' }}
+                            >
+                              {mth}: {rupiah(amt)}
+                            </span>
+                          ))}
+                        </div>
+
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 700 }}>
+                            Total Omset Shift
+                          </div>
+                          <div className="mono" style={{ fontSize: 18, fontWeight: 800, color: '#34d399' }}>
+                            {rupiah(shiftGrp.total_sales)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Shift Orders List */}
+                    {isShiftExpanded && (
+                      <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 10, background: 'rgba(0, 0, 0, 0.15)' }}>
+                        {shiftGrp.orders.map(order => {
+                          const isExpanded = Boolean(expandedHistoryOrders[order.order_number]);
+                          const isCancelled = order.status === 'CANCELLED';
+                          const isVoidPending = order.status === 'VOID_PENDING';
+
+                          return (
+                            <div
+                              key={order.order_number}
+                              style={{
+                                background: isCancelled ? 'rgba(244, 63, 94, 0.04)' : isVoidPending ? 'rgba(245, 158, 11, 0.05)' : 'rgba(255, 255, 255, 0.02)',
+                                border: isCancelled ? '1px solid rgba(244, 63, 94, 0.3)' : isVoidPending ? '1.5px solid rgba(245, 158, 11, 0.45)' : '1px solid var(--border)',
+                                borderRadius: 12,
+                                overflow: 'hidden',
+                                transition: 'all 0.2s ease',
+                                boxShadow: isExpanded ? '0 4px 20px rgba(0, 0, 0, 0.35)' : 'none'
+                              }}
+                            >
+                              {/* Order Summary Header */}
+                              <div
+                                onClick={() => toggleHistoryOrderExpand(order.order_number)}
+                                style={{
+                                  padding: '14px 18px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  flexWrap: 'wrap',
+                                  gap: 12,
+                                  cursor: 'pointer',
+                                  userSelect: 'none',
+                                  background: isExpanded ? 'rgba(255, 255, 255, 0.04)' : 'transparent',
+                                  borderBottom: isExpanded ? '1px solid var(--border)' : 'none'
+                                }}
+                              >
+                                {/* Left: Chevron + Order Number + Status Badges + Metas */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                                  <div style={{
+                                    width: 28, height: 28, borderRadius: 6,
+                                    background: 'rgba(255, 255, 255, 0.06)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    color: isCancelled ? '#fb7185' : isVoidPending ? '#fbbf24' : 'var(--accent-bright)',
+                                    transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                                    transition: 'transform 0.2s ease'
+                                  }}>
+                                    <ChevronDown size={15} />
+                                  </div>
+
+                                  <div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                      <span className="mono" style={{ fontSize: 14.5, fontWeight: 800, color: isCancelled ? '#fb7185' : isVoidPending ? '#fbbf24' : 'var(--accent-bright)' }}>
+                                        #{order.order_number}
+                                      </span>
+                                      <span
+                                        className="badge"
+                                        style={{
+                                          fontSize: 11,
+                                          fontWeight: 700,
+                                          background: 'rgba(99, 102, 241, 0.15)',
+                                          color: '#a5b4fc',
+                                          border: '1px solid rgba(99, 102, 241, 0.35)',
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: 4
+                                        }}
+                                        title={`Sesi Shift: ${order.shift_name || 'Reguler'} (ID: ${order.shift_id || '-'})`}
+                                      >
+                                        <Layers size={11} />
+                                        <span>{order.shift_name || 'Shift'} {order.shift_id ? `(#${order.shift_id})` : ''}</span>
+                                      </span>
+                                      <span
+                                        className="badge"
+                                        style={{
+                                          fontSize: 11,
+                                          fontWeight: 700,
+                                          background: 'rgba(245, 158, 11, 0.15)',
+                                          color: '#fde047',
+                                          border: '1px solid rgba(245, 158, 11, 0.35)',
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: 4
+                                        }}
+                                        title={`Petugas Kasir: ${order.cashier_name || 'Kasir'}`}
+                                      >
+                                        <User size={11} />
+                                        <span>{order.cashier_name || 'Kasir'}</span>
+                                      </span>
+                                      <span
+                                        className={`badge ${order.payment_method === 'GRAB' ? 'badge-success' : 'badge-neutral'}`}
+                                        style={{
+                                          fontSize: 11,
+                                          fontWeight: 700,
+                                          ...(order.payment_method === 'GRAB' ? { background: '#00B14F', color: '#ffffff', borderColor: '#00B14F' } : {})
+                                        }}
+                                      >
+                                        {order.payment_method || 'CASH'}
+                                      </span>
+                                      <span
+                                        className={`badge ${isCancelled ? 'badge-danger' : isVoidPending ? 'badge-warning' : (order.status === 'PAID' ? 'badge-success' : 'badge-warning')}`}
+                                        style={{
+                                          fontSize: 10.5,
+                                          fontWeight: 800,
+                                          ...(isCancelled ? { background: 'rgba(244, 63, 94, 0.2)', color: '#fb7185', borderColor: '#f43f5e' } : isVoidPending ? { background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', borderColor: '#f59e0b' } : {})
+                                        }}
+                                      >
+                                        {isCancelled ? '✕ DIBATALKAN (VOID)' : isVoidPending ? '⏳ MENUNGGU APPROVAL VOID' : (order.status === 'PAID' ? '✓ LUNAS' : '⏳ HOLD')}
+                                      </span>
+                                      {order.is_urgent_note && (
+                                        <span className="badge badge-danger" style={{ fontSize: 10.5 }}>
+                                          NOTA URGENT
+                                        </span>
+                                      )}
+                                      <span className="badge badge-info" style={{ fontSize: 11 }}>
+                                        {order.customer_name} {order.table_number ? `· Meja ${order.table_number}` : ''}
+                                      </span>
+                                    </div>
+
+                                    <div style={{ display: 'flex', gap: 14, fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4, flexWrap: 'wrap' }}>
+                                      <span>{order.created_at ? formatLocalDisplay(order.created_at, true) : order.date}</span>
+                                      <span>Kasir: <strong style={{ color: '#ffffff' }}>{order.cashier_name}</strong></span>
+                                      <span><strong>{order.items.length}</strong> menu ({order.total_qty} porsi)</span>
+                                      {order.notes && !isCancelled && !isVoidPending && <span style={{ color: 'var(--text-muted)' }}>*{order.notes}</span>}
+                                    </div>
+
+                                    {/* VOID PENDING Audit Banner */}
+                                    {isVoidPending && (
+                                      <div style={{
+                                        marginTop: 6,
+                                        padding: '6px 10px',
+                                        background: 'rgba(245, 158, 11, 0.12)',
+                                        border: '1px dashed rgba(245, 158, 11, 0.4)',
+                                        borderRadius: 6,
+                                        fontSize: 11.5,
+                                        color: '#fde68a',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 8,
+                                        flexWrap: 'wrap'
+                                      }}>
+                                        <span style={{ fontWeight: 800, color: '#fbbf24' }}>⏳ PERMOHONAN VOID:</span>
+                                        <span>"{order.cancellation_reason || order.notes || 'Permohonan void oleh kasir'}"</span>
+                                        {order.void_requested_by_name && <span>· Diajukan oleh: <strong style={{ color: '#fff' }}>{order.void_requested_by_name}</strong></span>}
+                                        {order.void_requested_at && <span>({formatLocalDisplay(order.void_requested_at, true)})</span>}
+                                      </div>
+                                    )}
+
+                                    {/* Cancellation Audit Banner if VOID */}
+                                    {isCancelled && (
+                                      <div style={{
+                                        marginTop: 6,
+                                        padding: '4px 8px',
+                                        background: 'rgba(244, 63, 94, 0.12)',
+                                        border: '1px dashed rgba(244, 63, 94, 0.35)',
+                                        borderRadius: 6,
+                                        fontSize: 11,
+                                        color: '#fda4af',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 6,
+                                        flexWrap: 'wrap'
+                                      }}>
+                                        <span style={{ fontWeight: 800, color: '#fb7185' }}>⚠️ ALASAN VOID:</span>
+                                        <span>"{order.cancellation_reason || order.notes || 'Pembatalan transaksi'}"</span>
+                                        {order.cancelled_by_name && <span>· Disetujui/Dibatalkan oleh: <strong style={{ color: '#fff' }}>{order.cancelled_by_name}</strong></span>}
+                                        {order.cancelled_at && <span>({formatLocalDisplay(order.cancelled_at, true)})</span>}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Right: Total Price + Action Buttons */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                  <div style={{ textAlign: 'right' }}>
+                                    <div className="mono" style={{
+                                      fontSize: 16,
+                                      fontWeight: 800,
+                                      color: isCancelled ? '#94a3b8' : isVoidPending ? '#fbbf24' : 'var(--ok)',
+                                      textDecoration: isCancelled ? 'line-through' : 'none'
+                                    }}>
+                                      {rupiah(order.total_price)}
+                                    </div>
+                                    {order.discount_amount > 0 && (
+                                      <div style={{ fontSize: 11, color: '#f87171' }}>
+                                        Hemat: {rupiah(order.discount_amount)} {order.discount_name ? `(${order.discount_name})` : ''}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {isCancelled ? (
+                                    <button
+                                      type="button"
+                                      className="btn btn-sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handlePrintVoidReceipt(order);
+                                      }}
+                                      title="Cetak Ulang Struk Pembatalan (Struk VOID)"
+                                      style={{
+                                        fontSize: 11.5,
+                                        padding: '4px 10px',
+                                        height: 32,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 5,
+                                        background: 'rgba(244, 63, 94, 0.15)',
+                                        border: '1px solid rgba(244, 63, 94, 0.4)',
+                                        color: '#fb7185',
+                                        fontWeight: 700
+                                      }}
+                                    >
+                                      <Printer size={13} />
+                                      <span>Struk Void</span>
+                                    </button>
+                                  ) : isVoidPending ? (
+                                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                      {isOwnerOrManager ? (
+                                        <>
+                                          <button
+                                            type="button"
+                                            className="btn btn-sm text-white"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleApproveVoid(order);
+                                            }}
+                                            title="Setujui Pembatalan & Kembalikan Bahan Baku Resep ke Stok"
+                                            style={{
+                                              fontSize: 11.5, padding: '4px 10px', height: 32,
+                                              background: '#16a34a', borderColor: '#15803d', color: '#ffffff',
+                                              fontWeight: 800, display: 'flex', alignItems: 'center', gap: 5
+                                            }}
+                                          >
+                                            <Check size={13} />
+                                            <span>Setujui Void</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="btn btn-sm btn-danger text-white"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleRejectVoid(order);
+                                            }}
+                                            title="Tolak Permohonan Void"
+                                            style={{
+                                              fontSize: 11.5, padding: '4px 8px', height: 32,
+                                              background: '#ef4444', borderColor: '#dc2626', color: '#ffffff',
+                                              fontWeight: 800, display: 'flex', alignItems: 'center', gap: 4
+                                            }}
+                                          >
+                                            <X size={13} />
+                                            <span>Tolak</span>
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <span className="badge badge-warning" style={{ fontSize: 11, padding: '6px 10px', fontWeight: 700 }}>
+                                          ⏳ Menunggu Manajer
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <button
+                                        type="button"
+                                        className="btn btn-sm btn-outline"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleReprintOrder(order);
+                                        }}
+                                        title="Cetak Ulang Struk Kasir Lengkap"
+                                        style={{ fontSize: 11.5, padding: '4px 10px', height: 32, display: 'flex', alignItems: 'center', gap: 5 }}
+                                      >
+                                        <Printer size={13} />
+                                        <span>Struk</span>
+                                      </button>
+
+                                      {order.status === 'PAID' && (
+                                        <button
+                                          type="button"
+                                          className="btn btn-sm"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setVoidPaidModal({
+                                              open: true,
+                                              order: order,
+                                              reason: '',
+                                              submitting: false,
+                                            });
+                                          }}
+                                          title="Batalkan / Void transaksi yang sudah lunas ini"
+                                          style={{
+                                            fontSize: 11.5,
+                                            padding: '4px 8px',
+                                            height: 32,
+                                            color: '#fb7185',
+                                            border: '1px solid rgba(244, 63, 94, 0.3)',
+                                            background: 'rgba(244, 63, 94, 0.1)',
+                                            fontWeight: 700,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 4
+                                          }}
+                                        >
+                                          <RotateCcw size={12} />
+                                          <span>Void Nota</span>
+                                        </button>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Expanded Items Table */}
+                              {isExpanded && (
+                                <div style={{ padding: '14px 18px', background: 'rgba(0, 0, 0, 0.2)' }}>
+                                  <div className="table-wrap">
+                                    <table>
+                                      <thead>
+                                        <tr>
+                                          <th>Menu / Item</th>
+                                          <th className="right">Harga Satuan</th>
+                                          <th className="right">Qty</th>
+                                          <th className="right">Subtotal</th>
+                                          <th className="right">Diskon</th>
+                                          <th className="right">Total</th>
+                                          <th>Catatan</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {order.items.map((it, itIdx) => (
+                                          <tr key={it.id || itIdx}>
+                                            <td style={{ fontWeight: 600 }}>
+                                              <div>{it.menu?.name}</div>
+                                              {it.modifiers && it.modifiers.length > 0 && (
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                                                  {it.modifiers.map((m, mIdx) => (
+                                                    <span key={mIdx} style={{
+                                                      fontSize: 10,
+                                                      background: 'rgba(139, 92, 246, 0.15)',
+                                                      color: '#c4b5fd',
+                                                      border: '1px solid rgba(139, 92, 246, 0.25)',
+                                                      padding: '1px 5px',
+                                                      borderRadius: 4
+                                                    }}>
+                                                      {m.name} {Number(m.price) > 0 && `(+${rupiah(m.price)})`}
+                                                    </span>
+                                                  ))}
+                                                </div>
+                                              )}
+                                            </td>
+                                            <td className="mono right" style={{ fontSize: 12 }}>
+                                              {rupiah(it.menu?.price || it.total_price / it.qty)}
+                                            </td>
+                                            <td className="mono right">{it.qty}</td>
+                                            <td className="mono right" style={{ fontSize: 12 }}>
+                                              {rupiah(it.subtotal || it.total_price)}
+                                            </td>
+                                            <td className="mono right" style={{ fontSize: 12, color: it.discount_amount > 0 ? '#f87171' : 'inherit' }}>
+                                              {it.discount_amount > 0 ? `-${rupiah(it.discount_amount)}` : '—'}
+                                            </td>
+                                            <td className="mono right" style={{ fontWeight: 700, color: isCancelled ? '#94a3b8' : 'var(--ok)', textDecoration: isCancelled ? 'line-through' : 'none' }}>
+                                              {rupiah(it.total_price)}
+                                            </td>
+                                            <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                              {it.notes || '—'}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           ) : historyViewMode === 'grouped' ? (
             /* GROUPED VIEW: PER NOTA / ORDER */
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {filteredGroupedHistory.map((order) => {
                 const isExpanded = Boolean(expandedHistoryOrders[order.order_number]);
+                const isCancelled = order.status === 'CANCELLED';
+                const isVoidPending = order.status === 'VOID_PENDING';
+
                 return (
                   <div
                     key={order.order_number}
                     style={{
-                      background: 'rgba(255, 255, 255, 0.02)',
-                      border: '1px solid var(--border)',
+                      background: isCancelled ? 'rgba(244, 63, 94, 0.04)' : isVoidPending ? 'rgba(245, 158, 11, 0.05)' : 'rgba(255, 255, 255, 0.02)',
+                      border: isCancelled ? '1px solid rgba(244, 63, 94, 0.3)' : isVoidPending ? '1.5px solid rgba(245, 158, 11, 0.45)' : '1px solid var(--border)',
                       borderRadius: 12,
                       overflow: 'hidden',
                       transition: 'all 0.2s ease',
@@ -2553,7 +3672,7 @@ export default function POS() {
                           width: 28, height: 28, borderRadius: 6,
                           background: 'rgba(255, 255, 255, 0.06)',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          color: 'var(--accent-bright)',
+                          color: isCancelled ? '#fb7185' : isVoidPending ? '#fbbf24' : 'var(--accent-bright)',
                           transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
                           transition: 'transform 0.2s ease'
                         }}>
@@ -2562,8 +3681,42 @@ export default function POS() {
 
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                            <span className="mono" style={{ fontSize: 14.5, fontWeight: 800, color: 'var(--accent-bright)' }}>
+                            <span className="mono" style={{ fontSize: 14.5, fontWeight: 800, color: isCancelled ? '#fb7185' : isVoidPending ? '#fbbf24' : 'var(--accent-bright)' }}>
                               #{order.order_number}
+                            </span>
+                            <span
+                              className="badge"
+                              style={{
+                                fontSize: 11,
+                                fontWeight: 700,
+                                background: 'rgba(99, 102, 241, 0.15)',
+                                color: '#a5b4fc',
+                                border: '1px solid rgba(99, 102, 241, 0.35)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4
+                              }}
+                              title={`Sesi Shift: ${order.shift_name || 'Reguler'} (ID: ${order.shift_id || '-'})`}
+                            >
+                              <Layers size={11} />
+                              <span>{order.shift_name || 'Shift'} {order.shift_id ? `(#${order.shift_id})` : ''}</span>
+                            </span>
+                            <span
+                              className="badge"
+                              style={{
+                                fontSize: 11,
+                                fontWeight: 700,
+                                background: 'rgba(245, 158, 11, 0.15)',
+                                color: '#fde047',
+                                border: '1px solid rgba(245, 158, 11, 0.35)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4
+                              }}
+                              title={`Petugas Kasir: ${order.cashier_name || 'Kasir'}`}
+                            >
+                              <User size={11} />
+                              <span>{order.cashier_name || 'Kasir'}</span>
                             </span>
                             <span
                               className={`badge ${order.payment_method === 'GRAB' ? 'badge-success' : 'badge-neutral'}`}
@@ -2575,8 +3728,15 @@ export default function POS() {
                             >
                               {order.payment_method || 'CASH'}
                             </span>
-                            <span className={`badge ${order.status === 'PAID' ? 'badge-success' : 'badge-warning'}`} style={{ fontSize: 10.5 }}>
-                              {order.status === 'PAID' ? 'LUNAS' : 'HOLD'}
+                            <span
+                              className={`badge ${isCancelled ? 'badge-danger' : isVoidPending ? 'badge-warning' : (order.status === 'PAID' ? 'badge-success' : 'badge-warning')}`}
+                              style={{
+                                fontSize: 10.5,
+                                fontWeight: 800,
+                                ...(isCancelled ? { background: 'rgba(244, 63, 94, 0.2)', color: '#fb7185', borderColor: '#f43f5e' } : isVoidPending ? { background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', borderColor: '#f59e0b' } : {})
+                              }}
+                            >
+                              {isCancelled ? '✕ DIBATALKAN (VOID)' : isVoidPending ? '⏳ MENUNGGU APPROVAL VOID' : (order.status === 'PAID' ? '✓ LUNAS' : '⏳ HOLD')}
                             </span>
                             {order.is_urgent_note && (
                               <span className="badge badge-danger" style={{ fontSize: 10.5 }}>
@@ -2592,15 +3752,67 @@ export default function POS() {
                             <span>{order.created_at ? formatLocalDisplay(order.created_at, true) : order.date}</span>
                             <span>Kasir: <strong style={{ color: '#ffffff' }}>{order.cashier_name}</strong></span>
                             <span><strong>{order.items.length}</strong> menu ({order.total_qty} porsi)</span>
-                            {order.notes && <span style={{ color: 'var(--text-muted)' }}>*{order.notes}</span>}
+                            {order.notes && !isCancelled && !isVoidPending && <span style={{ color: 'var(--text-muted)' }}>*{order.notes}</span>}
                           </div>
+
+                          {/* VOID PENDING Audit Banner */}
+                          {isVoidPending && (
+                            <div style={{
+                              marginTop: 6,
+                              padding: '6px 10px',
+                              background: 'rgba(245, 158, 11, 0.12)',
+                              border: '1px dashed rgba(245, 158, 11, 0.4)',
+                              borderRadius: 6,
+                              fontSize: 11.5,
+                              color: '#fde68a',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 8,
+                              flexWrap: 'wrap'
+                            }}>
+                              <span style={{ fontWeight: 800, color: '#fbbf24' }}>⏳ PERMOHONAN VOID:</span>
+                              <span>"{order.cancellation_reason || order.notes || 'Permohonan void oleh kasir'}"</span>
+                              {order.void_requested_by_name && <span>· Diajukan oleh: <strong style={{ color: '#fff' }}>{order.void_requested_by_name}</strong></span>}
+                              {order.void_requested_at && <span>({formatLocalDisplay(order.void_requested_at, true)})</span>}
+                              <span style={{ fontSize: 10.5, color: '#fbbf24', fontStyle: 'italic', display: 'block', width: '100%', marginTop: 2 }}>
+                                * Bahan baku resep terkunci akan dikembalikan ke Kartu Stok begitu disetujui Manajer/Owner.
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Cancellation Audit Banner if VOID */}
+                          {isCancelled && (
+                            <div style={{
+                              marginTop: 6,
+                              padding: '4px 8px',
+                              background: 'rgba(244, 63, 94, 0.12)',
+                              border: '1px dashed rgba(244, 63, 94, 0.35)',
+                              borderRadius: 6,
+                              fontSize: 11,
+                              color: '#fda4af',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              flexWrap: 'wrap'
+                            }}>
+                              <span style={{ fontWeight: 800, color: '#fb7185' }}>⚠️ ALASAN VOID:</span>
+                              <span>"{order.cancellation_reason || order.notes || 'Pembatalan transaksi'}"</span>
+                              {order.cancelled_by_name && <span>· Disetujui/Dibatalkan oleh: <strong style={{ color: '#fff' }}>{order.cancelled_by_name}</strong></span>}
+                              {order.cancelled_at && <span>({formatLocalDisplay(order.cancelled_at, true)})</span>}
+                            </div>
+                          )}
                         </div>
                       </div>
 
                       {/* Right: Total Price + Action Buttons */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <div style={{ textAlign: 'right' }}>
-                          <div className="mono" style={{ fontSize: 16, fontWeight: 800, color: 'var(--ok)' }}>
+                          <div className="mono" style={{
+                            fontSize: 16,
+                            fontWeight: 800,
+                            color: isCancelled ? '#94a3b8' : isVoidPending ? '#fbbf24' : 'var(--ok)',
+                            textDecoration: isCancelled ? 'line-through' : 'none'
+                          }}>
                             {rupiah(order.total_price)}
                           </div>
                           {order.discount_amount > 0 && (
@@ -2610,19 +3822,126 @@ export default function POS() {
                           )}
                         </div>
 
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-outline"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleReprintOrder(order);
-                          }}
-                          title="Cetak Ulang Struk Kasir Lengkap"
-                          style={{ fontSize: 11.5, padding: '4px 10px', height: 32, display: 'flex', alignItems: 'center', gap: 5 }}
-                        >
-                          <Printer size={13} />
-                          <span>Struk</span>
-                        </button>
+                        {isCancelled ? (
+                          <button
+                            type="button"
+                            className="btn btn-sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePrintVoidReceipt(order);
+                            }}
+                            title="Cetak Ulang Struk Pembatalan (Struk VOID)"
+                            style={{
+                              fontSize: 11.5,
+                              padding: '4px 10px',
+                              height: 32,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              background: 'rgba(244, 63, 94, 0.15)',
+                              border: '1px solid rgba(244, 63, 94, 0.4)',
+                              color: '#fb7185',
+                              fontWeight: 700
+                            }}
+                          >
+                            <Printer size={13} />
+                            <span>Struk Void</span>
+                          </button>
+                        ) : isVoidPending ? (
+                          /* VOID PENDING ACTIONS: APPROVAL FOR MANAGERS / NOTICE FOR CASHIERS */
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            {isOwnerOrManager ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm text-white"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleApproveVoid(order);
+                                  }}
+                                  title="Setujui Pembatalan & Kembalikan Bahan Baku Resep ke Stok"
+                                  style={{
+                                    fontSize: 11.5, padding: '4px 10px', height: 32,
+                                    background: '#16a34a', borderColor: '#15803d', color: '#ffffff',
+                                    fontWeight: 800, display: 'flex', alignItems: 'center', gap: 5
+                                  }}
+                                >
+                                  <Check size={13} />
+                                  <span>Setujui Void</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-danger text-white"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRejectVoid(order);
+                                  }}
+                                  title="Tolak Permohonan Void"
+                                  style={{
+                                    fontSize: 11.5, padding: '4px 8px', height: 32,
+                                    background: '#ef4444', borderColor: '#dc2626', color: '#ffffff',
+                                    fontWeight: 800, display: 'flex', alignItems: 'center', gap: 4
+                                  }}
+                                >
+                                  <X size={13} />
+                                  <span>Tolak</span>
+                                </button>
+                              </>
+                            ) : (
+                              <span className="badge badge-warning" style={{ fontSize: 11, padding: '6px 10px', fontWeight: 700 }}>
+                                ⏳ Menunggu Manajer
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleReprintOrder(order);
+                              }}
+                              title="Cetak Ulang Struk Kasir Lengkap"
+                              style={{ fontSize: 11.5, padding: '4px 10px', height: 32, display: 'flex', alignItems: 'center', gap: 5 }}
+                            >
+                              <Printer size={13} />
+                              <span>Struk</span>
+                            </button>
+
+                            {order.status === 'PAID' && (
+                              <button
+                                type="button"
+                                className="btn btn-sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setVoidPaidModal({
+                                    open: true,
+                                    order: order,
+                                    reason: '',
+                                    submitting: false,
+                                  });
+                                }}
+                                title="Batalkan / Void transaksi yang sudah lunas ini"
+                                style={{
+                                  fontSize: 11.5,
+                                  padding: '4px 8px',
+                                  height: 32,
+                                  color: '#fb7185',
+                                  border: '1px solid rgba(244, 63, 94, 0.3)',
+                                  background: 'rgba(244, 63, 94, 0.1)',
+                                  fontWeight: 700,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 4
+                                }}
+                              >
+                                <RotateCcw size={12} />
+                                <span>Void Nota</span>
+                              </button>
+                            )}
+                          </>
+                        )}
                       </div>
                     </div>
 
@@ -2674,7 +3993,7 @@ export default function POS() {
                                   <td className="mono right" style={{ fontSize: 12, color: it.discount_amount > 0 ? '#f87171' : 'inherit' }}>
                                     {it.discount_amount > 0 ? `-${rupiah(it.discount_amount)}` : '—'}
                                   </td>
-                                  <td className="mono right" style={{ fontWeight: 700, color: 'var(--ok)' }}>
+                                  <td className="mono right" style={{ fontWeight: 700, color: isCancelled ? '#94a3b8' : 'var(--ok)', textDecoration: isCancelled ? 'line-through' : 'none' }}>
                                     {rupiah(it.total_price)}
                                   </td>
                                   <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>
@@ -2698,84 +4017,268 @@ export default function POS() {
                 <thead>
                   <tr>
                     <th>No. Order</th>
-                    <th>Tanggal</th>
+                    <th>Tanggal & Jam</th>
+                    <th>Sesi Shift</th>
+                    <th>Kasir</th>
+                    <th>Status</th>
                     <th>Menu</th>
                     <th className="right">Qty</th>
                     <th className="right">Total</th>
                     <th>Metode</th>
                     <th>Pelanggan</th>
-                    <th>Kasir</th>
                     <th className="center">Aksi</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredFlatTransactions.map(t => (
-                    <tr key={t.id}>
-                      <td className="mono" style={{ fontSize: 12, color: 'var(--accent-bright)', fontWeight: 600 }}>
-                        {t.order_number || `TRX-${t.id}`}
-                      </td>
-                      <td className="mono" style={{ fontSize: 12 }}>{t.date}</td>
-                      <td style={{ fontWeight: 500 }}>
-                        <div>{t.menu?.name}</div>
-                        {t.modifiers && t.modifiers.length > 0 && (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
-                            {t.modifiers.map((m, mIdx) => (
-                              <span key={mIdx} style={{
-                                fontSize: 10,
-                                background: 'rgba(139, 92, 246, 0.15)',
-                                color: '#c4b5fd',
-                                border: '1px solid rgba(139, 92, 246, 0.25)',
-                                padding: '1px 5px',
-                                borderRadius: 4,
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 3
-                              }}>
-                                <span>{m.name}</span>
-                                {Number(m.price) > 0 && <strong style={{ color: '#a78bfa' }}>+{rupiah(m.price)}</strong>}
-                              </span>
-                            ))}
+                  {filteredFlatTransactions.map(t => {
+                    const isTrxCancelled = t.status === 'CANCELLED';
+                    return (
+                      <tr key={t.id} style={{ background: isTrxCancelled ? 'rgba(244, 63, 94, 0.04)' : undefined }}>
+                        <td className="mono" style={{ fontSize: 12, color: isTrxCancelled ? '#fb7185' : 'var(--accent-bright)', fontWeight: 600 }}>
+                          {t.order_number || `TRX-${t.id}`}
+                        </td>
+                        <td className="mono" style={{ fontSize: 11.5 }}>
+                          {t.created_at ? formatLocalDisplay(t.created_at, true) : t.date}
+                        </td>
+                        <td>
+                          <span className="badge" style={{ fontSize: 11, background: 'rgba(99, 102, 241, 0.15)', color: '#a5b4fc', border: '1px solid rgba(99, 102, 241, 0.3)' }}>
+                            🏷️ {t.shift?.shift_name || (t.shift_id ? `Shift #${t.shift_id}` : 'Reguler')}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="badge" style={{ fontSize: 11, background: 'rgba(245, 158, 11, 0.15)', color: '#fde047', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+                            👤 {t.user?.name || '-'}
+                          </span>
+                        </td>
+                        <td>
+                          <span className={`badge ${isTrxCancelled ? 'badge-danger' : (t.status === 'PAID' ? 'badge-success' : 'badge-warning')}`} style={{ fontSize: 10 }}>
+                            {isTrxCancelled ? 'VOID' : (t.status === 'PAID' ? 'LUNAS' : 'HOLD')}
+                          </span>
+                        </td>
+                        <td style={{ fontWeight: 500 }}>
+                          <div>{t.menu?.name}</div>
+                          {t.modifiers && t.modifiers.length > 0 && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                              {t.modifiers.map((m, mIdx) => (
+                                <span key={mIdx} style={{
+                                  fontSize: 10,
+                                  background: 'rgba(139, 92, 246, 0.15)',
+                                  color: '#c4b5fd',
+                                  border: '1px solid rgba(139, 92, 246, 0.25)',
+                                  padding: '1px 5px',
+                                  borderRadius: 4,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 3
+                                }}>
+                                  <span>{m.name}</span>
+                                  {Number(m.price) > 0 && <strong style={{ color: '#a78bfa' }}>+{rupiah(m.price)}</strong>}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {t.notes && (
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>*{t.notes}</div>
+                          )}
+                        </td>
+                        <td className="mono right">{t.qty}</td>
+                        <td className="mono right" style={{ color: isTrxCancelled ? '#94a3b8' : 'var(--ok)', fontWeight: 600, textDecoration: isTrxCancelled ? 'line-through' : 'none' }}>
+                          {rupiah(t.total_price)}
+                        </td>
+                        <td>
+                          <span
+                            className={`badge ${t.payment_method === 'GRAB' ? 'badge-success' : 'badge-neutral'}`}
+                            style={{
+                              fontSize: 11,
+                              ...(t.payment_method === 'GRAB' ? { background: '#00B14F', color: '#ffffff', borderColor: '#00B14F' } : {})
+                            }}
+                          >
+                            {t.payment_method || 'CASH'}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="badge badge-info" style={{ fontSize: 11 }}>
+                            {t.customer_name || 'Pelanggan Umum'}
+                          </span>
+                        </td>
+                        <td className="center">
+                          <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
+                            {isTrxCancelled ? (
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => handlePrintVoidReceipt(t)}
+                                title="Cetak Ulang Struk Void"
+                                style={{ padding: '4px 8px', color: '#fb7185' }}
+                              >
+                                <Printer size={13} style={{ marginRight: 4 }} /> Struk Void
+                              </button>
+                            ) : (
+                              <>
+                                <button
+                                  className="btn btn-ghost btn-sm"
+                                  onClick={() => handleReprint(t)}
+                                  title="Cetak Ulang Struk"
+                                  style={{ padding: '4px 8px' }}
+                                >
+                                  <Printer size={13} style={{ marginRight: 4 }} /> Struk
+                                </button>
+                                {t.status === 'PAID' && (
+                                  <button
+                                    className="btn btn-ghost btn-sm"
+                                    onClick={() => setVoidPaidModal({ open: true, order: t, reason: '', submitting: false })}
+                                    title="Void Transaksi"
+                                    style={{ padding: '4px 6px', color: '#fb7185' }}
+                                  >
+                                    <RotateCcw size={12} />
+                                  </button>
+                                )}
+                              </>
+                            )}
                           </div>
-                        )}
-                        {t.notes && (
-                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>*{t.notes}</div>
-                        )}
-                      </td>
-                      <td className="mono right">{t.qty}</td>
-                      <td className="mono right" style={{ color: 'var(--ok)', fontWeight: 600 }}>{rupiah(t.total_price)}</td>
-                      <td>
-                        <span
-                          className={`badge ${t.payment_method === 'GRAB' ? 'badge-success' : 'badge-neutral'}`}
-                          style={{
-                            fontSize: 11,
-                            ...(t.payment_method === 'GRAB' ? { background: '#00B14F', color: '#ffffff', borderColor: '#00B14F' } : {})
-                          }}
-                        >
-                          {t.payment_method || 'CASH'}
-                        </span>
-                      </td>
-                      <td>
-                        <span className="badge badge-info" style={{ fontSize: 11 }}>
-                          {t.customer_name || 'Pelanggan Umum'}
-                        </span>
-                      </td>
-                      <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{t.user?.name || '-'}</td>
-                      <td className="center">
-                        <button
-                          className="btn btn-ghost btn-sm"
-                          onClick={() => handleReprint(t)}
-                          title="Cetak Ulang Struk"
-                          style={{ padding: '4px 8px' }}
-                        >
-                          <Printer size={13} style={{ marginRight: 4 }} /> Struk
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           )}
+        </div>
+      ) : !activeShift?.shift ? (
+        /* ========================================================
+          LOCKED POS CASHIER VIEW (SHIFT NOT OPEN)
+         ======================================================== */
+        <div className="card fade-in" style={{
+          padding: '60px 24px',
+          margin: '20px auto',
+          maxWidth: 720,
+          textAlign: 'center',
+          background: 'linear-gradient(180deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.9) 100%)',
+          border: '1.5px solid rgba(245, 158, 11, 0.35)',
+          borderRadius: 20,
+          boxShadow: '0 20px 50px rgba(0, 0, 0, 0.4)',
+        }}>
+          <div style={{
+            width: 84,
+            height: 84,
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.22) 0%, rgba(217, 119, 6, 0.1) 100%)',
+            border: '2px solid rgba(245, 158, 11, 0.45)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 22px',
+            boxShadow: '0 0 35px rgba(245, 158, 11, 0.3)',
+          }}>
+            <Lock size={40} color="#fbbf24" />
+          </div>
+
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '4px 14px',
+            borderRadius: 20,
+            background: 'rgba(245, 158, 11, 0.15)',
+            border: '1px solid rgba(245, 158, 11, 0.4)',
+            color: '#fbbf24',
+            fontSize: 12,
+            fontWeight: 800,
+            marginBottom: 16,
+            textTransform: 'uppercase',
+            letterSpacing: 0.5,
+          }}>
+            <AlertTriangle size={14} /> Sesi Kasir Belum Dibuka
+          </div>
+
+          <h2 style={{ fontSize: 24, fontWeight: 800, color: '#ffffff', marginBottom: 12, letterSpacing: -0.5 }}>
+            Transaksi Kasir POS Terkunci
+          </h2>
+
+          <p style={{ color: 'var(--text-secondary)', fontSize: 14, lineHeight: 1.65, maxWidth: 560, margin: '0 auto 28px' }}>
+            Transaksi penjualan dan pesanan kasir POS tidak dapat dibuka atau diproses sebelum shift kasir dibuka. Buka shift kasir terlebih dahulu untuk memulai sesi penjualan dan pencatatan laci kasir di <strong>{activeOutlet?.name || 'Cabang Terpilih'}</strong>.
+          </p>
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            gap: 14,
+            background: 'rgba(255, 255, 255, 0.03)',
+            border: '1px solid var(--border)',
+            borderRadius: 14,
+            padding: '16px 20px',
+            marginBottom: 32,
+            textAlign: 'left',
+          }}>
+            <div>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Cabang Penempatan</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#f8fafc', marginTop: 4 }}>
+                {activeOutlet?.name || 'Cabang Utama'}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Kasir yang Bertugas</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#38bdf8', marginTop: 4 }}>
+                {currentUser.name || 'Kasir'}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Tanggal Sesi</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#34d399', marginTop: 4 }}>
+                {formatLocalDisplay(orderDate) || orderDate}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleOpenQuickShiftModal}
+              style={{
+                padding: '12px 28px',
+                fontSize: 14.5,
+                fontWeight: 700,
+                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                borderColor: '#10b981',
+                boxShadow: '0 4px 20px rgba(16, 185, 129, 0.35)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
+            >
+              <Play size={16} fill="currentColor" /> Buka Shift Kasir Sekarang
+            </button>
+
+            <Link
+              to="/shift"
+              className="btn btn-secondary"
+              style={{
+                padding: '12px 20px',
+                fontSize: 14,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
+            >
+              <Calendar size={15} /> Manajemen Shift
+            </Link>
+
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => setShowHistory(true)}
+              style={{
+                padding: '12px 20px',
+                fontSize: 14,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
+            >
+              <Receipt size={15} /> Riwayat Nota
+            </button>
+          </div>
         </div>
       ) : (
         <>
@@ -2956,8 +4459,25 @@ export default function POS() {
                       >
                         {/* Badge if in cart */}
                         {cartItem && (
-                          <div className="pos-menu-badge">
-                            x{cartItem.qty}
+                          <div
+                            className="pos-menu-badge"
+                            style={
+                              cartItem.qty > status.availableServings && menu.item_type !== 'SERVICE'
+                                ? {
+                                    background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                                    color: '#11162d',
+                                    fontWeight: 900,
+                                    boxShadow: '0 2px 10px rgba(245, 158, 11, 0.6)',
+                                  }
+                                : undefined
+                            }
+                            title={
+                              cartItem.qty > status.availableServings
+                                ? `${cartItem.qty} di keranjang (${cartItem.qty - status.availableServings} porsi menggantung)`
+                                : `${cartItem.qty} di keranjang`
+                            }
+                          >
+                            x{cartItem.qty} {cartItem.qty > status.availableServings && menu.item_type !== 'SERVICE' ? '⚡' : ''}
                           </div>
                         )}
 
@@ -3488,9 +5008,24 @@ export default function POS() {
                     const status = getMenuStockStatus(item.menu);
                     const itemKey = item.cartKey || item.menu.id;
                     const effectiveUnitPrice = item.unitPrice ?? item.menu.price;
+                    const available = status.availableServings ?? 0;
+                    const hasDeficit = item.qty > available && item.menu.item_type !== 'SERVICE';
+                    const deficitQty = Math.max(0, item.qty - available);
 
                     return (
-                      <div key={itemKey} className="pos-cart-item">
+                      <div
+                        key={itemKey}
+                        className="pos-cart-item"
+                        style={
+                          hasDeficit || item.isUrgent
+                            ? {
+                                background: 'rgba(245, 158, 11, 0.08)',
+                                border: '1px solid rgba(245, 158, 11, 0.4)',
+                                borderRadius: 10,
+                              }
+                            : undefined
+                        }
+                      >
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
                           <div style={{ flex: 1, paddingRight: 8 }}>
                             <div style={{ fontWeight: 700, fontSize: 13, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -3500,17 +5035,41 @@ export default function POS() {
                                   <Gift size={10} /> BUNDLING
                                 </span>
                               )}
-                              {item.isUrgent && (
+                              {hasDeficit ? (
+                                <span style={{ fontSize: 10, color: '#fbbf24', background: 'rgba(245,158,11,0.25)', border: '1px solid rgba(245,158,11,0.5)', padding: '1px 6px', borderRadius: 4, fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                  <Zap size={10} /> NOTA URGENT ({deficitQty} KURANG)
+                                </span>
+                              ) : item.isUrgent ? (
                                 <span style={{ fontSize: 10, color: '#f59e0b', background: 'rgba(245,158,11,0.2)', border: '1px solid rgba(245,158,11,0.4)', padding: '1px 6px', borderRadius: 4, fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                                   <Zap size={10} /> NOTA URGENT
                                 </span>
-                              )}
-                              {status.isSoldOut && !item.isUrgent && (
+                              ) : null}
+                              {status.isSoldOut && !item.isUrgent && !hasDeficit && (
                                 <span style={{ fontSize: 10, color: 'var(--danger)', background: 'rgba(244,63,94,0.15)', padding: '1px 5px', borderRadius: 4 }}>
                                   Stok Habis
                                 </span>
                               )}
                             </div>
+
+                            {/* Deficit Stock Warning Details */}
+                            {hasDeficit && (
+                              <div style={{
+                                marginTop: 4,
+                                padding: '3px 7px',
+                                borderRadius: 5,
+                                background: 'rgba(245, 158, 11, 0.15)',
+                                border: '1px solid rgba(245, 158, 11, 0.3)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 5,
+                                fontSize: 11,
+                                color: '#fbbf24',
+                                fontWeight: 600,
+                              }}>
+                                <AlertTriangle size={12} style={{ color: '#f59e0b', flexShrink: 0 }} />
+                                <span>Stok fisik: <strong>{available}</strong> · Menggantung: <strong>{deficitQty} porsi</strong></span>
+                              </div>
+                            )}
 
                             {/* Bundle breakdown pills in cart */}
                             {item.menu.item_type === 'BUNDLE' && (
@@ -3768,6 +5327,34 @@ export default function POS() {
                     <span className="mono">-{rupiah(cartDiscountAmount)}</span>
                   </div>
                 )}
+                {/* Real-time Deficit Warning Box */}
+                {cartDeficitItems.length > 0 && (
+                  <div style={{
+                    marginBottom: 10,
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.16) 0%, rgba(234, 88, 12, 0.1) 100%)',
+                    border: '1px solid rgba(245, 158, 11, 0.4)',
+                    fontSize: 11.5,
+                    color: '#fbbf24',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, marginBottom: 3 }}>
+                      <AlertTriangle size={13} style={{ color: '#f59e0b', flexShrink: 0 }} />
+                      <span>Peringatan: Stok Menggantung (Nota Urgent)</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', paddingLeft: 18 }}>
+                      {cartDeficitItems.map((d, idx) => (
+                        <div key={idx} style={{ marginTop: 1 }}>
+                          • <strong style={{ color: '#ffffff' }}>{d.menu.name}</strong>: Sisa fisik {d.available} porsi, menggantung <strong style={{ color: '#fbbf24' }}>{d.deficitQty} porsi</strong>.
+                        </div>
+                      ))}
+                      <div style={{ marginTop: 4, color: '#fcd34d', fontSize: 10.5, fontStyle: 'italic' }}>
+                        *Kekurangan bahan otomatis dicatat sebagai Nota Urgent & perlu persetujuan Manager/Owner saat pelunasan.
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14, alignItems: 'baseline', paddingTop: 4, borderTop: '1px dashed rgba(255,255,255,0.08)' }}>
                   <span style={{ fontWeight: 700, fontSize: 14, color: '#ffffff' }}>
                     {appendModeBill ? 'Tambahan Tagihan:' : 'Total Tagihan:'}
@@ -3842,10 +5429,12 @@ export default function POS() {
                         padding: '12px 6px',
                         fontSize: 12.5,
                         fontWeight: 800,
-                        boxShadow: cart.length > 0 ? '0 4px 20px var(--accent-glow)' : 'none'
+                        background: cartDeficitItems.length > 0 ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' : undefined,
+                        borderColor: cartDeficitItems.length > 0 ? '#f59e0b' : undefined,
+                        boxShadow: cart.length > 0 ? (cartDeficitItems.length > 0 ? '0 4px 20px rgba(245, 158, 11, 0.4)' : '0 4px 20px var(--accent-glow)') : 'none'
                       }}
                     >
-                      Bayar ({rupiah(cartTotal)}) <ArrowRight size={14} style={{ marginLeft: 4 }} />
+                      {cartDeficitItems.length > 0 ? '⚡ Bayar (Nota Urgent)' : `Bayar (${rupiah(cartTotal)})`} <ArrowRight size={14} style={{ marginLeft: 4 }} />
                     </button>
                   </div>
                 )}
@@ -4390,6 +5979,35 @@ export default function POS() {
               )}
             </div>
 
+            {/* Urgent Note Deficit Alert in Payment Modal */}
+            {cartDeficitItems.length > 0 && !activeOpenBillPayment && (
+              <div style={{
+                background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.18) 0%, rgba(234, 88, 12, 0.12) 100%)',
+                border: '1px solid rgba(245, 158, 11, 0.5)',
+                borderRadius: 12,
+                padding: '10px 14px',
+                marginBottom: 12,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, fontSize: 12.5, color: '#fbbf24', marginBottom: 4 }}>
+                  <AlertTriangle size={15} style={{ color: '#f59e0b', flexShrink: 0 }} />
+                  <span>Transaksi Ini Akan Menghasilkan Nota Urgent</span>
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                  Kuantitas pesanan melebihi sisa stok fisik di cabang saat ini:
+                  <ul style={{ margin: '4px 0 0', paddingLeft: 16 }}>
+                    {cartDeficitItems.map((d, idx) => (
+                      <li key={idx} style={{ color: '#ffffff' }}>
+                        <strong>{d.menu.name}</strong>: Dipesan {d.qty} porsi (Stok fisik: {d.available}, <strong style={{ color: '#fbbf24' }}>kekurangan {d.deficitQty} porsi</strong>).
+                      </li>
+                    ))}
+                  </ul>
+                  <div style={{ marginTop: 6, fontSize: 11, color: '#fcd34d', fontStyle: 'italic' }}>
+                    ⚡ Sisa bahan yang belum terpotong otomatis dicatat sebagai Nota Urgent & memerlukan persetujuan Manager/Owner saat pelunasan nanti.
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Total Display */}
             <div style={{
               background: activeOpenBillPayment
@@ -4829,20 +6447,88 @@ export default function POS() {
                     required
                   />
                 </div>
-                <div className="form-group mb-0">
-                  <label className="form-label" style={{ fontSize: 11, fontWeight: 600 }}>DP / Uang Tunai Dibayar Sekarang (Opsional)</label>
+                <div className="form-group mb-3">
+                  <label className="form-label" style={{ fontSize: 11, fontWeight: 600 }}>DP / Uang Muka Dibayar Sekarang (Opsional)</label>
                   <input
                     type="number"
                     className="form-control mono"
                     value={cashReceived}
                     onChange={e => setCashReceived(e.target.value)}
-                    placeholder="0 (Kosongkan/Isi 0 jika Full Kasbon)"
+                    placeholder="0 (Kosongkan / Isi 0 jika Full Kasbon)"
                     style={{ fontSize: 13, background: 'rgba(0,0,0,0.3)' }}
                   />
                   <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>
                     Sisa kasbon yang dicatat: <strong style={{ color: '#fbbf24' }}>{rupiah(Math.max(0, payableTotal - (Number(cashReceived) || 0)))}</strong>
                   </div>
                 </div>
+
+                {/* DP Payment Method Selection (Shown only when DP > 0) */}
+                {Number(cashReceived) > 0 && (
+                  <div style={{
+                    marginTop: 10,
+                    padding: '12px',
+                    borderRadius: 10,
+                    background: 'rgba(0,0,0,0.25)',
+                    border: '1px solid rgba(245, 158, 11, 0.25)'
+                  }}>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: '#fef08a', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <CreditCard size={14} /> Metode Pembayaran DP ({rupiah(Number(cashReceived))}):
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 8 }}>
+                      {[
+                        { key: 'CASH', label: 'Tunai', icon: Banknote },
+                        { key: 'TRANSFER', label: 'Transfer', icon: CreditCard },
+                        { key: 'QRIS', label: 'QRIS', icon: QrCode },
+                        { key: 'DEBIT', label: 'Debit/EDC', icon: CreditCard },
+                      ].map(m => {
+                        const Icon = m.icon;
+                        const active = dpPaymentMethod === m.key;
+                        return (
+                          <button
+                            key={m.key}
+                            type="button"
+                            onClick={() => setDpPaymentMethod(m.key)}
+                            style={{
+                              padding: '8px 4px',
+                              borderRadius: 8,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              gap: 4,
+                              border: '1px solid',
+                              borderColor: active ? '#f59e0b' : 'rgba(255,255,255,0.1)',
+                              background: active ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' : 'rgba(255,255,255,0.04)',
+                              color: active ? '#000000' : '#ffffff',
+                              fontWeight: active ? 800 : 500,
+                              fontSize: 11,
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            <Icon size={15} />
+                            {m.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {dpPaymentMethod !== 'CASH' && (
+                      <div className="form-group mb-0">
+                        <label className="form-label" style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
+                          No. Referensi / Bank / Catatan DP (Opsional)
+                        </label>
+                        <input
+                          type="text"
+                          className="form-control form-control-sm"
+                          value={dpReferenceNo}
+                          onChange={e => setDpReferenceNo(e.target.value)}
+                          placeholder="Contoh: Trf BCA / EDC Mandiri / QRIS Gopay"
+                          style={{ fontSize: 12, background: 'rgba(0,0,0,0.3)' }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -5108,9 +6794,17 @@ export default function POS() {
                 {(completedOrder.payment_method === 'KASBON' || completedOrder.payment_method === 'PIUTANG') && (
                   <>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5 }}>
-                      <span>DP / Tunai Dibayar:</span>
+                      <span>
+                        DP Dibayar ({completedOrder.dp_payment_method === 'TRANSFER' ? 'Transfer' : completedOrder.dp_payment_method === 'QRIS' ? 'QRIS' : completedOrder.dp_payment_method === 'DEBIT' ? 'Debit/EDC' : 'Tunai'}):
+                      </span>
                       <span>{Number(completedOrder.amount_paid) > 0 ? rupiah(completedOrder.amount_paid) : 'Rp0 (Full Kasbon)'}</span>
                     </div>
+                    {completedOrder.dp_reference_no && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9.5, opacity: 0.8 }}>
+                        <span>Ref DP:</span>
+                        <span>{completedOrder.dp_reference_no}</span>
+                      </div>
+                    )}
                     <div style={{
                       display: 'flex',
                       justifyContent: 'space-between',
@@ -5547,7 +7241,7 @@ export default function POS() {
               <button
                 type="button"
                 className="btn btn-primary"
-                onClick={() => printElement('printable-kitchen-chit', `Kitchen Chit - ${kitchenChitModal.bill.order_number || ''}`, { isThermal: true, pageSize: '80mm auto' })}
+                onClick={() => printElement('printable-kitchen-chit', `Kitchen Chit - ${kitchenChitModal.bill.order_number || ''}`, { isThermal: true, paperWidth: '80mm' })}
                 style={{ flex: 1.5, justifyContent: 'center', fontWeight: 800, background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)' }}
               >
                 <Printer size={15} style={{ marginRight: 6 }} /> Cetak ke Dapur
@@ -5667,7 +7361,7 @@ export default function POS() {
               <button
                 type="button"
                 className="btn btn-primary"
-                onClick={() => printElement('printable-prebill', `Pre-Bill - ${prebillModal.bill.order_number || ''}`, { isThermal: true, pageSize: '80mm auto' })}
+                onClick={() => printElement('printable-prebill', `Pre-Bill - ${prebillModal.bill.order_number || ''}`, { isThermal: true, paperWidth: '80mm' })}
                 style={{ flex: 1.5, justifyContent: 'center', fontWeight: 800 }}
               >
                 <Printer size={15} style={{ marginRight: 6 }} /> Cetak Lembar Tagihan
@@ -5729,10 +7423,10 @@ export default function POS() {
               </button>
               <button
                 type="button"
-                className="btn btn-danger"
+                className="btn btn-danger text-white"
                 onClick={handleConfirmCancelBill}
                 disabled={cancelBillModal.submitting}
-                style={{ flex: 1.5, justifyContent: 'center', fontWeight: 800 }}
+                style={{ flex: 1.5, justifyContent: 'center', fontWeight: 800, background: '#ef4444', borderColor: '#dc2626', color: '#ffffff' }}
               >
                 {cancelBillModal.submitting ? 'Membatalkan...' : 'Ya, Batalkan Tagihan'}
               </button>
@@ -5740,6 +7434,328 @@ export default function POS() {
           </div>
         </div>
       )}
+
+      {/* ========================================================
+          MODAL VOID TRANSAKSI SELESAI (APPROVAL MANAGER / OWNER)
+         ======================================================== */}
+      {voidPaidModal.open && voidPaidModal.order && (
+        <div className="modal-overlay" onClick={() => setVoidPaidModal({ open: false, order: null, reason: '', submitting: false })}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <div style={{
+                width: 44, height: 44, borderRadius: 12,
+                background: 'rgba(244, 63, 94, 0.15)',
+                border: '1px solid rgba(244, 63, 94, 0.35)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#fb7185', flexShrink: 0
+              }}>
+                <RotateCcw size={22} />
+              </div>
+              <div>
+                <h3 style={{ fontSize: 16, fontWeight: 800, color: '#ffffff', margin: 0 }}>
+                  Void / Batalkan Nota Transaksi
+                </h3>
+                <span className="mono" style={{ fontSize: 12, color: 'var(--accent-bright)' }}>
+                  #{voidPaidModal.order.order_number || voidPaidModal.order.id} · {rupiah(voidPaidModal.order.total_price)}
+                </span>
+              </div>
+            </div>
+
+            {/* Approval Context Banner */}
+            {isOwnerOrManager ? (
+              <div style={{
+                display: 'flex', alignItems: 'flex-start', gap: 10,
+                background: 'rgba(16, 185, 129, 0.12)',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+                borderRadius: 8, padding: '10px 12px', marginBottom: 14,
+                fontSize: 12, color: '#6ee7b7'
+              }}>
+                <ShieldCheck size={20} style={{ color: '#10b981', flexShrink: 0, marginTop: 1 }} />
+                <div>
+                  <strong style={{ color: '#ffffff' }}>Otorisasi Manajer / Owner: {currentUser.name || 'Manager'}</strong>
+                  <div style={{ fontSize: 11.5, color: '#a7f3d0', marginTop: 2, lineHeight: 1.4 }}>
+                    Anda memiliki hak otorisasi penuh. Menyetujui permohonan ini akan <strong>langsung membatalkan transaksi dan mengembalikan seluruh stok bahan baku ke Kartu Stok (ADJUSTMENT_IN)</strong>.
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div style={{
+                background: 'rgba(245, 158, 11, 0.1)',
+                border: '1px solid rgba(245, 158, 11, 0.3)',
+                borderRadius: 8, padding: '10px 12px', marginBottom: 14,
+                fontSize: 11.5, color: '#fde68a', lineHeight: 1.4
+              }}>
+                <div style={{ fontWeight: 800, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
+                  <ShieldAlert size={14} /> SOP Persetujuan Void Nota:
+                </div>
+                <div>
+                  Permohonan pembatalan nota ini akan otomatis diteruskan ke <strong>Halaman Persetujuan Manajer / Owner</strong>. Stok bahan baku resep di Kartu Stok akan dikembalikan begitu permohonan disetujui.
+                </div>
+              </div>
+            )}
+
+            {/* Reason input */}
+            <div className="form-group mb-3">
+              <label className="form-label" style={{ fontWeight: 700, fontSize: 12 }}>
+                Alasan Pembatalan / Void Nota <span style={{ color: 'var(--danger)' }}>*</span>
+              </label>
+              <textarea
+                className="form-control"
+                rows={3}
+                placeholder="Contoh: Tamu membatalkan pesanan / Salah ketik nominal / Double order kasir..."
+                value={voidPaidModal.reason}
+                onChange={e => setVoidPaidModal(p => ({ ...p, reason: e.target.value }))}
+                style={{ fontSize: 12.5 }}
+                autoFocus
+                required
+              />
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setVoidPaidModal({ open: false, order: null, reason: '', submitting: false });
+                }}
+                style={{ flex: 1, justifyContent: 'center' }}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger text-white"
+                onClick={handleConfirmVoidPaidOrder}
+                disabled={voidPaidModal.submitting || !voidPaidModal.reason.trim()}
+                style={{ flex: 1.6, justifyContent: 'center', fontWeight: 800, background: '#ef4444', borderColor: '#dc2626', color: '#ffffff' }}
+              >
+                {voidPaidModal.submitting
+                  ? 'Mengirim Permohonan...'
+                  : isOwnerOrManager
+                    ? 'Ya, Setujui & Void Transaksi'
+                    : 'Kirim Permohonan Void ke Manajer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL VOID RECEIPT: PREVIEW & CETAK NOTA DIBATALKAN (STRUK VOID)
+         ======================================================== */}
+      {voidReceiptModal.open && voidReceiptModal.order && (
+        <div className="modal-overlay" onClick={() => setVoidReceiptModal({ open: false, order: null })}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{
+                  fontSize: 12,
+                  fontWeight: 800,
+                  background: 'rgba(244, 63, 94, 0.15)',
+                  border: '1px solid rgba(244, 63, 94, 0.35)',
+                  color: '#fb7185',
+                  padding: '3px 8px',
+                  borderRadius: 6
+                }}>
+                  STRUK VOID
+                </span>
+                <strong style={{ color: '#ffffff', fontSize: 14 }}>
+                  {voidReceiptModal.order.order_number}
+                </strong>
+              </div>
+              <button
+                className="btn btn-ghost btn-icon"
+                onClick={() => setVoidReceiptModal({ open: false, order: null })}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* THERMAL VOID RECEIPT DISPLAY */}
+            <div id="printable-void-thermal-receipt" className="thermal-receipt-preview" style={{
+              background: '#fff',
+              color: '#000',
+              padding: '16px 14px',
+              borderRadius: 8,
+              fontFamily: 'monospace',
+              fontSize: 11,
+              lineHeight: 1.35,
+              boxShadow: '0 4px 15px rgba(0,0,0,0.4)',
+              border: '2px solid #ef4444'
+            }}>
+              {/* Header */}
+              <div style={{ textAlign: 'center', marginBottom: 10 }}>
+                <div style={{ fontWeight: 900, fontSize: 16, letterSpacing: '0.05em' }}>
+                  MOVA POS
+                </div>
+                <div style={{ fontSize: 9.5, opacity: 0.8 }}>
+                  Outlet: {voidReceiptModal.order.outlet_name || activeShift?.shift?.outlet?.name || 'Cabang Utama'}
+                </div>
+                <div style={{
+                  margin: '8px 0 4px',
+                  padding: '4px 6px',
+                  border: '2px dashed #000',
+                  fontWeight: 900,
+                  fontSize: 12,
+                  letterSpacing: '0.05em',
+                  textTransform: 'uppercase'
+                }}>
+                  *** NOTA DIBATALKAN (VOID) ***
+                </div>
+                <div style={{ fontSize: 9, fontWeight: 700, color: '#b91c1c' }}>
+                  STATUS: TRANSAKSI DIBATALKAN / VOID
+                </div>
+              </div>
+
+              <div style={{ borderBottom: '1px dashed #000', margin: '6px 0' }} />
+
+              {/* Order & Cancellation Meta */}
+              <div style={{ fontSize: 10.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>No. Nota:</span>
+                  <strong>{voidReceiptModal.order.order_number}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Tgl Order:</span>
+                  <span>{voidReceiptModal.order.date || '-'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Waktu Void:</span>
+                  <strong>{voidReceiptModal.order.cancelled_at ? formatLocalDisplay(voidReceiptModal.order.cancelled_at, true) : new Date().toLocaleString('id-ID')}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Dibatalkan Oleh:</span>
+                  <strong>{voidReceiptModal.order.cancelled_by_name || currentUser.name || 'Kasir'}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Kasir Transaksi:</span>
+                  <span>{voidReceiptModal.order.cashier_name || 'Kasir'}</span>
+                </div>
+                {voidReceiptModal.order.customer_name && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Pelanggan:</span>
+                    <span>{voidReceiptModal.order.customer_name}</span>
+                  </div>
+                )}
+                {voidReceiptModal.order.table_number && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Meja:</span>
+                    <span>Meja {voidReceiptModal.order.table_number}</span>
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Metode Bayar:</span>
+                  <span>{voidReceiptModal.order.payment_method || 'CASH'}</span>
+                </div>
+              </div>
+
+              <div style={{ borderBottom: '1px dashed #000', margin: '6px 0' }} />
+
+              {/* Alasan Pembatalan Banner */}
+              <div style={{
+                background: '#f4f4f4',
+                border: '1px solid #000',
+                padding: '4px 6px',
+                margin: '4px 0',
+                fontSize: 10
+              }}>
+                <strong>ALASAN VOID:</strong>
+                <div style={{ marginTop: 2, fontStyle: 'italic' }}>
+                  "{voidReceiptModal.order.cancellation_reason || 'Pembatalan transaksi oleh kasir/manager'}"
+                </div>
+              </div>
+
+              <div style={{ borderBottom: '1px dashed #000', margin: '6px 0' }} />
+
+              {/* Items List */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {(voidReceiptModal.order.items || []).map((it, idx) => (
+                  <div key={idx}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5 }}>
+                      <span><strong>{it.qty}x</strong> {it.menu_name}</span>
+                      <span style={{ textDecoration: 'line-through' }}>{rupiah(it.total_price)}</span>
+                    </div>
+                    {it.modifiers && it.modifiers.length > 0 && (
+                      <div style={{ fontSize: 9, paddingLeft: 8, opacity: 0.85 }}>
+                        {it.modifiers.map((m, mIdx) => (
+                          <span key={mIdx} style={{ marginRight: 4 }}>+{m.name}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ borderBottom: '1px dashed #000', margin: '6px 0' }} />
+
+              {/* Totals */}
+              <div style={{ fontSize: 10.5, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Subtotal Item:</span>
+                  <span style={{ textDecoration: 'line-through' }}>{rupiah(voidReceiptModal.order.subtotal || voidReceiptModal.order.total_price)}</span>
+                </div>
+                {Number(voidReceiptModal.order.discount_amount || 0) > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Diskon:</span>
+                    <span>-{rupiah(voidReceiptModal.order.discount_amount)}</span>
+                  </div>
+                )}
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontWeight: 900,
+                  fontSize: 12,
+                  borderTop: '1px solid #000',
+                  paddingTop: 4,
+                  marginTop: 2
+                }}>
+                  <span>TOTAL DIBATALKAN:</span>
+                  <span style={{ textDecoration: 'line-through' }}>{rupiah(voidReceiptModal.order.total_price)}</span>
+                </div>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontWeight: 900,
+                  fontSize: 11,
+                  color: '#b91c1c'
+                }}>
+                  <span>PENGEMBALIAN ({voidReceiptModal.order.payment_method || 'TUNAI'}):</span>
+                  <span>{rupiah(voidReceiptModal.order.total_price)}</span>
+                </div>
+              </div>
+
+              <div style={{ borderBottom: '1px dashed #000', margin: '8px 0' }} />
+
+              {/* Footer Audit Notice */}
+              <div style={{ textAlign: 'center', fontSize: 9, lineHeight: 1.3, opacity: 0.9 }}>
+                <div>* DOKUMEN BUKTI SAH PEMBATALAN TRANSAKSI *</div>
+                <div>Stok bahan baku & buku kas telah disesuaikan kembali secara otomatis.</div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => setVoidReceiptModal({ open: false, order: null })}
+                style={{ flex: 1, justifyContent: 'center' }}
+              >
+                Tutup
+              </button>
+              <button
+                className="btn btn-danger text-white"
+                onClick={doPrintVoidReceipt}
+                style={{ flex: 1.2, justifyContent: 'center', fontWeight: 800, background: '#ef4444', borderColor: '#dc2626', color: '#ffffff' }}
+              >
+                <Printer size={15} style={{ marginRight: 6, color: '#ffffff' }} /> Cetak Struk Void
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {/* ========================================================
           MODAL 7: PILIH VARIAN & MODIFIER (LEVEL, SAUS, TOPPING)
@@ -7030,6 +9046,323 @@ export default function POS() {
                   }}
                 >
                   {quickMemberModal.saving ? 'Mendaftarkan...' : 'Simpan & Pilih Member'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Modal Buka Shift Kasir Cepat (Quick Open Shift di POS) */}
+      {quickOpenShiftModal && (
+        <div className="modal-backdrop" onClick={() => setQuickOpenShiftModal(false)}>
+          <div
+            className="modal-card"
+            onClick={e => e.stopPropagation()}
+            style={{ maxWidth: 480, width: '92%' }}
+          >
+            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ padding: 8, borderRadius: 10, background: 'rgba(16, 185, 129, 0.15)', color: '#34d399' }}>
+                  <Play size={20} fill="currentColor" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: '#f8fafc' }}>
+                    Buka Shift Kasir
+                  </h3>
+                  <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text-secondary)' }}>
+                    Mulai sesi operasional kasir cabang {activeOutlet?.name || 'Utama'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-icon"
+                onClick={() => setQuickOpenShiftModal(false)}
+                style={{ padding: 4 }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleQuickOpenShiftSubmit}>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '18px 0' }}>
+                {/* Info Box */}
+                <div style={{
+                  padding: '12px 14px',
+                  borderRadius: 10,
+                  background: 'rgba(56, 189, 248, 0.08)',
+                  border: '1px solid rgba(56, 189, 248, 0.25)',
+                  fontSize: 12.5,
+                  color: '#bae6fd',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10
+                }}>
+                  <Store size={18} style={{ flexShrink: 0, color: '#38bdf8' }} />
+                  <div>
+                    Cabang Operasional: <strong>{activeOutlet?.name || 'Cabang Terpilih'}</strong> · Kasir: <strong>{currentUser.name || 'Kasir'}</strong>
+                  </div>
+                </div>
+
+                {/* Shift Schedule / Preset Selector if schedules exist */}
+                {shiftSchedules.length > 0 && (
+                  <div className="form-group mb-0">
+                    <label className="form-label" style={{ fontSize: 12, fontWeight: 700 }}>
+                      Pilih Template Jadwal Shift
+                    </label>
+                    <select
+                      className="form-control"
+                      value={openShiftForm.shift_schedule_id}
+                      onChange={e => {
+                        const schedId = e.target.value;
+                        const found = shiftSchedules.find(s => String(s.id) === String(schedId));
+                        setOpenShiftForm(prev => ({
+                          ...prev,
+                          shift_schedule_id: schedId,
+                          shift_name: found ? found.name : prev.shift_name,
+                        }));
+                      }}
+                      style={{ fontSize: 13 }}
+                    >
+                      <option value="">-- Shift Bebas / Kustom --</option>
+                      {shiftSchedules.map(sched => (
+                        <option key={sched.id} value={sched.id}>
+                          {sched.name} ({sched.start_time?.slice(0, 5)} - {sched.end_time?.slice(0, 5)})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Nama Shift */}
+                <div className="form-group mb-0">
+                  <label className="form-label" style={{ fontSize: 12, fontWeight: 700, color: '#f8fafc' }}>
+                    Nama Shift <span style={{ color: '#f87171' }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Contoh: Shift 1 (Pagi)"
+                    value={openShiftForm.shift_name}
+                    onChange={e => setOpenShiftForm(prev => ({ ...prev, shift_name: e.target.value }))}
+                    required
+                    style={{ fontSize: 13.5, fontWeight: 600 }}
+                  />
+
+                  {/* Quick Preset Shift Chips */}
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                    {['Shift 1 (Pagi)', 'Shift 2 (Siang/Sore)', 'Shift 3 (Malam)', 'Shift Full Day'].map(preset => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setOpenShiftForm(prev => ({ ...prev, shift_name: preset }))}
+                        className="btn btn-sm btn-outline"
+                        style={{
+                          fontSize: 11,
+                          padding: '3px 8px',
+                          background: openShiftForm.shift_name === preset ? 'rgba(56, 189, 248, 0.15)' : 'transparent',
+                          borderColor: openShiftForm.shift_name === preset ? '#38bdf8' : 'var(--border)',
+                          color: openShiftForm.shift_name === preset ? '#38bdf8' : 'var(--text-secondary)'
+                        }}
+                      >
+                        {preset}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Kas Awal / Modal Kasir */}
+                <div className="form-group mb-0">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <label className="form-label" style={{ fontSize: 12, fontWeight: 700, color: '#34d399', margin: 0 }}>
+                      💵 Modal Kas Awal di Laci Kasir (Rp) <span style={{ color: '#f87171' }}>*</span>
+                    </label>
+                    {lastClosedShift && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        style={{
+                          fontSize: 11,
+                          padding: '2px 8px',
+                          color: '#38bdf8',
+                          background: 'rgba(56, 189, 248, 0.1)',
+                          border: '1px solid rgba(56, 189, 248, 0.25)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4,
+                        }}
+                        onClick={() => setOpenShiftForm(prev => ({ ...prev, initial_cash: lastClosedShift.closing_cash }))}
+                        title="Klik untuk menyamakan modal awal dengan kas fisik closing shift sebelumnya"
+                      >
+                        <RotateCcw size={11} /> Samakan ({rupiah(lastClosedShift.closing_cash)})
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1000"
+                    className="form-control mono"
+                    placeholder="0"
+                    value={openShiftForm.initial_cash}
+                    onChange={e => setOpenShiftForm(prev => ({ ...prev, initial_cash: e.target.value }))}
+                    required
+                    style={{ fontSize: 16, fontWeight: 800, color: '#34d399' }}
+                  />
+
+                  {/* Quick Presets for Cash */}
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                    {[0, 50000, 100000, 200000, 500000].map(amt => (
+                      <button
+                        key={amt}
+                        type="button"
+                        onClick={() => setOpenShiftForm(prev => ({ ...prev, initial_cash: amt }))}
+                        className="btn btn-sm btn-outline"
+                        style={{
+                          fontSize: 11,
+                          padding: '3px 8px',
+                          background: Number(openShiftForm.initial_cash) === amt ? 'rgba(16, 185, 129, 0.15)' : 'transparent',
+                          borderColor: Number(openShiftForm.initial_cash) === amt ? '#10b981' : 'var(--border)',
+                          color: Number(openShiftForm.initial_cash) === amt ? '#34d399' : 'var(--text-secondary)'
+                        }}
+                      >
+                        {amt === 0 ? 'Tanpa Modal (Rp 0)' : rupiah(amt)}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Live Comparison Box & Alert */}
+                  {loadingLastClosed ? (
+                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 8, fontStyle: 'italic' }}>
+                      Memeriksa kas riil shift sebelumnya...
+                    </div>
+                  ) : lastClosedShift ? (() => {
+                    const inputAmt = Number(openShiftForm.initial_cash || 0);
+                    const prevRealAmt = Number(lastClosedShift.closing_cash || 0);
+                    const isMatch = inputAmt === prevRealAmt;
+                    const diff = inputAmt - prevRealAmt;
+                    const diffFormatted = diff > 0 ? `+${rupiah(diff)} (Lebih)` : `-${rupiah(Math.abs(diff))} (Kurang)`;
+
+                    return (
+                      <div style={{ marginTop: 8 }}>
+                        {isMatch ? (
+                          <div
+                            style={{
+                              padding: '8px 12px',
+                              borderRadius: 8,
+                              background: 'rgba(16, 185, 129, 0.1)',
+                              border: '1px solid rgba(16, 185, 129, 0.3)',
+                              fontSize: 12,
+                              color: '#a7f3d0',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 8,
+                            }}
+                          >
+                            <CheckCircle size={16} color="#34d399" style={{ flexShrink: 0 }} />
+                            <div>
+                              <strong>Sesuai Kas Riil:</strong> Modal awal sama dengan kas fisik closing shift sebelumnya (#{lastClosedShift.id} <strong>{lastClosedShift.shift_name}</strong>: <strong>{rupiah(prevRealAmt)}</strong>).
+                            </div>
+                          </div>
+                        ) : (
+                          <div
+                            style={{
+                              padding: '10px 14px',
+                              borderRadius: 10,
+                              background: 'rgba(245, 158, 11, 0.12)',
+                              border: '1px solid rgba(245, 158, 11, 0.4)',
+                              fontSize: 12,
+                              color: '#fde68a',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                              <AlertTriangle size={16} color="#f59e0b" style={{ flexShrink: 0 }} />
+                              <strong style={{ color: '#f59e0b', fontSize: 12.5 }}>
+                                Peringatan: Modal Awal Berbeda dari Kas Riil Shift Sebelumnya!
+                              </strong>
+                            </div>
+                            <div style={{ fontSize: 11.5, color: '#cbd5e1', lineHeight: 1.5, marginBottom: 8 }}>
+                              Kas fisik riil shift sebelumnya (#{lastClosedShift.id} <strong>{lastClosedShift.shift_name}</strong> oleh <strong>{lastClosedShift.closed_by_name || lastClosedShift.cashier_name}</strong>) adalah <strong style={{ color: '#38bdf8' }}>{rupiah(prevRealAmt)}</strong>.
+                              <br />
+                              Terdapat selisih kas sebesar <strong style={{ color: diff > 0 ? '#34d399' : '#f87171' }}>{diffFormatted}</strong>.
+                            </div>
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              style={{
+                                fontSize: 11,
+                                padding: '4px 10px',
+                                borderRadius: 6,
+                                background: 'rgba(245, 158, 11, 0.2)',
+                                color: '#fbbf24',
+                                border: '1px solid rgba(245, 158, 11, 0.4)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                fontWeight: 700,
+                              }}
+                              onClick={() => setOpenShiftForm(prev => ({ ...prev, initial_cash: prevRealAmt }))}
+                            >
+                              👉 Gunakan Kas Riil Shift Sebelumnya ({rupiah(prevRealAmt)})
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })() : (
+                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 8 }}>
+                      ℹ️ Belum ada riwayat closing shift sebelumnya di cabang ini.
+                    </div>
+                  )}
+                </div>
+
+                {/* Catatan Sesi */}
+                <div className="form-group mb-0">
+                  <label className="form-label" style={{ fontSize: 12, fontWeight: 600 }}>
+                    Catatan Shift (Opsional)
+                  </label>
+                  <textarea
+                    className="form-control"
+                    rows="2"
+                    placeholder="Contoh: Kasir buka pukul 08:00, uang kembalian pecahan 5rb dan 10rb siap."
+                    value={openShiftForm.notes}
+                    onChange={e => setOpenShiftForm(prev => ({ ...prev, notes: e.target.value }))}
+                    style={{ fontSize: 12.5 }}
+                  />
+                </div>
+              </div>
+
+              <div className="modal-footer" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setQuickOpenShiftModal(false)}
+                  disabled={openingShift}
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={openingShift}
+                  style={{
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    borderColor: '#10b981',
+                    fontWeight: 700,
+                    minWidth: 160,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                  }}
+                >
+                  {openingShift ? (
+                    'Membuka Shift...'
+                  ) : (
+                    <>
+                      <Play size={16} fill="currentColor" /> Buka Shift & Aktifkan Kasir
+                    </>
+                  )}
                 </button>
               </div>
             </form>

@@ -123,16 +123,17 @@ export default function TransferBahan() {
   // Load all initial data
   useEffect(() => {
     loadAllData();
-  }, [period]);
+  }, [period, activeOutletId]);
 
   async function loadAllData() {
     setLoading(true);
     try {
+      const targetOutlet = activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all' ? activeOutletId : undefined;
       const [trfRes, outRes, ingRes, menuRes] = await Promise.all([
-        api.get('/transfers', { params: { from: period.from, to: period.to } }),
+        api.get('/transfers', { params: { from: period.from, to: period.to, outlet_id: targetOutlet } }),
         api.get('/outlets'),
-        api.get('/ingredients'),
-        api.get('/menus').catch(() => ({ data: [] })),
+        api.get('/ingredients', { params: { outlet_id: targetOutlet } }),
+        api.get('/menus', { params: { outlet_id: targetOutlet } }).catch(() => ({ data: [] })),
       ]);
       setTransfers(trfRes.data || []);
       setOutlets(outRes.data || []);

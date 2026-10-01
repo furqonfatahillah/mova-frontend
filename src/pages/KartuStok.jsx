@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   ScrollText, Plus, Search, Filter, ArrowUpRight, ArrowDownLeft,
-  AlertTriangle, Calendar, Printer, X, Check, RefreshCw, Eye, Store,
+  AlertTriangle, AlertOctagon, Calendar, Printer, X, Check, RefreshCw, Eye, Store,
   ArrowLeft, Building2, ChevronRight, Calculator,
   Truck, PackageCheck, CheckCircle2, ShieldCheck, Clock, ArrowRight, RotateCcw, AlertCircle,
   ShoppingBag, FileSpreadsheet, Trash2, Edit2
@@ -12,9 +12,11 @@ import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 import { ownerConfirmDialog } from '../utils/swal';
+import { printElement } from '../utils/print';
 import ImportMasterModal from '../components/ImportMasterModal';
 
 const MUTATION_TYPES = [
+  { value: 'INITIAL', label: 'Saldo Awal Fisik', sign: '+', color: '#6366f1', bg: 'rgba(99, 102, 241, 0.12)', border: 'rgba(99, 102, 241, 0.3)' },
   { value: 'PURCHASE', label: 'Pembelian (PO)', sign: '+', color: 'var(--ok)', bg: 'rgba(16, 217, 122, 0.12)', border: 'rgba(16, 217, 122, 0.3)' },
   { value: 'SALE_USAGE', label: 'Penjualan (POS)', sign: '-', color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.12)', border: 'rgba(56, 189, 248, 0.3)' },
   { value: 'WASTE', label: 'Waste / Rusak', sign: '-', color: 'var(--danger)', bg: 'rgba(255, 77, 109, 0.12)', border: 'rgba(255, 77, 109, 0.3)' },
@@ -112,6 +114,7 @@ export default function KartuStok() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [itemSearch, setItemSearch] = useState('');
   const [itemCategory, setItemCategory] = useState('ALL');
+  const [itemStatusFilter, setItemStatusFilter] = useState('ALL'); // 'ALL' | 'SAFE' | 'NEGATIVE' | 'LOW' | 'URGENT'
 
   // Stock card detail state (Level 2)
   const [ingredients, setIngredients] = useState([]);
@@ -142,6 +145,7 @@ export default function KartuStok() {
   const [typeFilter, setTypeFilter] = useState('ALL'); // 'ALL' | 'IN' | 'OUT' | type
   const [searchTerm, setSearchTerm] = useState('');
   const [showImportStockModal, setShowImportStockModal] = useState(false);
+  const [importModalType, setImportModalType] = useState('STOCK_AWAL_BAHAN'); // 'STOCK_AWAL_BAHAN' | 'STOCK_AWAL_PERLENGKAPAN'
 
   // Modal Add / Edit Mutation
   const [modalOpen, setModalOpen] = useState(false);
@@ -388,6 +392,33 @@ export default function KartuStok() {
     }, 0);
   }, [mutationForm.items]);
 
+  const negativePurchaseItems = useMemo(() => {
+    if (mutationForm.type !== 'PURCHASE') return [];
+    const targetOutlet = mutationForm.outlet_id || selectedOutletId || 1;
+    const list = [];
+    for (const it of mutationForm.items) {
+      if (!it.ingredient_id) continue;
+      const ing = ingredients.find(i => Number(i.id) === Number(it.ingredient_id));
+      if (ing) {
+        let stock = 0;
+        if (ing.outlet_stocks && ing.outlet_stocks.length > 0) {
+          const os = ing.outlet_stocks.find(s => String(s.outlet_id) === String(targetOutlet));
+          stock = os ? Number(os.stock ?? 0) : 0;
+        } else {
+          stock = Number(ing.current_stock ?? ing.stock ?? 0);
+        }
+        if (stock < -0.0001) {
+          list.push({
+            name: ing.name,
+            stock,
+            unit: ing.unit_pakai || 'unit'
+          });
+        }
+      }
+    }
+    return list;
+  }, [mutationForm.type, mutationForm.outlet_id, selectedOutletId, mutationForm.items, ingredients]);
+
   async function handleAddMutation(e) {
     e.preventDefault();
     if (!mutationForm.items || mutationForm.items.length === 0) {
@@ -410,6 +441,32 @@ export default function KartuStok() {
     if (mutationForm.type === 'PURCHASE' && mutationForm.payment_type === 'HUTANG' && !mutationForm.supplier_name?.trim()) {
       toast.error('Harap masukkan nama supplier untuk transaksi hutang/tempo');
       return;
+    }
+
+    // CEK STOK MINUS PADA PEMBELIAN (PURCHASE)
+    if (mutationForm.type === 'PURCHASE') {
+      const targetOutlet = mutationForm.outlet_id || selectedOutletId || 1;
+      const negativeItems = [];
+      for (const it of mutationForm.items) {
+        const ing = ingredients.find(i => Number(i.id) === Number(it.ingredient_id));
+        if (ing) {
+          let stock = 0;
+          if (ing.outlet_stocks && ing.outlet_stocks.length > 0) {
+            const os = ing.outlet_stocks.find(s => String(s.outlet_id) === String(targetOutlet));
+            stock = os ? Number(os.stock ?? 0) : 0;
+          } else {
+            stock = Number(ing.current_stock ?? ing.stock ?? 0);
+          }
+          if (stock < -0.0001) {
+            negativeItems.push(`${ing.name} (Stok: ${stock} ${ing.unit_pakai || 'unit'})`);
+          }
+        }
+      }
+
+      if (negativeItems.length > 0) {
+        toast.error(`Stok bahan baku berstatus MINUS:\n• ${negativeItems.join('\n• ')}\n\nAnda harus melakukan Penyesuaian Stok (Adjust Stock / Opname) terlebih dahulu sebelum melakukan pembelian!`, { duration: 7000 });
+        return;
+      }
     }
 
     // JIKA SEDANG EDIT DATA MUTASI EKSISTING (PUT)
@@ -566,7 +623,15 @@ export default function KartuStok() {
   }
 
   function handlePrint() {
-    window.print();
+    const isDetail = Boolean(selectedIngId && stockCard);
+    const title = isDetail
+      ? `Kartu Stok - ${selectedIng?.name || stockCard?.ingredient?.name || 'Bahan'} (${selectedIng?.code || stockCard?.ingredient?.code || ''}) - ${stockCard?.outlet_name || currentOutlet?.name || 'Gudang'}`
+      : `Rekapitulasi Saldo Stok Gudang - ${currentOutlet?.name || 'Semua Cabang'}`;
+
+    printElement('printable-stock-card', title, {
+      orientation: 'landscape',
+      margin: '8mm 8mm'
+    });
   }
 
   function openItemStockCard(ingId) {
@@ -844,19 +909,33 @@ export default function KartuStok() {
     return groups;
   }, [ingredients, mutationForm.outlet_id, selectedOutletId]);
 
-  // Hitung jumlah item persediaan per klasifikasi (Semua, Bahan, Perlengkapan, Bahan Setengah Jadi)
-  const categoryCounts = useMemo(() => {
-    const counts = { ALL: 0, BAHAN: 0, PERLENGKAPAN: 0, SEMI_FINISHED: 0 };
+  // Hitung jumlah item persediaan per klasifikasi dan status stok (Semua, Bahan, Perlengkapan, Olahan, Aman, Minus, Menipis, Urgent)
+  const filterCounts = useMemo(() => {
+    const counts = {
+      ALL: 0,
+      BAHAN: 0,
+      PERLENGKAPAN: 0,
+      SEMI_FINISHED: 0,
+      SAFE: 0,
+      NEGATIVE: 0,
+      LOW: 0,
+      URGENT: 0,
+    };
     if (!summaryData?.items) return counts;
     counts.ALL = summaryData.items.length;
     for (const it of summaryData.items) {
       const cls = getItemClassification(it);
-      if (counts[cls] !== undefined) {
-        counts[cls]++;
-      }
+      if (counts[cls] !== undefined) counts[cls]++;
+      if (Number(it.stok_akhir) > 0) counts.SAFE++;
+      if (Number(it.stok_akhir) < 0) counts.NEGATIVE++;
+      if (it.is_low && Number(it.stok_akhir) >= 0) counts.LOW++;
+      if (it.has_urgent_note || (it.pending_urgent_qty && Number(it.pending_urgent_qty) > 0)) counts.URGENT++;
     }
     return counts;
   }, [summaryData]);
+
+  // Backward compatibility alias for category counts
+  const categoryCounts = filterCounts;
 
   // Filtered in-transit transfers
   const filteredInTransitList = useMemo(() => {
@@ -876,23 +955,32 @@ export default function KartuStok() {
     });
   }, [inTransitList, inTransitSearch]);
 
-  // Filtered summary items (Berdasarkan filter klasifikasi & pencarian teks)
+  // Filtered summary items (Berdasarkan filter klasifikasi, status stok & pencarian teks)
   const filteredSummaryItems = useMemo(() => {
     if (!summaryData?.items) return [];
     return summaryData.items.filter(it => {
+      // 1. Filter Kategori
       if (itemCategory !== 'ALL') {
         const cls = getItemClassification(it);
         if (cls !== itemCategory) return false;
       }
+
+      // 2. Filter Status Stok
+      if (itemStatusFilter === 'SAFE' && Number(it.stok_akhir) <= 0) return false;
+      if (itemStatusFilter === 'NEGATIVE' && Number(it.stok_akhir) >= 0) return false;
+      if (itemStatusFilter === 'LOW' && (!it.is_low || Number(it.stok_akhir) < 0)) return false;
+      if (itemStatusFilter === 'URGENT' && !it.has_urgent_note && (!it.pending_urgent_qty || Number(it.pending_urgent_qty) <= 0)) return false;
+
+      // 3. Search query
       if (itemSearch.trim()) {
         const q = itemSearch.toLowerCase();
-        const matchName = it.name.toLowerCase().includes(q);
-        const matchCode = it.code.toLowerCase().includes(q);
+        const matchName = (it.name || '').toLowerCase().includes(q);
+        const matchCode = (it.code || '').toLowerCase().includes(q);
         if (!matchName && !matchCode) return false;
       }
       return true;
     });
-  }, [summaryData, itemCategory, itemSearch]);
+  }, [summaryData, itemCategory, itemStatusFilter, itemSearch]);
 
   // Filtered detail rows
   const filteredDetailRows = useMemo(() => {
@@ -972,11 +1060,25 @@ export default function KartuStok() {
             )}
             <button
               className="btn btn-secondary"
-              onClick={() => setShowImportStockModal(true)}
-              title="Import Stock Awal Fisik Per Gudang / Cabang (.xlsx)"
-              style={{ color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.4)', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              onClick={() => {
+                setImportModalType('STOCK_AWAL_BAHAN');
+                setShowImportStockModal(true);
+              }}
+              title="Import Saldo Awal Fisik Bahan Baku Per Gudang / Cabang (.xlsx)"
+              style={{ color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.4)', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}
             >
-              <FileSpreadsheet size={14} /> Import Stock Awal Gudang
+              <FileSpreadsheet size={14} /> Import Saldo Awal Bahan
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={() => {
+                setImportModalType('STOCK_AWAL_PERLENGKAPAN');
+                setShowImportStockModal(true);
+              }}
+              title="Import Saldo Awal Fisik Perlengkapan & Packaging Per Gudang / Cabang (.xlsx)"
+              style={{ color: '#34d399', borderColor: 'rgba(52, 211, 153, 0.4)', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}
+            >
+              <FileSpreadsheet size={14} /> Import Saldo Awal Perlengkapan
             </button>
             <button className="btn btn-secondary" onClick={handlePrint} title="Cetak Laporan">
               <Printer size={14} /> Cetak
@@ -1111,733 +1213,1055 @@ export default function KartuStok() {
           {/* VIEW 1: DAFTAR BAHAN BAKU DI GUDANG INI (Tampil Setelah Pilih Gudang)      */}
           {/* ========================================================================= */}
           {!selectedIngId && (
-        <div className="fade-in">
-          {/* Warehouse KPI Summary Cards */}
-          <div className="stat-cards mb-5">
-            <div className="stat-card accent">
-              <div className="stat-label">Gudang / Cabang Aktif</div>
-              <div className="stat-value accent" style={{ fontSize: 18, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {currentOutlet?.name || 'Gudang Pusat'}
-              </div>
-              <div className="stat-sub">{currentOutlet?.is_main ? 'Gudang Distribusi Pusat' : 'Outlet Operasional Cabang'}</div>
-            </div>
+            <div className="fade-in">
+              {/* Warehouse KPI Summary Cards */}
+              <div className="stat-cards mb-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+                <div className="stat-card accent">
+                  <div className="stat-label">Gudang / Cabang Aktif</div>
+                  <div className="stat-value accent" style={{ fontSize: 18, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {currentOutlet?.name || 'Gudang Pusat'}
+                  </div>
+                  <div className="stat-sub">{currentOutlet?.is_main ? 'Gudang Distribusi Pusat' : 'Outlet Operasional Cabang'}</div>
+                </div>
 
-            <div className="stat-card">
-              <div className="stat-label">Total Jenis Bahan Terdata</div>
-              <div className="stat-value">
-                {summaryData?.summary?.total_items || 0} <span style={{ fontSize: 14, fontWeight: 500 }}>Bahan</span>
-              </div>
-              <div className="stat-sub">Di gudang ini untuk periode terpilih</div>
-            </div>
+                {/* 🟢 Saldo Persediaan Aman (Positif) */}
+                <div className="stat-card ok" style={{ borderLeft: '4px solid #10b981' }}>
+                  <div className="stat-label" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ fontSize: 13 }}>🟢</span> Nilai Persediaan Aman (Positif)
+                  </div>
+                  <div className="stat-value ok" style={{ color: '#34d399' }}>
+                    {rupiah(summaryData?.summary?.total_safe_valuation ?? summaryData?.summary?.total_nilai ?? 0)}
+                  </div>
+                  <div className="stat-sub">
+                    {summaryData?.summary?.total_safe_items ?? filterCounts.SAFE} bahan dengan saldo fisik positif & aman
+                  </div>
+                </div>
 
-            <div className={`stat-card ${(summaryData?.summary?.total_low_stock || 0) > 0 ? 'danger' : 'ok'}`}>
-              <div className="stat-label">Bahan Kritis / Menipis</div>
-              <div className={`stat-value ${(summaryData?.summary?.total_low_stock || 0) > 0 ? 'danger' : 'ok'}`}>
-                {summaryData?.summary?.total_low_stock || 0} <span style={{ fontSize: 14, fontWeight: 500 }}>Bahan</span>
-              </div>
-              <div className="stat-sub">
-                {(summaryData?.summary?.total_low_stock || 0) > 0 ? '⚠️ Memerlukan restock segera' : '✓ Seluruh stok di atas batas minimum'}
-              </div>
-            </div>
+                {/* 🔴 Saldo Defisit / Stok Minus (Minus Rp) */}
+                <div
+                  className={`stat-card ${(summaryData?.summary?.total_negative_items || 0) > 0 ? 'danger' : ''}`}
+                  style={{
+                    borderLeft: '4px solid #ef4444',
+                    background: (summaryData?.summary?.total_negative_items || 0) > 0 ? 'rgba(239, 68, 68, 0.08)' : undefined,
+                    borderColor: (summaryData?.summary?.total_negative_items || 0) > 0 ? 'rgba(239, 68, 68, 0.35)' : undefined
+                  }}
+                >
+                  <div className="stat-label" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ fontSize: 13 }}>🔴</span> Defisit Stok Minus (Nota Urgent)
+                  </div>
+                  <div className="stat-value danger" style={{ color: '#f87171' }}>
+                    {rupiah(summaryData?.summary?.total_deficit_valuation || 0)}
+                  </div>
+                  <div className="stat-sub" style={{ color: (summaryData?.summary?.total_negative_items || 0) > 0 ? '#fca5a5' : undefined }}>
+                    {(summaryData?.summary?.total_negative_items || 0) > 0
+                      ? `⚠️ ${summaryData?.summary?.total_negative_items} bahan minus (terpisah dari saldo persediaan aman)`
+                      : '✓ Tidak ada defisit stok minus'}
+                  </div>
+                </div>
 
-            <div className="stat-card ok">
-              <div className="stat-label">Total Nilai Persediaan</div>
-              <div className="stat-value ok">
-                {rupiah(summaryData?.summary?.total_nilai || 0)}
-              </div>
-              <div className="stat-sub">Estimasi nilai stok akhir berjalan</div>
-            </div>
-          </div>
+                {/* 🔷 Net Saldo Buku Persediaan */}
+                <div className="stat-card" style={{ borderLeft: '4px solid #6366f1' }}>
+                  <div className="stat-label" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ fontSize: 13 }}>🔷</span> Net Saldo Buku Persediaan
+                  </div>
+                  <div className="stat-value" style={{ color: '#818cf8' }}>
+                    {rupiah(summaryData?.summary?.net_total_valuation ?? summaryData?.summary?.total_nilai ?? 0)}
+                  </div>
+                  <div className="stat-sub">
+                    Saldo Bersih Persediaan = Positif + Minus
+                  </div>
+                </div>
 
-          {/* Items Filter & Search Bar */}
-          <div className="card mb-4" style={{ padding: '12px 18px' }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', justifyContent: 'space-between' }}>
-              {/* Category Filter Pills */}
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {STOCK_CARD_CATEGORIES.map(cat => {
-                  const count = categoryCounts[cat.key] ?? 0;
-                  const isActive = itemCategory === cat.key;
-                  return (
+                {/* ⚠️ Bahan Kritis / Menipis */}
+                <div className={`stat-card ${(summaryData?.summary?.total_low_stock || 0) > 0 ? 'warn' : 'ok'}`}>
+                  <div className="stat-label">Bahan Kritis / Menipis</div>
+                  <div className={`stat-value ${(summaryData?.summary?.total_low_stock || 0) > 0 ? 'warn' : 'ok'}`} style={{ color: (summaryData?.summary?.total_low_stock || 0) > 0 ? '#fbbf24' : '#34d399' }}>
+                    {summaryData?.summary?.total_low_stock || 0} <span style={{ fontSize: 14, fontWeight: 500 }}>Bahan</span>
+                  </div>
+                  <div className="stat-sub">
+                    {(summaryData?.summary?.total_low_stock || 0) > 0 ? '⚠️ Memerlukan restock segera' : '✓ Seluruh stok di atas batas minimum'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Items Filter & Search Bar */}
+              <div className="card mb-4" style={{ padding: '12px 18px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {/* Row 1: Category Filter & Search Box */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', justifyContent: 'space-between' }}>
+                    {/* Category Filter Pills */}
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)', marginRight: 4, fontWeight: 600 }}>Kategori:</span>
+                      {STOCK_CARD_CATEGORIES.map(cat => {
+                        const count = filterCounts[cat.key] ?? 0;
+                        const isActive = itemCategory === cat.key;
+                        return (
+                          <button
+                            key={cat.key}
+                            className={`btn btn-sm ${isActive ? 'btn-primary' : 'btn-ghost'}`}
+                            onClick={() => setItemCategory(cat.key)}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 7,
+                              fontWeight: isActive ? 600 : 500,
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            <span>{cat.label}</span>
+                            <span
+                              style={{
+                                fontSize: 10.5,
+                                padding: '1px 6px',
+                                borderRadius: 10,
+                                background: isActive ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.08)',
+                                color: isActive ? '#ffffff' : 'var(--text-secondary)',
+                                fontWeight: 700,
+                              }}
+                            >
+                              {count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Search Box */}
+                    <div style={{ position: 'relative', width: 260 }}>
+                      <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="Cari nama atau kode bahan..."
+                        style={{ paddingLeft: 30, paddingRight: 10, fontSize: 12.5, height: 34 }}
+                        value={itemSearch}
+                        onChange={e => setItemSearch(e.target.value)}
+                      />
+                      {itemSearch && (
+                        <button
+                          onClick={() => setItemSearch('')}
+                          style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+                        >
+                          <X size={12} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Row 2: Status & Deficit Filter Quick Tabs */}
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', paddingTop: 8, borderTop: '1px dashed var(--border)' }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)', marginRight: 4, fontWeight: 600 }}>Filter Status Stok:</span>
                     <button
-                      key={cat.key}
-                      className={`btn btn-sm ${isActive ? 'btn-primary' : 'btn-ghost'}`}
-                      onClick={() => setItemCategory(cat.key)}
+                      className={`btn btn-sm ${itemStatusFilter === 'ALL' ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() => setItemStatusFilter('ALL')}
+                      style={{ fontSize: 11.5 }}
+                    >
+                      Semua Status ({summaryData?.items?.length || 0})
+                    </button>
+                    <button
+                      className={`btn btn-sm ${itemStatusFilter === 'SAFE' ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() => setItemStatusFilter('SAFE')}
                       style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 7,
-                        fontWeight: isActive ? 600 : 500,
-                        transition: 'all 0.15s ease',
+                        fontSize: 11.5,
+                        color: itemStatusFilter !== 'SAFE' ? '#34d399' : undefined,
+                        borderColor: itemStatusFilter === 'SAFE' ? undefined : 'rgba(16, 185, 129, 0.3)',
+                        background: itemStatusFilter === 'SAFE' ? undefined : 'rgba(16, 185, 129, 0.06)'
                       }}
                     >
-                      <span>{cat.label}</span>
-                      <span
+                      🟢 Stok Aman ({filterCounts.SAFE})
+                    </button>
+                    <button
+                      className={`btn btn-sm ${itemStatusFilter === 'NEGATIVE' ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() => setItemStatusFilter('NEGATIVE')}
+                      style={{
+                        fontSize: 11.5,
+                        color: itemStatusFilter !== 'NEGATIVE' ? '#f87171' : undefined,
+                        borderColor: itemStatusFilter === 'NEGATIVE' ? undefined : 'rgba(239, 68, 68, 0.4)',
+                        background: itemStatusFilter === 'NEGATIVE' ? 'var(--danger)' : 'rgba(239, 68, 68, 0.12)',
+                        fontWeight: 700
+                      }}
+                    >
+                      🔴 Stok Minus / Defisit ({filterCounts.NEGATIVE})
+                    </button>
+                    <button
+                      className={`btn btn-sm ${itemStatusFilter === 'LOW' ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() => setItemStatusFilter('LOW')}
+                      style={{
+                        fontSize: 11.5,
+                        color: itemStatusFilter !== 'LOW' ? '#fbbf24' : undefined,
+                      }}
+                    >
+                      🟡 Stok Menipis ({filterCounts.LOW})
+                    </button>
+                    {filterCounts.URGENT > 0 && (
+                      <button
+                        className={`btn btn-sm ${itemStatusFilter === 'URGENT' ? 'btn-primary' : 'btn-ghost'}`}
+                        onClick={() => setItemStatusFilter('URGENT')}
                         style={{
-                          fontSize: 10.5,
-                          padding: '1px 6px',
-                          borderRadius: 10,
-                          background: isActive ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.08)',
-                          color: isActive ? '#ffffff' : 'var(--text-secondary)',
-                          fontWeight: 700,
+                          fontSize: 11.5,
+                          color: itemStatusFilter !== 'URGENT' ? '#fb923c' : undefined,
+                          borderColor: 'rgba(251, 146, 60, 0.3)',
+                          background: itemStatusFilter === 'URGENT' ? undefined : 'rgba(251, 146, 60, 0.08)'
                         }}
                       >
-                        {count}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Search Box */}
-              <div style={{ position: 'relative', width: 260 }}>
-                <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                <input
-                  type="text"
-                  className="form-control"
-                  placeholder="Cari nama atau kode bahan..."
-                  style={{ paddingLeft: 30, paddingRight: 10, fontSize: 12.5, height: 34 }}
-                  value={itemSearch}
-                  onChange={e => setItemSearch(e.target.value)}
-                />
-                {itemSearch && (
-                  <button
-                    onClick={() => setItemSearch('')}
-                    style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
-                  >
-                    <X size={12} />
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Items Summary Table */}
-          <div className="card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 15 }}>
-                  {itemCategory === 'PERLENGKAPAN' ? 'Daftar Perlengkapan & Packaging' :
-                   itemCategory === 'SEMI_FINISHED' ? 'Daftar Bahan Setengah Jadi (Prep / Olahan)' :
-                   itemCategory === 'BAHAN' ? 'Daftar Bahan Baku Mentah' :
-                   'Daftar Persediaan & Bahan'} di {currentOutlet?.name || 'Gudang'}
+                        🏷️ Ada Nota Urgent ({filterCounts.URGENT})
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <span>Periode: <strong>{period.from}</strong> s/d <strong>{period.to}</strong> · Klik nama item untuk membuka kartu stok & buku besar mutasi lengkap.</span>
-                  <span className="pill pill-accent" style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 4 }} title="Saldo Awal stok fisik otomatis tersimpan dan terakumulasi dari Master Bahan & Master Perlengkapan">
-                    ✓ Saldo Awal Terintegrasi dari Master Bahan & Perlengkapan
+              </div>
+
+              {/* Items Summary Table */}
+              <div className="card">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>
+                      {itemCategory === 'PERLENGKAPAN' ? 'Daftar Perlengkapan & Packaging' :
+                        itemCategory === 'SEMI_FINISHED' ? 'Daftar Bahan Setengah Jadi (Prep / Olahan)' :
+                          itemCategory === 'BAHAN' ? 'Daftar Bahan Baku Mentah' :
+                            'Daftar Persediaan & Bahan'} di {currentOutlet?.name || 'Gudang'}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span>Periode: <strong>{period.from}</strong> s/d <strong>{period.to}</strong> · Klik nama item untuk membuka kartu stok & buku besar mutasi lengkap.</span>
+                      <span className="pill pill-accent" style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 4 }} title="Saldo Awal stok fisik otomatis tersimpan dan terakumulasi dari Master Bahan & Master Perlengkapan">
+                        ✓ Saldo Awal Terintegrasi dari Master Bahan & Perlengkapan
+                      </span>
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                    Menampilkan <strong>{filteredSummaryItems.length}</strong> item
                   </span>
                 </div>
-              </div>
-              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                Menampilkan <strong>{filteredSummaryItems.length}</strong> item
-              </span>
-            </div>
 
-            {summaryLoading ? (
-              <LoadingState />
-            ) : (
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th style={{ width: 45 }} className="center">No</th>
-                      <th style={{ width: 95 }}>Kode</th>
-                      <th style={{ minWidth: 180 }}>Nama Bahan Baku</th>
-                      <th style={{ width: 100 }}>Kategori</th>
-                      <th className="right" style={{ width: 110 }}>Stok Awal ({period.from})</th>
-                      <th className="right" style={{ width: 95 }}>Masuk (+)</th>
-                      <th className="right" style={{ width: 95 }}>Keluar (-)</th>
-                      <th className="right" style={{ width: 115 }}>Stok Akhir ({period.to})</th>
-                      <th style={{ width: 75 }}>Satuan</th>
-                      <th className="right" style={{ width: 120 }}>Harga Satuan</th>
-                      <th className="right" style={{ width: 135 }}>Nilai Stok (Rp)</th>
-                      <th className="right" style={{ width: 85 }}>Stok Min</th>
-                      <th className="center" style={{ width: 90 }}>Status</th>
-                      <th className="center" style={{ width: 115 }}>Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredSummaryItems.length === 0 ? (
-                      <tr>
-                        <td colSpan={14} style={{ textAlign: 'center', padding: '36px 0', color: 'var(--text-muted)' }}>
-                          Tidak ada item yang sesuai dengan filter atau kriteria pencarian.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredSummaryItems.map((it, idx) => {
-                        const statusClass = it.is_empty ? 'pill-danger' : (it.is_low ? 'pill-warn' : 'pill-ok');
-                        const statusLabel = it.is_empty ? 'HABIS' : (it.is_low ? 'MENIPIS' : 'AMAN');
-
-                        return (
-                          <tr
-                            key={it.id}
-                            style={{ cursor: 'pointer', transition: 'background 0.15s ease' }}
-                            onClick={() => openItemStockCard(it.id)}
-                            className="table-row-hover"
-                          >
-                            <td className="mono center" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                              {idx + 1}
-                            </td>
-                            <td className="mono" style={{ fontWeight: 600, color: 'var(--accent-bright)' }}>
-                              {it.code}
-                            </td>
-                            <td>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span style={{ fontWeight: 700, fontSize: 13, color: '#ffffff' }}>
-                                  {it.name}
-                                </span>
-                                <ArrowUpRight size={13} color="var(--accent-bright)" style={{ opacity: 0.7 }} />
-                              </div>
-                            </td>
-                            <td>
-                              {(() => {
-                                const cls = getItemClassification(it);
-                                const isPkg = cls === 'PERLENGKAPAN';
-                                const isSemi = cls === 'SEMI_FINISHED';
-                                const badgeStyle = isPkg
-                                  ? { bg: 'rgba(59, 130, 246, 0.15)', text: '#60a5fa', border: 'rgba(59, 130, 246, 0.3)', label: 'Perlengkapan' }
-                                  : isSemi
-                                  ? { bg: 'rgba(234, 179, 8, 0.15)', text: '#facc15', border: 'rgba(234, 179, 8, 0.3)', label: 'Setengah Jadi' }
-                                  : { bg: 'rgba(168, 85, 247, 0.15)', text: '#c084fc', border: 'rgba(168, 85, 247, 0.3)', label: 'Bahan' };
-
-                                return (
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                                    <span
-                                      style={{
-                                        fontSize: 10.5,
-                                        padding: '2px 7px',
-                                        borderRadius: 4,
-                                        display: 'inline-block',
-                                        width: 'fit-content',
-                                        fontWeight: 600,
-                                        background: badgeStyle.bg,
-                                        color: badgeStyle.text,
-                                        border: `1px solid ${badgeStyle.border}`,
-                                      }}
-                                    >
-                                      {badgeStyle.label}
-                                    </span>
-                                    {it.category && !['Perlengkapan', 'Bahan', 'Setengah Jadi', 'Raw', 'SEMI_FINISHED'].includes(it.category) && (
-                                      <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-                                        {it.category}
-                                      </span>
-                                    )}
-                                  </div>
-                                );
-                              })()}
-                            </td>
-                            <td className="mono right" style={{ color: 'var(--text-secondary)' }}>
-                              {num(it.stok_awal)}
-                            </td>
-                            <td className="mono right" style={{ color: it.total_masuk > 0 ? 'var(--ok)' : 'var(--text-muted)', fontWeight: it.total_masuk > 0 ? 600 : 400 }}>
-                              {it.total_masuk > 0 ? `+${num(it.total_masuk)}` : '0'}
-                            </td>
-                            <td className="mono right" style={{ color: it.total_keluar > 0 ? 'var(--danger)' : 'var(--text-muted)', fontWeight: it.total_keluar > 0 ? 600 : 400 }}>
-                              {it.total_keluar > 0 ? `-${num(it.total_keluar)}` : '0'}
-                            </td>
-                            <td className="mono right" style={{ fontWeight: 700, fontSize: 13.5, color: it.stok_akhir < 0 ? 'var(--danger)' : (it.is_low ? 'var(--warn)' : 'var(--accent-bright)') }}>
-                              {num(it.stok_akhir)}
-                            </td>
-                            <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-                              {it.unit_pakai}
-                            </td>
-                            {/* Harga Satuan */}
-                            <td className="mono right" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                              {rupiah(it.harga_satuan || (it.harga_beli && it.konversi ? it.harga_beli / it.konversi : 0))}
-                              <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 2 }}>/{it.unit_pakai}</span>
-                            </td>
-                            {/* Nilai Stok (Rp) */}
-                            <td className="mono right" style={{ fontWeight: 800, fontSize: 13, color: '#34d399' }} title="Estimasi Nilai Persediaan Stok Akhir">
-                              {rupiah(it.nilai_stok || 0)}
-                            </td>
-                            <td className="mono right" style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-                              {num(it.stok_min)}
-                            </td>
-                            <td className="center">
-                              <span className={`pill ${statusClass}`} style={{ fontSize: 10 }}>
-                                {statusLabel}
-                              </span>
-                            </td>
-                            <td className="center" onClick={e => e.stopPropagation()}>
-                              <button
-                                className="btn btn-primary btn-sm"
-                                style={{ padding: '4px 10px', fontSize: 11.5 }}
-                                onClick={() => openItemStockCard(it.id)}
-                              >
-                                <Eye size={12} /> Buka Kartu
-                              </button>
+                {summaryLoading ? (
+                  <LoadingState />
+                ) : (
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th style={{ width: 45 }} className="center">No</th>
+                          <th style={{ width: 95 }}>Kode</th>
+                          <th style={{ minWidth: 200 }}>Nama Bahan Baku</th>
+                          <th style={{ width: 100 }}>Kategori</th>
+                          <th className="right" style={{ width: 110 }}>Stok Awal ({period.from})</th>
+                          <th className="right" style={{ width: 95 }}>Masuk (+)</th>
+                          <th className="right" style={{ width: 95 }}>Keluar (-)</th>
+                          <th className="right" style={{ width: 115 }}>Stok Akhir ({period.to})</th>
+                          <th style={{ width: 75 }}>Satuan</th>
+                          <th className="right" style={{ width: 120 }}>Harga Satuan</th>
+                          <th className="right" style={{ width: 145 }}>Nilai Stok (Rp)</th>
+                          <th className="right" style={{ width: 85 }}>Stok Min</th>
+                          <th className="center" style={{ width: 110 }}>Status</th>
+                          <th className="center" style={{ width: 115 }}>Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredSummaryItems.length === 0 ? (
+                          <tr>
+                            <td colSpan={14} style={{ textAlign: 'center', padding: '36px 0', color: 'var(--text-muted)' }}>
+                              Tidak ada item yang sesuai dengan filter atau kriteria pencarian.
                             </td>
                           </tr>
+                        ) : (
+                          filteredSummaryItems.map((it, idx) => {
+                            const isNegative = Number(it.stok_akhir) < 0;
+                            const isLow = it.is_low && Number(it.stok_akhir) >= 0;
+                            const isEmpty = Number(it.stok_akhir) === 0;
+
+                            const statusClass = isNegative ? 'pill-danger' : (isEmpty ? 'pill-warn' : (isLow ? 'pill-warn' : 'pill-ok'));
+                            const statusLabel = isNegative ? 'STOK MINUS' : (isEmpty ? 'HABIS' : (isLow ? 'MENIPIS' : 'AMAN'));
+
+                            return (
+                              <tr
+                                key={it.id}
+                                style={{
+                                  cursor: 'pointer',
+                                  transition: 'background 0.15s ease',
+                                  background: isNegative ? 'rgba(239, 68, 68, 0.04)' : undefined
+                                }}
+                                onClick={() => openItemStockCard(it.id)}
+                                className="table-row-hover"
+                              >
+                                <td className="mono center" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                  {idx + 1}
+                                </td>
+                                <td className="mono" style={{ fontWeight: 600, color: isNegative ? '#f87171' : 'var(--accent-bright)' }}>
+                                  {it.code}
+                                </td>
+                                <td>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                      <span style={{ fontWeight: 700, fontSize: 13, color: isNegative ? '#fca5a5' : '#ffffff' }}>
+                                        {it.name}
+                                      </span>
+                                      <ArrowUpRight size={13} color={isNegative ? '#f87171' : 'var(--accent-bright)'} style={{ opacity: 0.7 }} />
+                                    </div>
+                                    {isNegative && (
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 1 }}>
+                                        <span
+                                          style={{
+                                            fontSize: 9.5,
+                                            padding: '1px 6px',
+                                            borderRadius: 4,
+                                            fontWeight: 700,
+                                            background: 'rgba(239, 68, 68, 0.18)',
+                                            color: '#f87171',
+                                            border: '1px solid rgba(239, 68, 68, 0.35)',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: 3,
+                                          }}
+                                        >
+                                          <AlertOctagon size={10} /> Defisit Saldo Minus
+                                        </span>
+                                      </div>
+                                    )}
+                                    {it.has_urgent_note && (
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 1 }}>
+                                        <span
+                                          style={{
+                                            fontSize: 9.5,
+                                            padding: '1px 6px',
+                                            borderRadius: 4,
+                                            fontWeight: 600,
+                                            background: 'rgba(245, 158, 11, 0.15)',
+                                            color: '#fbbf24',
+                                            border: '1px solid rgba(245, 158, 11, 0.3)',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: 3,
+                                          }}
+                                        >
+                                          🏷️ Riwayat Nota Urgent
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </td>
+                                <td>
+                                  {(() => {
+                                    const cls = getItemClassification(it);
+                                    const isPkg = cls === 'PERLENGKAPAN';
+                                    const isSemi = cls === 'SEMI_FINISHED';
+                                    const badgeStyle = isPkg
+                                      ? { bg: 'rgba(59, 130, 246, 0.15)', text: '#60a5fa', border: 'rgba(59, 130, 246, 0.3)', label: 'Perlengkapan' }
+                                      : isSemi
+                                        ? { bg: 'rgba(234, 179, 8, 0.15)', text: '#facc15', border: 'rgba(234, 179, 8, 0.3)', label: 'Setengah Jadi' }
+                                        : { bg: 'rgba(168, 85, 247, 0.15)', text: '#c084fc', border: 'rgba(168, 85, 247, 0.3)', label: 'Bahan' };
+
+                                    return (
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                        <span
+                                          style={{
+                                            fontSize: 10.5,
+                                            padding: '2px 7px',
+                                            borderRadius: 4,
+                                            display: 'inline-block',
+                                            width: 'fit-content',
+                                            fontWeight: 600,
+                                            background: badgeStyle.bg,
+                                            color: badgeStyle.text,
+                                            border: `1px solid ${badgeStyle.border}`,
+                                          }}
+                                        >
+                                          {badgeStyle.label}
+                                        </span>
+                                        {it.category && !['Perlengkapan', 'Bahan', 'Setengah Jadi', 'Raw', 'SEMI_FINISHED'].includes(it.category) && (
+                                          <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                            {it.category}
+                                          </span>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
+                                </td>
+                                <td className="mono right" style={{ color: Number(it.stok_awal) < 0 ? 'var(--danger)' : 'var(--text-secondary)' }}>
+                                  {num(it.stok_awal)}
+                                </td>
+                                <td className="mono right" style={{ color: it.total_masuk > 0 ? 'var(--ok)' : 'var(--text-muted)', fontWeight: it.total_masuk > 0 ? 600 : 400 }}>
+                                  {it.total_masuk > 0 ? `+${num(it.total_masuk)}` : '0'}
+                                </td>
+                                <td className="mono right" style={{ color: it.total_keluar > 0 ? 'var(--danger)' : 'var(--text-muted)', fontWeight: it.total_keluar > 0 ? 600 : 400 }}>
+                                  {it.total_keluar > 0 ? `-${num(it.total_keluar)}` : '0'}
+                                </td>
+                                <td className="mono right" style={{ fontWeight: 700, fontSize: 13.5, color: isNegative ? 'var(--danger)' : (isLow ? 'var(--warn)' : 'var(--accent-bright)') }}>
+                                  {num(it.stok_akhir)}
+                                </td>
+                                <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+                                  {it.unit_pakai}
+                                </td>
+                                {/* Harga Satuan */}
+                                <td className="mono right" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                                  {rupiah(it.harga_satuan || (it.harga_beli && it.konversi ? it.harga_beli / it.konversi : 0))}
+                                  <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 2 }}>/{it.unit_pakai}</span>
+                                </td>
+                                {/* Nilai Stok (Rp) */}
+                                <td className="mono right" style={{ fontWeight: 800, fontSize: 13, color: isNegative ? 'var(--danger)' : '#34d399' }} title={isNegative ? "Defisit Nilai Persediaan Stok Minus (Terpisah dari Saldo Aman)" : "Estimasi Nilai Persediaan Stok Aman"}>
+                                  {rupiah(it.nilai_stok || 0)}
+                                  {isNegative && (
+                                    <div style={{ fontSize: 9.5, color: 'var(--danger)', fontWeight: 700 }}>
+                                      Defisit Minus
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="mono right" style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+                                  {num(it.stok_min)}
+                                </td>
+                                <td className="center">
+                                  <span className={`pill ${statusClass}`} style={{ fontSize: 10 }}>
+                                    {statusLabel}
+                                  </span>
+                                </td>
+                                <td className="center" onClick={e => e.stopPropagation()}>
+                                  <button
+                                    className="btn btn-primary btn-sm"
+                                    style={{ padding: '4px 10px', fontSize: 11.5 }}
+                                    onClick={() => openItemStockCard(it.id)}
+                                  >
+                                    <Eye size={12} /> Buka Kartu
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                      {filteredSummaryItems.length > 0 && (() => {
+                        const safeItems = filteredSummaryItems.filter(x => Number(x.stok_akhir || 0) > 0);
+                        const negativeItems = filteredSummaryItems.filter(x => Number(x.stok_akhir || 0) < 0);
+                        const totalSafeVal = safeItems.reduce((acc, x) => acc + Number(x.saldo_aman_rp ?? (Number(x.stok_akhir) > 0 ? x.nilai_stok : 0) ?? 0), 0);
+                        const totalDeficitVal = negativeItems.reduce((acc, x) => acc + Number(x.saldo_minus_rp ?? (Number(x.stok_akhir) < 0 ? x.nilai_stok : 0) ?? 0), 0);
+                        const netVal = totalSafeVal + totalDeficitVal;
+
+                        return (
+                          <tfoot>
+                            {/* Summary Tier 1: Total Saldo Persediaan Aman (Positif) */}
+                            <tr style={{ background: 'rgba(16, 185, 129, 0.06)', fontWeight: 700, borderTop: '2px solid var(--border)' }}>
+                              <td colSpan={4} style={{ textAlign: 'right', padding: '9px 14px', fontSize: 12, color: '#34d399' }}>
+                                🟢 TOTAL PERSEDIAAN AMAN ({safeItems.length} ITEM):
+                              </td>
+                              <td className="mono right" style={{ color: 'var(--text-secondary)' }}>
+                                {num(safeItems.reduce((acc, x) => acc + Number(x.stok_awal || 0), 0))}
+                              </td>
+                              <td className="mono right" style={{ color: 'var(--ok)' }}>
+                                +{num(safeItems.reduce((acc, x) => acc + Number(x.total_masuk || 0), 0))}
+                              </td>
+                              <td className="mono right" style={{ color: 'var(--danger)' }}>
+                                -{num(safeItems.reduce((acc, x) => acc + Number(x.total_keluar || 0), 0))}
+                              </td>
+                              <td className="mono right" style={{ color: '#34d399', fontWeight: 800 }}>
+                                {num(safeItems.reduce((acc, x) => acc + Number(x.stok_akhir || 0), 0))}
+                              </td>
+                              <td></td>
+                              <td></td>
+                              <td className="mono right" style={{ color: '#34d399', fontSize: 13, fontWeight: 800 }}>
+                                {rupiah(totalSafeVal)}
+                              </td>
+                              <td colSpan={3} style={{ fontSize: 11, color: '#34d399', fontWeight: 600 }}>
+                                ✓ Persediaan Positif
+                              </td>
+                            </tr>
+
+                            {/* Summary Tier 2: Total Defisit Stok Minus (Hanya Tampil Jika Ada Item Minus) */}
+                            {negativeItems.length > 0 && (
+                              <tr style={{ background: 'rgba(239, 68, 68, 0.09)', fontWeight: 700, borderTop: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                                <td colSpan={4} style={{ textAlign: 'right', padding: '9px 14px', fontSize: 12, color: '#f87171' }}>
+                                  🔴 TOTAL DEFISIT STOK MINUS ({negativeItems.length} ITEM):
+                                </td>
+                                <td className="mono right" style={{ color: '#fca5a5' }}>
+                                  {num(negativeItems.reduce((acc, x) => acc + Number(x.stok_awal || 0), 0))}
+                                </td>
+                                <td className="mono right" style={{ color: 'var(--ok)' }}>
+                                  +{num(negativeItems.reduce((acc, x) => acc + Number(x.total_masuk || 0), 0))}
+                                </td>
+                                <td className="mono right" style={{ color: 'var(--danger)' }}>
+                                  -{num(negativeItems.reduce((acc, x) => acc + Number(x.total_keluar || 0), 0))}
+                                </td>
+                                <td className="mono right" style={{ color: 'var(--danger)', fontWeight: 800 }}>
+                                  {num(negativeItems.reduce((acc, x) => acc + Number(x.stok_akhir || 0), 0))}
+                                </td>
+                                <td></td>
+                                <td></td>
+                                <td className="mono right" style={{ color: 'var(--danger)', fontSize: 13, fontWeight: 800 }}>
+                                  {rupiah(totalDeficitVal)}
+                                </td>
+                                <td colSpan={3} style={{ fontSize: 11, color: '#f87171', fontWeight: 600 }}>
+                                  ⚠️ Defisit Pelunasan Nota Urgent
+                                </td>
+                              </tr>
+                            )}
+
+                            {/* Summary Tier 3: Net Total Saldo Keseluruhan */}
+                            <tr style={{ background: 'rgba(255, 255, 255, 0.04)', fontWeight: 800, borderTop: '2px solid var(--border-accent)' }}>
+                              <td colSpan={4} style={{ textAlign: 'right', padding: '10px 14px', fontSize: 12.5, color: '#818cf8' }}>
+                                🔷 NET SALDO BUKU PERSEDIAAN ({filteredSummaryItems.length} ITEM):
+                              </td>
+                              <td className="mono right" style={{ color: 'var(--text-secondary)' }}>
+                                {num(filteredSummaryItems.reduce((acc, x) => acc + Number(x.stok_awal || 0), 0))}
+                              </td>
+                              <td className="mono right" style={{ color: 'var(--ok)' }}>
+                                +{num(filteredSummaryItems.reduce((acc, x) => acc + Number(x.total_masuk || 0), 0))}
+                              </td>
+                              <td className="mono right" style={{ color: 'var(--danger)' }}>
+                                -{num(filteredSummaryItems.reduce((acc, x) => acc + Number(x.total_keluar || 0), 0))}
+                              </td>
+                              <td className="mono right" style={{ color: 'var(--accent-bright)', fontSize: 13.5 }}>
+                                {num(filteredSummaryItems.reduce((acc, x) => acc + Number(x.stok_akhir || 0), 0))}
+                              </td>
+                              <td></td>
+                              <td></td>
+                              <td className="mono right" style={{ color: '#818cf8', fontSize: 13.5, fontWeight: 800 }}>
+                                {rupiah(netVal)}
+                              </td>
+                              <td colSpan={3} style={{ fontSize: 11, color: '#a5b4fc' }}>
+                                (Aman + Defisit Minus)
+                              </td>
+                            </tr>
+                          </tfoot>
                         );
-                      })
-                    )}
-                  </tbody>
-                  {filteredSummaryItems.length > 0 && (
-                    <tfoot>
-                      <tr style={{ background: 'rgba(255, 255, 255, 0.03)', fontWeight: 700, borderTop: '2px solid var(--border)' }}>
-                        <td colSpan={4} style={{ textAlign: 'right', padding: '12px 14px', fontSize: 12.5, color: 'var(--text-secondary)' }}>
-                          TOTAL KESELURUHAN:
-                        </td>
-                        <td className="mono right" style={{ color: 'var(--text-secondary)' }}>
-                          {num(filteredSummaryItems.reduce((acc, x) => acc + Number(x.stok_awal || 0), 0))}
-                        </td>
-                        <td className="mono right" style={{ color: 'var(--ok)' }}>
-                          +{num(filteredSummaryItems.reduce((acc, x) => acc + Number(x.total_masuk || 0), 0))}
-                        </td>
-                        <td className="mono right" style={{ color: 'var(--danger)' }}>
-                          -{num(filteredSummaryItems.reduce((acc, x) => acc + Number(x.total_keluar || 0), 0))}
-                        </td>
-                        <td className="mono right" style={{ color: 'var(--accent-bright)' }}>
-                          {num(filteredSummaryItems.reduce((acc, x) => acc + Number(x.stok_akhir || 0), 0))}
-                        </td>
-                        <td></td>
-                        <td></td>
-                        <td className="mono right" style={{ color: '#34d399', fontSize: 13.5, fontWeight: 800 }}>
-                          {rupiah(filteredSummaryItems.reduce((acc, x) => acc + Number(x.nilai_stok || 0), 0))}
-                        </td>
-                        <td colSpan={3}></td>
-                      </tr>
-                    </tfoot>
-                  )}
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* VIEW 2: KARTU STOK DETAIL ITEM TERPILIH DI GUDANG & RANGE TANGGAL TERSEBUT */}
-      {/* ========================================================================= */}
-      {selectedIngId && (
-        <div className="fade-in">
-          {/* Breadcrumb & Quick Switch Bar */}
-          <div className="card mb-4" style={{ padding: '12px 18px', background: 'rgba(99, 102, 241, 0.08)', border: '1px solid var(--border-accent)' }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <button className="btn btn-secondary btn-sm" onClick={backToSummaryList} style={{ padding: '5px 10px' }}>
-                  <ArrowLeft size={13} /> Kembali ke Daftar Bahan
-                </button>
-                <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span>{currentOutlet?.name || 'Gudang'}</span>
-                  <ChevronRight size={13} color="var(--text-muted)" />
-                  <strong style={{ color: 'var(--accent-bright)' }}>{selectedIng?.name || 'Bahan'}</strong>
-                  {selectedIng && (() => {
-                    const cls = getItemClassification(selectedIng);
-                    const isPkg = cls === 'PERLENGKAPAN';
-                    const isSemi = cls === 'SEMI_FINISHED';
-                    const badgeStyle = isPkg
-                      ? { bg: 'rgba(59, 130, 246, 0.15)', text: '#60a5fa', border: 'rgba(59, 130, 246, 0.3)', label: 'Perlengkapan' }
-                      : isSemi
-                      ? { bg: 'rgba(234, 179, 8, 0.15)', text: '#facc15', border: 'rgba(234, 179, 8, 0.3)', label: 'Setengah Jadi' }
-                      : { bg: 'rgba(168, 85, 247, 0.15)', text: '#c084fc', border: 'rgba(168, 85, 247, 0.3)', label: 'Bahan' };
-                    return (
-                      <span
-                        style={{
-                          fontSize: 10,
-                          padding: '1px 6px',
-                          borderRadius: 4,
-                          fontWeight: 600,
-                          background: badgeStyle.bg,
-                          color: badgeStyle.text,
-                          border: `1px solid ${badgeStyle.border}`,
-                        }}
-                      >
-                        {badgeStyle.label}
-                      </span>
-                    );
-                  })()}
-                  <ChevronRight size={13} color="var(--text-muted)" />
-                  <span className="mono" style={{ color: 'var(--text-muted)', fontSize: 11.5 }}>{period.from} s/d {period.to}</span>
-                </div>
-              </div>
-
-              {/* Quick Ingredient Switcher Dropdown */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Pindah Bahan:</span>
-                <select
-                  className="form-control"
-                  style={{ fontSize: 12, padding: '4px 8px', maxWidth: 220 }}
-                  value={selectedIngId}
-                  onChange={e => setSelectedIngId(Number(e.target.value))}
-                >
-                  {ingredients.map(i => {
-                    const cls = getItemClassification(i);
-                    const tag = cls === 'PERLENGKAPAN' ? '[Perlengkapan] ' : (cls === 'SEMI_FINISHED' ? '[Setengah Jadi] ' : '');
-                    return (
-                      <option key={i.id} value={i.id} style={{ background: '#11162d', color: '#ffffff' }}>
-                        {tag}{i.code} - {i.name}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Summary KPI Cards for Selected Ingredient */}
-          {cardLoading ? (
-            <div className="mb-4"><LoadingState /></div>
-          ) : stockCard && (
-            <div className="stat-cards mb-5">
-              {/* Saldo Awal */}
-              <div className="stat-card accent">
-                <div className="stat-label">Saldo Awal Periode</div>
-                <div className="stat-value accent">
-                  {num(stockCard.stok_awal)} <span style={{ fontSize: 14, fontWeight: 500 }}>{stockCard.ingredient.unit_pakai}</span>
-                </div>
-                <div className="stat-sub">Per tanggal {stockCard.period.from} di {stockCard.outlet_name}</div>
-              </div>
-
-              {/* Total Masuk */}
-              <div className="stat-card ok">
-                <div className="stat-label">Total Masuk (+)</div>
-                <div className="stat-value ok">
-                  +{num(stockCard.total_masuk)} <span style={{ fontSize: 14, fontWeight: 500 }}>{stockCard.ingredient.unit_pakai}</span>
-                </div>
-                <div className="stat-sub">Pembelian: +{num(stockCard.total_pembelian)}</div>
-              </div>
-
-              {/* Total Keluar */}
-              <div className="stat-card danger">
-                <div className="stat-label">Total Keluar (-)</div>
-                <div className="stat-value danger">
-                  -{num(stockCard.total_keluar)} <span style={{ fontSize: 14, fontWeight: 500 }}>{stockCard.ingredient.unit_pakai}</span>
-                </div>
-                <div className="stat-sub">POS: {num(stockCard.total_penjualan)} · Waste: {num(stockCard.total_waste)}</div>
-              </div>
-
-              {/* Saldo Akhir */}
-              <div className={`stat-card ${stockCard.is_below_min ? 'danger' : 'ok'}`}>
-                <div className="stat-label">Saldo Akhir Berjalan</div>
-                <div className={`stat-value ${stockCard.is_below_min ? 'danger' : 'ok'}`}>
-                  {num(stockCard.stok_akhir)} <span style={{ fontSize: 14, fontWeight: 500 }}>{stockCard.ingredient.unit_pakai}</span>
-                </div>
-                <div style={{ marginTop: 4, fontWeight: 700, color: '#34d399', fontSize: 13.5 }}>
-                  ≈ {rupiah(stockCard.nilai_stok_akhir || 0)}
-                </div>
-                <div className="stat-sub" style={{ color: stockCard.is_below_min ? 'var(--danger)' : 'var(--ok)' }}>
-                  {stockCard.is_below_min ? '⚠️ Di bawah batas stok minimum' : '✓ Stok aman di atas batas minimum'}
-                </div>
+                      })()}
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
           )}
 
-          {/* Detail Filter & Search Bar */}
-          <div className="card mb-4" style={{ padding: '12px 18px' }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', justifyContent: 'space-between' }}>
-              {/* Quick Filter Buttons */}
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <button
-                  className={`btn btn-sm ${typeFilter === 'ALL' ? 'btn-primary' : 'btn-ghost'}`}
-                  onClick={() => setTypeFilter('ALL')}
-                >
-                  Semua ({stockCard?.rows?.length || 0})
-                </button>
-                <button
-                  className={`btn btn-sm ${typeFilter === 'IN' ? 'btn-primary' : 'btn-ghost'}`}
-                  onClick={() => setTypeFilter('IN')}
-                  style={{ color: typeFilter !== 'IN' ? 'var(--ok)' : undefined }}
-                >
-                  <ArrowUpRight size={12} /> Masuk Saja
-                </button>
-                <button
-                  className={`btn btn-sm ${typeFilter === 'OUT' ? 'btn-primary' : 'btn-ghost'}`}
-                  onClick={() => setTypeFilter('OUT')}
-                  style={{ color: typeFilter !== 'OUT' ? 'var(--danger)' : undefined }}
-                >
-                  <ArrowDownLeft size={12} /> Keluar Saja
-                </button>
-                <button
-                  className={`btn btn-sm ${typeFilter === 'PURCHASE' ? 'btn-primary' : 'btn-ghost'}`}
-                  onClick={() => setTypeFilter('PURCHASE')}
-                >
-                  Pembelian
-                </button>
-                <button
-                  className={`btn btn-sm ${typeFilter === 'SALE_USAGE' ? 'btn-primary' : 'btn-ghost'}`}
-                  onClick={() => setTypeFilter('SALE_USAGE')}
-                >
-                  Penjualan POS
-                </button>
-                <button
-                  className={`btn btn-sm ${typeFilter === 'WASTE' ? 'btn-primary' : 'btn-ghost'}`}
-                  onClick={() => setTypeFilter('WASTE')}
-                >
-                  Waste
-                </button>
-                <button
-                  className={`btn btn-sm ${typeFilter === 'TRANSFER_IN' ? 'btn-primary' : 'btn-ghost'}`}
-                  onClick={() => setTypeFilter('TRANSFER_IN')}
-                >
-                  Transfer Masuk
-                </button>
-                <button
-                  className={`btn btn-sm ${typeFilter === 'TRANSFER_OUT' ? 'btn-primary' : 'btn-ghost'}`}
-                  onClick={() => setTypeFilter('TRANSFER_OUT')}
-                >
-                  Transfer Keluar
-                </button>
-              </div>
+          {/* ========================================================================= */}
+          {/* VIEW 2: KARTU STOK DETAIL ITEM TERPILIH DI GUDANG & RANGE TANGGAL TERSEBUT */}
+          {/* ========================================================================= */}
+          {selectedIngId && (
+            <div className="fade-in">
+              {/* Breadcrumb & Quick Switch Bar */}
+              <div className="card mb-4" style={{ padding: '12px 18px', background: 'rgba(99, 102, 241, 0.08)', border: '1px solid var(--border-accent)' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <button className="btn btn-secondary btn-sm" onClick={backToSummaryList} style={{ padding: '5px 10px' }}>
+                      <ArrowLeft size={13} /> Kembali ke Daftar Bahan
+                    </button>
+                    <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>{currentOutlet?.name || 'Gudang'}</span>
+                      <ChevronRight size={13} color="var(--text-muted)" />
+                      <strong style={{ color: 'var(--accent-bright)' }}>{selectedIng?.name || 'Bahan'}</strong>
+                      {selectedIng && (() => {
+                        const cls = getItemClassification(selectedIng);
+                        const isPkg = cls === 'PERLENGKAPAN';
+                        const isSemi = cls === 'SEMI_FINISHED';
+                        const badgeStyle = isPkg
+                          ? { bg: 'rgba(59, 130, 246, 0.15)', text: '#60a5fa', border: 'rgba(59, 130, 246, 0.3)', label: 'Perlengkapan' }
+                          : isSemi
+                            ? { bg: 'rgba(234, 179, 8, 0.15)', text: '#facc15', border: 'rgba(234, 179, 8, 0.3)', label: 'Setengah Jadi' }
+                            : { bg: 'rgba(168, 85, 247, 0.15)', text: '#c084fc', border: 'rgba(168, 85, 247, 0.3)', label: 'Bahan' };
+                        return (
+                          <span
+                            style={{
+                              fontSize: 10,
+                              padding: '1px 6px',
+                              borderRadius: 4,
+                              fontWeight: 600,
+                              background: badgeStyle.bg,
+                              color: badgeStyle.text,
+                              border: `1px solid ${badgeStyle.border}`,
+                            }}
+                          >
+                            {badgeStyle.label}
+                          </span>
+                        );
+                      })()}
+                      <ChevronRight size={13} color="var(--text-muted)" />
+                      <span className="mono" style={{ color: 'var(--text-muted)', fontSize: 11.5 }}>{period.from} s/d {period.to}</span>
+                    </div>
+                  </div>
 
-              {/* Search Box */}
-              <div style={{ position: 'relative', width: 240 }}>
-                <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                <input
-                  type="text"
-                  className="form-control"
-                  placeholder="Cari ref / catatan..."
-                  style={{ paddingLeft: 30, paddingRight: 10, fontSize: 12, height: 32 }}
-                  value={searchTerm}
-                  onChange={e => setSearchTerm(e.target.value)}
-                />
-                {searchTerm && (
-                  <button
-                    onClick={() => setSearchTerm('')}
-                    style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
-                  >
-                    <X size={12} />
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Kartu Stok Ledger Table */}
-          <div className="card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 15 }}>
-                  Buku Besar Mutasi — {selectedIng?.name} ({selectedIng?.code})
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-                  Gudang: <strong style={{ color: 'var(--accent-bright)' }}>{stockCard?.outlet_name || currentOutlet?.name}</strong> ·
-                  Satuan Pakai: <span className="mono" style={{ color: 'var(--accent)' }}>{selectedIng?.unit_pakai}</span> ·
-                  Konversi: 1 {selectedIng?.unit_beli} = {num(selectedIng?.konversi)} {selectedIng?.unit_pakai} ·
-                  Harga Beli: <span className="mono" style={{ color: 'var(--text-primary)' }}>{rupiah(stockCard?.ingredient?.harga ?? selectedIng?.harga)}/{selectedIng?.unit_beli}</span> ·
-                  Harga Pakai: <span className="mono" style={{ color: 'var(--accent-bright)', fontWeight: 600 }}>{rupiah((stockCard?.ingredient?.harga ?? selectedIng?.harga) / (selectedIng?.konversi || 1))}/{selectedIng?.unit_pakai}</span>
+                  {/* Quick Ingredient Switcher Dropdown */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Pindah Bahan:</span>
+                    <select
+                      className="form-control"
+                      style={{ fontSize: 12, padding: '4px 8px', maxWidth: 220 }}
+                      value={selectedIngId}
+                      onChange={e => setSelectedIngId(Number(e.target.value))}
+                    >
+                      {ingredients.map(i => {
+                        const cls = getItemClassification(i);
+                        const tag = cls === 'PERLENGKAPAN' ? '[Perlengkapan] ' : (cls === 'SEMI_FINISHED' ? '[Setengah Jadi] ' : '');
+                        return (
+                          <option key={i.id} value={i.id} style={{ background: '#11162d', color: '#ffffff' }}>
+                            {tag}{i.code} - {i.name}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
                 </div>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                  Menampilkan <strong>{filteredDetailRows.length}</strong> transaksi mutasi
-                </span>
-              </div>
-            </div>
 
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th style={{ width: 40 }}>NO</th>
-                    <th style={{ width: 105 }}>TANGGAL</th>
-                    <th style={{ width: 130 }}>GUDANG / CABANG</th>
-                    <th style={{ width: 140 }}>NO. REFERENSI</th>
-                    <th>KETERANGAN / AKTIVITAS</th>
-                    <th style={{ width: 135 }}>TIPE MUTASI</th>
-                    <th className="right" style={{ width: 140 }}>HARGA SATUAN</th>
-                    <th className="right" style={{ width: 110 }}>MASUK (+)</th>
-                    <th className="right" style={{ width: 110 }}>KELUAR (-)</th>
-                    <th className="right" style={{ width: 130 }}>SALDO BERJALAN</th>
-                    <th className="right" style={{ width: 135 }}>NILAI SALDO (RP)</th>
-                    <th style={{ minWidth: 160 }}>PETUGAS / AKSI</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {/* Row Opening Balance */}
-                  {(() => {
-                    const firstRowCostBefore = filteredDetailRows?.[0]?.cost_before ? Number(filteredDetailRows[0].cost_before) : null;
-                    const latestAvgPricePerPakai = (Number(stockCard?.ingredient?.harga ?? selectedIng?.harga ?? 0)) / Math.max(Number(selectedIng?.konversi || 1), 1);
-                    const initialOpeningCostPerPakai = firstRowCostBefore ?? latestAvgPricePerPakai;
-                    return (
-                      <tr style={{ background: 'var(--accent-dim)', fontStyle: 'italic' }}>
-                        <td className="mono center">—</td>
-                        <td className="mono" style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{period.from}</td>
-                        <td><span style={{ fontSize: 11, color: 'var(--accent-bright)', fontWeight: 600 }}>{stockCard?.outlet_name || currentOutlet?.name}</span></td>
-                        <td className="mono" style={{ color: 'var(--text-muted)' }}>SALDO-AWAL</td>
-                        <td style={{ fontWeight: 600, color: 'var(--accent)' }}>Saldo Awal per {period.from}</td>
-                        <td><span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Saldo Awal</span></td>
-                        <td className="mono right" style={{ fontSize: 12.5 }}>
-                          <div style={{ display: 'inline-flex', alignItems: 'baseline', gap: 3, justifyContent: 'flex-end' }}>
-                            <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>
-                              {rupiah(initialOpeningCostPerPakai)}
-                            </span>
-                            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>/{selectedIng?.unit_pakai || 'gram'}</span>
-                          </div>
-                        </td>
-                        <td className="mono right">—</td>
-                        <td className="mono right">—</td>
-                        <td className="mono right" style={{ fontWeight: 700, color: 'var(--accent)', fontSize: 13.5 }}>
-                          {num(stockCard?.stok_awal)} {selectedIng?.unit_pakai}
-                        </td>
-                        <td className="mono right" style={{ fontWeight: 700, color: '#34d399', fontSize: 12.5 }}>
-                          {rupiah(Math.max(0, stockCard?.stok_awal || 0) * initialOpeningCostPerPakai)}
-                        </td>
-                        <td style={{ color: 'var(--text-muted)', fontSize: 11 }}>Sistem</td>
+              {/* Summary KPI Cards for Selected Ingredient */}
+              {cardLoading ? (
+                <div className="mb-4"><LoadingState /></div>
+              ) : stockCard && (
+                <>
+                  {/* Deficit Warning Banner if negative */}
+                  {stockCard.stok_akhir < 0 && (
+                    <div
+                      className="card mb-4"
+                      style={{
+                        padding: '14px 18px',
+                        background: 'rgba(239, 68, 68, 0.1)',
+                        border: '1px solid rgba(239, 68, 68, 0.4)',
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 12,
+                        borderRadius: 8
+                      }}
+                    >
+                      <AlertOctagon size={22} color="#f87171" style={{ flexShrink: 0, marginTop: 2 }} />
+                      <div style={{ fontSize: 12.5, color: '#fca5a5', lineHeight: 1.5 }}>
+                        <strong style={{ color: '#ffffff', fontSize: 13.5 }}>
+                          ⚠️ PERINGATAN DEFISIT: Stok bahan ini bersaldo minus ({num(stockCard.stok_akhir)} {stockCard.ingredient.unit_pakai} senilai {rupiah(stockCard.nilai_stok_akhir || 0)})
+                        </strong>
+                        <div style={{ marginTop: 4, color: '#fecaca', fontSize: 12 }}>
+                          Saldo minus terjadi akibat pelunasan nota urgent / pemakaian melebihi stok fisik. Nilai rupiah minus ({rupiah(stockCard.nilai_stok_akhir || 0)}) terpisah saldonya dari persediaan yang aman.
+                          Sebelum melakukan pembelian atau memasak batch, lakukan penyesuaian (adjustment) stok terlebih dahulu.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="stat-cards mb-5">
+                    {/* Saldo Awal */}
+                    <div className={`stat-card ${stockCard.stok_awal < 0 ? 'danger' : 'accent'}`}>
+                      <div className="stat-label">
+                        {stockCard.stok_awal < 0 ? 'Saldo Awal (Defisit)' : 'Saldo Awal Periode'}
+                      </div>
+                      <div className={`stat-value ${stockCard.stok_awal < 0 ? 'danger' : 'accent'}`} style={{ color: stockCard.stok_awal < 0 ? '#f87171' : undefined }}>
+                        {num(stockCard.stok_awal)} <span style={{ fontSize: 14, fontWeight: 500 }}>{stockCard.ingredient.unit_pakai}</span>
+                      </div>
+                      <div style={{ marginTop: 3, fontWeight: 700, color: stockCard.stok_awal < 0 ? '#f87171' : '#818cf8', fontSize: 13 }}>
+                        ≈ {rupiah(stockCard.nilai_saldo_awal !== undefined ? stockCard.nilai_saldo_awal : (Number(stockCard.stok_awal || 0) * (stockCard.cost_awal_per_pakai || ((stockCard.ingredient?.harga || 0) / (stockCard.ingredient?.konversi || 1)))))}
+                      </div>
+                      <div className="stat-sub">Per tanggal {stockCard.period.from} di {stockCard.outlet_name}</div>
+                    </div>
+
+                    {/* Total Masuk */}
+                    <div className="stat-card ok">
+                      <div className="stat-label">Total Masuk (+)</div>
+                      <div className="stat-value ok">
+                        +{num(stockCard.total_masuk)} <span style={{ fontSize: 14, fontWeight: 500 }}>{stockCard.ingredient.unit_pakai}</span>
+                      </div>
+                      <div className="stat-sub">Pembelian: +{num(stockCard.total_pembelian)}</div>
+                    </div>
+
+                    {/* Total Keluar */}
+                    <div className="stat-card danger">
+                      <div className="stat-label">Total Keluar (-)</div>
+                      <div className="stat-value danger">
+                        -{num(stockCard.total_keluar)} <span style={{ fontSize: 14, fontWeight: 500 }}>{stockCard.ingredient.unit_pakai}</span>
+                      </div>
+                      <div className="stat-sub">POS: {num(stockCard.total_penjualan)} · Waste: {num(stockCard.total_waste)}</div>
+                    </div>
+
+                    {/* Saldo Akhir */}
+                    <div
+                      className={`stat-card ${stockCard.stok_akhir < 0 ? 'danger' : (stockCard.is_below_min ? 'warn' : 'ok')}`}
+                      style={{
+                        borderLeft: stockCard.stok_akhir < 0 ? '4px solid #ef4444' : (stockCard.is_below_min ? '4px solid #f59e0b' : '4px solid #10b981'),
+                        background: stockCard.stok_akhir < 0 ? 'rgba(239, 68, 68, 0.08)' : undefined
+                      }}
+                    >
+                      <div className="stat-label">
+                        {stockCard.stok_akhir < 0 ? '🔴 Saldo Akhir Defisit (Minus)' : 'Saldo Akhir Berjalan'}
+                      </div>
+                      <div className={`stat-value ${stockCard.stok_akhir < 0 ? 'danger' : (stockCard.is_below_min ? 'warn' : 'ok')}`} style={{ color: stockCard.stok_akhir < 0 ? '#f87171' : undefined }}>
+                        {num(stockCard.stok_akhir)} <span style={{ fontSize: 14, fontWeight: 500 }}>{stockCard.ingredient.unit_pakai}</span>
+                      </div>
+                      <div style={{ marginTop: 4, fontWeight: 800, color: stockCard.stok_akhir < 0 ? '#f87171' : '#34d399', fontSize: 14 }}>
+                        ≈ {rupiah(stockCard.nilai_stok_akhir || 0)}
+                        {stockCard.stok_akhir < 0 && <span style={{ fontSize: 11, fontWeight: 600, marginLeft: 5 }}>(Defisit Mines)</span>}
+                      </div>
+                      <div className="stat-sub" style={{ color: stockCard.stok_akhir < 0 ? '#fca5a5' : (stockCard.is_below_min ? 'var(--warn)' : 'var(--ok)') }}>
+                        {stockCard.stok_akhir < 0 ? '⚠️ Saldo mines akibat pelunasan nota urgent' : (stockCard.is_below_min ? '⚠️ Di bawah batas stok minimum' : '✓ Stok aman di atas batas minimum')}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Detail Filter & Search Bar */}
+              <div className="card mb-4" style={{ padding: '12px 18px' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', justifyContent: 'space-between' }}>
+                  {/* Quick Filter Buttons */}
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <button
+                      className={`btn btn-sm ${typeFilter === 'ALL' ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() => setTypeFilter('ALL')}
+                    >
+                      Semua ({stockCard?.rows?.length || 0})
+                    </button>
+                    <button
+                      className={`btn btn-sm ${typeFilter === 'IN' ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() => setTypeFilter('IN')}
+                      style={{ color: typeFilter !== 'IN' ? 'var(--ok)' : undefined }}
+                    >
+                      <ArrowUpRight size={12} /> Masuk Saja
+                    </button>
+                    <button
+                      className={`btn btn-sm ${typeFilter === 'OUT' ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() => setTypeFilter('OUT')}
+                      style={{ color: typeFilter !== 'OUT' ? 'var(--danger)' : undefined }}
+                    >
+                      <ArrowDownLeft size={12} /> Keluar Saja
+                    </button>
+                    <button
+                      className={`btn btn-sm ${typeFilter === 'PURCHASE' ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() => setTypeFilter('PURCHASE')}
+                    >
+                      Pembelian
+                    </button>
+                    <button
+                      className={`btn btn-sm ${typeFilter === 'SALE_USAGE' ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() => setTypeFilter('SALE_USAGE')}
+                    >
+                      Penjualan POS
+                    </button>
+                    <button
+                      className={`btn btn-sm ${typeFilter === 'WASTE' ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() => setTypeFilter('WASTE')}
+                    >
+                      Waste
+                    </button>
+                    <button
+                      className={`btn btn-sm ${typeFilter === 'TRANSFER_IN' ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() => setTypeFilter('TRANSFER_IN')}
+                    >
+                      Transfer Masuk
+                    </button>
+                    <button
+                      className={`btn btn-sm ${typeFilter === 'TRANSFER_OUT' ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() => setTypeFilter('TRANSFER_OUT')}
+                    >
+                      Transfer Keluar
+                    </button>
+                  </div>
+
+                  {/* Search Box */}
+                  <div style={{ position: 'relative', width: 240 }}>
+                    <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Cari ref / catatan..."
+                      style={{ paddingLeft: 30, paddingRight: 10, fontSize: 12, height: 32 }}
+                      value={searchTerm}
+                      onChange={e => setSearchTerm(e.target.value)}
+                    />
+                    {searchTerm && (
+                      <button
+                        onClick={() => setSearchTerm('')}
+                        style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Kartu Stok Ledger Table */}
+              <div className="card">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>
+                      Buku Besar Mutasi — {selectedIng?.name} ({selectedIng?.code})
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                      Gudang: <strong style={{ color: 'var(--accent-bright)' }}>{stockCard?.outlet_name || currentOutlet?.name}</strong> ·
+                      Satuan Pakai: <span className="mono" style={{ color: 'var(--accent)' }}>{selectedIng?.unit_pakai}</span> ·
+                      Konversi: 1 {selectedIng?.unit_beli} = {num(selectedIng?.konversi)} {selectedIng?.unit_pakai} ·
+                      Harga Beli: <span className="mono" style={{ color: 'var(--text-primary)' }}>{rupiah(stockCard?.ingredient?.harga ?? selectedIng?.harga)}/{selectedIng?.unit_beli}</span> ·
+                      Harga Pakai: <span className="mono" style={{ color: 'var(--accent-bright)', fontWeight: 600 }}>{rupiah((stockCard?.ingredient?.harga ?? selectedIng?.harga) / (selectedIng?.konversi || 1))}/{selectedIng?.unit_pakai}</span>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                      Menampilkan <strong>{filteredDetailRows.length}</strong> transaksi mutasi
+                    </span>
+                  </div>
+                </div>
+
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th style={{ width: 40 }}>NO</th>
+                        <th style={{ width: 105 }}>TANGGAL</th>
+                        <th style={{ width: 130 }}>GUDANG / CABANG</th>
+                        <th style={{ width: 140 }}>NO. REFERENSI</th>
+                        <th>KETERANGAN / AKTIVITAS</th>
+                        <th style={{ width: 135 }}>TIPE MUTASI</th>
+                        <th className="right" style={{ width: 140 }}>HARGA SATUAN</th>
+                        <th className="right" style={{ width: 110 }}>MASUK (+)</th>
+                        <th className="right" style={{ width: 110 }}>KELUAR (-)</th>
+                        <th className="right" style={{ width: 130 }}>SALDO BERJALAN</th>
+                        <th className="right" style={{ width: 145 }}>NILAI SALDO (RP)</th>
+                        <th style={{ minWidth: 160 }}>PETUGAS / AKSI</th>
                       </tr>
-                    );
-                  })()}
+                    </thead>
+                    <tbody>
+                      {/* Row Opening Balance */}
+                      {(() => {
+                        const firstRowCostBefore = filteredDetailRows?.[0]?.cost_before ? Number(filteredDetailRows[0].cost_before) : null;
+                        const latestAvgPricePerPakai = (Number(stockCard?.ingredient?.harga ?? selectedIng?.harga ?? 0)) / Math.max(Number(selectedIng?.konversi || 1), 1);
+                        const initialOpeningCostPerPakai = stockCard?.cost_awal_per_pakai !== undefined && stockCard?.cost_awal_per_pakai !== null
+                          ? Number(stockCard.cost_awal_per_pakai)
+                          : (firstRowCostBefore ?? latestAvgPricePerPakai);
+                        const isOpeningNegative = Number(stockCard?.stok_awal || 0) < 0;
+                        const openingNominal = stockCard?.nilai_saldo_awal !== undefined && stockCard?.nilai_saldo_awal !== null
+                          ? Number(stockCard.nilai_saldo_awal)
+                          : (Number(stockCard?.stok_awal || 0) * initialOpeningCostPerPakai);
 
-                  {/* Mutation Rows */}
-                  {filteredDetailRows.length > 0 ? (() => {
-                    const fallbackPrice = (Number(stockCard?.ingredient?.harga ?? selectedIng?.harga ?? 0)) / Math.max(Number(selectedIng?.konversi || 1), 1);
-                    let runningCost = filteredDetailRows?.[0]?.cost_before ? Number(filteredDetailRows[0].cost_before) : fallbackPrice;
-
-                    return filteredDetailRows.map((row, idx) => {
-                      if (row.cost_after) {
-                        runningCost = Number(row.cost_after);
-                      } else if (row.cost_before) {
-                        runningCost = Number(row.cost_before);
-                      } else if (row.unit_price) {
-                        runningCost = Number(row.unit_price) > 1000 && (selectedIng?.konversi || 1) > 1
-                          ? Number(row.unit_price) / Number(selectedIng.konversi)
-                          : Number(row.unit_price);
-                      }
-                      const unitPriceVal = runningCost;
-
-                      return (
-                        <tr key={row.id || idx}>
-                          <td className="mono center" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                            {idx + 1}
-                          </td>
-                          <td className="mono" style={{ fontSize: 12 }}>
-                            {row.date}
-                          </td>
-                          <td>
-                            <span style={{ fontSize: 11, color: '#c7d2fe', fontWeight: 600 }}>
-                              {row.outlet_name || 'Outlet'}
-                            </span>
-                          </td>
-                          <td className="mono" style={{ fontSize: 12 }}>
-                            {row.shift_id ? (
-                              <button
-                                className="btn btn-sm"
-                                style={{
-                                   padding: '3px 8px',
-                                   fontSize: 11,
-                                   color: 'var(--accent-bright)',
-                                   border: '1px solid var(--border-accent)',
-                                   background: 'var(--accent-dim)',
-                                   display: 'inline-flex',
-                                   alignItems: 'center',
-                                   gap: 5,
-                                   cursor: 'pointer'
-                                }}
-                                onClick={() => handleOpenShiftDetail(row.shift_id)}
-                                title="Klik untuk melihat rincian transaksi POS di shift ini"
-                              >
-                                <Eye size={12} /> {row.ref}
-                              </button>
-                            ) : (
-                              <span style={{ color: 'var(--accent-bright)' }}>{row.ref}</span>
-                            )}
-                          </td>
-                          <td style={{ fontSize: 12.5 }}>
-                            {row.note || '—'}
-                          </td>
-                          <td>
-                            {getTypeBadge(row.type)}
-                          </td>
-                          <td className="mono right" style={{ fontSize: 12.5 }}>
-                            <div style={{ display: 'inline-flex', alignItems: 'baseline', gap: 3, justifyContent: 'flex-end' }}>
-                              <span style={{ fontWeight: 700, color: row.cost_after ? 'var(--accent-bright)' : '#ffffff' }}>
-                                {rupiah(unitPriceVal)}
-                              </span>
-                              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>/{selectedIng?.unit_pakai || 'gram'}</span>
-                            </div>
-                            {row.unit_price && Number(selectedIng?.konversi || 1) > 1 && (
-                              <div style={{ fontSize: 9.5, color: '#34d399', marginTop: 1 }}>
-                                PO: @{rupiah(row.unit_price)}/{selectedIng?.unit_beli}
+                        return (
+                          <tr style={{ background: isOpeningNegative ? 'rgba(239, 68, 68, 0.08)' : 'var(--accent-dim)', fontStyle: 'italic' }}>
+                            <td className="mono center">—</td>
+                            <td className="mono" style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{period.from}</td>
+                            <td><span style={{ fontSize: 11, color: isOpeningNegative ? '#f87171' : 'var(--accent-bright)', fontWeight: 600 }}>{stockCard?.outlet_name || currentOutlet?.name}</span></td>
+                            <td className="mono" style={{ color: 'var(--text-muted)' }}>SALDO-AWAL</td>
+                            <td style={{ fontWeight: 600, color: isOpeningNegative ? '#f87171' : 'var(--accent)' }}>
+                              Saldo Awal per {period.from} {isOpeningNegative ? '(Defisit Mines)' : ''}
+                            </td>
+                            <td><span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Saldo Awal</span></td>
+                            <td className="mono right" style={{ fontSize: 12.5 }}>
+                              <div style={{ display: 'inline-flex', alignItems: 'baseline', gap: 3, justifyContent: 'flex-end' }}>
+                                <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>
+                                  {rupiah(initialOpeningCostPerPakai)}
+                                </span>
+                                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>/{selectedIng?.unit_pakai || 'gram'}</span>
                               </div>
-                            )}
-                          </td>
-                          <td className="mono right" style={{ color: row.qty_in > 0 ? 'var(--ok)' : 'var(--text-muted)', fontWeight: row.qty_in > 0 ? 600 : 400 }}>
-                            {row.qty_in > 0 ? `+${num(row.qty_in)}` : '—'}
-                          </td>
-                          <td className="mono right" style={{ color: row.qty_out > 0 ? 'var(--danger)' : 'var(--text-muted)', fontWeight: row.qty_out > 0 ? 600 : 400 }}>
-                            {row.qty_out > 0 ? `-${num(row.qty_out)}` : '—'}
-                          </td>
-                          <td className="mono right" style={{ fontWeight: 700, fontSize: 13, color: row.balance < 0 ? 'var(--danger)' : 'var(--text-primary)' }}>
-                            {num(row.balance)} {selectedIng?.unit_pakai}
-                          </td>
-                          <td className="mono right" style={{ fontWeight: 700, fontSize: 12.5, color: row.balance < 0 ? 'var(--danger)' : '#34d399' }}>
-                            {rupiah(Math.max(0, row.balance || 0) * unitPriceVal)}
-                            {row.unit_price ? (
-                              <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>
-                                PO: @{rupiah(row.unit_price)}
-                              </div>
-                            ) : null}
-                          </td>
-                          <td>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                              <AuditInfo
-                                createdAt={row.created_at}
-                                createdBy={row.created_by_name || row.user}
-                                updatedAt={row.changed_at}
-                                updatedBy={row.changed_by_name}
-                              />
-                              {(isOwnerBisnis || isPlatformAdmin) && row.id && (
-                                <button
-                                  type="button"
-                                  className="btn btn-ghost btn-sm"
-                                  onClick={() => handleOpenEditMovement(row)}
-                                  title="Edit Data Mutasi & Hitung Ulang Akumulasi Seluruh Data Setelahnya (Khusus Owner Bisnis)"
-                                  style={{
-                                    color: 'var(--accent-bright)',
-                                    padding: '4px 8px',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: 4,
-                                    borderRadius: 6,
-                                    background: 'rgba(99, 102, 241, 0.12)',
-                                    border: '1px solid rgba(99, 102, 241, 0.28)'
-                                  }}
-                                >
-                                  <Edit2 size={12} />
-                                  <span style={{ fontSize: 11, fontWeight: 700 }}>Edit</span>
-                                </button>
+                            </td>
+                            <td className="mono right">—</td>
+                            <td className="mono right">—</td>
+                            <td className="mono right" style={{ fontWeight: 700, color: isOpeningNegative ? 'var(--danger)' : 'var(--accent)', fontSize: 13.5 }}>
+                              {num(stockCard?.stok_awal)} {selectedIng?.unit_pakai}
+                            </td>
+                            <td className="mono right" style={{ fontWeight: 700, color: isOpeningNegative ? 'var(--danger)' : '#34d399', fontSize: 12.5 }}>
+                              {rupiah(openingNominal)}
+                              {isOpeningNegative && (
+                                <div style={{ fontSize: 9.5, color: 'var(--danger)', fontWeight: 700 }}>
+                                  Defisit Mines
+                                </div>
                               )}
-                            </div>
+                            </td>
+                            <td style={{ color: 'var(--text-muted)', fontSize: 11 }}>Sistem</td>
+                          </tr>
+                        );
+                      })()}
+
+                      {/* Mutation Rows */}
+                      {filteredDetailRows.length > 0 ? (() => {
+                        const fallbackPrice = (Number(stockCard?.ingredient?.harga ?? selectedIng?.harga ?? 0)) / Math.max(Number(selectedIng?.konversi || 1), 1);
+
+                        return filteredDetailRows.map((row, idx) => {
+                          let unitPriceVal = fallbackPrice;
+                          if (row.balance && Number(row.balance) !== 0 && row.balance_nominal !== undefined && row.balance_nominal !== null) {
+                            unitPriceVal = Math.abs(Number(row.balance_nominal) / Number(row.balance));
+                          } else if (row.cost_after !== undefined && row.cost_after !== null && Number(row.cost_after) > 0) {
+                            unitPriceVal = Number(row.cost_after);
+                          } else if (row.cost_before !== undefined && row.cost_before !== null && Number(row.cost_before) > 0) {
+                            unitPriceVal = Number(row.cost_before);
+                          } else if (row.unit_price) {
+                            unitPriceVal = Number(row.unit_price) > 1000 && (selectedIng?.konversi || 1) > 1
+                              ? Number(row.unit_price) / Number(selectedIng.konversi)
+                              : Number(row.unit_price);
+                          }
+                          const isNegativeRow = Number(row.balance) < 0;
+                          const isUrgent = Boolean(row.is_urgent_resolution || (row.note && (row.note.includes('Nota Urgent') || row.note.includes('Pelunasan'))));
+                          const balanceNominalVal = row.balance_nominal !== undefined && row.balance_nominal !== null
+                            ? Number(row.balance_nominal)
+                            : (Number(row.balance || 0) * unitPriceVal);
+
+                          return (
+                            <tr
+                              key={row.id || idx}
+                              style={{
+                                background: isNegativeRow ? 'rgba(239, 68, 68, 0.04)' : undefined
+                              }}
+                            >
+                              <td className="mono center" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                {idx + 1}
+                              </td>
+                              <td className="mono" style={{ fontSize: 12 }}>
+                                {row.date}
+                              </td>
+                              <td>
+                                <span style={{ fontSize: 11, color: '#c7d2fe', fontWeight: 600 }}>
+                                  {row.outlet_name || 'Outlet'}
+                                </span>
+                              </td>
+                              <td className="mono" style={{ fontSize: 12 }}>
+                                {row.shift_id ? (
+                                  <button
+                                    className="btn btn-sm"
+                                    style={{
+                                      padding: '3px 8px',
+                                      fontSize: 11,
+                                      color: 'var(--accent-bright)',
+                                      border: '1px solid var(--border-accent)',
+                                      background: 'var(--accent-dim)',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 5,
+                                      cursor: 'pointer'
+                                    }}
+                                    onClick={() => handleOpenShiftDetail(row.shift_id)}
+                                    title="Klik untuk melihat rincian transaksi POS di shift ini"
+                                  >
+                                    <Eye size={12} /> {row.ref}
+                                  </button>
+                                ) : (
+                                  <span style={{ color: 'var(--accent-bright)' }}>{row.ref}</span>
+                                )}
+                              </td>
+                              <td style={{ fontSize: 12.5 }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                  <span>{row.note || '—'}</span>
+                                  {isUrgent && (
+                                    <div>
+                                      <span
+                                        style={{
+                                          fontSize: 9.5,
+                                          padding: '1px 6px',
+                                          borderRadius: 4,
+                                          fontWeight: 700,
+                                          background: 'rgba(239, 68, 68, 0.18)',
+                                          color: '#f87171',
+                                          border: '1px solid rgba(239, 68, 68, 0.35)',
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: 3,
+                                        }}
+                                      >
+                                        <AlertOctagon size={10} /> Pelunasan Nota Urgent
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+                              <td>
+                                {getTypeBadge(row.type)}
+                              </td>
+                              <td className="mono right" style={{ fontSize: 12.5 }}>
+                                <div style={{ display: 'inline-flex', alignItems: 'baseline', gap: 3, justifyContent: 'flex-end' }}>
+                                  <span style={{ fontWeight: 700, color: row.cost_after ? 'var(--accent-bright)' : '#ffffff' }}>
+                                    {rupiah(unitPriceVal)}
+                                  </span>
+                                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>/{selectedIng?.unit_pakai || 'gram'}</span>
+                                </div>
+                                {row.unit_price && Number(selectedIng?.konversi || 1) > 1 && (
+                                  <div style={{ fontSize: 9.5, color: '#34d399', marginTop: 1 }}>
+                                    PO: @{rupiah(row.unit_price)}/{selectedIng?.unit_beli}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="mono right" style={{ color: row.qty_in > 0 ? 'var(--ok)' : 'var(--text-muted)', fontWeight: row.qty_in > 0 ? 600 : 400 }}>
+                                {row.qty_in > 0 ? `+${num(row.qty_in)}` : '—'}
+                              </td>
+                              <td className="mono right" style={{ color: row.qty_out > 0 ? 'var(--danger)' : 'var(--text-muted)', fontWeight: row.qty_out > 0 ? 600 : 400 }}>
+                                {row.qty_out > 0 ? `-${num(row.qty_out)}` : '—'}
+                              </td>
+                              <td className="mono right" style={{ fontWeight: 700, fontSize: 13, color: isNegativeRow ? 'var(--danger)' : 'var(--text-primary)' }}>
+                                {num(row.balance)} {selectedIng?.unit_pakai}
+                              </td>
+                              <td className="mono right" style={{ fontWeight: 700, fontSize: 12.5, color: isNegativeRow ? 'var(--danger)' : '#34d399' }}>
+                                {rupiah(balanceNominalVal)}
+                                {isNegativeRow && (
+                                  <div style={{ fontSize: 9.5, color: 'var(--danger)', fontWeight: 700 }}>
+                                    Defisit Saldo Minus
+                                  </div>
+                                )}
+                                {row.unit_price ? (
+                                  <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>
+                                    PO: @{rupiah(row.unit_price)}
+                                  </div>
+                                ) : null}
+                              </td>
+                              <td>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                                  <AuditInfo
+                                    createdAt={row.created_at}
+                                    createdBy={row.created_by_name || row.user}
+                                    updatedAt={row.changed_at}
+                                    updatedBy={row.changed_by_name}
+                                  />
+                                  {(isOwnerBisnis || isPlatformAdmin) && row.id && (
+                                    <button
+                                      type="button"
+                                      className="btn btn-ghost btn-sm"
+                                      onClick={() => handleOpenEditMovement(row)}
+                                      title="Edit Data Mutasi & Hitung Ulang Akumulasi Seluruh Data Setelahnya (Khusus Owner Bisnis)"
+                                      style={{
+                                        color: 'var(--accent-bright)',
+                                        padding: '4px 8px',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 4,
+                                        borderRadius: 6,
+                                        background: 'rgba(99, 102, 241, 0.12)',
+                                        border: '1px solid rgba(99, 102, 241, 0.28)'
+                                      }}
+                                    >
+                                      <Edit2 size={12} />
+                                      <span style={{ fontSize: 11, fontWeight: 700 }}>Edit</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })() : (
+                        <tr>
+                          <td colSpan={12} style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--text-muted)' }}>
+                            Tidak ada transaksi mutasi stok yang sesuai dengan filter.
                           </td>
                         </tr>
-                      );
-                    });
-                  })() : (
-                    <tr>
-                      <td colSpan={12} style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--text-muted)' }}>
-                        Tidak ada transaksi mutasi stok yang sesuai dengan filter.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-                {/* Table Footer with Totals */}
-                {stockCard && (
-                  <tfoot>
-                    <tr style={{ background: 'rgba(255,255,255,0.03)', fontWeight: 700, borderTop: '2px solid var(--border-strong)' }}>
-                      <td colSpan={7} style={{ textTransform: 'uppercase', letterSpacing: '0.04em', fontSize: 11, color: 'var(--text-secondary)' }}>
-                        Total Periode ({period.from} s/d {period.to})
-                      </td>
-                      <td className="mono right" style={{ color: 'var(--ok)', fontSize: 13 }}>
-                        +{num(stockCard.total_masuk)}
-                      </td>
-                      <td className="mono right" style={{ color: 'var(--danger)', fontSize: 13 }}>
-                        -{num(stockCard.total_keluar)}
-                      </td>
-                      <td className="mono right" style={{ color: stockCard.stok_akhir < 0 ? 'var(--danger)' : 'var(--accent)', fontSize: 14 }}>
-                        {num(stockCard.stok_akhir)} {selectedIng?.unit_pakai}
-                      </td>
-                      <td></td>
-                      <td></td>
-                    </tr>
-                  </tfoot>
-                )}
-              </table>
+                      )}
+                    </tbody>
+                    {/* Table Footer with Totals */}
+                    {stockCard && (
+                      <tfoot>
+                        <tr style={{ background: 'rgba(255,255,255,0.03)', fontWeight: 700, borderTop: '2px solid var(--border-strong)' }}>
+                          <td colSpan={7} style={{ textTransform: 'uppercase', letterSpacing: '0.04em', fontSize: 11, color: 'var(--text-secondary)' }}>
+                            Total Periode ({period.from} s/d {period.to})
+                          </td>
+                          <td className="mono right" style={{ color: 'var(--ok)', fontSize: 13 }}>
+                            +{num(stockCard.total_masuk)}
+                          </td>
+                          <td className="mono right" style={{ color: 'var(--danger)', fontSize: 13 }}>
+                            -{num(stockCard.total_keluar)}
+                          </td>
+                          <td className="mono right" style={{ color: stockCard.stok_akhir < 0 ? 'var(--danger)' : 'var(--accent)', fontSize: 14, fontWeight: 800 }}>
+                            {num(stockCard.stok_akhir)} {selectedIng?.unit_pakai}
+                          </td>
+                          <td className="mono right" style={{ color: stockCard.stok_akhir < 0 ? 'var(--danger)' : '#34d399', fontSize: 13.5, fontWeight: 800 }}>
+                            {rupiah(stockCard.nilai_stok_akhir || 0)}
+                            {stockCard.stok_akhir < 0 && (
+                              <div style={{ fontSize: 9.5, color: 'var(--danger)', fontWeight: 700 }}>
+                                (Defisit Mines)
+                              </div>
+                            )}
+                          </td>
+                          <td></td>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          )}
+        </>
       )}
-    </>
-  )}
 
       {/* ========================================================================= */}
       {/* VIEW 3: PERSEDIAAN DALAM PERJALANAN (STOCK IN TRANSIT & APPROVAL RECEIVE) */}
@@ -2745,6 +3169,36 @@ export default function KartuStok() {
                   </div>
                 </div>
 
+                {/* Alert jika ada bahan yang dibeli berstatus stok MINUS */}
+                {mutationForm.type === 'PURCHASE' && negativePurchaseItems.length > 0 && (
+                  <div style={{
+                    padding: '12px 16px',
+                    borderRadius: 8,
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    marginBottom: 14,
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 12
+                  }}>
+                    <AlertTriangle size={22} style={{ color: '#ef4444', flexShrink: 0, marginTop: 2 }} />
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#f87171' }}>
+                        ⛔ PERINGATAN: STOK MINUS HARUS DI-ADJUST TERLEBIH DAHULU!
+                      </div>
+                      <div style={{ fontSize: 11.5, color: '#fca5a5', marginTop: 4, lineHeight: 1.45 }}>
+                        Bahan berikut memiliki stok <strong>MINUS</strong> di cabang ini:
+                        <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                          {negativePurchaseItems.map((neg, i) => (
+                            <li key={i}><strong>{neg.name}</strong> (Stok saat ini: {neg.stock} {neg.unit})</li>
+                          ))}
+                        </ul>
+                        Sesuai SOP, Anda wajib melakukan <strong>Penyesuaian Stok (Adjust Stock / Opname)</strong> terlebih dahulu untuk menormalkan saldo stok sebelum menambah pembelian baru.
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* 2. KHUSUS PEMBELIAN (PURCHASE): KATEGORI FISIK & METODE PEMBAYARAN */}
                 {mutationForm.type === 'PURCHASE' && (
                   <>
@@ -3320,24 +3774,29 @@ export default function KartuStok() {
                 <button
                   type="submit"
                   className="btn"
-                  disabled={saving}
+                  disabled={saving || (mutationForm.type === 'PURCHASE' && negativePurchaseItems.length > 0)}
                   style={{
                     fontWeight: 800,
-                    background: editingMovementId
-                      ? 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)'
-                      : ((mutationForm.type === 'PURCHASE' && mutationForm.is_in_transit)
-                        ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
-                        : 'var(--primary)'),
-                    color: '#ffffff'
+                    background: (mutationForm.type === 'PURCHASE' && negativePurchaseItems.length > 0)
+                      ? '#475569'
+                      : editingMovementId
+                        ? 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)'
+                        : ((mutationForm.type === 'PURCHASE' && mutationForm.is_in_transit)
+                          ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
+                          : 'var(--primary)'),
+                    color: '#ffffff',
+                    cursor: (mutationForm.type === 'PURCHASE' && negativePurchaseItems.length > 0) ? 'not-allowed' : 'pointer'
                   }}
                 >
                   <Check size={14} /> {saving
                     ? 'Menyimpan & Menghitung Ulang...'
-                    : editingMovementId
-                      ? 'Simpan Perubahan & Akumulasi Ulang'
-                      : (mutationForm.type === 'PURCHASE' && mutationForm.is_in_transit)
-                        ? `Simpan ${mutationForm.items.length} Item ke Dalam Perjalanan`
-                        : `Simpan Mutasi (${mutationForm.items.length} Bahan)`}
+                    : (mutationForm.type === 'PURCHASE' && negativePurchaseItems.length > 0)
+                      ? '⚠️ Wajib Adjust Stok'
+                      : editingMovementId
+                        ? 'Simpan Perubahan & Akumulasi Ulang'
+                        : (mutationForm.type === 'PURCHASE' && mutationForm.is_in_transit)
+                          ? `Simpan ${mutationForm.items.length} Item ke Dalam Perjalanan`
+                          : `Simpan Mutasi (${mutationForm.items.length} Bahan)`}
                 </button>
               </div>
             </form>
@@ -3461,11 +3920,367 @@ export default function KartuStok() {
         </div>
       )}
 
-      {/* Import Stock Awal Fisik Per Gudang Modal */}
+      {/* ========================================================================= */}
+      {/* HIGH-FIDELITY PRINTABLE DOCUMENT (BUKU BESAR MUTASI / REKAPITULASI STOK) */}
+      {/* ========================================================================= */}
+      <div
+        id="printable-stock-card"
+        className="printable-document"
+        style={{ display: 'none' }}
+      >
+        {selectedIngId && stockCard ? (
+          /* ========================================= */
+          /* 1. DETAIL BUKU BESAR MUTASI / KARTU STOK */
+          /* ========================================= */
+          <div>
+            {/* Kop Laporan */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2.5px solid #000000', paddingBottom: 10, marginBottom: 14 }}>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.02em' }}>
+                  {currentUser?.business?.name || currentBusiness?.name || 'MAROA F&B GROUP'}
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 800, marginTop: 2, color: '#000000' }}>
+                  BUKU BESAR MUTASI & KARTU STOK PERSEDIAAN
+                </div>
+                <div style={{ fontSize: 11, color: '#333333', marginTop: 1 }}>
+                  Lokasi Gudang: <strong>{stockCard?.outlet_name || currentOutlet?.name}</strong> · Periode: <strong>{period.from}</strong> s/d <strong>{period.to}</strong>
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 10, textTransform: 'uppercase', fontWeight: 700, color: '#555555' }}>
+                  TANGGAL CETAK
+                </div>
+                <div style={{ fontSize: 11, fontWeight: 700, fontFamily: 'monospace' }}>
+                  {new Date().toLocaleString('id-ID')}
+                </div>
+                <div style={{ fontSize: 10, color: '#555555', marginTop: 2 }}>
+                  Petugas: {currentUser?.name || 'Sistem'}
+                </div>
+              </div>
+            </div>
+
+            {/* Item Specifications & Metadata Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 12, marginBottom: 14, border: '1px solid #000000', padding: 10, borderRadius: 4 }}>
+              <div>
+                <table style={{ width: '100%', border: 'none', margin: 0 }}>
+                  <tbody>
+                    <tr style={{ border: 'none' }}>
+                      <td style={{ border: 'none', padding: '2px 4px', width: 120, fontWeight: 700, fontSize: 11 }}>Nama Item / Bahan:</td>
+                      <td style={{ border: 'none', padding: '2px 4px', fontSize: 12, fontWeight: 800 }}>{selectedIng?.name || stockCard?.ingredient?.name} ({selectedIng?.code || stockCard?.ingredient?.code})</td>
+                    </tr>
+                    <tr style={{ border: 'none' }}>
+                      <td style={{ border: 'none', padding: '2px 4px', fontWeight: 700, fontSize: 11 }}>Kategori / Tipe:</td>
+                      <td style={{ border: 'none', padding: '2px 4px', fontSize: 11 }}>{selectedIng?.category || 'Umum'} · {selectedIng?.type === 'SEMI_FINISHED' ? 'Bahan Setengah Jadi (Olahan)' : (getItemClassification(selectedIng) === 'PERLENGKAPAN' ? 'Perlengkapan / Kemasan' : 'Bahan Baku Mentah')}</td>
+                    </tr>
+                    <tr style={{ border: 'none' }}>
+                      <td style={{ border: 'none', padding: '2px 4px', fontWeight: 700, fontSize: 11 }}>Konversi Satuan:</td>
+                      <td style={{ border: 'none', padding: '2px 4px', fontSize: 11, fontFamily: 'monospace' }}>1 {selectedIng?.unit_beli} = {num(selectedIng?.konversi)} {selectedIng?.unit_pakai}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div>
+                <table style={{ width: '100%', border: 'none', margin: 0 }}>
+                  <tbody>
+                    <tr style={{ border: 'none' }}>
+                      <td style={{ border: 'none', padding: '2px 4px', width: 130, fontWeight: 700, fontSize: 11 }}>Harga Beli Master:</td>
+                      <td style={{ border: 'none', padding: '2px 4px', fontSize: 11, fontFamily: 'monospace', fontWeight: 700 }}>{rupiah(stockCard?.ingredient?.harga ?? selectedIng?.harga)} / {selectedIng?.unit_beli}</td>
+                    </tr>
+                    <tr style={{ border: 'none' }}>
+                      <td style={{ border: 'none', padding: '2px 4px', fontWeight: 700, fontSize: 11 }}>HPP Moving Avg:</td>
+                      <td style={{ border: 'none', padding: '2px 4px', fontSize: 11, fontFamily: 'monospace', fontWeight: 800 }}>{rupiah((stockCard?.ingredient?.harga ?? selectedIng?.harga) / (selectedIng?.konversi || 1))} / {selectedIng?.unit_pakai}</td>
+                    </tr>
+                    <tr style={{ border: 'none' }}>
+                      <td style={{ border: 'none', padding: '2px 4px', fontWeight: 700, fontSize: 11 }}>Batas Minimum:</td>
+                      <td style={{ border: 'none', padding: '2px 4px', fontSize: 11, fontFamily: 'monospace' }}>{num(stockCard?.stok_min)} {selectedIng?.unit_pakai}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Summary Box */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 14 }}>
+              <div style={{ border: '1px solid #000000', padding: '6px 10px', textAlign: 'center' }}>
+                <div style={{ fontSize: 9.5, textTransform: 'uppercase', fontWeight: 700 }}>Saldo Awal ({period.from})</div>
+                <div style={{ fontSize: 13, fontWeight: 900, fontFamily: 'monospace', marginTop: 2 }}>{num(stockCard?.stok_awal)} {selectedIng?.unit_pakai}</div>
+                <div style={{ fontSize: 10.5, fontWeight: 700 }}>{rupiah(stockCard?.nilai_saldo_awal)}</div>
+              </div>
+              <div style={{ border: '1px solid #000000', padding: '6px 10px', textAlign: 'center' }}>
+                <div style={{ fontSize: 9.5, textTransform: 'uppercase', fontWeight: 700 }}>Total Masuk (+)</div>
+                <div style={{ fontSize: 13, fontWeight: 900, fontFamily: 'monospace', marginTop: 2 }}>+{num(stockCard?.total_masuk)} {selectedIng?.unit_pakai}</div>
+                <div style={{ fontSize: 10.5, color: '#333333' }}>Pembelian & Transfer Masuk</div>
+              </div>
+              <div style={{ border: '1px solid #000000', padding: '6px 10px', textAlign: 'center' }}>
+                <div style={{ fontSize: 9.5, textTransform: 'uppercase', fontWeight: 700 }}>Total Keluar (-)</div>
+                <div style={{ fontSize: 13, fontWeight: 900, fontFamily: 'monospace', marginTop: 2 }}>-{num(stockCard?.total_keluar)} {selectedIng?.unit_pakai}</div>
+                <div style={{ fontSize: 10.5, color: '#333333' }}>POS, Waste & Transfer Keluar</div>
+              </div>
+              <div style={{ border: '1px solid #000000', padding: '6px 10px', textAlign: 'center', background: '#f8f8f8' }}>
+                <div style={{ fontSize: 9.5, textTransform: 'uppercase', fontWeight: 800 }}>Saldo Akhir ({period.to})</div>
+                <div style={{ fontSize: 13, fontWeight: 900, fontFamily: 'monospace', marginTop: 2 }}>{num(stockCard?.stok_akhir)} {selectedIng?.unit_pakai}</div>
+                <div style={{ fontSize: 10.5, fontWeight: 800 }}>{rupiah(stockCard?.nilai_stok_akhir)}</div>
+              </div>
+            </div>
+
+            {/* Mutation Ledger Table */}
+            <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #000000', fontSize: 10, margin: '8px 0' }}>
+              <thead>
+                <tr style={{ background: '#f0f0f0', borderBottom: '1.5px solid #000000' }}>
+                  <th style={{ width: 30, textAlign: 'center', border: '1px solid #000000', padding: '4px 6px' }}>NO</th>
+                  <th style={{ width: 75, textAlign: 'left', border: '1px solid #000000', padding: '4px 6px' }}>TANGGAL</th>
+                  <th style={{ width: 95, textAlign: 'left', border: '1px solid #000000', padding: '4px 6px' }}>NO. REF</th>
+                  <th style={{ textAlign: 'left', border: '1px solid #000000', padding: '4px 6px' }}>KETERANGAN / AKTIVITAS</th>
+                  <th style={{ width: 90, textAlign: 'left', border: '1px solid #000000', padding: '4px 6px' }}>TIPE</th>
+                  <th style={{ width: 90, textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>HARGA SATUAN</th>
+                  <th style={{ width: 75, textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>MASUK (+)</th>
+                  <th style={{ width: 75, textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>KELUAR (-)</th>
+                  <th style={{ width: 90, textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>SALDO (QTY)</th>
+                  <th style={{ width: 100, textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>NILAI SALDO (RP)</th>
+                  <th style={{ width: 80, textAlign: 'left', border: '1px solid #000000', padding: '4px 6px' }}>PETUGAS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {/* Opening Balance Row */}
+                <tr style={{ background: '#fafafa', fontStyle: 'italic', borderBottom: '1px solid #000000' }}>
+                  <td style={{ textAlign: 'center', border: '1px solid #000000', padding: '4px 6px' }}>—</td>
+                  <td style={{ border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace' }}>{period.from}</td>
+                  <td style={{ border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace' }}>SALDO-AWAL</td>
+                  <td style={{ border: '1px solid #000000', padding: '4px 6px', fontWeight: 700 }}>Saldo Awal Fisik per {period.from}</td>
+                  <td style={{ border: '1px solid #000000', padding: '4px 6px' }}>Saldo Awal</td>
+                  <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace' }}>{rupiah(stockCard?.cost_awal_per_pakai ?? ((stockCard?.ingredient?.harga ?? selectedIng?.harga ?? 0) / (selectedIng?.konversi || 1)))}/{selectedIng?.unit_pakai}</td>
+                  <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>—</td>
+                  <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>—</td>
+                  <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace', fontWeight: 800 }}>{num(stockCard?.stok_awal)} {selectedIng?.unit_pakai}</td>
+                  <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace', fontWeight: 800 }}>{rupiah(stockCard?.nilai_saldo_awal)}</td>
+                  <td style={{ border: '1px solid #000000', padding: '4px 6px' }}>Sistem</td>
+                </tr>
+
+                {/* Mutation Rows */}
+                {filteredDetailRows.map((row, idx) => {
+                  const fallbackPrice = (Number(stockCard?.ingredient?.harga ?? selectedIng?.harga ?? 0)) / Math.max(Number(selectedIng?.konversi || 1), 1);
+                  let unitPriceVal = fallbackPrice;
+                  if (row.balance && Number(row.balance) !== 0 && row.balance_nominal !== undefined && row.balance_nominal !== null) {
+                    unitPriceVal = Math.abs(Number(row.balance_nominal) / Number(row.balance));
+                  } else if (row.cost_after !== undefined && row.cost_after !== null && Number(row.cost_after) > 0) {
+                    unitPriceVal = Number(row.cost_after);
+                  } else if (row.cost_before !== undefined && row.cost_before !== null && Number(row.cost_before) > 0) {
+                    unitPriceVal = Number(row.cost_before);
+                  } else if (row.unit_price) {
+                    unitPriceVal = Number(row.unit_price) > 1000 && (selectedIng?.konversi || 1) > 1
+                      ? Number(row.unit_price) / Number(selectedIng.konversi)
+                      : Number(row.unit_price);
+                  }
+                  const balanceNominalVal = row.balance_nominal !== undefined && row.balance_nominal !== null
+                    ? Number(row.balance_nominal)
+                    : (Number(row.balance || 0) * unitPriceVal);
+
+                  return (
+                    <tr key={row.id || idx} style={{ borderBottom: '1px solid #cccccc' }}>
+                      <td style={{ textAlign: 'center', border: '1px solid #000000', padding: '4px 6px' }}>{idx + 1}</td>
+                      <td style={{ border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace' }}>{row.date}</td>
+                      <td style={{ border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace' }}>{row.ref}</td>
+                      <td style={{ border: '1px solid #000000', padding: '4px 6px' }}>{row.note || '—'}</td>
+                      <td style={{ border: '1px solid #000000', padding: '4px 6px', fontWeight: 600 }}>{row.type}</td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace', fontWeight: 700 }}>
+                        {rupiah(unitPriceVal)}/{selectedIng?.unit_pakai}
+                        {row.unit_price && Number(selectedIng?.konversi || 1) > 1 ? ` (PO: @${rupiah(row.unit_price)})` : ''}
+                      </td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace', fontWeight: row.qty_in > 0 ? 700 : 400 }}>
+                        {row.qty_in > 0 ? `+${num(row.qty_in)}` : '—'}
+                      </td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace', fontWeight: row.qty_out > 0 ? 700 : 400 }}>
+                        {row.qty_out > 0 ? `-${num(row.qty_out)}` : '—'}
+                      </td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace', fontWeight: 800 }}>
+                        {num(row.balance)} {selectedIng?.unit_pakai}
+                      </td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace', fontWeight: 800 }}>
+                        {rupiah(balanceNominalVal)}
+                      </td>
+                      <td style={{ border: '1px solid #000000', padding: '4px 6px', fontSize: 9.5 }}>
+                        {row.created_by_name || row.user || 'Sistem'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr style={{ background: '#f4f4f4', fontWeight: 800, borderTop: '2px solid #000000' }}>
+                  <td colSpan={6} style={{ textAlign: 'right', border: '1px solid #000000', padding: '6px 8px', textTransform: 'uppercase' }}>
+                    TOTAL AKUMULASI PERIODE INI
+                  </td>
+                  <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '6px 8px', fontFamily: 'monospace', fontWeight: 800 }}>
+                    +{num(stockCard?.total_masuk)}
+                  </td>
+                  <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '6px 8px', fontFamily: 'monospace', fontWeight: 800 }}>
+                    -{num(stockCard?.total_keluar)}
+                  </td>
+                  <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '6px 8px', fontFamily: 'monospace', fontWeight: 900 }}>
+                    {num(stockCard?.stok_akhir)} {selectedIng?.unit_pakai}
+                  </td>
+                  <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '6px 8px', fontFamily: 'monospace', fontWeight: 900 }}>
+                    {rupiah(stockCard?.nilai_stok_akhir)}
+                  </td>
+                  <td style={{ border: '1px solid #000000' }}></td>
+                </tr>
+              </tfoot>
+            </table>
+
+            {/* Lembar Pengesahan */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20, marginTop: 24, textAlign: 'center', fontSize: 11, pageBreakInside: 'avoid' }}>
+              <div>
+                <div style={{ fontWeight: 700 }}>Dibuat Oleh (Checker/Gudang):</div>
+                <div style={{ height: 45 }}></div>
+                <div style={{ borderTop: '1px solid #000000', width: '80%', margin: '0 auto', paddingTop: 3, fontWeight: 700 }}>
+                  ({currentUser?.name || 'Petugas Gudang'})
+                </div>
+              </div>
+              <div>
+                <div style={{ fontWeight: 700 }}>Diverifikasi (PIC / Supervisor):</div>
+                <div style={{ height: 45 }}></div>
+                <div style={{ borderTop: '1px solid #000000', width: '80%', margin: '0 auto', paddingTop: 3, fontWeight: 700 }}>
+                  (_________________________)
+                </div>
+              </div>
+              <div>
+                <div style={{ fontWeight: 700 }}>Disetujui (Owner / Finansial):</div>
+                <div style={{ height: 45 }}></div>
+                <div style={{ borderTop: '1px solid #000000', width: '80%', margin: '0 auto', paddingTop: 3, fontWeight: 700 }}>
+                  (_________________________)
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* ======================================================== */
+          /* 2. REKAPITULASI RINGKASAN SALDO SELURUH BAHAN DI GUDANG */
+          /* ======================================================== */
+          <div>
+            {/* Kop Laporan */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2.5px solid #000000', paddingBottom: 10, marginBottom: 14 }}>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.02em' }}>
+                  {currentUser?.business?.name || currentBusiness?.name || 'MAROA F&B GROUP'}
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 800, marginTop: 2, color: '#000000' }}>
+                  LAPORAN REKAPITULASI SALDO STOK & VALUASI PERSEDIAAN GUDANG
+                </div>
+                <div style={{ fontSize: 11, color: '#333333', marginTop: 1 }}>
+                  Gudang / Lokasi: <strong>{currentOutlet?.name || 'Semua Cabang'}</strong> · Periode: <strong>{period.from}</strong> s/d <strong>{period.to}</strong> · Kategori: <strong>{itemCategory}</strong>
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 10, textTransform: 'uppercase', fontWeight: 700, color: '#555555' }}>
+                  TANGGAL CETAK
+                </div>
+                <div style={{ fontSize: 11, fontWeight: 700, fontFamily: 'monospace' }}>
+                  {new Date().toLocaleString('id-ID')}
+                </div>
+                <div style={{ fontSize: 10, color: '#555555', marginTop: 2 }}>
+                  Petugas: {currentUser?.name || 'Sistem'}
+                </div>
+              </div>
+            </div>
+
+            {/* Financial Totals */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 14 }}>
+              <div style={{ border: '1px solid #000000', padding: '6px 10px', textAlign: 'center' }}>
+                <div style={{ fontSize: 9.5, textTransform: 'uppercase', fontWeight: 700 }}>Total Bahan & Item</div>
+                <div style={{ fontSize: 13, fontWeight: 900, fontFamily: 'monospace', marginTop: 2 }}>{filteredSummaryItems.length} Item</div>
+              </div>
+              <div style={{ border: '1px solid #000000', padding: '6px 10px', textAlign: 'center' }}>
+                <div style={{ fontSize: 9.5, textTransform: 'uppercase', fontWeight: 700 }}>Stok Aman (Positif)</div>
+                <div style={{ fontSize: 13, fontWeight: 900, fontFamily: 'monospace', marginTop: 2 }}>{filterCounts.SAFE} Item</div>
+              </div>
+              <div style={{ border: '1px solid #000000', padding: '6px 10px', textAlign: 'center' }}>
+                <div style={{ fontSize: 9.5, textTransform: 'uppercase', fontWeight: 700 }}>Stok Defisit (Minus)</div>
+                <div style={{ fontSize: 13, fontWeight: 900, fontFamily: 'monospace', marginTop: 2 }}>{filterCounts.NEGATIVE} Item</div>
+              </div>
+              <div style={{ border: '1px solid #000000', padding: '6px 10px', textAlign: 'center', background: '#f8f8f8' }}>
+                <div style={{ fontSize: 9.5, textTransform: 'uppercase', fontWeight: 800 }}>Total Nilai Valuasi Saldo</div>
+                <div style={{ fontSize: 13, fontWeight: 900, fontFamily: 'monospace', marginTop: 2 }}>
+                  {rupiah(summaryData?.grand_total_safe_valuation || 0)}
+                </div>
+              </div>
+            </div>
+
+            {/* Summary Table */}
+            <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #000000', fontSize: 10, margin: '8px 0' }}>
+              <thead>
+                <tr style={{ background: '#f0f0f0', borderBottom: '1.5px solid #000000' }}>
+                  <th style={{ width: 30, textAlign: 'center', border: '1px solid #000000', padding: '4px 6px' }}>NO</th>
+                  <th style={{ width: 75, textAlign: 'left', border: '1px solid #000000', padding: '4px 6px' }}>KODE</th>
+                  <th style={{ textAlign: 'left', border: '1px solid #000000', padding: '4px 6px' }}>NAMA BAHAN BAKU</th>
+                  <th style={{ width: 85, textAlign: 'left', border: '1px solid #000000', padding: '4px 6px' }}>KATEGORI</th>
+                  <th style={{ width: 80, textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>STOK AWAL</th>
+                  <th style={{ width: 75, textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>MASUK (+)</th>
+                  <th style={{ width: 75, textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>KELUAR (-)</th>
+                  <th style={{ width: 85, textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>STOK AKHIR</th>
+                  <th style={{ width: 55, textAlign: 'center', border: '1px solid #000000', padding: '4px 6px' }}>SATUAN</th>
+                  <th style={{ width: 85, textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>HARGA SATUAN</th>
+                  <th style={{ width: 100, textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>NILAI STOK (RP)</th>
+                  <th style={{ width: 75, textAlign: 'center', border: '1px solid #000000', padding: '4px 6px' }}>STATUS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredSummaryItems.map((it, idx) => {
+                  const isNeg = Number(it.stok_akhir) < 0;
+                  return (
+                    <tr key={it.id || idx} style={{ borderBottom: '1px solid #cccccc', background: isNeg ? '#fff5f5' : 'transparent' }}>
+                      <td style={{ textAlign: 'center', border: '1px solid #000000', padding: '4px 6px' }}>{idx + 1}</td>
+                      <td style={{ border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace' }}>{it.code}</td>
+                      <td style={{ border: '1px solid #000000', padding: '4px 6px', fontWeight: 700 }}>{it.name}</td>
+                      <td style={{ border: '1px solid #000000', padding: '4px 6px' }}>{it.category || 'Umum'}</td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace' }}>{num(it.stok_awal)}</td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace' }}>{num(it.total_masuk)}</td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace' }}>{num(it.total_keluar)}</td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace', fontWeight: 800 }}>{num(it.stok_akhir)}</td>
+                      <td style={{ textAlign: 'center', border: '1px solid #000000', padding: '4px 6px' }}>{it.unit_pakai}</td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace' }}>{rupiah(it.harga_satuan)}</td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace', fontWeight: 800 }}>{rupiah(it.nilai_stok)}</td>
+                      <td style={{ textAlign: 'center', border: '1px solid #000000', padding: '4px 6px', fontWeight: 700 }}>
+                        {isNeg ? 'MINUS' : (it.is_low ? 'MENIPIS' : 'AMAN')}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            {/* Lembar Pengesahan */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20, marginTop: 24, textAlign: 'center', fontSize: 11, pageBreakInside: 'avoid' }}>
+              <div>
+                <div style={{ fontWeight: 700 }}>Dibuat Oleh (Checker/Gudang):</div>
+                <div style={{ height: 45 }}></div>
+                <div style={{ borderTop: '1px solid #000000', width: '80%', margin: '0 auto', paddingTop: 3, fontWeight: 700 }}>
+                  ({currentUser?.name || 'Petugas Gudang'})
+                </div>
+              </div>
+              <div>
+                <div style={{ fontWeight: 700 }}>Diverifikasi (PIC / Supervisor):</div>
+                <div style={{ height: 45 }}></div>
+                <div style={{ borderTop: '1px solid #000000', width: '80%', margin: '0 auto', paddingTop: 3, fontWeight: 700 }}>
+                  (_________________________)
+                </div>
+              </div>
+              <div>
+                <div style={{ fontWeight: 700 }}>Disetujui (Owner / Finansial):</div>
+                <div style={{ height: 45 }}></div>
+                <div style={{ borderTop: '1px solid #000000', width: '80%', margin: '0 auto', paddingTop: 3, fontWeight: 700 }}>
+                  (_________________________)
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Import Saldo Awal Fisik Per Gudang Modal (Bahan / Perlengkapan) */}
       <ImportMasterModal
         isOpen={showImportStockModal}
         onClose={() => setShowImportStockModal(false)}
-        targetMaster="STOCK_AWAL_GUDANG"
+        targetMaster={importModalType || 'STOCK_AWAL_BAHAN'}
         onSuccess={() => {
           fetchSummary();
           fetchIngredients();
