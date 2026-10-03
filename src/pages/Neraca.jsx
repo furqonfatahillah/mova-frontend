@@ -12,6 +12,7 @@ import {
   CreditCard,
   Wallet,
   ArrowRight,
+  ChevronRight,
   Info,
   Sparkles,
   Layers,
@@ -22,6 +23,7 @@ import { rupiah, LoadingState, PageHeader } from '../components/ui';
 import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
 import { useOutlet } from '../context/OutletContext';
 import { exportBalanceSheetToExcel, printBalanceSheetReport } from '../utils/exportReport';
+import BalanceSheetDetailModal from '../components/BalanceSheetDetailModal';
 import toast from 'react-hot-toast';
 
 export default function Neraca() {
@@ -34,6 +36,11 @@ export default function Neraca() {
   const [exporting, setExporting] = useState(false);
   const [neracaData, setNeracaData] = useState(null);
   const [viewMode, setViewMode] = useState('stacked'); // 'stacked' | 'two_column'
+  const [selectedAccount, setSelectedAccount] = useState(null);
+
+  const handleOpenDetail = (code, name) => {
+    setSelectedAccount({ code, name });
+  };
 
   // Fetch Neraca Data from API
   const fetchNeraca = async () => {
@@ -195,6 +202,34 @@ export default function Neraca() {
         </div>
       ) : (
         <>
+          {/* Interactive Audit Trail Notice Banner */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 8,
+              padding: '10px 16px',
+              borderRadius: 10,
+              background: 'linear-gradient(90deg, rgba(56, 189, 248, 0.12) 0%, rgba(16, 185, 129, 0.08) 100%)',
+              border: '1px solid rgba(56, 189, 248, 0.25)',
+              fontSize: 12.5,
+              color: '#e0f2fe',
+              marginBottom: 16,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Sparkles size={16} color="#38bdf8" style={{ flexShrink: 0 }} />
+              <span>
+                <strong style={{ color: '#ffffff' }}>Audit Trail Interaktif:</strong> Klik pada pos akun, subtotal, atau kartu ringkasan mana saja di bawah ini untuk melihat rincian sumber nilai, rumus perhitungan, dan riwayat transaksi lengkapnya.
+              </span>
+            </div>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
+              Klik akun untuk bedah data <ChevronRight size={13} />
+            </span>
+          </div>
+
           {/* 3. Executive KPI Summary Cards */}
           <div
             style={{
@@ -207,19 +242,23 @@ export default function Neraca() {
             {/* Total Aset */}
             <div
               className="card"
+              onClick={() => handleOpenDetail('TOTAL_ASSETS', 'Total Aset (Aktiva)')}
               style={{
                 padding: '16px 18px',
                 borderLeft: '4px solid #10b981',
                 background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(20, 26, 52, 0.72) 100%)',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
               }}
+              title="Klik untuk melihat rincian komposisi Total Aset (Aktiva)"
             >
               <div className="flex-between mb-1">
                 <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Landmark size={15} color="#10b981" />
                   Total Aset (Aktiva)
                 </span>
-                <span style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 6, background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', fontWeight: 700 }}>
-                  Kekayaan Usaha
+                <span style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 6, background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                  Rincian <ChevronRight size={11} />
                 </span>
               </div>
               <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: '#10b981', margin: '4px 0 8px 0' }}>
@@ -236,19 +275,23 @@ export default function Neraca() {
             {/* Total Liabilitas */}
             <div
               className="card"
+              onClick={() => handleOpenDetail('TOTAL_LIABILITIES', 'Total Liabilitas (Hutang)')}
               style={{
                 padding: '16px 18px',
                 borderLeft: '4px solid #f43f5e',
                 background: 'linear-gradient(135deg, rgba(244, 63, 94, 0.08) 0%, rgba(20, 26, 52, 0.72) 100%)',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
               }}
+              title="Klik untuk melihat rincian komposisi Total Liabilitas (Hutang)"
             >
               <div className="flex-between mb-1">
                 <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <CreditCard size={15} color="#f43f5e" />
                   Total Liabilitas (Hutang)
                 </span>
-                <span style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 6, background: 'rgba(244, 63, 94, 0.15)', color: '#f43f5e', fontWeight: 700 }}>
-                  Kewajiban
+                <span style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 6, background: 'rgba(244, 63, 94, 0.15)', color: '#f43f5e', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                  Rincian <ChevronRight size={11} />
                 </span>
               </div>
               <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: '#f43f5e', margin: '4px 0 8px 0' }}>
@@ -265,19 +308,23 @@ export default function Neraca() {
             {/* Total Modal & Ekuitas */}
             <div
               className="card"
+              onClick={() => handleOpenDetail('TOTAL_EQUITY', 'Total Modal & Ekuitas')}
               style={{
                 padding: '16px 18px',
                 borderLeft: '4px solid #38bdf8',
                 background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.08) 0%, rgba(20, 26, 52, 0.72) 100%)',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
               }}
+              title="Klik untuk melihat rincian komposisi Total Modal & Ekuitas"
             >
               <div className="flex-between mb-1">
                 <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <TrendingUp size={15} color="#38bdf8" />
                   Total Modal & Ekuitas
                 </span>
-                <span style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 6, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', fontWeight: 700 }}>
-                  Kepemilikan
+                <span style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 6, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                  Rincian <ChevronRight size={11} />
                 </span>
               </div>
               <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: '#38bdf8', margin: '4px 0 8px 0' }}>
@@ -294,13 +341,17 @@ export default function Neraca() {
             {/* Status Keseimbangan Neraca */}
             <div
               className="card"
+              onClick={() => handleOpenDetail('STATUS_BALANCE', 'Status Keseimbangan Neraca')}
               style={{
                 padding: '16px 18px',
                 borderLeft: `4px solid ${neracaData.is_balanced ? '#10b981' : '#f59e0b'}`,
                 background: neracaData.is_balanced
                   ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(20, 26, 52, 0.72) 100%)'
                   : 'linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(20, 26, 52, 0.72) 100%)',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
               }}
+              title="Klik untuk melihat audit keseimbangan neraca"
             >
               <div className="flex-between mb-1">
                 <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -309,11 +360,11 @@ export default function Neraca() {
                 </span>
                 {neracaData.is_balanced ? (
                   <span style={{ fontSize: 10.5, padding: '2px 8px', borderRadius: 6, background: 'rgba(16, 185, 129, 0.2)', color: '#10b981', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                    <CheckCircle2 size={12} /> SEIMBANG
+                    <CheckCircle2 size={12} /> SEIMBANG <ChevronRight size={11} />
                   </span>
                 ) : (
                   <span style={{ fontSize: 10.5, padding: '2px 8px', borderRadius: 6, background: 'rgba(245, 158, 11, 0.2)', color: '#f59e0b', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                    <AlertCircle size={12} /> SELISIH
+                    <AlertCircle size={12} /> SELISIH <ChevronRight size={11} />
                   </span>
                 )}
               </div>
@@ -363,14 +414,21 @@ export default function Neraca() {
                     {(neracaData.current_assets?.accounts || []).map((acc, idx) => (
                       <div
                         key={idx}
+                        onClick={() => handleOpenDetail(acc.code, acc.name)}
                         style={{
                           display: 'flex',
                           justifyContent: 'space-between',
                           alignItems: 'center',
-                          padding: '8px 12px',
+                          padding: '10px 14px',
                           borderBottom: '1px solid rgba(165, 180, 252, 0.06)',
                           fontSize: 13,
+                          cursor: 'pointer',
+                          borderRadius: 8,
+                          transition: 'background 0.15s ease',
                         }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                        title={`Klik untuk melihat rincian & sumber nilai: ${acc.name}`}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                           <span className="mono" style={{ width: 75, color: 'var(--text-muted)', fontSize: 12 }}>
@@ -380,90 +438,49 @@ export default function Neraca() {
                             {acc.name}
                           </span>
                         </div>
-                        <span className="mono" style={{ fontWeight: 600, color: acc.amount < 0 ? 'var(--danger)' : 'var(--text-primary)' }}>
-                          {rupiah(acc.amount)}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span className="mono" style={{ fontWeight: 600, color: acc.amount < 0 ? 'var(--danger)' : 'var(--text-primary)' }}>
+                            {rupiah(acc.amount)}
+                          </span>
+                          <ChevronRight size={14} color="var(--text-muted)" style={{ opacity: 0.6 }} />
+                        </div>
                       </div>
                     ))}
                     {/* Subtotal Aset Lancar */}
                     <div
+                      onClick={() => handleOpenDetail('TOTAL_ASSETS', 'Jumlah Aset Lancar')}
                       style={{
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
-                        padding: '10px 12px',
+                        padding: '10px 14px',
                         borderTop: '1px solid var(--border-strong)',
                         background: 'rgba(165, 180, 252, 0.04)',
                         borderRadius: 6,
                         marginTop: 4,
                         fontWeight: 700,
                         fontSize: 13.5,
+                        cursor: 'pointer',
+                        transition: 'background 0.15s ease',
                       }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(16, 185, 129, 0.1)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(165, 180, 252, 0.04)')}
+                      title="Klik untuk melihat rincian komposisi Total Aset Lancar"
                     >
                       <span style={{ color: '#ffffff' }}>Jumlah Aset Lancar</span>
-                      <span className="mono" style={{ color: '#10b981' }}>
-                        {rupiah(neracaData.current_assets?.subtotal || 0)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 2. ASET TETAP */}
-                <div style={{ marginBottom: 26 }}>
-                  <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--accent-bright)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    Aset Tetap
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    {(neracaData.fixed_assets?.accounts || []).map((acc, idx) => (
-                      <div
-                        key={idx}
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          padding: '8px 12px',
-                          borderBottom: '1px solid rgba(165, 180, 252, 0.06)',
-                          fontSize: 13,
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                          <span className="mono" style={{ width: 75, color: 'var(--text-muted)', fontSize: 12 }}>
-                            {acc.code || ''}
-                          </span>
-                          <span style={{ color: '#ffffff', fontWeight: 500 }}>
-                            {acc.name}
-                          </span>
-                        </div>
-                        <span className="mono" style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                          {rupiah(acc.amount)}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span className="mono" style={{ color: '#10b981' }}>
+                          {rupiah(neracaData.current_assets?.subtotal || 0)}
                         </span>
+                        <ChevronRight size={14} color="#10b981" />
                       </div>
-                    ))}
-                    {/* Subtotal Aset Tetap */}
-                    <div
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        padding: '10px 12px',
-                        borderTop: '1px solid var(--border-strong)',
-                        background: 'rgba(165, 180, 252, 0.04)',
-                        borderRadius: 6,
-                        marginTop: 4,
-                        fontWeight: 700,
-                        fontSize: 13.5,
-                      }}
-                    >
-                      <span style={{ color: '#ffffff' }}>Jumlah Aset Tetap</span>
-                      <span className="mono" style={{ color: '#10b981' }}>
-                        {rupiah(neracaData.fixed_assets?.subtotal || 0)}
-                      </span>
                     </div>
                   </div>
                 </div>
 
                 {/* GRAND TOTAL ASET (AKTIVA) */}
                 <div
+                  onClick={() => handleOpenDetail('TOTAL_ASSETS', 'Total Aset (Aktiva)')}
                   style={{
                     display: 'flex',
                     justifyContent: 'space-between',
@@ -475,14 +492,22 @@ export default function Neraca() {
                     fontWeight: 800,
                     fontSize: 15,
                     marginBottom: 32,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
                   }}
+                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#10b981')}
+                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.35)')}
+                  title="Klik untuk melihat rincian komposisi Total Aset (Aktiva)"
                 >
                   <span style={{ color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     JUMLAH ASET (AKTIVA)
                   </span>
-                  <span className="mono" style={{ color: '#10b981', fontSize: 17 }}>
-                    {rupiah(neracaData.total_assets?.amount || 0)}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span className="mono" style={{ color: '#10b981', fontSize: 17 }}>
+                      {rupiah(neracaData.total_assets?.amount || 0)}
+                    </span>
+                    <ChevronRight size={16} color="#10b981" />
+                  </div>
                 </div>
 
                 {/* 3. LIABILITAS (KEWAJIBAN) */}
@@ -494,14 +519,21 @@ export default function Neraca() {
                     {(neracaData.liabilities?.accounts || []).map((acc, idx) => (
                       <div
                         key={idx}
+                        onClick={() => handleOpenDetail(acc.code, acc.name)}
                         style={{
                           display: 'flex',
                           justifyContent: 'space-between',
                           alignItems: 'center',
-                          padding: '8px 12px',
+                          padding: '10px 14px',
                           borderBottom: '1px solid rgba(165, 180, 252, 0.06)',
                           fontSize: 13,
+                          cursor: 'pointer',
+                          borderRadius: 8,
+                          transition: 'background 0.15s ease',
                         }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                        title={`Klik untuk melihat rincian & sumber nilai: ${acc.name}`}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                           <span className="mono" style={{ width: 75, color: 'var(--text-muted)', fontSize: 12 }}>
@@ -511,30 +543,42 @@ export default function Neraca() {
                             {acc.name}
                           </span>
                         </div>
-                        <span className="mono" style={{ fontWeight: 600, color: '#f43f5e' }}>
-                          {rupiah(acc.amount)}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span className="mono" style={{ fontWeight: 600, color: '#f43f5e' }}>
+                            {rupiah(acc.amount)}
+                          </span>
+                          <ChevronRight size={14} color="var(--text-muted)" style={{ opacity: 0.6 }} />
+                        </div>
                       </div>
                     ))}
                     {/* Subtotal Liabilitas */}
                     <div
+                      onClick={() => handleOpenDetail('TOTAL_LIABILITIES', 'Jumlah Liabilitas')}
                       style={{
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
-                        padding: '10px 12px',
+                        padding: '10px 14px',
                         borderTop: '1px solid var(--border-strong)',
                         background: 'rgba(165, 180, 252, 0.04)',
                         borderRadius: 6,
                         marginTop: 4,
                         fontWeight: 700,
                         fontSize: 13.5,
+                        cursor: 'pointer',
+                        transition: 'background 0.15s ease',
                       }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(244, 63, 94, 0.1)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(165, 180, 252, 0.04)')}
+                      title="Klik untuk melihat rincian Total Liabilitas"
                     >
                       <span style={{ color: '#ffffff' }}>Jumlah Liabilitas</span>
-                      <span className="mono" style={{ color: '#f43f5e' }}>
-                        {rupiah(neracaData.liabilities?.subtotal || 0)}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span className="mono" style={{ color: '#f43f5e' }}>
+                          {rupiah(neracaData.liabilities?.subtotal || 0)}
+                        </span>
+                        <ChevronRight size={14} color="#f43f5e" />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -548,14 +592,21 @@ export default function Neraca() {
                     {(neracaData.equity?.accounts || []).map((acc, idx) => (
                       <div
                         key={idx}
+                        onClick={() => handleOpenDetail(acc.code, acc.name)}
                         style={{
                           display: 'flex',
                           justifyContent: 'space-between',
                           alignItems: 'center',
-                          padding: '8px 12px',
+                          padding: '10px 14px',
                           borderBottom: '1px solid rgba(165, 180, 252, 0.06)',
                           fontSize: 13,
+                          cursor: 'pointer',
+                          borderRadius: 8,
+                          transition: 'background 0.15s ease',
                         }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                        title={`Klik untuk melihat rincian & sumber nilai: ${acc.name}`}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                           <span className="mono" style={{ width: 75, color: 'var(--text-muted)', fontSize: 12 }}>
@@ -565,36 +616,49 @@ export default function Neraca() {
                             {acc.name}
                           </span>
                         </div>
-                        <span className="mono" style={{ fontWeight: 600, color: '#38bdf8' }}>
-                          {rupiah(acc.amount)}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span className="mono" style={{ fontWeight: 600, color: acc.amount < 0 ? '#f43f5e' : '#38bdf8' }}>
+                            {rupiah(acc.amount)}
+                          </span>
+                          <ChevronRight size={14} color="var(--text-muted)" style={{ opacity: 0.6 }} />
+                        </div>
                       </div>
                     ))}
                     {/* Subtotal Modal */}
                     <div
+                      onClick={() => handleOpenDetail('TOTAL_EQUITY', 'Jumlah Modal & Ekuitas')}
                       style={{
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
-                        padding: '10px 12px',
+                        padding: '10px 14px',
                         borderTop: '1px solid var(--border-strong)',
                         background: 'rgba(165, 180, 252, 0.04)',
                         borderRadius: 6,
                         marginTop: 4,
                         fontWeight: 700,
                         fontSize: 13.5,
+                        cursor: 'pointer',
+                        transition: 'background 0.15s ease',
                       }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(56, 189, 248, 0.1)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(165, 180, 252, 0.04)')}
+                      title="Klik untuk melihat rincian Modal & Ekuitas"
                     >
                       <span style={{ color: '#ffffff' }}>Jumlah Modal & Ekuitas</span>
-                      <span className="mono" style={{ color: '#38bdf8' }}>
-                        {rupiah(neracaData.equity?.subtotal || 0)}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span className="mono" style={{ color: '#38bdf8' }}>
+                          {rupiah(neracaData.equity?.subtotal || 0)}
+                        </span>
+                        <ChevronRight size={14} color="#38bdf8" />
+                      </div>
                     </div>
                   </div>
                 </div>
 
                 {/* GRAND TOTAL KEWAJIBAN & MODAL (PASSIVA) */}
                 <div
+                  onClick={() => handleOpenDetail('STATUS_BALANCE', 'Jumlah Kewajiban dan Modal')}
                   style={{
                     display: 'flex',
                     justifyContent: 'space-between',
@@ -605,14 +669,22 @@ export default function Neraca() {
                     border: '1px solid rgba(56, 189, 248, 0.35)',
                     fontWeight: 800,
                     fontSize: 15,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
                   }}
+                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#38bdf8')}
+                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.35)')}
+                  title="Klik untuk melihat audit keseimbangan neraca"
                 >
                   <span style={{ color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     JUMLAH KEWAJIBAN DAN MODAL (PASSIVA)
                   </span>
-                  <span className="mono" style={{ color: '#38bdf8', fontSize: 17 }}>
-                    {rupiah(neracaData.total_liabilities_and_equity?.amount || 0)}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span className="mono" style={{ color: '#38bdf8', fontSize: 17 }}>
+                      {rupiah(neracaData.total_liabilities_and_equity?.amount || 0)}
+                    </span>
+                    <ChevronRight size={16} color="#38bdf8" />
+                  </div>
                 </div>
               </div>
             ) : (
@@ -638,47 +710,72 @@ export default function Neraca() {
                     }}
                   >
                     <div>
-                      <div style={{ fontSize: 14, fontWeight: 800, color: '#10b981', borderBottom: '1px solid var(--border)', paddingBottom: 8, marginBottom: 14 }}>
-                        ASET (AKTIVA)
+                      <div style={{ fontSize: 14, fontWeight: 800, color: '#10b981', borderBottom: '1px solid var(--border)', paddingBottom: 8, marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>ASET (AKTIVA)</span>
+                        <span style={{ fontSize: 10.5, color: 'var(--text-muted)', fontWeight: 600 }}>Klik pos untuk rincian</span>
                       </div>
 
                       {/* Aset Lancar */}
                       <div style={{ marginBottom: 18 }}>
                         <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                          1. Aset Lancar
+                          Aset Lancar
                         </div>
                         {(neracaData.current_assets?.accounts || []).map((acc, idx) => (
-                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 8px', fontSize: 12.5 }}>
+                          <div
+                            key={idx}
+                            onClick={() => handleOpenDetail(acc.code, acc.name)}
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              padding: '6px 8px',
+                              fontSize: 12.5,
+                              cursor: 'pointer',
+                              borderRadius: 6,
+                              transition: 'background 0.12s ease',
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)')}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                            title={`Klik untuk melihat rincian: ${acc.name}`}
+                          >
                             <span style={{ color: '#cbd5e1' }}>{acc.code} {acc.name}</span>
-                            <span className="mono" style={{ color: '#ffffff' }}>{rupiah(acc.amount)}</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span className="mono" style={{ color: '#ffffff' }}>{rupiah(acc.amount)}</span>
+                              <ChevronRight size={13} color="var(--text-muted)" style={{ opacity: 0.6 }} />
+                            </div>
                           </div>
                         ))}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 8px', borderTop: '1px dashed var(--border)', fontWeight: 700, fontSize: 12.5, color: '#10b981' }}>
+                        <div
+                          onClick={() => handleOpenDetail('TOTAL_ASSETS', 'Subtotal Aset Lancar')}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '7px 8px',
+                            borderTop: '1px dashed var(--border)',
+                            fontWeight: 700,
+                            fontSize: 12.5,
+                            color: '#10b981',
+                            cursor: 'pointer',
+                            borderRadius: 6,
+                            marginTop: 4,
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(16, 185, 129, 0.08)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                          title="Klik untuk melihat rincian Total Aset Lancar"
+                        >
                           <span>Subtotal Aset Lancar</span>
-                          <span className="mono">{rupiah(neracaData.current_assets?.subtotal || 0)}</span>
-                        </div>
-                      </div>
-
-                      {/* Aset Tetap */}
-                      <div style={{ marginBottom: 18 }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                          2. Aset Tetap
-                        </div>
-                        {(neracaData.fixed_assets?.accounts || []).map((acc, idx) => (
-                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 8px', fontSize: 12.5 }}>
-                            <span style={{ color: '#cbd5e1' }}>{acc.code} {acc.name}</span>
-                            <span className="mono" style={{ color: '#ffffff' }}>{rupiah(acc.amount)}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span className="mono">{rupiah(neracaData.current_assets?.subtotal || 0)}</span>
+                            <ChevronRight size={13} color="#10b981" />
                           </div>
-                        ))}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 8px', borderTop: '1px dashed var(--border)', fontWeight: 700, fontSize: 12.5, color: '#10b981' }}>
-                          <span>Subtotal Aset Tetap</span>
-                          <span className="mono">{rupiah(neracaData.fixed_assets?.subtotal || 0)}</span>
                         </div>
                       </div>
                     </div>
 
                     {/* Total Aktiva Footer */}
                     <div
+                      onClick={() => handleOpenDetail('TOTAL_ASSETS', 'Total Aset (Aktiva)')}
                       style={{
                         display: 'flex',
                         justifyContent: 'space-between',
@@ -690,12 +787,20 @@ export default function Neraca() {
                         fontWeight: 800,
                         fontSize: 14,
                         marginTop: 14,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
                       }}
+                      onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#10b981')}
+                      onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.35)')}
+                      title="Klik untuk melihat rincian komposisi Total Aset (Aktiva)"
                     >
                       <span style={{ color: '#ffffff' }}>TOTAL ASET (AKTIVA)</span>
-                      <span className="mono" style={{ color: '#10b981', fontSize: 15 }}>
-                        {rupiah(neracaData.total_assets?.amount || 0)}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span className="mono" style={{ color: '#10b981', fontSize: 15 }}>
+                          {rupiah(neracaData.total_assets?.amount || 0)}
+                        </span>
+                        <ChevronRight size={15} color="#10b981" />
+                      </div>
                     </div>
                   </div>
 
@@ -712,8 +817,9 @@ export default function Neraca() {
                     }}
                   >
                     <div>
-                      <div style={{ fontSize: 14, fontWeight: 800, color: '#38bdf8', borderBottom: '1px solid var(--border)', paddingBottom: 8, marginBottom: 14 }}>
-                        KEWAJIBAN & EKUITAS (PASSIVA)
+                      <div style={{ fontSize: 14, fontWeight: 800, color: '#38bdf8', borderBottom: '1px solid var(--border)', paddingBottom: 8, marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>KEWAJIBAN & EKUITAS (PASSIVA)</span>
+                        <span style={{ fontSize: 10.5, color: 'var(--text-muted)', fontWeight: 600 }}>Klik pos untuk rincian</span>
                       </div>
 
                       {/* Liabilitas */}
@@ -722,14 +828,54 @@ export default function Neraca() {
                           1. Liabilitas (Kewajiban)
                         </div>
                         {(neracaData.liabilities?.accounts || []).map((acc, idx) => (
-                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 8px', fontSize: 12.5 }}>
+                          <div
+                            key={idx}
+                            onClick={() => handleOpenDetail(acc.code, acc.name)}
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              padding: '6px 8px',
+                              fontSize: 12.5,
+                              cursor: 'pointer',
+                              borderRadius: 6,
+                              transition: 'background 0.12s ease',
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)')}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                            title={`Klik untuk melihat rincian: ${acc.name}`}
+                          >
                             <span style={{ color: '#cbd5e1' }}>{acc.code} {acc.name}</span>
-                            <span className="mono" style={{ color: '#f43f5e' }}>{rupiah(acc.amount)}</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span className="mono" style={{ color: '#f43f5e' }}>{rupiah(acc.amount)}</span>
+                              <ChevronRight size={13} color="var(--text-muted)" style={{ opacity: 0.6 }} />
+                            </div>
                           </div>
                         ))}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 8px', borderTop: '1px dashed var(--border)', fontWeight: 700, fontSize: 12.5, color: '#f43f5e' }}>
+                        <div
+                          onClick={() => handleOpenDetail('TOTAL_LIABILITIES', 'Subtotal Liabilitas')}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '7px 8px',
+                            borderTop: '1px dashed var(--border)',
+                            fontWeight: 700,
+                            fontSize: 12.5,
+                            color: '#f43f5e',
+                            cursor: 'pointer',
+                            borderRadius: 6,
+                            marginTop: 4,
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(244, 63, 94, 0.08)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                          title="Klik untuk melihat rincian Total Liabilitas"
+                        >
                           <span>Subtotal Liabilitas</span>
-                          <span className="mono">{rupiah(neracaData.liabilities?.subtotal || 0)}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span className="mono">{rupiah(neracaData.liabilities?.subtotal || 0)}</span>
+                            <ChevronRight size={13} color="#f43f5e" />
+                          </div>
                         </div>
                       </div>
 
@@ -739,20 +885,61 @@ export default function Neraca() {
                           2. Modal & Ekuitas
                         </div>
                         {(neracaData.equity?.accounts || []).map((acc, idx) => (
-                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 8px', fontSize: 12.5 }}>
+                          <div
+                            key={idx}
+                            onClick={() => handleOpenDetail(acc.code, acc.name)}
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              padding: '6px 8px',
+                              fontSize: 12.5,
+                              cursor: 'pointer',
+                              borderRadius: 6,
+                              transition: 'background 0.12s ease',
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)')}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                            title={`Klik untuk melihat rincian: ${acc.name}`}
+                          >
                             <span style={{ color: '#cbd5e1' }}>{acc.code} {acc.name}</span>
-                            <span className="mono" style={{ color: '#38bdf8' }}>{rupiah(acc.amount)}</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span className="mono" style={{ color: acc.amount < 0 ? '#f43f5e' : '#38bdf8' }}>{rupiah(acc.amount)}</span>
+                              <ChevronRight size={13} color="var(--text-muted)" style={{ opacity: 0.6 }} />
+                            </div>
                           </div>
                         ))}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 8px', borderTop: '1px dashed var(--border)', fontWeight: 700, fontSize: 12.5, color: '#38bdf8' }}>
+                        <div
+                          onClick={() => handleOpenDetail('TOTAL_EQUITY', 'Subtotal Modal & Ekuitas')}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '7px 8px',
+                            borderTop: '1px dashed var(--border)',
+                            fontWeight: 700,
+                            fontSize: 12.5,
+                            color: '#38bdf8',
+                            cursor: 'pointer',
+                            borderRadius: 6,
+                            marginTop: 4,
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(56, 189, 248, 0.08)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                          title="Klik untuk melihat rincian Subtotal Modal & Ekuitas"
+                        >
                           <span>Subtotal Modal & Ekuitas</span>
-                          <span className="mono">{rupiah(neracaData.equity?.subtotal || 0)}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span className="mono">{rupiah(neracaData.equity?.subtotal || 0)}</span>
+                            <ChevronRight size={13} color="#38bdf8" />
+                          </div>
                         </div>
                       </div>
                     </div>
 
                     {/* Total Passiva Footer */}
                     <div
+                      onClick={() => handleOpenDetail('STATUS_BALANCE', 'Total Kewajiban & Modal')}
                       style={{
                         display: 'flex',
                         justifyContent: 'space-between',
@@ -764,20 +951,41 @@ export default function Neraca() {
                         fontWeight: 800,
                         fontSize: 14,
                         marginTop: 14,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
                       }}
+                      onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#38bdf8')}
+                      onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.35)')}
+                      title="Klik untuk melihat audit keseimbangan neraca"
                     >
                       <span style={{ color: '#ffffff' }}>TOTAL KEWAJIBAN & MODAL</span>
-                      <span className="mono" style={{ color: '#38bdf8', fontSize: 15 }}>
-                        {rupiah(neracaData.total_liabilities_and_equity?.amount || 0)}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span className="mono" style={{ color: '#38bdf8', fontSize: 15 }}>
+                          {rupiah(neracaData.total_liabilities_and_equity?.amount || 0)}
+                        </span>
+                        <ChevronRight size={15} color="#38bdf8" />
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
             )}
           </div>
+
+          {/* 5. BALANCE SHEET DETAIL AUDIT TRAIL MODAL */}
+          <BalanceSheetDetailModal
+            isOpen={!!selectedAccount}
+            onClose={() => setSelectedAccount(null)}
+            accountCode={selectedAccount?.code}
+            accountName={selectedAccount?.name}
+            period={neracaData?.period || { from: effectiveDateFrom, to: effectiveDateTo }}
+            outletId={activeOutletId}
+            outletName={activeOutlet?.name || (activeOutletId ? 'Cabang Terpilih' : 'Semua Cabang (Konsolidasi)')}
+            businessName={currentBusiness?.name || 'MOVA POS'}
+          />
         </>
       )}
     </div>
   );
 }
+

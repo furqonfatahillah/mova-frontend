@@ -4,7 +4,7 @@ import {
   ArrowUpRight, RefreshCw, Printer, Plus, Search, Filter,
   Building2, Layers, CheckCircle2, AlertCircle, Sparkles,
   HelpCircle, Store, Edit3, Trash, Info, Package, Landmark, Flame,
-  Clock, CheckSquare, Square, X, SlidersHorizontal, Check, UserCheck, ChevronDown
+  Clock, CheckSquare, Square, X, SlidersHorizontal, Check, UserCheck, ChevronDown, Scale, Coins, ArrowRightLeft
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, num, pct, LoadingState, PageHeader, PeriodPicker } from '../components/ui';
@@ -16,56 +16,52 @@ import { confirmDialog } from '../utils/swal';
 
 export const ACTIVITY_TYPES = [
   { value: 'OPERATING', label: 'Operasi (Operating)', color: '#10b981' },
-  { value: 'INVESTING', label: 'Investasi (CapEx)',   color: '#8b5cf6' },
+  { value: 'INVESTING', label: 'Investasi (CapEx)', color: '#8b5cf6' },
   { value: 'FINANCING', label: 'Pendanaan (Financing)', color: '#ec4899' },
 ];
 
 export const CASH_CATEGORIES = [
   // CapEx / Investing
-  { value: 'EQUIPMENT',         label: 'Peralatan & Mesin Dapur (CapEx)',       activity: 'INVESTING', defaultType: 'OUT' },
-  { value: 'RENOVATION',        label: 'Renovasi Bangunan & Interior (CapEx)',   activity: 'INVESTING', defaultType: 'OUT' },
-  { value: 'FURNITURE',         label: 'Furnitur & Peralatan Saji (CapEx)',      activity: 'INVESTING', defaultType: 'OUT' },
-  { value: 'TECH_POS',          label: 'Perangkat POS & IT Hardware (CapEx)',    activity: 'INVESTING', defaultType: 'OUT' },
-  { value: 'ASSET_SALE',        label: 'Penjualan Aset Bekas (Kas Masuk)',      activity: 'INVESTING', defaultType: 'IN' },
+  { value: 'EQUIPMENT', label: 'Peralatan & Mesin Dapur (CapEx)', activity: 'INVESTING', defaultType: 'OUT' },
+  { value: 'RENOVATION', label: 'Renovasi Bangunan & Interior (CapEx)', activity: 'INVESTING', defaultType: 'OUT' },
+  { value: 'FURNITURE', label: 'Furnitur & Peralatan Saji (CapEx)', activity: 'INVESTING', defaultType: 'OUT' },
+  { value: 'TECH_POS', label: 'Perangkat POS & IT Hardware (CapEx)', activity: 'INVESTING', defaultType: 'OUT' },
+  { value: 'ASSET_SALE', label: 'Penjualan Aset Bekas (Kas Masuk)', activity: 'INVESTING', defaultType: 'IN' },
 
   // Financing
-  { value: 'CAPITAL_INJECTION', label: 'Setoran Modal Owner / Investor',        activity: 'FINANCING', defaultType: 'IN' },
-  { value: 'OWNER_WITHDRAWAL',  label: 'Prive / Penarikan Kas Pribadi Owner',    activity: 'FINANCING', defaultType: 'OUT' },
-  { value: 'LOAN_RECEIPT',      label: 'Penerimaan Pinjaman Usaha',             activity: 'FINANCING', defaultType: 'IN' },
-  { value: 'LOAN_REPAYMENT',    label: 'Pembayaran Pokok Pinjaman',             activity: 'FINANCING', defaultType: 'OUT' },
+  { value: 'CAPITAL_INJECTION', label: 'Setoran Modal Owner / Investor', activity: 'FINANCING', defaultType: 'IN' },
+  { value: 'OWNER_WITHDRAWAL', label: 'Prive / Penarikan Kas Pribadi Owner', activity: 'FINANCING', defaultType: 'OUT' },
+  { value: 'LOAN_RECEIPT', label: 'Penerimaan Pinjaman Usaha', activity: 'FINANCING', defaultType: 'IN' },
+  { value: 'LOAN_REPAYMENT', label: 'Pembayaran Pokok Pinjaman', activity: 'FINANCING', defaultType: 'OUT' },
 
   // Operating Extra
-  { value: 'SUPPLIER_PURCHASE', label: 'Belanja Bahan Baku Langsung',           activity: 'OPERATING', defaultType: 'OUT' },
-  { value: 'OTHER_INCOME',      label: 'Pendapatan Kas Operasional Lain',       activity: 'OPERATING', defaultType: 'IN' },
-  { value: 'OTHER_EXPENSE',     label: 'Biaya Kas Operasional Lain',            activity: 'OPERATING', defaultType: 'OUT' },
+  { value: 'SUPPLIER_PURCHASE', label: 'Belanja Bahan Baku Langsung', activity: 'OPERATING', defaultType: 'OUT' },
+  { value: 'OTHER_INCOME', label: 'Pendapatan Kas Operasional Lain', activity: 'OPERATING', defaultType: 'IN' },
+  { value: 'OTHER_EXPENSE', label: 'Biaya Kas Operasional Lain', activity: 'OPERATING', defaultType: 'OUT' },
 ];
 
 export const ACCOUNT_TYPES = [
-  { value: 'BANK_MAIN',   label: 'Rekening Bank Utama Resto' },
+  { value: 'BANK_MAIN', label: 'Rekening Bank Utama Resto' },
   { value: 'CASH_DRAWER', label: 'Kas Toko / Laci Kasir' },
-  { value: 'PETTY_CASH',  label: 'Kas Kecil (Petty Cash)' },
 ];
 
 export const AVAILABLE_PAYMENT_METHODS = [
-  { id: 'CASH',       label: 'Tunai / Kas Laci',   desc: 'Uang fisik tunai kasir & laci toko',   color: '#10b981', icon: Wallet },
-  { id: 'QRIS',       label: 'QRIS',               desc: 'QRIS BCA, GoPay, ShopeePay, Dana',    color: '#06b6d4', icon: Sparkles },
-  { id: 'GRAB',       label: 'Grab / E-Commerce',  desc: 'GrabFood, GoFood, ShopeeFood, TikTok', color: '#f59e0b', icon: Flame },
-  { id: 'TRANSFER',   label: 'Transfer Bank',      desc: 'BCA, Mandiri, BRI & Rekening Giro',   color: '#8b5cf6', icon: Landmark },
-  { id: 'DEBIT',      label: 'Debit / EDC',        desc: 'Kartu Debit & Mesin Gesek EDC',       color: '#ec4899', icon: DollarSign },
-  { id: 'PETTY_CASH', label: 'Kas Kecil (Petty)',  desc: 'Kas operasional & petty cash harian',  color: '#eab308', icon: Package },
+  { id: 'CASH', label: 'Kas Laci Kasir (Cash)', desc: 'Uang fisik tunai transaksi penjualan & belanja di laci kasir', color: '#10b981', icon: Wallet },
+  { id: 'QRIS', label: 'QRIS', desc: 'QRIS BCA, GoPay, ShopeePay, Dana', color: '#06b6d4', icon: Sparkles },
+  { id: 'GRAB', label: 'Grab / E-Commerce', desc: 'GrabFood, GoFood, ShopeeFood, TikTok', color: '#f59e0b', icon: Flame },
+  { id: 'TRANSFER', label: 'Transfer Bank', desc: 'BCA, Mandiri, BRI & Rekening Giro', color: '#8b5cf6', icon: Landmark },
+  { id: 'DEBIT', label: 'Debit / EDC', desc: 'Kartu Debit & Mesin Gesek EDC', color: '#ec4899', icon: DollarSign },
 ];
 
 export const PAYMENT_METHOD_TABS = [
-  { id: 'ALL',           label: 'Semua Metode',          sub: 'Semua Aliran Kas Gabungan',  color: '#38bdf8', icon: Layers, isPreset: true },
-  { id: 'NON_CASH',      label: 'Gabungan Non-Tunai',    sub: 'QRIS + Grab + Transfer + EDC', color: '#06b6d4', icon: Sparkles, isPreset: true },
-  { id: 'CASH_ALL',      label: 'Gabungan Kas & Petty',  sub: 'Kas Laci + Kas Operasional', color: '#10b981', icon: Wallet, isPreset: true },
-  { id: 'ECOMMERCE_ALL', label: 'Gabungan E-Commerce',   sub: 'Grab + GoFood + ShopeeFood',  color: '#f59e0b', icon: Flame, isPreset: true },
-  { id: 'CASH',          label: 'Tunai (Cash)',          sub: 'Kas Laci Saja',              color: '#10b981', icon: Wallet },
-  { id: 'QRIS',          label: 'QRIS',                  sub: 'BCA, GoPay, Shopee',         color: '#06b6d4', icon: Sparkles },
-  { id: 'GRAB',          label: 'Grab / Delivery',       sub: 'E-Commerce Delivery',        color: '#f59e0b', icon: Flame },
-  { id: 'TRANSFER',      label: 'Transfer Bank',         sub: 'Rekening Bank',              color: '#8b5cf6', icon: Landmark },
-  { id: 'DEBIT',         label: 'Debit / EDC',           sub: 'Kartu Debit & EDC',          color: '#ec4899', icon: DollarSign },
-  { id: 'PETTY_CASH',    label: 'Kas Kecil',             sub: 'Petty Cash Belanja',         color: '#eab308', icon: Package },
+  { id: 'ALL', label: 'Semua Metode', sub: 'Semua Aliran Kas Gabungan', color: '#38bdf8', icon: Layers, isPreset: true },
+  { id: 'NON_CASH', label: 'Gabungan Non-Tunai', sub: 'QRIS + Grab + Transfer + EDC', color: '#06b6d4', icon: Sparkles, isPreset: true },
+  { id: 'ECOMMERCE_ALL', label: 'Gabungan E-Commerce', sub: 'Grab + GoFood + ShopeeFood', color: '#f59e0b', icon: Flame, isPreset: true },
+  { id: 'CASH', label: 'Kas Laci Kasir', sub: 'Uang Fisik di Laci POS / Tunai', color: '#10b981', icon: Wallet },
+  { id: 'QRIS', label: 'QRIS', sub: 'BCA, GoPay, Shopee', color: '#06b6d4', icon: Sparkles },
+  { id: 'GRAB', label: 'Grab / Delivery', sub: 'E-Commerce Delivery', color: '#f59e0b', icon: Flame },
+  { id: 'TRANSFER', label: 'Transfer Bank', sub: 'Rekening Bank', color: '#8b5cf6', icon: Landmark },
+  { id: 'DEBIT', label: 'Debit / EDC', sub: 'Kartu Debit & EDC', color: '#ec4899', icon: DollarSign },
 ];
 
 export default function CashFlow() {
@@ -114,9 +110,50 @@ export default function CashFlow() {
     };
   }, [selectedPaymentMethod]);
 
-  // Active Shift metadata and calculated initial cash
+  // Active Shift metadata and calculated initial cash & closing discrepancy
   const activeShiftMeta = useMemo(() => {
+    // Chronological shifts for inter-shift handover discrepancy
+    const chronShifts = [...(availableShifts || [])].sort((a, b) => {
+      const dateA = a.opened_at || a.created_at || '';
+      const dateB = b.opened_at || b.created_at || '';
+      return dateA.localeCompare(dateB) || Number(a.id) - Number(b.id);
+    });
+
+    const shiftInterMap = {};
+    let prevClosedShift = null;
+    chronShifts.forEach(cs => {
+      let diffAntar = Number(cs.inter_shift_diff ?? 0);
+      let prevName = cs.prev_shift_name || null;
+      let prevClosing = cs.prev_closing_cash != null ? Number(cs.prev_closing_cash) : null;
+
+      if (prevClosedShift && prevClosedShift.closing_cash !== null && prevClosedShift.closing_cash !== undefined) {
+        if (!cs.inter_shift_diff && cs.inter_shift_diff !== 0) {
+          prevClosing = Number(prevClosedShift.closing_cash || 0);
+          prevName = prevClosedShift.shift_name;
+          diffAntar = Number(cs.initial_cash || 0) - prevClosing;
+        } else if (!prevName) {
+          prevName = prevClosedShift.shift_name;
+          prevClosing = Number(prevClosedShift.closing_cash || 0);
+        }
+      }
+
+      shiftInterMap[cs.id] = {
+        diffAntar,
+        prevName,
+        prevClosing,
+      };
+
+      if (cs.status === 'CLOSED' && cs.closing_cash !== null && cs.closing_cash !== undefined) {
+        prevClosedShift = cs;
+      }
+    });
+
     const allInitial = (availableShifts || []).reduce((acc, s) => acc + Number(s.initial_cash || 0), 0);
+    const closedShifts = (availableShifts || []).filter(s => s.status === 'CLOSED');
+    const allClosing = closedShifts.reduce((acc, s) => acc + Number(s.closing_cash || 0), 0);
+    const allSystem = closedShifts.reduce((acc, s) => acc + Number(s.system_cash || 0), 0);
+    const allDiff = closedShifts.reduce((acc, s) => acc + Number(s.cash_difference || 0), 0);
+    const allInterDiff = (availableShifts || []).reduce((acc, s) => acc + (shiftInterMap[s.id]?.diffAntar || Number(s.inter_shift_diff || 0)), 0);
 
     if (!selectedShift || selectedShift === 'ALL' || selectedShift === 'all') {
       return {
@@ -124,38 +161,69 @@ export default function CashFlow() {
         label: 'Semua Shift (Gabungan Total)',
         isAll: true,
         count: availableShifts.length,
+        closedCount: closedShifts.length,
         initialCashTotal: statementData?.summary?.initial_cash_total ?? allInitial,
+        closingCashTotal: statementData?.summary?.closing_cash_total ?? allClosing,
+        systemCashTotal: statementData?.summary?.system_cash_total ?? allSystem,
+        cashDifferenceTotal: statementData?.summary?.cash_difference_total ?? allDiff,
+        interShiftDiffTotal: statementData?.summary?.inter_shift_difference_total ?? allInterDiff,
+        prevShiftName: null,
+        prevClosingCash: null,
+        shifts: availableShifts,
+        closedShifts: closedShifts,
         shiftNames: 'Semua Shift Gabungan',
       };
     }
 
     const ids = selectedShift.toString().split(',').map(id => Number(id.trim())).filter(Boolean);
     const matchedShifts = (availableShifts || []).filter(s => ids.includes(s.id));
-    const totalInitial = matchedShifts.length > 0
-      ? matchedShifts.reduce((acc, s) => acc + Number(s.initial_cash || 0), 0)
-      : (statementData?.summary?.initial_cash_total ?? 0);
+    const matchedClosed = matchedShifts.filter(s => s.status === 'CLOSED');
+    const totalInitial = matchedShifts.reduce((acc, s) => acc + Number(s.initial_cash || 0), 0);
+    const totalClosing = matchedClosed.reduce((acc, s) => acc + Number(s.closing_cash || 0), 0);
+    const totalSystem = matchedClosed.reduce((acc, s) => acc + Number(s.system_cash || 0), 0);
+    const totalDiff = matchedClosed.reduce((acc, s) => acc + Number(s.cash_difference || 0), 0);
+    const totalInterDiff = matchedShifts.reduce((acc, s) => acc + (shiftInterMap[s.id]?.diffAntar || Number(s.inter_shift_diff || 0)), 0);
 
     if (ids.length === 1) {
       const s = matchedShifts[0] || (availableShifts || []).find(x => x.id === ids[0]);
+      const isClosed = s?.status === 'CLOSED';
+      const inter = shiftInterMap[s?.id] || { diffAntar: Number(s?.inter_shift_diff || 0), prevName: s?.prev_shift_name, prevClosing: s?.prev_closing_cash };
       return {
         id: selectedShift,
-        label: s ? `${s.shift_name} (${s.cashier_name || 'Kasir'})` : `Shift #${ids[0]}`,
+        label: s ? `${s.shift_name} (${s.cashier_name || 'Kasir'})` : `Shift ${ids[0]}`,
         isSingle: true,
         count: 1,
+        closedCount: isClosed ? 1 : 0,
         shift: s,
+        shifts: s ? [s] : [],
+        closedShifts: isClosed ? [s] : [],
         initialCashTotal: s ? Number(s.initial_cash || 0) : totalInitial,
-        shiftNames: s ? s.shift_name : `Shift #${ids[0]}`,
+        closingCashTotal: isClosed ? Number(s.closing_cash || 0) : totalClosing,
+        systemCashTotal: isClosed ? Number(s.system_cash || 0) : totalSystem,
+        cashDifferenceTotal: isClosed ? Number(s.cash_difference || 0) : totalDiff,
+        interShiftDiffTotal: inter.diffAntar,
+        prevShiftName: inter.prevName,
+        prevClosingCash: inter.prevClosing,
+        shiftNames: s ? s.shift_name : `Shift ${ids[0]}`,
       };
     }
 
-    const names = matchedShifts.map(s => s.shift_name).join(', ') || ids.map(i => `#${i}`).join(', ');
+    const names = matchedShifts.map(s => s.shift_name).join(', ') || ids.map(i => `Shift ${i}`).join(', ');
     return {
       id: selectedShift,
       label: `Gabungan ${ids.length} Shift (${names})`,
       isCombined: true,
       count: ids.length,
+      closedCount: matchedClosed.length,
       shifts: matchedShifts,
+      closedShifts: matchedClosed,
       initialCashTotal: totalInitial,
+      closingCashTotal: totalClosing,
+      systemCashTotal: totalSystem,
+      cashDifferenceTotal: totalDiff,
+      interShiftDiffTotal: totalInterDiff,
+      prevShiftName: null,
+      prevClosingCash: null,
       shiftNames: names,
     };
   }, [selectedShift, availableShifts, statementData]);
@@ -163,14 +231,15 @@ export default function CashFlow() {
   // Detail Drilldown Modal State
   const [detailModal, setDetailModal] = useState({
     open: false,
-    type: null, // 'OPERATING' | 'SALES_INFLOW' | 'PURCHASES_OUTFLOW' | 'OPEX_OUTFLOW' | 'INVESTING' | 'FINANCING' | 'NET_CASH' | 'INVENTORY_TRAPPED'
+    type: null, // 'OPERATING' | 'SALES_INFLOW' | 'RECEIVABLE_INFLOW' | 'PURCHASES_OUTFLOW' | 'OPEX_OUTFLOW' | 'INVESTING' | 'FINANCING' | 'NET_CASH' | 'INVENTORY_TRAPPED'
+    subTab: 'DIRECT', // 'DIRECT' | 'RECEIVABLE' | 'COMBINED'
     title: '',
     loading: false,
     items: [],
     extraData: null,
   });
 
-  async function handleCardClick(type) {
+  async function handleCardClick(type, initialSubTab = null) {
     const targetOutlet = activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all'
       ? activeOutletId
       : undefined;
@@ -179,14 +248,28 @@ export default function CashFlow() {
     const pmLabel = activePmMeta?.label || 'Semua Metode';
     const shiftLabel = selectedShift !== 'ALL' ? ` [${activeShiftMeta?.label}]` : '';
 
-    if (type === 'SALES_INFLOW') {
-      setDetailModal({ 
-        open: true, 
-        type: 'SALES_INFLOW', 
-        title: `Rincian Kas Masuk dari Penjualan Langsung Kasir (${pmLabel}${shiftLabel})`, 
-        loading: true, 
-        items: [], 
-        extraData: statementData?.operating?.inflows 
+    if (type === 'SALES_INFLOW' || type === 'RECEIVABLE_INFLOW' || type === 'INFLOWS_ALL') {
+      const directTotal = Number(statementData?.operating?.inflows?.direct_sales_total || 0);
+      const recTotal = Number(statementData?.operating?.inflows?.receivable_collections || 0);
+      let chosenSubTab = initialSubTab;
+      if (!chosenSubTab) {
+        if (type === 'RECEIVABLE_INFLOW') {
+          chosenSubTab = 'RECEIVABLE';
+        } else if (type === 'INFLOWS_ALL') {
+          chosenSubTab = 'COMBINED';
+        } else {
+          chosenSubTab = (directTotal === 0 && recTotal > 0) ? 'RECEIVABLE' : 'DIRECT';
+        }
+      }
+
+      setDetailModal({
+        open: true,
+        type: 'SALES_INFLOW',
+        subTab: chosenSubTab,
+        title: `Rincian Kas Masuk Operasional Kasir (${pmLabel}${shiftLabel})`,
+        loading: true,
+        items: [],
+        extraData: statementData?.operating?.inflows
       });
       try {
         const res = await api.get('/transactions', {
@@ -197,34 +280,14 @@ export default function CashFlow() {
         toast.error('Gagal memuat rincian transaksi kasir');
         setDetailModal(p => ({ ...p, loading: false }));
       }
-    } else if (type === 'RECEIVABLE_INFLOW') {
-      let filteredPayments = statementData?.operating?.inflows?.receivable_payments || [];
-      if (pm) {
-        filteredPayments = filteredPayments.filter(rp => {
-          const m = (rp.payment_method || '').toUpperCase();
-          if (pm === 'CASH' || pm === 'TUNAI') return m === 'CASH' || m === 'TUNAI';
-          if (pm === 'QRIS') return m.includes('QRIS');
-          if (pm === 'TRANSFER') return m.includes('TRANSFER');
-          if (pm === 'DEBIT' || pm === 'EDC') return m.includes('DEBIT') || m.includes('EDC');
-          return m === pm;
-        });
-      }
+    } else if (type === 'PURCHASES_OUTFLOW') {
       setDetailModal({
         open: true,
-        type: 'RECEIVABLE_INFLOW',
-        title: `Rincian Kas Masuk dari Pembayaran / Pelunasan Kasbon Pelanggan (${pmLabel}${shiftLabel})`,
-        loading: false,
-        items: filteredPayments,
-        extraData: statementData?.operating?.inflows?.receivable_breakdown,
-      });
-    } else if (type === 'PURCHASES_OUTFLOW') {
-      setDetailModal({ 
-        open: true, 
-        type: 'PURCHASES_OUTFLOW', 
-        title: `Rincian Kas Keluar untuk Pembelian Stok Bahan Baku (${pmLabel}${shiftLabel})`, 
-        loading: true, 
-        items: [], 
-        extraData: statementData?.operating?.top_purchases 
+        type: 'PURCHASES_OUTFLOW',
+        title: `Rincian Kas Keluar untuk Pembelian Stok Bahan Baku (${pmLabel}${shiftLabel})`,
+        loading: true,
+        items: [],
+        extraData: statementData?.operating?.top_purchases
       });
       try {
         const res = await api.get('/movements', {
@@ -236,12 +299,12 @@ export default function CashFlow() {
         setDetailModal(p => ({ ...p, loading: false }));
       }
     } else if (type === 'OPEX_OUTFLOW') {
-      setDetailModal({ 
-        open: true, 
-        type: 'OPEX_OUTFLOW', 
-        title: `Rincian Kas Keluar untuk Beban Operasional Toko (${pmLabel}${shiftLabel})`, 
-        loading: true, 
-        items: [] 
+      setDetailModal({
+        open: true,
+        type: 'OPEX_OUTFLOW',
+        title: `Rincian Kas Keluar untuk Beban Operasional Toko (${pmLabel}${shiftLabel})`,
+        loading: true,
+        items: []
       });
       try {
         const res = await api.get('/expenses', {
@@ -255,12 +318,12 @@ export default function CashFlow() {
     } else if (type === 'OPERATING') {
       setDetailModal({ open: true, type: 'OPERATING', title: `Rincian & Formula Arus Kas Operasi (Operating Cash Flow / OCF) - ${pmLabel}${shiftLabel}`, loading: false, items: [] });
     } else if (type === 'INVESTING') {
-      setDetailModal({ 
-        open: true, 
-        type: 'INVESTING', 
-        title: `Rincian Belanja Modal & Investasi Aset (${pmLabel}${shiftLabel})`, 
-        loading: true, 
-        items: [] 
+      setDetailModal({
+        open: true,
+        type: 'INVESTING',
+        title: `Rincian Belanja Modal & Investasi Aset (${pmLabel}${shiftLabel})`,
+        loading: true,
+        items: []
       });
       try {
         const res = await api.get('/cash-transactions', {
@@ -272,12 +335,12 @@ export default function CashFlow() {
         setDetailModal(p => ({ ...p, loading: false }));
       }
     } else if (type === 'FINANCING') {
-      setDetailModal({ 
-        open: true, 
-        type: 'FINANCING', 
-        title: `Rincian Arus Kas Pendanaan, Modal & Prive Owner (${pmLabel}${shiftLabel})`, 
-        loading: true, 
-        items: [] 
+      setDetailModal({
+        open: true,
+        type: 'FINANCING',
+        title: `Rincian Arus Kas Pendanaan, Modal & Prive Owner (${pmLabel}${shiftLabel})`,
+        loading: true,
+        items: []
       });
       try {
         const res = await api.get('/cash-transactions', {
@@ -292,6 +355,28 @@ export default function CashFlow() {
       setDetailModal({ open: true, type: 'NET_CASH', title: `Jembatan Total Perubahan Bersih Kas Riil (Net Cash Flow) - ${pmLabel}${shiftLabel}`, loading: false, items: [] });
     } else if (type === 'INVENTORY_TRAPPED') {
       setDetailModal({ open: true, type: 'INVENTORY_TRAPPED', title: 'Rincian Analisis Kas Terkunci di Persediaan Bahan Baku', loading: false, items: [] });
+    } else if (type === 'SHIFT_DISCREPANCY') {
+      const targetShifts = (selectedShift && selectedShift !== 'ALL')
+        ? (activeShiftMeta.shifts || [])
+        : availableShifts;
+      setDetailModal({
+        open: true,
+        type: 'SHIFT_DISCREPANCY',
+        title: `Rincian Rekonsiliasi Kas Laci & Selisih Kasir Sesi Shift (${pmLabel}${shiftLabel})`,
+        loading: false,
+        items: targetShifts,
+        extraData: {
+          initialCashTotal: activeShiftMeta.initialCashTotal,
+          closingCashTotal: activeShiftMeta.closingCashTotal,
+          systemCashTotal: activeShiftMeta.systemCashTotal,
+          cashDifferenceTotal: activeShiftMeta.cashDifferenceTotal,
+          interShiftDiffTotal: activeShiftMeta.interShiftDiffTotal,
+          prevShiftName: activeShiftMeta.prevShiftName,
+          prevClosingCash: activeShiftMeta.prevClosingCash,
+          closedCount: activeShiftMeta.closedCount,
+          totalCount: activeShiftMeta.count,
+        }
+      });
     }
   }
 
@@ -498,6 +583,57 @@ export default function CashFlow() {
     return Array.from(map.values());
   }, [detailModal.items, detailModal.type]);
 
+  // Filtered receivable payments based on selected payment method
+  const filteredReceivablePayments = useMemo(() => {
+    let list = statementData?.operating?.inflows?.receivable_payments || [];
+    if (selectedPaymentMethod && selectedPaymentMethod !== 'ALL') {
+      const pm = selectedPaymentMethod.toUpperCase();
+      list = list.filter(rp => {
+        const m = (rp.payment_method || '').toUpperCase();
+        if (pm === 'CASH' || pm === 'TUNAI') return m === 'CASH' || m === 'TUNAI';
+        if (pm === 'QRIS') return m.includes('QRIS');
+        if (pm === 'TRANSFER') return m.includes('TRANSFER');
+        if (pm === 'DEBIT' || pm === 'EDC') return m.includes('DEBIT') || m.includes('EDC');
+        return m === pm;
+      });
+    }
+    return list;
+  }, [statementData, selectedPaymentMethod]);
+
+  // Combined Inflow List (Direct Sales Orders + Receivable Payments)
+  const combinedInflowList = useMemo(() => {
+    const list = [];
+    groupedSalesOrders.forEach(o => {
+      list.push({
+        id: `ord_${o.id || o.order_number}`,
+        type: 'ORDER',
+        ref_no: o.order_number,
+        date: o.date,
+        created_at: o.created_at,
+        customer: o.customer_name || (o.table_number ? `Meja ${o.table_number}` : 'Walk-in'),
+        payment_method: o.payment_method,
+        notes: o.items && o.items.length > 0 ? o.items.join(', ') : 'Penjualan Menu Kasir',
+        user: o.user_name,
+        amount: o.total_price,
+      });
+    });
+    filteredReceivablePayments.forEach(rp => {
+      list.push({
+        id: `rp_${rp.id || rp.payment_no}`,
+        type: 'RECEIVABLE_PAYMENT',
+        ref_no: `${rp.payment_no} (${rp.receivable_no || 'Kasbon'})`,
+        date: rp.payment_date,
+        created_at: rp.payment_date,
+        customer: rp.customer_name || 'Pelanggan Kasbon',
+        payment_method: rp.payment_method,
+        notes: rp.notes || 'Pelunasan Kasbon Pelanggan',
+        user: rp.receiver_name,
+        amount: rp.amount,
+      });
+    });
+    return list;
+  }, [groupedSalesOrders, filteredReceivablePayments]);
+
   function handlePrint() {
     printElement(
       'printable-cashflow-statement',
@@ -608,26 +744,6 @@ export default function CashFlow() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            {/* Modal Awal Kas Highlight Pill */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '4px 12px',
-                borderRadius: 20,
-                background: 'rgba(16, 185, 129, 0.12)',
-                border: '1px solid rgba(16, 185, 129, 0.35)',
-                color: '#34d399',
-                fontSize: 12,
-                fontWeight: 700,
-              }}
-              title="Total modal awal kas laci fisik yang dimasukkan kasir saat pembukaan shift untuk filter yang aktif"
-            >
-              <Wallet size={13} />
-              <span>Modal Awal Kas: <strong>{rupiah(activeShiftMeta.initialCashTotal)}</strong></span>
-            </div>
-
             {selectedShift !== 'ALL' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span
@@ -704,8 +820,20 @@ export default function CashFlow() {
               <div style={{ fontSize: 12.5, fontWeight: selectedShift === 'ALL' ? 800 : 600, color: selectedShift === 'ALL' ? '#ffffff' : '#cbd5e1' }}>
                 Semua Shift (Gabungan)
               </div>
-              <div style={{ fontSize: 10, color: selectedShift === 'ALL' ? '#38bdf8' : 'var(--text-muted)', marginTop: 2 }}>
-                Konsolidasi {availableShifts.length} Sesi
+              <div style={{ fontSize: 10, color: selectedShift === 'ALL' ? '#38bdf8' : 'var(--text-muted)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>{availableShifts.length} Sesi ({activeShiftMeta.closedCount} Tutup)</span>
+                {activeShiftMeta.closedCount > 0 && (
+                  <span style={{
+                    fontSize: 9,
+                    padding: '1px 6px',
+                    borderRadius: 8,
+                    background: activeShiftMeta.cashDifferenceTotal === 0 ? 'rgba(16, 185, 129, 0.2)' : (activeShiftMeta.cashDifferenceTotal > 0 ? 'rgba(56, 189, 248, 0.2)' : 'rgba(244, 63, 94, 0.2)'),
+                    color: activeShiftMeta.cashDifferenceTotal === 0 ? '#34d399' : (activeShiftMeta.cashDifferenceTotal > 0 ? '#38bdf8' : '#f43f5e'),
+                    fontWeight: 700
+                  }}>
+                    {activeShiftMeta.cashDifferenceTotal === 0 ? 'Selisih Rp0 (Pas)' : (activeShiftMeta.cashDifferenceTotal > 0 ? `+${rupiah(activeShiftMeta.cashDifferenceTotal)} (Lebih)` : `-${rupiah(Math.abs(activeShiftMeta.cashDifferenceTotal))} (Tekor)`)}
+                  </span>
+                )}
               </div>
             </div>
           </button>
@@ -715,6 +843,7 @@ export default function CashFlow() {
             const isSelected = selectedShift === s.id.toString() || (selectedShift !== 'ALL' && selectedShift.toString().split(',').includes(s.id.toString()));
             const isSingleSelected = selectedShift === s.id.toString();
             const isOpen = s.status === 'OPEN';
+            const diff = Number(s.cash_difference || 0);
 
             return (
               <button
@@ -768,9 +897,23 @@ export default function CashFlow() {
                     >
                       {isOpen ? 'AKTIF' : 'TUTUP'}
                     </span>
+                    {!isOpen && (
+                      <span
+                        style={{
+                          fontSize: 9,
+                          padding: '1px 5px',
+                          borderRadius: 8,
+                          background: diff === 0 ? 'rgba(16, 185, 129, 0.2)' : (diff > 0 ? 'rgba(56, 189, 248, 0.2)' : 'rgba(244, 63, 94, 0.2)'),
+                          color: diff === 0 ? '#34d399' : (diff > 0 ? '#38bdf8' : '#f43f5e'),
+                          fontWeight: 700,
+                        }}
+                      >
+                        {diff === 0 ? 'Pas (Rp0)' : (diff > 0 ? `+${rupiah(diff)}` : `-${rupiah(Math.abs(diff))}`)}
+                      </span>
+                    )}
                   </div>
                   <div style={{ fontSize: 10, color: isSelected ? '#34d399' : 'var(--text-muted)', marginTop: 2 }}>
-                    {s.cashier_name} • Modal: {rupiah(s.initial_cash)}
+                    {s.cashier_name} • {isOpen ? `Modal: ${rupiah(s.initial_cash)}` : `Fisik Closing: ${rupiah(s.closing_cash)}`}
                   </div>
                 </div>
               </button>
@@ -880,6 +1023,9 @@ export default function CashFlow() {
           {PAYMENT_METHOD_TABS.map((pmTab) => {
             const isSelected = selectedPaymentMethod === pmTab.id;
             const TabIcon = pmTab.icon;
+            const isCashTab = pmTab.id === 'CASH';
+            const initialCash = activeShiftMeta.initialCashTotal || 0;
+
             return (
               <button
                 key={pmTab.id}
@@ -919,13 +1065,36 @@ export default function CashFlow() {
                 <div>
                   <div
                     style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
                       fontSize: 13,
                       fontWeight: isSelected ? 800 : 600,
                       color: isSelected ? '#ffffff' : '#cbd5e1',
                       lineHeight: 1.2,
                     }}
                   >
-                    {pmTab.label}
+                    <span>{pmTab.label}</span>
+                    {isCashTab && initialCash > 0 && (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          padding: '2px 7px',
+                          borderRadius: 6,
+                          background: isSelected ? 'rgba(16, 185, 129, 0.35)' : 'rgba(16, 185, 129, 0.18)',
+                          color: '#34d399',
+                          border: '1px solid rgba(16, 185, 129, 0.45)',
+                          fontWeight: 700,
+                          letterSpacing: 0.2,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 3,
+                        }}
+                        title="Modal Awal Kas di Laci Kasir"
+                      >
+                        <Wallet size={10} /> Modal: {rupiah(initialCash)}
+                      </span>
+                    )}
                   </div>
                   <div
                     style={{
@@ -935,7 +1104,9 @@ export default function CashFlow() {
                       marginTop: 2,
                     }}
                   >
-                    {pmTab.sub}
+                    {isCashTab && initialCash > 0
+                      ? `Uang Laci POS • Modal Awal ${rupiah(initialCash)}`
+                      : pmTab.sub}
                   </div>
                 </div>
               </button>
@@ -1118,6 +1289,181 @@ export default function CashFlow() {
             Lihat rincian formula kas riil →
           </div>
         </div>
+
+        {/* Card 5: Shift Closing Discrepancy (Selisih Kasir) */}
+        {(() => {
+          const diff = Number(activeShiftMeta.cashDifferenceTotal || 0);
+          const isBalanced = diff === 0;
+          const isOver = diff > 0;
+          const isShort = diff < 0;
+          const cardColor = isBalanced ? '#10b981' : (isOver ? '#38bdf8' : '#f43f5e');
+          const badgeBg = isBalanced ? 'rgba(16, 185, 129, 0.2)' : (isOver ? 'rgba(56, 189, 248, 0.2)' : 'rgba(244, 63, 94, 0.2)');
+          const badgeBorder = isBalanced ? 'rgba(16, 185, 129, 0.4)' : (isOver ? 'rgba(56, 189, 248, 0.4)' : 'rgba(244, 63, 94, 0.4)');
+          const badgeText = isBalanced ? '✓ BALANCE' : (isOver ? '+ LEBIH KAS' : '⚠️ TEKOR KAS');
+          const statusText = isBalanced ? 'Uang Laci Pas' : (isOver ? `Lebih Kas +${rupiah(diff)}` : `Kurang Kas -${rupiah(Math.abs(diff))}`);
+
+          return (
+            <div
+              className="card"
+              onClick={() => handleCardClick('SHIFT_DISCREPANCY')}
+              style={{
+                padding: 18,
+                background: `linear-gradient(135deg, ${cardColor}15 0%, rgba(15, 23, 42, 0.85) 100%)`,
+                border: `1.5px solid ${cardColor}40`,
+                boxShadow: `0 8px 25px ${cardColor}15`,
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+              title="Klik untuk melihat rincian rekonsiliasi kas laci & selisih shift kasir saat closing"
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 800, color: cardColor, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Selisih Kasir (Closing Shift)
+                </span>
+                <div
+                  style={{
+                    padding: '2px 8px',
+                    borderRadius: 20,
+                    fontSize: 10,
+                    fontWeight: 800,
+                    background: badgeBg,
+                    color: cardColor,
+                    border: `1px solid ${badgeBorder}`,
+                  }}
+                >
+                  {badgeText}
+                </div>
+              </div>
+              <div style={{ fontSize: 22, fontWeight: 900, color: cardColor, letterSpacing: -0.5, marginBottom: 4 }}>
+                {isOver ? `+${rupiah(diff)}` : (isShort ? `-${rupiah(Math.abs(diff))}` : rupiah(0))}
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>Fisik: <strong style={{ color: '#f8fafc' }}>{rupiah(activeShiftMeta.closingCashTotal || 0)}</strong></span>
+                <span>Sistem: <strong style={{ color: '#f8fafc' }}>{rupiah(activeShiftMeta.systemCashTotal || 0)}</strong></span>
+              </div>
+              <div style={{ fontSize: 10, color: cardColor, fontWeight: 700, marginTop: 4, display: 'flex', justifyContent: 'space-between' }}>
+                <span>{statusText}</span>
+                <span>{activeShiftMeta.closedCount} sesi tutup →</span>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Card 6: Shift Handover Discrepancy (Selisih Antar Kasir) */}
+        {(() => {
+          const interDiff = Number(activeShiftMeta.interShiftDiffTotal || 0);
+          const isInterBalanced = interDiff === 0;
+          const isInterOver = interDiff > 0;
+          const isInterShort = interDiff < 0;
+          const cardColor = isInterBalanced ? '#10b981' : (isInterOver ? '#38bdf8' : '#f43f5e');
+          const badgeBg = isInterBalanced ? 'rgba(16, 185, 129, 0.2)' : (isInterOver ? 'rgba(56, 189, 248, 0.2)' : 'rgba(244, 63, 94, 0.2)');
+          const badgeBorder = isInterBalanced ? 'rgba(16, 185, 129, 0.4)' : (isInterOver ? 'rgba(56, 189, 248, 0.4)' : 'rgba(244, 63, 94, 0.4)');
+          const badgeText = isInterBalanced ? '✓ BALANCE' : (isInterOver ? '+ LEBIH MODAL' : '⚠️ TEKOR SERAH TERIMA');
+
+          const subtitle = activeShiftMeta.isSingle && activeShiftMeta.prevShiftName
+            ? `Modal ${activeShiftMeta.label.split('(')[0]} (${rupiah(activeShiftMeta.initialCashTotal || 0)}) vs Kas Lalu ${activeShiftMeta.prevShiftName} (${rupiah(activeShiftMeta.prevClosingCash || 0)})`
+            : (activeShiftMeta.isSingle
+              ? `Modal Awal Shift Perdana (${rupiah(activeShiftMeta.initialCashTotal || 0)})`
+              : `Akumulasi Selisih Modal Sesi Baru vs Kas Closing Sesi Sebelumnya`);
+
+          return (
+            <div
+              className="card"
+              onClick={() => handleCardClick('SHIFT_DISCREPANCY')}
+              style={{
+                padding: 18,
+                background: `linear-gradient(135deg, ${cardColor}15 0%, rgba(15, 23, 42, 0.85) 100%)`,
+                border: `1.5px solid ${cardColor}40`,
+                boxShadow: `0 8px 25px ${cardColor}15`,
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+              title="Klik untuk melihat rincian rekonsiliasi kas laci & selisih serah terima antar kasir"
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 800, color: cardColor, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Selisih Antar Kasir
+                </span>
+                <div
+                  style={{
+                    padding: '2px 8px',
+                    borderRadius: 20,
+                    fontSize: 10,
+                    fontWeight: 800,
+                    background: badgeBg,
+                    color: cardColor,
+                    border: `1px solid ${badgeBorder}`,
+                  }}
+                >
+                  {badgeText}
+                </div>
+              </div>
+              <div style={{ fontSize: 22, fontWeight: 900, color: cardColor, letterSpacing: -0.5, marginBottom: 4 }}>
+                {isInterOver ? `+${rupiah(interDiff)}` : (isInterShort ? `-${rupiah(Math.abs(interDiff))}` : rupiah(0))}
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={subtitle}>
+                {subtitle}
+              </div>
+              <div style={{ fontSize: 10, color: cardColor, fontWeight: 700, marginTop: 4 }}>
+                {isInterBalanced ? 'Serah terima modal sesuai' : (isInterOver ? 'Modal awal lebih banyak dari fisik lalu' : 'Modal awal berkurang saat serah terima')} →
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Card 6: Total Sisa Kas Dipegang Setelah Selisih Kasir */}
+        {(() => {
+          const modalAwal = Number(activeShiftMeta.initialCashTotal || 0);
+          const netKas = Number(sum.net_cash_flow || 0);
+          const kasSebelumSelisih = modalAwal + netKas;
+          const diff = Number(activeShiftMeta.cashDifferenceTotal || 0);
+          const sisaKasAkhir = kasSebelumSelisih + diff;
+
+          return (
+            <div
+              className="card"
+              onClick={() => handleCardClick('SHIFT_DISCREPANCY')}
+              style={{
+                padding: 18,
+                background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.16) 0%, rgba(15, 23, 42, 0.85) 100%)',
+                border: '1.5px solid rgba(6, 182, 212, 0.45)',
+                boxShadow: '0 8px 25px rgba(6, 182, 212, 0.15)',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+              title="Klik untuk melihat rincian rekonsiliasi kas laci & selisih shift kasir"
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 800, color: '#22d3ee', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Total Sisa Kas Dipegang
+                </span>
+                <div
+                  style={{
+                    padding: '2px 8px',
+                    borderRadius: 20,
+                    fontSize: 10,
+                    fontWeight: 800,
+                    background: 'rgba(6, 182, 212, 0.25)',
+                    color: '#22d3ee',
+                    border: '1px solid rgba(6, 182, 212, 0.45)',
+                  }}
+                >
+                  NET KAS AKHIR
+                </div>
+              </div>
+              <div style={{ fontSize: 22, fontWeight: 900, color: '#22d3ee', letterSpacing: -0.5, marginBottom: 4, fontFamily: 'monospace' }}>
+                {rupiah(sisaKasAkhir)}
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>Kas Laci: <strong style={{ color: '#f8fafc' }}>{rupiah(kasSebelumSelisih)}</strong></span>
+                <span>Selisih: <strong style={{ color: diff < 0 ? '#f43f5e' : (diff > 0 ? '#38bdf8' : '#10b981') }}>{diff >= 0 ? `+${rupiah(diff)}` : `-${rupiah(Math.abs(diff))}`}</strong></span>
+              </div>
+              <div style={{ fontSize: 10, color: '#06b6d4', fontWeight: 600, marginTop: 4 }}>
+                Sisa fisik riil di tangan kasir →
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* 3. Tab Navigation */}
@@ -1310,7 +1656,7 @@ export default function CashFlow() {
                       <td style={{ padding: '4px 0', textAlign: 'right', fontWeight: 600, color: '#34d399' }}>{rupiah(op.inflows?.extra_income)}</td>
                     </tr>
                   )}
-                  
+
                   <tr style={{ fontWeight: 600, color: '#f8fafc' }}>
                     <td colSpan={2} style={{ padding: '10px 0 2px' }}>Pengeluaran Kas Operasi (Cash Outflows):</td>
                   </tr>
@@ -1506,46 +1852,329 @@ export default function CashFlow() {
               </table>
             </div>
 
-            {/* GRAND TOTAL: PERUBAHAN BERSIH KAS RIIL */}
+            {/* GRAND TOTAL: PERUBAHAN BERSIH KAS RIIL & TOTAL FISIK UANG DIPEGANG KASIR */}
             <div
-              className="card"
-              onClick={() => handleCardClick('NET_CASH')}
               style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '20px 24px',
-                borderRadius: 12,
-                background: `linear-gradient(135deg, ${sum.liquidity_color}25 0%, rgba(15, 23, 42, 0.95) 100%)`,
-                border: `2px solid ${sum.liquidity_color}60`,
-                boxShadow: `0 10px 30px ${sum.liquidity_color}20`,
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                gap: 12,
+                marginTop: 14,
               }}
-              title="Klik untuk melihat formula kalkulasi perubahan bersih kas riil"
             >
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Wallet size={22} color={sum.liquidity_color} />
-                  <span style={{ fontSize: 16, fontWeight: 900, color: '#ffffff', letterSpacing: 0.5 }}>
-                    KENAIKAN / (PENURUNAN) BERSIH KAS RIIL (NET CASH FLOW)
-                  </span>
-                  <span style={{ fontSize: 11, color: sum.liquidity_color, background: `${sum.liquidity_color}25`, padding: '2px 6px', borderRadius: 4, marginLeft: 4 }}>
-                    🔍 Formula
-                  </span>
+              {/* CARD 1: KENAIKAN / PENURUNAN KAS BERSIH (NET CASH FLOW) */}
+              <div
+                className="card"
+                onClick={() => handleCardClick('NET_CASH')}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '16px 20px',
+                  borderRadius: 12,
+                  background: `linear-gradient(135deg, ${sum.liquidity_color}18 0%, rgba(15, 23, 42, 0.95) 100%)`,
+                  border: `1.5px solid ${sum.liquidity_color}45`,
+                  boxShadow: `0 6px 20px ${sum.liquidity_color}15`,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                }}
+                title="Klik untuk melihat formula kalkulasi perubahan bersih kas riil"
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <TrendingUp size={18} color={sum.liquidity_color} />
+                    <span style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', letterSpacing: 0.3 }}>
+                      KENAIKAN / (PENURUNAN) BERSIH KAS
+                    </span>
+                    <span style={{ fontSize: 10, color: sum.liquidity_color, background: `${sum.liquidity_color}25`, padding: '1px 5px', borderRadius: 4 }}>
+                      🔍 Formula
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>
+                    Realisasi: Operasi + Investasi + Pendanaan
+                  </div>
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                  Total Realisasi Kas: Arus Kas Operasi + Arus Kas Investasi + Arus Kas Pendanaan
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 20, fontWeight: 900, color: sum.net_cash_flow >= 0 ? sum.liquidity_color : '#f43f5e', fontFamily: 'monospace' }}>
+                    {sum.net_cash_flow >= 0 ? `+${rupiah(sum.net_cash_flow)}` : rupiah(sum.net_cash_flow)}
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: sum.liquidity_color, marginTop: 1 }}>
+                    {sum.liquidity_label}
+                  </div>
                 </div>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 26, fontWeight: 900, color: sum.net_cash_flow >= 0 ? sum.liquidity_color : '#f43f5e' }}>
-                  {rupiah(sum.net_cash_flow)}
+
+              {/* CARD 2: MODAL AWAL KAS DI LACI */}
+              <div
+                className="card"
+                onClick={() => handleCardClick('SHIFT_DISCREPANCY')}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '16px 20px',
+                  borderRadius: 12,
+                  background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.12) 0%, rgba(15, 23, 42, 0.95) 100%)',
+                  border: '1.5px solid rgba(56, 189, 248, 0.35)',
+                  boxShadow: '0 6px 20px rgba(56, 189, 248, 0.1)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                }}
+                title="Klik untuk melihat rincian modal awal kas di laci dari sesi shift kasir"
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <Clock size={18} color="#38bdf8" />
+                    <span style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', letterSpacing: 0.3 }}>
+                      MODAL AWAL KAS DI LACI
+                    </span>
+                    <span style={{ fontSize: 10, color: '#38bdf8', background: 'rgba(56, 189, 248, 0.2)', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>
+                      🔍 Rincian Shift
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>
+                    Kas fisik awal saat pembukaan shift
+                  </div>
                 </div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: sum.liquidity_color, marginTop: 2 }}>
-                  {sum.liquidity_label}
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 20, fontWeight: 900, color: '#38bdf8', fontFamily: 'monospace' }}>
+                    {rupiah(activeShiftMeta.initialCashTotal || 0)}
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginTop: 1 }}>
+                    {activeShiftMeta.isAll ? `${activeShiftMeta.count} Sesi Shift →` : `${activeShiftMeta.label} →`}
+                  </div>
                 </div>
               </div>
+
+              {/* CARD 3: TOTAL FISIK UANG YANG DIPEGANG KASIR (TOTAL CASH ON HAND) */}
+              <div
+                className="card"
+                onClick={() => handleCardClick('SHIFT_DISCREPANCY')}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '16px 20px',
+                  borderRadius: 12,
+                  background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.25) 0%, rgba(15, 23, 42, 0.95) 100%)',
+                  border: '2px solid rgba(16, 185, 129, 0.7)',
+                  boxShadow: '0 8px 25px rgba(16, 185, 129, 0.25)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                }}
+                title="Klik untuk melihat rincian rekonsiliasi total fisik kas yang dipegang kasir"
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <Wallet size={20} color="#34d399" />
+                    <span style={{ fontSize: 13.5, fontWeight: 900, color: '#ffffff', letterSpacing: 0.3 }}>
+                      TOTAL FISIK UANG DIPEGANG KASIR
+                    </span>
+                    <span style={{ fontSize: 9.5, color: '#34d399', background: 'rgba(16, 185, 129, 0.25)', border: '1px solid rgba(16, 185, 129, 0.4)', padding: '1px 5px', borderRadius: 4, fontWeight: 800 }}>
+                      KAS FISIK LACI
+                    </span>
+                    <span style={{ fontSize: 10, color: '#34d399', background: 'rgba(16, 185, 129, 0.2)', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>
+                      🔍 Formula
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 3 }}>
+                    Modal Awal ({rupiah(activeShiftMeta.initialCashTotal || 0)}) + Net Kas ({sum.net_cash_flow >= 0 ? `+${rupiah(sum.net_cash_flow)}` : rupiah(sum.net_cash_flow)})
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 24, fontWeight: 900, color: '#34d399', fontFamily: 'monospace' }}>
+                    {rupiah((activeShiftMeta.initialCashTotal || 0) + (sum.net_cash_flow || 0))}
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#10b981', marginTop: 1 }}>
+                    Saldo Akhir Kas Laci Riil →
+                  </div>
+                </div>
+              </div>
+
+              {/* CARD 4: SELISIH KASIR DARI HASIL CLOSING SHIFT */}
+              {(() => {
+                const diff = Number(activeShiftMeta.cashDifferenceTotal || 0);
+                const isBalanced = diff === 0;
+                const isOver = diff > 0;
+                const isShort = diff < 0;
+                const cardColor = isBalanced ? '#10b981' : (isOver ? '#38bdf8' : '#f43f5e');
+
+                return (
+                  <div
+                    className="card"
+                    onClick={() => handleCardClick('SHIFT_DISCREPANCY')}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '16px 20px',
+                      borderRadius: 12,
+                      background: `linear-gradient(135deg, ${cardColor}18 0%, rgba(15, 23, 42, 0.95) 100%)`,
+                      border: `1.5px solid ${cardColor}45`,
+                      boxShadow: `0 6px 20px ${cardColor}15`,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                    }}
+                    title="Klik untuk melihat rincian rekonsiliasi kas laci kasir"
+                  >
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                        <Scale size={18} color={cardColor} />
+                        <span style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', letterSpacing: 0.3 }}>
+                          SELISIH KASIR (CLOSING SHIFT)
+                        </span>
+                        <span style={{
+                          fontSize: 9.5,
+                          padding: '1px 6px',
+                          borderRadius: 4,
+                          fontWeight: 800,
+                          background: isBalanced ? 'rgba(16, 185, 129, 0.25)' : (isOver ? 'rgba(56, 189, 248, 0.25)' : 'rgba(244, 63, 94, 0.25)'),
+                          color: cardColor,
+                          border: `1px solid ${cardColor}40`,
+                        }}>
+                          {isBalanced ? '✓ PAS / BALANCE' : (isOver ? '+ LEBIH KAS' : '⚠️ TEKOR KAS')}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>
+                        Fisik Closing ({rupiah(activeShiftMeta.closingCashTotal || 0)}) vs Sistem ({rupiah(activeShiftMeta.systemCashTotal || 0)})
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 20, fontWeight: 900, color: cardColor, fontFamily: 'monospace' }}>
+                        {isOver ? `+${rupiah(diff)}` : (isShort ? `-${rupiah(Math.abs(diff))}` : rupiah(0))}
+                      </div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: cardColor, marginTop: 1 }}>
+                        {isBalanced ? 'Tidak Ada Selisih' : (isOver ? 'Kas Lebih di Laci' : 'Kas Kurang di Laci')}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* CARD 5: SELISIH ANTAR KASIR (SERAH TERIMA MODAL AWAL VS KAS CLOSING LALU) */}
+              {(() => {
+                const interDiff = Number(activeShiftMeta.interShiftDiffTotal || 0);
+                const isInterBalanced = interDiff === 0;
+                const isInterOver = interDiff > 0;
+                const isInterShort = interDiff < 0;
+                const cardColor = isInterBalanced ? '#10b981' : (isInterOver ? '#38bdf8' : '#f43f5e');
+
+                const subtitle = activeShiftMeta.isSingle && activeShiftMeta.prevShiftName
+                  ? `Modal Buka (${rupiah(activeShiftMeta.initialCashTotal || 0)}) vs Kas Lalu ${activeShiftMeta.prevShiftName} (${rupiah(activeShiftMeta.prevClosingCash || 0)})`
+                  : (activeShiftMeta.isSingle
+                    ? `Modal Awal Shift Perdana (${rupiah(activeShiftMeta.initialCashTotal || 0)})`
+                    : `Akumulasi Selisih Modal Sesi Baru vs Kas Closing Sesi Sebelumnya`);
+
+                return (
+                  <div
+                    className="card"
+                    onClick={() => handleCardClick('SHIFT_DISCREPANCY')}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '16px 20px',
+                      borderRadius: 12,
+                      background: `linear-gradient(135deg, ${cardColor}18 0%, rgba(15, 23, 42, 0.95) 100%)`,
+                      border: `1.5px solid ${cardColor}45`,
+                      boxShadow: `0 6px 20px ${cardColor}15`,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                    }}
+                    title="Klik untuk melihat rincian rekonsiliasi kas laci & serah terima antar kasir"
+                  >
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                        <ArrowRightLeft size={18} color={cardColor} />
+                        <span style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', letterSpacing: 0.3 }}>
+                          SELISIH ANTAR KASIR
+                        </span>
+                        <span style={{
+                          fontSize: 9.5,
+                          padding: '1px 6px',
+                          borderRadius: 4,
+                          fontWeight: 800,
+                          background: isInterBalanced ? 'rgba(16, 185, 129, 0.25)' : (isInterOver ? 'rgba(56, 189, 248, 0.25)' : 'rgba(244, 63, 94, 0.25)'),
+                          color: cardColor,
+                          border: `1px solid ${cardColor}40`,
+                        }}>
+                          {isInterBalanced ? '✓ PAS / BALANCE' : (isInterOver ? '+ LEBIH MODAL' : '⚠️ TEKOR SERAH TERIMA')}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>
+                        {subtitle}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 20, fontWeight: 900, color: cardColor, fontFamily: 'monospace' }}>
+                        {isInterOver ? `+${rupiah(interDiff)}` : (isInterShort ? `-${rupiah(Math.abs(interDiff))}` : rupiah(0))}
+                      </div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: cardColor, marginTop: 1 }}>
+                        {isInterBalanced ? 'Serah Terima Sesuai' : (isInterOver ? 'Modal Awal Lebih Banyak' : 'Modal Awal Berkurang')}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* CARD 5: TOTAL SISA UANG DIPEGANG KASIR SETELAH MENGURANGI SELISIH KASIR */}
+              {(() => {
+                const modalAwal = Number(activeShiftMeta.initialCashTotal || 0);
+                const netKas = Number(sum.net_cash_flow || 0);
+                const kasSebelumSelisih = modalAwal + netKas;
+                const diff = Number(activeShiftMeta.cashDifferenceTotal || 0);
+                const sisaKasAkhir = kasSebelumSelisih + diff;
+
+                return (
+                  <div
+                    className="card"
+                    onClick={() => handleCardClick('SHIFT_DISCREPANCY')}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '16px 20px',
+                      borderRadius: 12,
+                      background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.25) 0%, rgba(15, 23, 42, 0.95) 100%)',
+                      border: '2px solid rgba(6, 182, 212, 0.7)',
+                      boxShadow: '0 8px 25px rgba(6, 182, 212, 0.25)',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                    }}
+                    title="Klik untuk melihat rincian rekonsiliasi kas laci kasir"
+                  >
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                        <Coins size={20} color="#22d3ee" />
+                        <span style={{ fontSize: 13.5, fontWeight: 900, color: '#ffffff', letterSpacing: 0.3 }}>
+                          TOTAL SISA KAS DIPEGANG
+                        </span>
+                        <span style={{
+                          fontSize: 9.5,
+                          color: '#22d3ee',
+                          background: 'rgba(6, 182, 212, 0.25)',
+                          border: '1px solid rgba(6, 182, 212, 0.45)',
+                          padding: '1px 6px',
+                          borderRadius: 4,
+                          fontWeight: 800,
+                        }}>
+                          SETELAH SELISIH
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 3 }}>
+                        Kas Fisik ({rupiah(kasSebelumSelisih)}) {diff === 0 ? '' : (diff > 0 ? `+ Selisih (${rupiah(diff)})` : `- Selisih (${rupiah(Math.abs(diff))})`)}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 24, fontWeight: 900, color: '#22d3ee', fontFamily: 'monospace' }}>
+                        {rupiah(sisaKasAkhir)}
+                      </div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#06b6d4', marginTop: 1 }}>
+                        Sisa Fisik Riil di Tangan Kasir
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -1621,8 +2250,8 @@ export default function CashFlow() {
                         background: isTotal
                           ? 'rgba(16, 185, 129, 0.12)'
                           : isStart
-                          ? 'rgba(56, 189, 248, 0.08)'
-                          : 'transparent',
+                            ? 'rgba(56, 189, 248, 0.08)'
+                            : 'transparent',
                         fontWeight: isTotal || isStart ? 700 : 400,
                       }}
                     >
@@ -1641,10 +2270,10 @@ export default function CashFlow() {
                           color: isTotal
                             ? (step.amount >= 0 ? '#34d399' : '#f43f5e')
                             : isAdd
-                            ? '#34d399'
-                            : isSub
-                            ? '#f87171'
-                            : '#f8fafc',
+                              ? '#34d399'
+                              : isSub
+                                ? '#f87171'
+                                : '#f8fafc',
                         }}
                       >
                         {isAdd && step.amount > 0 ? `+${rupiah(step.amount)}` : rupiah(step.amount)}
@@ -1843,7 +2472,7 @@ export default function CashFlow() {
             <form onSubmit={handleSubmitTransaction}>
               <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 {/* Tanggal & Cabang */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div className="modal-form-grid-2">
                   <div className="form-group">
                     <label className="form-label" style={{ fontSize: 12 }}>Tanggal Transaksi *</label>
                     <input
@@ -1870,7 +2499,7 @@ export default function CashFlow() {
                 </div>
 
                 {/* Aktivitas & Arah Kas */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 12 }}>
+                <div className="modal-form-grid-2">
                   <div className="form-group">
                     <label className="form-label" style={{ fontSize: 12 }}>Aktivitas Arus Kas *</label>
                     <select
@@ -1929,7 +2558,7 @@ export default function CashFlow() {
                 </div>
 
                 {/* Nominal & Akun */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 12 }}>
+                <div className="modal-form-grid-2">
                   <div className="form-group">
                     <label className="form-label" style={{ fontSize: 12 }}>Nominal (Rp) *</label>
                     <input
@@ -1996,13 +2625,13 @@ export default function CashFlow() {
 
       {/* 7.5 DRILLDOWN / BREAKDOWN EXPLANATION MODAL */}
       {detailModal.open && (
-        <div className="modal-overlay" style={{ zIndex: 1100 }}>
+        <div className="modal-overlay" style={{ zIndex: 99999 }}>
           <div
             className="modal-card"
             style={{
-              maxWidth: 820,
-              width: '94%',
-              maxHeight: '88vh',
+              maxWidth: detailModal.type === 'SHIFT_DISCREPANCY' ? 1220 : 880,
+              width: '95%',
+              maxHeight: '94vh',
               display: 'flex',
               flexDirection: 'column',
               background: '#0b1329',
@@ -2033,22 +2662,22 @@ export default function CashFlow() {
                       detailModal.type === 'SALES_INFLOW' || detailModal.type === 'OPERATING'
                         ? 'rgba(16, 185, 129, 0.15)'
                         : detailModal.type === 'PURCHASES_OUTFLOW' || detailModal.type === 'OPEX_OUTFLOW'
-                        ? 'rgba(248, 113, 113, 0.15)'
-                        : detailModal.type === 'INVESTING'
-                        ? 'rgba(139, 92, 246, 0.15)'
-                        : detailModal.type === 'FINANCING'
-                        ? 'rgba(236, 72, 153, 0.15)'
-                        : 'rgba(56, 189, 248, 0.15)',
+                          ? 'rgba(248, 113, 113, 0.15)'
+                          : detailModal.type === 'INVESTING'
+                            ? 'rgba(139, 92, 246, 0.15)'
+                            : detailModal.type === 'FINANCING'
+                              ? 'rgba(236, 72, 153, 0.15)'
+                              : 'rgba(56, 189, 248, 0.15)',
                     color:
                       detailModal.type === 'SALES_INFLOW' || detailModal.type === 'OPERATING'
                         ? '#34d399'
                         : detailModal.type === 'PURCHASES_OUTFLOW' || detailModal.type === 'OPEX_OUTFLOW'
-                        ? '#f87171'
-                        : detailModal.type === 'INVESTING'
-                        ? '#a78bfa'
-                        : detailModal.type === 'FINANCING'
-                        ? '#f472b6'
-                        : '#38bdf8',
+                          ? '#f87171'
+                          : detailModal.type === 'INVESTING'
+                            ? '#a78bfa'
+                            : detailModal.type === 'FINANCING'
+                              ? '#f472b6'
+                              : '#38bdf8',
                   }}
                 >
                   <Search size={18} />
@@ -2075,11 +2704,13 @@ export default function CashFlow() {
             <div
               className="modal-body"
               style={{
-                padding: '20px 22px',
+                padding: '14px 18px',
                 overflowY: 'auto',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: 16,
+                gap: 10,
+                flex: 1,
+                minHeight: 0,
               }}
             >
               {detailModal.loading ? (
@@ -2088,217 +2719,465 @@ export default function CashFlow() {
                 </div>
               ) : (
                 <>
-                  {/* TYPE: SALES_INFLOW */}
-                  {detailModal.type === 'SALES_INFLOW' && (
+                  {/* TYPE: SALES_INFLOW or RECEIVABLE_INFLOW */}
+                  {(detailModal.type === 'SALES_INFLOW' || detailModal.type === 'RECEIVABLE_INFLOW') && (
                     <>
-                      {/* Summary Cards */}
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
-                        <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-                          <div style={{ fontSize: 11, color: '#a7f3d0' }}>Tunai (Cash)</div>
-                          <div style={{ fontSize: 15, fontWeight: 800, color: '#34d399', marginTop: 2 }}>
-                            {rupiah(op.inflows?.cash_sales)}
-                          </div>
-                        </div>
-                        <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
-                          <div style={{ fontSize: 11, color: '#bae6fd' }}>QRIS</div>
-                          <div style={{ fontSize: 15, fontWeight: 800, color: '#38bdf8', marginTop: 2 }}>
-                            {rupiah(op.inflows?.qris_sales)}
-                          </div>
-                        </div>
-                        <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
-                          <div style={{ fontSize: 11, color: '#fde68a' }}>Grab / E-Comm</div>
-                          <div style={{ fontSize: 15, fontWeight: 800, color: '#f59e0b', marginTop: 2 }}>
-                            {rupiah(op.inflows?.grab_sales || 0)}
-                          </div>
-                        </div>
-                        <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(168, 85, 247, 0.2)' }}>
-                          <div style={{ fontSize: 11, color: '#e9d5ff' }}>Transfer Bank</div>
-                          <div style={{ fontSize: 15, fontWeight: 800, color: '#c084fc', marginTop: 2 }}>
-                            {rupiah(op.inflows?.transfer_sales)}
-                          </div>
-                        </div>
-                        <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(251, 146, 60, 0.1)', border: '1px solid rgba(251, 146, 60, 0.2)' }}>
-                          <div style={{ fontSize: 11, color: '#fed7aa' }}>Debit / EDC</div>
-                          <div style={{ fontSize: 15, fontWeight: 800, color: '#fb923c', marginTop: 2 }}>
-                            {rupiah(op.inflows?.debit_sales)}
-                          </div>
-                        </div>
-                        <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.15)' }}>
-                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Kas Masuk</div>
-                          <div style={{ fontSize: 16, fontWeight: 900, color: '#f8fafc', marginTop: 2 }}>
-                            {rupiah(op.inflows?.total_inflows)}
-                          </div>
-                        </div>
+                      {/* Sub-Tab Navigation */}
+                      <div
+                        style={{
+                          display: 'flex',
+                          gap: 8,
+                          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                          paddingBottom: 12,
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className={`btn btn-sm ${detailModal.subTab === 'DIRECT' ? 'btn-primary' : 'btn-secondary'}`}
+                          onClick={() => setDetailModal(p => ({ ...p, subTab: 'DIRECT' }))}
+                          style={{
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            borderRadius: 8,
+                            padding: '7px 14px',
+                          }}
+                        >
+                          🛍️ Penjualan Langsung Kasir ({rupiah(op.inflows?.direct_sales_total || 0)})
+                        </button>
+                        <button
+                          type="button"
+                          className={`btn btn-sm ${detailModal.subTab === 'RECEIVABLE' ? 'btn-primary' : 'btn-secondary'}`}
+                          onClick={() => setDetailModal(p => ({ ...p, subTab: 'RECEIVABLE' }))}
+                          style={{
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            borderRadius: 8,
+                            padding: '7px 14px',
+                          }}
+                        >
+                          📝 Pelunasan Kasbon Customer ({rupiah(op.inflows?.receivable_collections || 0)})
+                        </button>
+                        <button
+                          type="button"
+                          className={`btn btn-sm ${detailModal.subTab === 'COMBINED' ? 'btn-primary' : 'btn-secondary'}`}
+                          onClick={() => setDetailModal(p => ({ ...p, subTab: 'COMBINED' }))}
+                          style={{
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            borderRadius: 8,
+                            padding: '7px 14px',
+                          }}
+                        >
+                          ✨ Semua Kas Masuk (Gabungan) ({rupiah(op.inflows?.total_inflows || 0)})
+                        </button>
                       </div>
 
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)', background: 'rgba(255, 255, 255, 0.03)', padding: '8px 12px', borderRadius: 6 }}>
-                        💡 <strong>Dari mana angka ini berasal?</strong> Diambil secara real-time dari seluruh order kasir yang berstatus <em>PAID / Selesai</em>. Uang masuk langsung dihitung berdasarkan metode bayar riil.
-                      </div>
+                      {/* Content: DIRECT SALES */}
+                      {detailModal.subTab === 'DIRECT' && (
+                        <>
+                          {/* Summary Cards */}
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
+                            <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                              <div style={{ fontSize: 11, color: '#a7f3d0' }}>Tunai (Cash)</div>
+                              <div style={{ fontSize: 15, fontWeight: 800, color: '#34d399', marginTop: 2 }}>
+                                {rupiah(op.inflows?.cash_sales || 0)}
+                              </div>
+                            </div>
+                            <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
+                              <div style={{ fontSize: 11, color: '#bae6fd' }}>QRIS</div>
+                              <div style={{ fontSize: 15, fontWeight: 800, color: '#38bdf8', marginTop: 2 }}>
+                                {rupiah(op.inflows?.qris_sales || 0)}
+                              </div>
+                            </div>
+                            <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+                              <div style={{ fontSize: 11, color: '#fde68a' }}>Grab / Online</div>
+                              <div style={{ fontSize: 15, fontWeight: 800, color: '#f59e0b', marginTop: 2 }}>
+                                {rupiah(op.inflows?.grab_sales || 0)}
+                              </div>
+                            </div>
+                            <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(168, 85, 247, 0.2)' }}>
+                              <div style={{ fontSize: 11, color: '#e9d5ff' }}>Transfer Bank</div>
+                              <div style={{ fontSize: 15, fontWeight: 800, color: '#c084fc', marginTop: 2 }}>
+                                {rupiah(op.inflows?.transfer_sales || 0)}
+                              </div>
+                            </div>
+                            <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(251, 146, 60, 0.1)', border: '1px solid rgba(251, 146, 60, 0.2)' }}>
+                              <div style={{ fontSize: 11, color: '#fed7aa' }}>Debit / EDC</div>
+                              <div style={{ fontSize: 15, fontWeight: 800, color: '#fb923c', marginTop: 2 }}>
+                                {rupiah(op.inflows?.debit_sales || 0)}
+                              </div>
+                            </div>
+                            <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.15)' }}>
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Penjualan Langsung</div>
+                              <div style={{ fontSize: 16, fontWeight: 900, color: '#f8fafc', marginTop: 2 }}>
+                                {rupiah(op.inflows?.direct_sales_total || 0)}
+                              </div>
+                            </div>
+                          </div>
 
-                      <div className="table-responsive" style={{ maxHeight: 340, overflowY: 'auto' }}>
-                        <table className="table" style={{ fontSize: 12 }}>
-                          <thead>
-                            <tr>
-                              <th>No. Invoice / Order</th>
-                              <th>Waktu Order</th>
-                              <th>Metode Bayar</th>
-                              <th>Pelanggan / Meja</th>
-                              <th>Item Menu Terjual</th>
-                              <th>Kasir</th>
-                              <th style={{ textAlign: 'right' }}>Total Bayar</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {groupedSalesOrders.length > 0 ? (
-                              groupedSalesOrders.map((ord, idx) => (
-                                <tr key={ord.order_number || idx}>
-                                  <td className="mono" style={{ color: '#38bdf8', fontWeight: 600 }}>
-                                    {ord.order_number}
-                                  </td>
-                                  <td>
-                                    {ord.created_at
-                                      ? new Date(ord.created_at).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })
-                                      : ord.date}
-                                  </td>
-                                  <td>
-                                    <span
-                                      style={{
-                                        padding: '2px 7px',
-                                        borderRadius: 4,
-                                        background: 'rgba(255, 255, 255, 0.08)',
-                                        fontWeight: 700,
-                                        fontSize: 11,
-                                        color: ord.payment_method === 'CASH' ? '#34d399' : '#38bdf8'
-                                      }}
-                                    >
-                                      {ord.payment_method}
-                                    </span>
-                                  </td>
-                                  <td>
-                                    {ord.customer_name || (ord.table_number ? `Meja ${ord.table_number}` : 'Pelanggan Walk-in')}
-                                  </td>
-                                  <td style={{ color: '#cbd5e1', maxWidth: 220, fontSize: 11.5 }}>
-                                    {ord.items.length > 0 ? ord.items.join(', ') : 'Menu Penjualan'}
-                                  </td>
-                                  <td style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
-                                    {ord.user_name}
-                                  </td>
-                                  <td style={{ textAlign: 'right', fontWeight: 700, color: '#34d399', fontSize: 13 }}>
-                                    {rupiah(ord.total_price)}
-                                  </td>
+                          {/* Kasbon Inflow Alert Banner */}
+                          {Number(op.inflows?.receivable_collections || 0) > 0 && (
+                            <div
+                              style={{
+                                padding: '12px 16px',
+                                borderRadius: 10,
+                                background: 'rgba(167, 139, 250, 0.12)',
+                                border: '1px solid rgba(167, 139, 250, 0.3)',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                flexWrap: 'wrap',
+                                gap: 10,
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <Sparkles size={18} color="#c084fc" />
+                                <div>
+                                  <div style={{ fontSize: 13, fontWeight: 700, color: '#ffffff' }}>
+                                    Ada Uang Masuk dari Pelunasan Kasbon: <strong style={{ color: '#c084fc' }}>{rupiah(op.inflows?.receivable_collections)}</strong>
+                                  </div>
+                                  <div style={{ fontSize: 11.5, color: '#cbd5e1' }}>
+                                    Uang kas/transfer masuk ini berasal dari pembayaran hutang/kasbon pelanggan yang diterima kasir.
+                                  </div>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                className="btn btn-sm"
+                                onClick={() => setDetailModal(p => ({ ...p, subTab: 'RECEIVABLE' }))}
+                                style={{
+                                  background: '#8b5cf6',
+                                  color: '#ffffff',
+                                  fontWeight: 700,
+                                  fontSize: 12,
+                                  border: 'none',
+                                  borderRadius: 8,
+                                  padding: '6px 14px',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Buka Rincian Kasbon ({rupiah(op.inflows?.receivable_collections)}) →
+                              </button>
+                            </div>
+                          )}
+
+                          <div style={{ fontSize: 12, color: 'var(--text-muted)', background: 'rgba(255, 255, 255, 0.03)', padding: '8px 12px', borderRadius: 6 }}>
+                            💡 <strong>Penjualan Langsung Kasir:</strong> Diambil dari order kasir tunai/non-tunai langsung (selain kasbon) yang berstatus <em>PAID / Selesai</em>.
+                          </div>
+
+                          <div className="table-responsive" style={{ maxHeight: 340, overflowY: 'auto' }}>
+                            <table className="table" style={{ fontSize: 12 }}>
+                              <thead>
+                                <tr>
+                                  <th>No. Invoice / Order</th>
+                                  <th>Waktu Order</th>
+                                  <th>Metode Bayar</th>
+                                  <th>Pelanggan / Meja</th>
+                                  <th>Item Menu Terjual</th>
+                                  <th>Kasir</th>
+                                  <th style={{ textAlign: 'right' }}>Total Bayar</th>
                                 </tr>
-                              ))
-                            ) : (
-                              <tr>
-                                <td colSpan={7} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)' }}>
-                                  Tidak ada transaksi kasir pada periode ini.
-                                </td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
-                    </>
-                  )}
+                              </thead>
+                              <tbody>
+                                {groupedSalesOrders.length > 0 ? (
+                                  groupedSalesOrders.map((ord, idx) => (
+                                    <tr key={ord.order_number || idx}>
+                                      <td className="mono" style={{ color: '#38bdf8', fontWeight: 600 }}>
+                                        {ord.order_number}
+                                      </td>
+                                      <td>
+                                        {ord.created_at
+                                          ? new Date(ord.created_at).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })
+                                          : ord.date}
+                                      </td>
+                                      <td>
+                                        <span
+                                          style={{
+                                            padding: '2px 7px',
+                                            borderRadius: 4,
+                                            background: 'rgba(255, 255, 255, 0.08)',
+                                            fontWeight: 700,
+                                            fontSize: 11,
+                                            color: ord.payment_method === 'CASH' ? '#34d399' : '#38bdf8'
+                                          }}
+                                        >
+                                          {ord.payment_method}
+                                        </span>
+                                      </td>
+                                      <td>
+                                        {ord.customer_name || (ord.table_number ? `Meja ${ord.table_number}` : 'Pelanggan Walk-in')}
+                                      </td>
+                                      <td style={{ color: '#cbd5e1', maxWidth: 220, fontSize: 11.5 }}>
+                                        {ord.items.length > 0 ? ord.items.join(', ') : 'Menu Penjualan'}
+                                      </td>
+                                      <td style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                                        {ord.user_name}
+                                      </td>
+                                      <td style={{ textAlign: 'right', fontWeight: 700, color: '#34d399', fontSize: 13 }}>
+                                        {rupiah(ord.total_price)}
+                                      </td>
+                                    </tr>
+                                  ))
+                                ) : (
+                                  <tr>
+                                    <td colSpan={7} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)' }}>
+                                      Tidak ada transaksi penjualan langsung kasir pada periode ini.
+                                      {Number(op.inflows?.receivable_collections || 0) > 0 && (
+                                        <div style={{ marginTop: 6, color: '#c084fc', fontWeight: 600 }}>
+                                          Klik tab "Pelunasan Kasbon Customer" di atas untuk melihat pembayaran kasbon senilai {rupiah(op.inflows?.receivable_collections)}.
+                                        </div>
+                                      )}
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+                      )}
 
-                  {/* TYPE: RECEIVABLE_INFLOW */}
-                  {detailModal.type === 'RECEIVABLE_INFLOW' && (
-                    <>
-                      {/* Summary Cards */}
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
-                        <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-                          <div style={{ fontSize: 11, color: '#a7f3d0' }}>Pembayaran Tunai</div>
-                          <div style={{ fontSize: 15, fontWeight: 800, color: '#34d399', marginTop: 2 }}>
-                            {rupiah(detailModal.extraData?.cash || 0)}
+                      {/* Content: RECEIVABLE COLLECTIONS */}
+                      {detailModal.subTab === 'RECEIVABLE' && (
+                        <>
+                          {/* Summary Cards */}
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
+                            <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                              <div style={{ fontSize: 11, color: '#a7f3d0' }}>Pembayaran Tunai</div>
+                              <div style={{ fontSize: 15, fontWeight: 800, color: '#34d399', marginTop: 2 }}>
+                                {rupiah(statementData?.operating?.inflows?.receivable_breakdown?.cash || 0)}
+                              </div>
+                            </div>
+                            <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
+                              <div style={{ fontSize: 11, color: '#bae6fd' }}>QRIS</div>
+                              <div style={{ fontSize: 15, fontWeight: 800, color: '#38bdf8', marginTop: 2 }}>
+                                {rupiah(statementData?.operating?.inflows?.receivable_breakdown?.qris || 0)}
+                              </div>
+                            </div>
+                            <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(168, 85, 247, 0.2)' }}>
+                              <div style={{ fontSize: 11, color: '#e9d5ff' }}>Transfer Bank</div>
+                              <div style={{ fontSize: 15, fontWeight: 800, color: '#c084fc', marginTop: 2 }}>
+                                {rupiah(statementData?.operating?.inflows?.receivable_breakdown?.transfer || 0)}
+                              </div>
+                            </div>
+                            <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(251, 146, 60, 0.1)', border: '1px solid rgba(251, 146, 60, 0.2)' }}>
+                              <div style={{ fontSize: 11, color: '#fed7aa' }}>Debit / Lainnya</div>
+                              <div style={{ fontSize: 15, fontWeight: 800, color: '#fb923c', marginTop: 2 }}>
+                                {rupiah((statementData?.operating?.inflows?.receivable_breakdown?.debit || 0) + (statementData?.operating?.inflows?.receivable_breakdown?.other || 0))}
+                              </div>
+                            </div>
+                            <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.15)' }}>
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Pelunasan Kasbon</div>
+                              <div style={{ fontSize: 16, fontWeight: 900, color: '#34d399', marginTop: 2 }}>
+                                {rupiah(op.inflows?.receivable_collections || 0)}
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                        <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(168, 85, 247, 0.2)' }}>
-                          <div style={{ fontSize: 11, color: '#e9d5ff' }}>Transfer Bank</div>
-                          <div style={{ fontSize: 15, fontWeight: 800, color: '#c084fc', marginTop: 2 }}>
-                            {rupiah(detailModal.extraData?.transfer || 0)}
-                          </div>
-                        </div>
-                        <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
-                          <div style={{ fontSize: 11, color: '#bae6fd' }}>QRIS / Debit</div>
-                          <div style={{ fontSize: 15, fontWeight: 800, color: '#38bdf8', marginTop: 2 }}>
-                            {rupiah((detailModal.extraData?.qris || 0) + (detailModal.extraData?.debit || 0))}
-                          </div>
-                        </div>
-                        <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.15)' }}>
-                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Kas Masuk Kasbon</div>
-                          <div style={{ fontSize: 16, fontWeight: 900, color: '#34d399', marginTop: 2 }}>
-                            {rupiah(op.inflows?.receivable_collections || 0)}
-                          </div>
-                        </div>
-                      </div>
 
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)', background: 'rgba(168, 85, 247, 0.08)', border: '1px solid rgba(168, 85, 247, 0.2)', padding: '10px 14px', borderRadius: 6 }}>
-                        💡 <strong>Prinsip Arus Kas Riil:</strong> Penjualan kasbon saat nota dibuat <em>TIDAK</em> masuk ke Arus Kas karena uang belum diterima. Uang hanya diakui masuk ke Arus Kas ketika pelanggan benar-benar membayar/mencicil kasbon tersebut di kasir.
-                      </div>
+                          <div style={{ fontSize: 12, color: 'var(--text-muted)', background: 'rgba(168, 85, 247, 0.08)', border: '1px solid rgba(168, 85, 247, 0.2)', padding: '10px 14px', borderRadius: 6 }}>
+                            💡 <strong>Prinsip Arus Kas Riil:</strong> Penjualan kasbon saat nota dibuat <em>TIDAK</em> masuk ke Arus Kas karena uang belum diterima. Uang hanya diakui masuk ke Arus Kas ketika kasir menerima uang muka (DP) atau cicilan/pelunasan kasbon dari pelanggan.
+                          </div>
 
-                      <div className="table-responsive" style={{ maxHeight: 340, overflowY: 'auto' }}>
-                        <table className="table" style={{ fontSize: 12 }}>
-                          <thead>
-                            <tr>
-                              <th>No. Bukti Bayar</th>
-                              <th>No. Kasbon</th>
-                              <th>Tanggal Bayar</th>
-                              <th>Nama Pelanggan</th>
-                              <th>Metode Bayar</th>
-                              <th>Penerima (Kasir)</th>
-                              <th>Keterangan / Catatan</th>
-                              <th style={{ textAlign: 'right' }}>Nominal Kas Masuk</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {detailModal.items && detailModal.items.length > 0 ? (
-                              detailModal.items.map((item, idx) => (
-                                <tr key={item.id || idx}>
-                                  <td className="mono" style={{ color: '#38bdf8', fontWeight: 600 }}>
-                                    {item.payment_no}
-                                  </td>
-                                  <td className="mono" style={{ color: '#cbd5e1' }}>
-                                    {item.receivable_no || '-'}
-                                  </td>
-                                  <td>{item.payment_date}</td>
-                                  <td style={{ fontWeight: 600, color: '#f8fafc' }}>
-                                    {item.customer_name}
-                                  </td>
-                                  <td>
-                                    <span
-                                      style={{
-                                        padding: '2px 7px',
-                                        borderRadius: 4,
-                                        background: 'rgba(255, 255, 255, 0.08)',
-                                        fontWeight: 700,
-                                        fontSize: 11,
-                                        color: item.payment_method === 'CASH' ? '#34d399' : '#38bdf8'
-                                      }}
-                                    >
-                                      {item.payment_method}
-                                    </span>
-                                  </td>
-                                  <td style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
-                                    {item.receiver_name}
-                                  </td>
-                                  <td style={{ fontSize: 11.5, color: '#cbd5e1', maxWidth: 180 }}>
-                                    {item.notes || '-'}
-                                  </td>
-                                  <td style={{ textAlign: 'right', fontWeight: 700, color: '#34d399', fontSize: 13 }}>
-                                    {rupiah(item.amount)}
-                                  </td>
+                          <div className="table-responsive" style={{ maxHeight: 340, overflowY: 'auto' }}>
+                            <table className="table" style={{ fontSize: 12 }}>
+                              <thead>
+                                <tr>
+                                  <th>No. Bukti Bayar</th>
+                                  <th>No. Kasbon</th>
+                                  <th>Tanggal Bayar</th>
+                                  <th>Nama Pelanggan</th>
+                                  <th>Metode Bayar</th>
+                                  <th>Penerima (Kasir)</th>
+                                  <th>Keterangan / Catatan</th>
+                                  <th style={{ textAlign: 'right' }}>Nominal Kas Masuk</th>
                                 </tr>
-                              ))
-                            ) : (
-                              <tr>
-                                <td colSpan={8} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)' }}>
-                                  Tidak ada catatan pembayaran kasbon pelanggan pada periode ini.
-                                </td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
+                              </thead>
+                              <tbody>
+                                {filteredReceivablePayments && filteredReceivablePayments.length > 0 ? (
+                                  filteredReceivablePayments.map((item, idx) => (
+                                    <tr key={item.id || idx}>
+                                      <td className="mono" style={{ color: '#38bdf8', fontWeight: 600 }}>
+                                        {item.payment_no}
+                                      </td>
+                                      <td className="mono" style={{ color: '#cbd5e1' }}>
+                                        {item.receivable_no || '-'}
+                                      </td>
+                                      <td>{item.payment_date}</td>
+                                      <td style={{ fontWeight: 600, color: '#f8fafc' }}>
+                                        {item.customer_name}
+                                      </td>
+                                      <td>
+                                        <span
+                                          style={{
+                                            padding: '2px 7px',
+                                            borderRadius: 4,
+                                            background: 'rgba(255, 255, 255, 0.08)',
+                                            fontWeight: 700,
+                                            fontSize: 11,
+                                            color: item.payment_method === 'CASH' || item.payment_method === 'TUNAI' ? '#34d399' : '#38bdf8'
+                                          }}
+                                        >
+                                          {item.payment_method}
+                                        </span>
+                                      </td>
+                                      <td style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                                        {item.receiver_name}
+                                      </td>
+                                      <td style={{ fontSize: 11.5, color: '#cbd5e1', maxWidth: 180 }}>
+                                        {item.notes || '-'}
+                                      </td>
+                                      <td style={{ textAlign: 'right', fontWeight: 700, color: '#34d399', fontSize: 13 }}>
+                                        {rupiah(item.amount)}
+                                      </td>
+                                    </tr>
+                                  ))
+                                ) : (
+                                  <tr>
+                                    <td colSpan={8} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)' }}>
+                                      Tidak ada catatan pembayaran kasbon pelanggan pada periode ini.
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+                      )}
+
+                      {/* Content: COMBINED INFLOWS */}
+                      {detailModal.subTab === 'COMBINED' && (
+                        <>
+                          {/* Summary Cards */}
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
+                            <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                              <div style={{ fontSize: 11, color: '#a7f3d0' }}>Tunai (Semua)</div>
+                              <div style={{ fontSize: 15, fontWeight: 800, color: '#34d399', marginTop: 2 }}>
+                                {rupiah((op.inflows?.cash_sales || 0) + (statementData?.operating?.inflows?.receivable_breakdown?.cash || 0))}
+                              </div>
+                            </div>
+                            <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
+                              <div style={{ fontSize: 11, color: '#bae6fd' }}>QRIS (Semua)</div>
+                              <div style={{ fontSize: 15, fontWeight: 800, color: '#38bdf8', marginTop: 2 }}>
+                                {rupiah((op.inflows?.qris_sales || 0) + (statementData?.operating?.inflows?.receivable_breakdown?.qris || 0))}
+                              </div>
+                            </div>
+                            <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+                              <div style={{ fontSize: 11, color: '#fde68a' }}>Grab / Online</div>
+                              <div style={{ fontSize: 15, fontWeight: 800, color: '#f59e0b', marginTop: 2 }}>
+                                {rupiah(op.inflows?.grab_sales || 0)}
+                              </div>
+                            </div>
+                            <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(168, 85, 247, 0.2)' }}>
+                              <div style={{ fontSize: 11, color: '#e9d5ff' }}>Transfer Bank</div>
+                              <div style={{ fontSize: 15, fontWeight: 800, color: '#c084fc', marginTop: 2 }}>
+                                {rupiah((op.inflows?.transfer_sales || 0) + (statementData?.operating?.inflows?.receivable_breakdown?.transfer || 0))}
+                              </div>
+                            </div>
+                            <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(251, 146, 60, 0.1)', border: '1px solid rgba(251, 146, 60, 0.2)' }}>
+                              <div style={{ fontSize: 11, color: '#fed7aa' }}>Debit / EDC</div>
+                              <div style={{ fontSize: 15, fontWeight: 800, color: '#fb923c', marginTop: 2 }}>
+                                {rupiah((op.inflows?.debit_sales || 0) + (statementData?.operating?.inflows?.receivable_breakdown?.debit || 0) + (statementData?.operating?.inflows?.receivable_breakdown?.other || 0))}
+                              </div>
+                            </div>
+                            <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.15)' }}>
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Kas Masuk (Gabungan)</div>
+                              <div style={{ fontSize: 16, fontWeight: 900, color: '#f8fafc', marginTop: 2 }}>
+                                {rupiah(op.inflows?.total_inflows || 0)}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div style={{ fontSize: 12, color: 'var(--text-muted)', background: 'rgba(255, 255, 255, 0.03)', padding: '8px 12px', borderRadius: 6 }}>
+                            💡 <strong>Total Kas Masuk Gabungan:</strong> Menampilkan seluruh penerimaan uang kas fisik dan non-tunai yang masuk ke kasir atau bank, baik dari penjualan langsung maupun pembayaran kasbon pelanggan.
+                          </div>
+
+                          <div className="table-responsive" style={{ maxHeight: 340, overflowY: 'auto' }}>
+                            <table className="table" style={{ fontSize: 12 }}>
+                              <thead>
+                                <tr>
+                                  <th>Tipe Kas Masuk</th>
+                                  <th>No. Ref / Bukti</th>
+                                  <th>Tanggal</th>
+                                  <th>Metode Bayar</th>
+                                  <th>Pelanggan / Meja</th>
+                                  <th>Keterangan</th>
+                                  <th>Kasir</th>
+                                  <th style={{ textAlign: 'right' }}>Total Masuk</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {combinedInflowList && combinedInflowList.length > 0 ? (
+                                  combinedInflowList.map((item, idx) => (
+                                    <tr key={item.id || idx}>
+                                      <td>
+                                        <span
+                                          style={{
+                                            padding: '2px 7px',
+                                            borderRadius: 4,
+                                            fontWeight: 700,
+                                            fontSize: 10.5,
+                                            background: item.type === 'ORDER' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(168, 85, 247, 0.15)',
+                                            color: item.type === 'ORDER' ? '#38bdf8' : '#c084fc',
+                                            border: item.type === 'ORDER' ? '1px solid rgba(56, 189, 248, 0.3)' : '1px solid rgba(168, 85, 247, 0.3)',
+                                          }}
+                                        >
+                                          {item.type === 'ORDER' ? 'Penjualan' : 'Pelunasan Kasbon'}
+                                        </span>
+                                      </td>
+                                      <td className="mono" style={{ color: '#cbd5e1', fontWeight: 600 }}>
+                                        {item.ref_no}
+                                      </td>
+                                      <td style={{ fontSize: 11.5 }}>
+                                        {item.created_at
+                                          ? new Date(item.created_at).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })
+                                          : item.date}
+                                      </td>
+                                      <td>
+                                        <span
+                                          style={{
+                                            padding: '2px 7px',
+                                            borderRadius: 4,
+                                            background: 'rgba(255, 255, 255, 0.08)',
+                                            fontWeight: 700,
+                                            fontSize: 11,
+                                            color: (item.payment_method === 'CASH' || item.payment_method === 'TUNAI') ? '#34d399' : '#38bdf8'
+                                          }}
+                                        >
+                                          {item.payment_method}
+                                        </span>
+                                      </td>
+                                      <td style={{ fontWeight: 600, color: '#f8fafc' }}>
+                                        {item.customer}
+                                      </td>
+                                      <td style={{ color: '#cbd5e1', maxWidth: 200, fontSize: 11.5 }}>
+                                        {item.notes}
+                                      </td>
+                                      <td style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                                        {item.user}
+                                      </td>
+                                      <td style={{ textAlign: 'right', fontWeight: 700, color: '#34d399', fontSize: 13 }}>
+                                        {rupiah(item.amount)}
+                                      </td>
+                                    </tr>
+                                  ))
+                                ) : (
+                                  <tr>
+                                    <td colSpan={8} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)' }}>
+                                      Tidak ada catatan kas masuk pada periode ini.
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+                      )}
                     </>
                   )}
 
@@ -2488,21 +3367,71 @@ export default function CashFlow() {
 
                         {/* Waterfall Breakdown Formula */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'rgba(0, 0, 0, 0.2)', padding: 12, borderRadius: 8 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
-                            <span style={{ color: '#cbd5e1' }}>
-                              (+) Kas Masuk Penjualan Kasir (POS)
-                            </span>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <button
-                                className="btn btn-ghost btn-sm"
-                                style={{ padding: '2px 8px', fontSize: 11, color: '#38bdf8' }}
-                                onClick={() => handleCardClick('SALES_INFLOW')}
-                              >
-                                🔍 Lihat Rincian
-                              </button>
-                              <strong style={{ color: '#34d399' }}>+{rupiah(op.inflows?.total_inflows)}</strong>
+                          {Number(op.inflows?.receivable_collections || 0) > 0 ? (
+                            <>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+                                <span style={{ color: '#cbd5e1' }}>
+                                  (+) Kas Masuk Penjualan Langsung Kasir
+                                </span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <button
+                                    className="btn btn-ghost btn-sm"
+                                    style={{ padding: '2px 8px', fontSize: 11, color: '#38bdf8' }}
+                                    onClick={() => handleCardClick('SALES_INFLOW', 'DIRECT')}
+                                  >
+                                    🔍 Rincian Penjualan
+                                  </button>
+                                  <strong style={{ color: '#34d399' }}>+{rupiah(op.inflows?.direct_sales_total || 0)}</strong>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+                                <span style={{ color: '#cbd5e1' }}>
+                                  (+) Kas Masuk Pelunasan Kasbon Customer
+                                </span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <button
+                                    className="btn btn-ghost btn-sm"
+                                    style={{ padding: '2px 8px', fontSize: 11, color: '#a78bfa' }}
+                                    onClick={() => handleCardClick('RECEIVABLE_INFLOW', 'RECEIVABLE')}
+                                  >
+                                    🔍 Rincian Kasbon
+                                  </button>
+                                  <strong style={{ color: '#a78bfa' }}>+{rupiah(op.inflows?.receivable_collections || 0)}</strong>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, background: 'rgba(255, 255, 255, 0.04)', padding: '4px 8px', borderRadius: 4 }}>
+                                <span style={{ color: '#f8fafc', fontWeight: 600 }}>
+                                  (Subtotal Kas Masuk Operasional)
+                                </span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <button
+                                    className="btn btn-ghost btn-sm"
+                                    style={{ padding: '2px 8px', fontSize: 11, color: '#38bdf8' }}
+                                    onClick={() => handleCardClick('INFLOWS_ALL', 'COMBINED')}
+                                  >
+                                    🔍 Gabungan
+                                  </button>
+                                  <strong style={{ color: '#34d399' }}>+{rupiah(op.inflows?.total_inflows || 0)}</strong>
+                                </div>
+                              </div>
+                            </>
+                          ) : (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+                              <span style={{ color: '#cbd5e1' }}>
+                                (+) Kas Masuk Penjualan Kasir (POS)
+                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <button
+                                  className="btn btn-ghost btn-sm"
+                                  style={{ padding: '2px 8px', fontSize: 11, color: '#38bdf8' }}
+                                  onClick={() => handleCardClick('SALES_INFLOW', 'DIRECT')}
+                                >
+                                  🔍 Lihat Rincian
+                                </button>
+                                <strong style={{ color: '#34d399' }}>+{rupiah(op.inflows?.total_inflows || 0)}</strong>
+                              </div>
                             </div>
-                          </div>
+                          )}
 
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
                             <span style={{ color: '#cbd5e1' }}>
@@ -2792,6 +3721,312 @@ export default function CashFlow() {
                       </div>
                     </>
                   )}
+
+                  {/* TYPE: SHIFT_DISCREPANCY */}
+                  {detailModal.type === 'SHIFT_DISCREPANCY' && (
+                    <>
+                      {/* Top Metric Cards for Shift Discrepancy */}
+                      {(() => {
+                        const modalTotal = Number(detailModal.extraData?.initialCashTotal || 0);
+                        const sysTotal = Number(detailModal.extraData?.systemCashTotal || 0);
+                        const closingTotal = Number(detailModal.extraData?.closingCashTotal || 0);
+                        const diff = Number(detailModal.extraData?.cashDifferenceTotal || 0);
+                        const isBal = diff === 0;
+                        const isOver = diff > 0;
+                        const diffColor = isBal ? '#10b981' : (isOver ? '#38bdf8' : '#f43f5e');
+                        const diffBg = isBal ? 'rgba(16, 185, 129, 0.1)' : (isOver ? 'rgba(56, 189, 248, 0.1)' : 'rgba(244, 63, 94, 0.1)');
+                        const diffBorder = isBal ? 'rgba(16, 185, 129, 0.3)' : (isOver ? 'rgba(56, 189, 248, 0.3)' : 'rgba(244, 63, 94, 0.3)');
+
+                        const interDiff = Number(detailModal.extraData?.interShiftDiffTotal || 0);
+                        const isInterBal = interDiff === 0;
+                        const isInterOver = interDiff > 0;
+                        const interColor = isInterBal ? '#10b981' : (isInterOver ? '#38bdf8' : '#f43f5e');
+                        const interBg = isInterBal ? 'rgba(16, 185, 129, 0.1)' : (isInterOver ? 'rgba(56, 189, 248, 0.1)' : 'rgba(244, 63, 94, 0.1)');
+                        const interBorder = isInterBal ? 'rgba(16, 185, 129, 0.3)' : (isInterOver ? 'rgba(56, 189, 248, 0.3)' : 'rgba(244, 63, 94, 0.3)');
+
+                        const closedList = (detailModal.items || []).filter(s => s.status === 'CLOSED');
+                        const closedFormulaStr = closedList.length > 0
+                          ? closedList.map(s => `${s.shift_name} (${rupiah(s.closing_cash || 0)})`).join(' + ')
+                          : 'Belum ada shift ditutup';
+
+                        const initialFormulaStr = (detailModal.items || []).map(s => `${s.shift_name} (${rupiah(s.initial_cash || 0)})`).join(' + ') || rupiah(modalTotal);
+
+                        return (
+                          <>
+                            {/* 5 KPI Cards in Responsive Row/Grid */}
+                            <div className="modal-kpi-5-grid">
+                              {/* 1. Modal Awal */}
+                              <div style={{ background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.25)', padding: '9px 12px', borderRadius: 9 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <div style={{ fontSize: 10.5, color: '#7dd3fc', fontWeight: 700 }}>1. Modal Awal Kas</div>
+                                  <span style={{ fontSize: 9, background: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>
+                                    {detailModal.extraData?.totalCount || 0} Sesi
+                                  </span>
+                                </div>
+                                <div style={{ fontSize: 16, fontWeight: 900, color: '#38bdf8', marginTop: 2 }}>
+                                  {rupiah(modalTotal)}
+                                </div>
+                                <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={initialFormulaStr}>
+                                  Sumber: {initialFormulaStr}
+                                </div>
+                              </div>
+
+                              {/* 2. Kas Teoretis Sistem */}
+                              <div style={{ background: 'rgba(168, 85, 247, 0.08)', border: '1px solid rgba(168, 85, 247, 0.25)', padding: '9px 12px', borderRadius: 9 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <div style={{ fontSize: 10.5, color: '#c084fc', fontWeight: 700 }}>2. Kas Sistem</div>
+                                  <span style={{ fontSize: 9, background: 'rgba(168, 85, 247, 0.2)', color: '#c084fc', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>
+                                    Target
+                                  </span>
+                                </div>
+                                <div style={{ fontSize: 16, fontWeight: 900, color: '#c084fc', marginTop: 2 }}>
+                                  {rupiah(sysTotal)}
+                                </div>
+                                <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                                  Modal ({rupiah(modalTotal)}) + Penjualan
+                                </div>
+                              </div>
+
+                              {/* 3. Fisik Aktual Closing */}
+                              <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', padding: '9px 12px', borderRadius: 9 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <div style={{ fontSize: 10.5, color: '#34d399', fontWeight: 700 }}>3. Fisik Closing</div>
+                                  <span style={{ fontSize: 9, background: 'rgba(16, 185, 129, 0.2)', color: '#34d399', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>
+                                    {detailModal.extraData?.closedCount || 0} Tutup
+                                  </span>
+                                </div>
+                                <div style={{ fontSize: 16, fontWeight: 900, color: '#34d399', marginTop: 2 }}>
+                                  {rupiah(closingTotal)}
+                                </div>
+                                <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={closedFormulaStr}>
+                                  Hitung: {closedFormulaStr}
+                                </div>
+                              </div>
+
+                              {/* 4. Selisih Closing Shift */}
+                              <div style={{ background: diffBg, border: `1.5px solid ${diffBorder}`, padding: '9px 12px', borderRadius: 9 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <div style={{ fontSize: 10.5, color: diffColor, fontWeight: 700 }}>4. Selisih Closing</div>
+                                  <span style={{ fontSize: 9, background: `${diffColor}25`, color: diffColor, padding: '1px 5px', borderRadius: 4, fontWeight: 800 }}>
+                                    {isBal ? '✓ PAS' : (isOver ? '+ LEBIH' : '⚠️ TEKOR')}
+                                  </span>
+                                </div>
+                                <div style={{ fontSize: 16, fontWeight: 900, color: diffColor, marginTop: 2 }}>
+                                  {isOver ? `+${rupiah(diff)}` : (diff < 0 ? `-${rupiah(Math.abs(diff))}` : rupiah(0))}
+                                </div>
+                                <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                                  Fisik ({rupiah(closingTotal)}) - Sistem ({rupiah(sysTotal)})
+                                </div>
+                              </div>
+
+                              {/* 5. Selisih Antar Kasir */}
+                              <div style={{ background: interBg, border: `1.5px solid ${interBorder}`, padding: '9px 12px', borderRadius: 9 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <div style={{ fontSize: 10.5, color: interColor, fontWeight: 700 }}>5. Selisih Antar Kasir</div>
+                                  <span style={{ fontSize: 9, background: `${interColor}25`, color: interColor, padding: '1px 5px', borderRadius: 4, fontWeight: 800 }}>
+                                    {isInterBal ? '✓ SESUAI' : (isInterOver ? '+ LEBIH' : '⚠️ TEKOR')}
+                                  </span>
+                                </div>
+                                <div style={{ fontSize: 16, fontWeight: 900, color: interColor, marginTop: 2 }}>
+                                  {isInterOver ? `+${rupiah(interDiff)}` : (interDiff < 0 ? `-${rupiah(Math.abs(interDiff))}` : rupiah(0))}
+                                </div>
+                                <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  Modal Baru vs Kas Closing Lalu
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Compact Formula & Explanation Strip */}
+                            <div
+                              style={{
+                                background: 'rgba(15, 23, 42, 0.85)',
+                                border: '1px solid rgba(56, 189, 248, 0.25)',
+                                padding: '8px 12px',
+                                borderRadius: 8,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 4,
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                                <div style={{ fontSize: 11, fontWeight: 800, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <Sparkles size={13} /> Cara Kerja & Formula Rekonsiliasi Kas Laci:
+                                </div>
+                                <div style={{ fontSize: 10.5, color: '#94a3b8' }}>
+                                  <strong>Kas Sistem</strong> = Modal Awal ({rupiah(modalTotal)}) + Penjualan Tunai Kasir - Kas Keluar = <span style={{ color: '#c084fc', fontWeight: 700 }}>{rupiah(sysTotal)}</span>
+                                </div>
+                              </div>
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '4px 12px', color: '#cbd5e1', fontSize: 10.5 }}>
+                                <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`Fisik Closing: ${closedFormulaStr} = ${rupiah(closingTotal)}`}>
+                                  • <strong>Fisik Closing:</strong> {closedFormulaStr} = <span style={{ color: '#34d399', fontWeight: 700 }}>{rupiah(closingTotal)}</span>
+                                </div>
+                                <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`Selisih Closing: Fisik (${rupiah(closingTotal)}) - Sistem (${rupiah(sysTotal)})`}>
+                                  • <strong>Selisih Closing:</strong> Fisik ({rupiah(closingTotal)}) - Sistem ({rupiah(sysTotal)}) = <span style={{ color: diffColor, fontWeight: 800 }}>{isOver ? `+${rupiah(diff)} (Lebih Kas)` : (diff < 0 ? `-${rupiah(Math.abs(diff))} (Tekor Kasir)` : 'Rp0 (Pas)')}</span>
+                                </div>
+                                <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title="Selisih Antar Kasir: Modal Shift Baru vs Kas Closing Shift Sebelumnya">
+                                  • <strong>Selisih Antar Kasir:</strong> <span style={{ color: interColor, fontWeight: 800 }}>{isInterOver ? `+${rupiah(interDiff)} (Lebih Modal)` : (interDiff < 0 ? `-${rupiah(Math.abs(interDiff))} (Tekor Serah Terima)` : 'Rp0 (Sesuai)')}</span> {detailModal.items?.length === 1 && detailModal.extraData?.prevShiftName ? `(vs ${detailModal.extraData?.prevShiftName})` : ''}
+                                </div>
+                                <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`Total Fisik Kas: Modal Awal (${rupiah(modalTotal)}) + Net Kas (${rupiah(sum.net_cash_flow)})`}>
+                                  • <strong>Total Kas di Laci:</strong> Modal ({rupiah(modalTotal)}) + Net Kas ({rupiah(sum.net_cash_flow)}) = <span style={{ color: '#34d399', fontWeight: 700 }}>{rupiah(modalTotal + (sum.net_cash_flow || 0))}</span>
+                                </div>
+                                <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title="Total Sisa Kas: Kas Fisik Laci + Selisih Kasir Closing">
+                                  • <strong>Sisa Kas Akhir:</strong> Kas Laci ({rupiah(modalTotal + (sum.net_cash_flow || 0))}) {diff >= 0 ? `+ Selisih (${rupiah(diff)})` : `- Selisih (${rupiah(Math.abs(diff))})`} = <span style={{ color: '#22d3ee', fontWeight: 800 }}>{rupiah(modalTotal + (sum.net_cash_flow || 0) + diff)}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Detail Shifts Table - Expanded & Sticky Headers */}
+                            <div
+                              className="table-responsive"
+                              style={{
+                                flex: 1,
+                                minHeight: 220,
+                                maxHeight: 'none',
+                                overflowY: 'auto',
+                                border: '1px solid rgba(255, 255, 255, 0.08)',
+                                borderRadius: 8,
+                                background: 'rgba(15, 23, 42, 0.4)',
+                              }}
+                            >
+                              <table className="table" style={{ fontSize: 11.5, margin: 0, width: '100%' }}>
+                                <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: '#0f172a' }}>
+                                  <tr>
+                                    <th style={{ background: '#0f172a', borderBottom: '2px solid rgba(255, 255, 255, 0.12)', padding: '9px 12px' }}>Sesi Shift</th>
+                                    <th style={{ background: '#0f172a', borderBottom: '2px solid rgba(255, 255, 255, 0.12)', padding: '9px 12px' }}>Kasir</th>
+                                    <th style={{ background: '#0f172a', borderBottom: '2px solid rgba(255, 255, 255, 0.12)', textAlign: 'center', padding: '9px 8px' }}>Status</th>
+                                    <th style={{ background: '#0f172a', borderBottom: '2px solid rgba(255, 255, 255, 0.12)', textAlign: 'right', padding: '9px 12px' }}>Kas Awal</th>
+                                    <th style={{ background: '#0f172a', borderBottom: '2px solid rgba(255, 255, 255, 0.12)', textAlign: 'right', padding: '9px 12px' }}>Kas Sistem</th>
+                                    <th style={{ background: '#0f172a', borderBottom: '2px solid rgba(255, 255, 255, 0.12)', textAlign: 'right', padding: '9px 12px' }}>Fisik Closing</th>
+                                    <th style={{ background: '#0f172a', borderBottom: '2px solid rgba(255, 255, 255, 0.12)', textAlign: 'right', padding: '9px 12px' }}>Selisih Closing</th>
+                                    <th style={{ background: '#0f172a', borderBottom: '2px solid rgba(255, 255, 255, 0.12)', textAlign: 'right', padding: '9px 12px' }}>Selisih Antar Kasir</th>
+                                    <th style={{ background: '#0f172a', borderBottom: '2px solid rgba(255, 255, 255, 0.12)', padding: '9px 12px' }}>Catatan Closing</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {detailModal.items && detailModal.items.length > 0 ? (
+                                    detailModal.items.map((s, idx) => {
+                                      const isOpen = s.status === 'OPEN';
+                                      const diff = Number(s.cash_difference || 0);
+                                      const isBal = diff === 0;
+                                      const isOver = diff > 0;
+                                      const diffColor = isBal ? '#34d399' : (isOver ? '#38bdf8' : '#f87171');
+                                      const diffBg = isBal ? 'rgba(16, 185, 129, 0.15)' : (isOver ? 'rgba(56, 189, 248, 0.15)' : 'rgba(248, 113, 113, 0.15)');
+
+                                      const interDiff = Number(s.inter_shift_diff || 0);
+                                      const isInterBal = interDiff === 0;
+                                      const isInterOver = interDiff > 0;
+                                      const interColor = isInterBal ? '#34d399' : (isInterOver ? '#38bdf8' : '#f87171');
+                                      const interBg = isInterBal ? 'rgba(16, 185, 129, 0.15)' : (isInterOver ? 'rgba(56, 189, 248, 0.15)' : 'rgba(248, 113, 113, 0.15)');
+
+                                      return (
+                                        <tr key={s.id || idx}>
+                                          <td style={{ padding: '8px 12px' }}>
+                                            <div style={{ fontWeight: 700, color: '#f8fafc' }}>{s.shift_name}</div>
+                                            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                              {s.opened_at ? s.opened_at.slice(0, 16) : '—'}
+                                            </div>
+                                          </td>
+                                          <td style={{ color: '#e2e8f0', fontWeight: 600, padding: '8px 12px' }}>
+                                            {s.cashier_name || 'Kasir'}
+                                          </td>
+                                          <td style={{ textAlign: 'center', padding: '8px 8px' }}>
+                                            <span
+                                              style={{
+                                                fontSize: 9.5,
+                                                padding: '2px 6px',
+                                                borderRadius: 8,
+                                                background: isOpen ? 'rgba(16, 185, 129, 0.2)' : 'rgba(148, 163, 184, 0.15)',
+                                                color: isOpen ? '#34d399' : '#94a3b8',
+                                                fontWeight: 700,
+                                              }}
+                                            >
+                                              {isOpen ? 'AKTIF' : 'CLOSED'}
+                                            </span>
+                                          </td>
+                                          <td style={{ textAlign: 'right', padding: '8px 12px' }}>
+                                            <div style={{ fontWeight: 700, color: '#38bdf8' }}>{rupiah(s.initial_cash || 0)}</div>
+                                            <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>Modal Buka</div>
+                                          </td>
+                                          <td style={{ textAlign: 'right', padding: '8px 12px' }}>
+                                            <div style={{ fontWeight: 700, color: '#c084fc' }}>{isOpen ? 'Berjalan' : rupiah(s.system_cash || 0)}</div>
+                                            <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>{isOpen ? 'Awal + Penjualan' : 'Awal + Penjualan'}</div>
+                                          </td>
+                                          <td style={{ textAlign: 'right', padding: '8px 12px' }}>
+                                            <div style={{ fontWeight: 700, color: '#34d399' }}>{isOpen ? '—' : rupiah(s.closing_cash || 0)}</div>
+                                            <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>{isOpen ? 'Belum Tutup' : 'Hitung Riil'}</div>
+                                          </td>
+                                          <td style={{ textAlign: 'right', padding: '8px 12px' }}>
+                                            {isOpen ? (
+                                              <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Shift Berjalan</span>
+                                            ) : (
+                                              <div>
+                                                <span
+                                                  style={{
+                                                    padding: '2px 7px',
+                                                    borderRadius: 6,
+                                                    background: diffBg,
+                                                    color: diffColor,
+                                                    fontWeight: 800,
+                                                    fontSize: 10.5,
+                                                    display: 'inline-block',
+                                                  }}
+                                                >
+                                                  {isOver ? `+${rupiah(diff)} (Lebih)` : (diff < 0 ? `-${rupiah(Math.abs(diff))} (Tekor)` : 'Rp0 (Pas)')}
+                                                </span>
+                                                <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 2 }}>
+                                                  Fisik - Sistem
+                                                </div>
+                                              </div>
+                                            )}
+                                          </td>
+                                          <td style={{ textAlign: 'right', padding: '8px 12px' }}>
+                                            {s.prev_shift_name ? (
+                                              <div>
+                                                <span
+                                                  style={{
+                                                    padding: '2px 7px',
+                                                    borderRadius: 6,
+                                                    background: interBg,
+                                                    color: interColor,
+                                                    fontWeight: 800,
+                                                    fontSize: 10.5,
+                                                    display: 'inline-block',
+                                                  }}
+                                                >
+                                                  {isInterOver ? `+${rupiah(interDiff)}` : (interDiff < 0 ? `-${rupiah(Math.abs(interDiff))}` : 'Rp0 (Pas)')}
+                                                </span>
+                                                <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 2 }}>
+                                                  vs {s.prev_shift_name} ({rupiah(s.prev_closing_cash || 0)})
+                                                </div>
+                                              </div>
+                                            ) : (
+                                              <div>
+                                                <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Shift Perdana</span>
+                                                <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>Modal Baru</div>
+                                              </div>
+                                            )}
+                                          </td>
+                                          <td style={{ fontSize: 10.5, color: 'var(--text-muted)', maxWidth: 160, padding: '8px 12px' }}>
+                                            {s.notes || '—'}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })
+                                  ) : (
+                                    <tr>
+                                      <td colSpan={9} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)' }}>
+                                        Tidak ada data shift kasir pada periode ini.
+                                      </td>
+                                    </tr>
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -2822,7 +4057,7 @@ export default function CashFlow() {
 
       {/* MODAL GABUNGAN SHIFT KASIR (MULTI-SELECT) */}
       {shiftModalOpen && (
-        <div className="modal-backdrop" style={{ zIndex: 1050 }}>
+        <div className="modal-backdrop" style={{ zIndex: 99999 }}>
           <div
             className="modal-content card"
             style={{
@@ -3044,7 +4279,7 @@ export default function CashFlow() {
 
       {/* MODAL GABUNGAN METODE PEMBAYARAN (MULTI-SELECT) */}
       {customPmModalOpen && (
-        <div className="modal-backdrop" style={{ zIndex: 1050 }}>
+        <div className="modal-backdrop" style={{ zIndex: 99999 }}>
           <div
             className="modal-content card"
             style={{
@@ -3306,10 +4541,50 @@ export default function CashFlow() {
               </tr>
 
               {/* GRAND TOTAL */}
-              <tr style={{ fontWeight: 'bold', fontSize: 13, background: '#cbd5e1', borderBottom: '3px double #000' }}>
-                <td style={{ padding: '8px' }}>KENAIKAN / (PENURUNAN) BERSIH KAS RIIL</td>
-                <td style={{ textAlign: 'right', padding: '8px' }}>{rupiah(sum.net_cash_flow)}</td>
+              <tr style={{ fontWeight: 'bold', fontSize: 12, background: '#e2e8f0', borderTop: '1px solid #94a3b8' }}>
+                <td style={{ padding: '7px 8px' }}>KENAIKAN / (PENURUNAN) BERSIH KAS RIIL</td>
+                <td style={{ textAlign: 'right', padding: '7px 8px' }}>{rupiah(sum.net_cash_flow)}</td>
               </tr>
+              <tr style={{ fontSize: 11, background: '#f8fafc' }}>
+                <td style={{ padding: '5px 8px 5px 20px', color: '#475569' }}>
+                  (+) Modal Awal Kas di Laci ({activeShiftMeta?.label || 'Semua Shift'})
+                </td>
+                <td style={{ textAlign: 'right', padding: '5px 8px', color: '#0369a1', fontWeight: 600 }}>
+                  {rupiah(activeShiftMeta?.initialCashTotal || 0)}
+                </td>
+              </tr>
+              <tr style={{ fontWeight: 'bold', fontSize: 13, background: '#cbd5e1', borderTop: '1.5px solid #0f172a', borderBottom: '3px double #000' }}>
+                <td style={{ padding: '8px' }}>TOTAL FISIK UANG DIPEGANG KASIR (SALDO AKHIR KAS LACI)</td>
+                <td style={{ textAlign: 'right', padding: '8px', color: '#047857' }}>
+                  {rupiah((activeShiftMeta?.initialCashTotal || 0) + (sum.net_cash_flow || 0))}
+                </td>
+              </tr>
+              {activeShiftMeta?.closedCount > 0 && (
+                <>
+                  <tr style={{ fontSize: 11, background: '#f1f5f9' }}>
+                    <td style={{ padding: '5px 8px 5px 20px', color: '#475569' }}>
+                      (+/-) Selisih Kasir Selesai Shift ({activeShiftMeta.closedCount} Sesi Ditutup: Fisik {rupiah(activeShiftMeta.closingCashTotal || 0)} vs Sistem {rupiah(activeShiftMeta.systemCashTotal || 0)})
+                    </td>
+                    <td style={{ textAlign: 'right', padding: '5px 8px', fontWeight: 700, color: activeShiftMeta.cashDifferenceTotal === 0 ? '#047857' : (activeShiftMeta.cashDifferenceTotal > 0 ? '#0284c7' : '#b91c1c') }}>
+                      {activeShiftMeta.cashDifferenceTotal > 0 ? `+${rupiah(activeShiftMeta.cashDifferenceTotal)} (Lebih)` : (activeShiftMeta.cashDifferenceTotal < 0 ? `-${rupiah(Math.abs(activeShiftMeta.cashDifferenceTotal))} (Tekor)` : 'Rp0 (Pas)')}
+                    </td>
+                  </tr>
+                  <tr style={{ fontSize: 11, background: '#f8fafc' }}>
+                    <td style={{ padding: '5px 8px 5px 20px', color: '#475569' }}>
+                      (+/-) Selisih Antar Kasir (Serah Terima Shift: Modal Buka vs Kas Closing Lalu)
+                    </td>
+                    <td style={{ textAlign: 'right', padding: '5px 8px', fontWeight: 700, color: Number(activeShiftMeta?.interShiftDiffTotal || 0) === 0 ? '#047857' : (Number(activeShiftMeta?.interShiftDiffTotal || 0) > 0 ? '#0284c7' : '#b91c1c') }}>
+                      {Number(activeShiftMeta?.interShiftDiffTotal || 0) > 0 ? `+${rupiah(activeShiftMeta.interShiftDiffTotal)} (Lebih)` : (Number(activeShiftMeta?.interShiftDiffTotal || 0) < 0 ? `-${rupiah(Math.abs(activeShiftMeta.interShiftDiffTotal))} (Tekor)` : 'Rp0 (Pas)')}
+                    </td>
+                  </tr>
+                  <tr style={{ fontWeight: 'bold', fontSize: 13, background: '#e0f2fe', borderTop: '1.5px solid #0284c7', borderBottom: '3px double #000' }}>
+                    <td style={{ padding: '8px' }}>TOTAL SISA KAS DIPEGANG (SETELAH SELISIH KASIR)</td>
+                    <td style={{ textAlign: 'right', padding: '8px', color: '#0284c7' }}>
+                      {rupiah((activeShiftMeta?.initialCashTotal || 0) + (sum.net_cash_flow || 0) + Number(activeShiftMeta.cashDifferenceTotal || 0))}
+                    </td>
+                  </tr>
+                </>
+              )}
             </tbody>
           </table>
 

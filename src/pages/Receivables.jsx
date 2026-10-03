@@ -7,7 +7,7 @@ import {
   Trash2, Edit3, ArrowRight, ShieldAlert, Receipt, Send, Check,
   Users, CheckSquare, Square, Layers, Sparkles, History,
   Landmark, Building2, Building, QrCode, ShoppingCart, ArrowDownToLine,
-  CheckCheck, Info, Percent, Settings2, Sliders, Tag
+  CheckCheck, Info, Percent, Settings2, Sliders, Tag, UserPlus
 } from 'lucide-react';
 import api from '../api/client';
 import {
@@ -16,7 +16,7 @@ import {
 } from '../components/ui';
 import { getTodayStr } from '../utils/date';
 import { useOutlet } from '../context/OutletContext';
-import { exportReceivablesToExcel } from '../utils/exportReport';
+import { exportReceivablesToExcel, exportReceivablePaymentsToExcel } from '../utils/exportReport';
 import { printElement } from '../utils/print';
 import toast from 'react-hot-toast';
 import ImportMasterModal from '../components/ImportMasterModal';
@@ -105,8 +105,14 @@ export default function Receivables() {
 
   // Modal States
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  // Customer History Autocomplete Search State (Create Modal)
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+  const [customerSearchResults, setCustomerSearchResults] = useState([]);
+  const [searchingCustomers, setSearchingCustomers] = useState(false);
+  const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
+  const [selectedHistoryCustomer, setSelectedHistoryCustomer] = useState(null);
   const [payModal, setPayModal] = useState({
-    open: false, item: null, amount: '', payment_date: getTodayStr(),
+    open: false, item: null, amount: '', cash_received: '', payment_date: getTodayStr(),
     payment_method: 'CASH', reference_no: '', notes: ''
   });
 
@@ -116,6 +122,7 @@ export default function Receivables() {
     customerGroup: null,
     selectedIds: [],
     amount: '',
+    cash_received: '',
     payment_date: getTodayStr(),
     payment_method: 'CASH',
     reference_no: '',
@@ -164,6 +171,8 @@ export default function Receivables() {
             total_amount: rec.total_amount,
             remaining_amount: rec.remaining_amount,
             outlet_name: rec.outlet?.name || rec.outlet_name,
+            shift_id: p.shift_id || p.shift?.id || rec.shift_id || rec.shift?.id || null,
+            shift_name: p.shift_name || p.shift?.shift_name || rec.shift_name || rec.shift?.shift_name || (p.shift_id ? `Shift #${p.shift_id}` : (rec.shift_id ? `Shift #${rec.shift_id}` : null)),
           });
         }
       }
@@ -180,6 +189,7 @@ export default function Receivables() {
       (p.payment_no && p.payment_no.toLowerCase().includes(q)) ||
       (p.customer_name && p.customer_name.toLowerCase().includes(q)) ||
       (p.receivable_no && p.receivable_no.toLowerCase().includes(q)) ||
+      (p.shift_name && p.shift_name.toLowerCase().includes(q)) ||
       (p.notes && p.notes.toLowerCase().includes(q)) ||
       (p.reference_no && p.reference_no.toLowerCase().includes(q)) ||
       (p.payment_method && p.payment_method.toLowerCase().includes(q))
@@ -230,6 +240,7 @@ export default function Receivables() {
       },
       selectedIds: selectedUnpaidReceivables.map(i => i.id),
       amount: String(selectedTotalRemaining),
+      cash_received: String(selectedTotalRemaining),
       payment_date: getTodayStr(),
       payment_method: 'CASH',
       reference_no: '',
@@ -576,7 +587,68 @@ export default function Receivables() {
     });
   }, [customerSummary, searchQuery]);
 
-  // Select customer in create modal
+  // Search customer history from backend (receivables history + master members)
+  async function searchHistoryCustomers(query = '') {
+    setSearchingCustomers(true);
+    try {
+      const res = await api.get('/receivables/search-history-customers', {
+        params: {
+          q: query,
+          outlet_id: targetOutlet || undefined,
+        }
+      });
+      setCustomerSearchResults(res.data || []);
+    } catch (err) {
+      console.error('Error searching customer history:', err);
+      setCustomerSearchResults([]);
+    } finally {
+      setSearchingCustomers(false);
+    }
+  }
+
+  function handleSelectHistoryCustomer(cust) {
+    setSelectedHistoryCustomer(cust);
+    setForm(f => ({
+      ...f,
+      customer_id: cust.customer_id || '',
+      customer_name: cust.customer_name || '',
+      customer_phone: cust.customer_phone || '',
+      customer_address: cust.customer_address || '',
+    }));
+    setCustomerSearchQuery(cust.customer_name + (cust.customer_phone ? ` (${cust.customer_phone})` : ''));
+    setCustomerSearchOpen(false);
+    toast.success(`Pelanggan "${cust.customer_name}" dipilih dari riwayat`);
+  }
+
+  function handleClearSelectedHistoryCustomer() {
+    setSelectedHistoryCustomer(null);
+    setCustomerSearchQuery('');
+    setForm(f => ({
+      ...f,
+      customer_id: '',
+      customer_name: '',
+      customer_phone: '',
+      customer_address: '',
+    }));
+    searchHistoryCustomers('');
+  }
+
+  function handleUseAsNewCustomer(nameStr) {
+    const trimmed = nameStr.trim();
+    if (!trimmed) return;
+    const isPhone = /^[0-9+\-\s()]+$/.test(trimmed);
+    setSelectedHistoryCustomer(null);
+    setForm(f => ({
+      ...f,
+      customer_id: '',
+      customer_name: isPhone ? '' : trimmed,
+      customer_phone: isPhone ? trimmed.replace(/[^0-9]/g, '') : f.customer_phone,
+    }));
+    setCustomerSearchOpen(false);
+    toast.success(`Menggunakan "${trimmed}" sebagai pelanggan baru.`);
+  }
+
+  // Select customer in create modal (legacy / fallback)
   function handleSelectCustomerInForm(customerId) {
     if (!customerId) {
       setForm(f => ({ ...f, customer_id: '', customer_name: '', customer_phone: '', customer_address: '' }));
@@ -666,6 +738,10 @@ export default function Receivables() {
       notes: '',
       outlet_id: targetOutlet || '',
     });
+    setCustomerSearchQuery('');
+    setCustomerSearchResults([]);
+    setCustomerSearchOpen(false);
+    setSelectedHistoryCustomer(null);
   }
 
   function openEditModal(item) {
@@ -684,6 +760,14 @@ export default function Receivables() {
       notes: item.notes || '',
       outlet_id: item.outlet_id || '',
     });
+    setCustomerSearchQuery(item.customer_name || '');
+    setSelectedHistoryCustomer({
+      customer_id: item.customer_id,
+      customer_name: item.customer_name,
+      customer_phone: item.customer_phone,
+      customer_address: item.customer_address,
+      total_remaining: item.remaining_amount,
+    });
     setCreateModalOpen(true);
   }
 
@@ -692,27 +776,76 @@ export default function Receivables() {
     e.preventDefault();
     if (!payModal.item) return;
     const amountNum = Number(payModal.amount);
+    const isCash = payModal.payment_method === 'CASH' || payModal.payment_method === 'TUNAI';
+    const cashReceivedNum = isCash
+      ? (payModal.cash_received !== '' ? Number(payModal.cash_received) : amountNum)
+      : amountNum;
+
     if (!amountNum || amountNum <= 0) {
       toast.error('Nominal pembayaran harus lebih dari 0');
       return;
     }
-    if (amountNum > (payModal.item.remaining_amount + 0.01)) {
+
+    if (isCash && cashReceivedNum < amountNum) {
+      toast.error(`Uang tunai diterima (${rupiah(cashReceivedNum)}) kurang dari nominal pembayaran (${rupiah(amountNum)})`);
+      return;
+    }
+
+    if (!isCash && amountNum > (payModal.item.remaining_amount + 0.01)) {
       toast.error(`Nominal pembayaran melebihi sisa kasbon (${rupiah(payModal.item.remaining_amount)})`);
       return;
     }
 
     setSubmitting(true);
     try {
-      await api.post(`/receivables/${payModal.item.id}/payments`, {
+      const res = await api.post(`/receivables/${payModal.item.id}/payments`, {
         amount: amountNum,
+        cash_received: isCash ? cashReceivedNum : undefined,
         payment_date: payModal.payment_date,
         payment_method: payModal.payment_method,
         reference_no: payModal.reference_no,
         notes: payModal.notes,
       });
-      toast.success(`Pembayaran ${rupiah(amountNum)} berhasil dicatat!`);
-      setPayModal({ open: false, item: null, amount: '', payment_date: getTodayStr(), payment_method: 'CASH', reference_no: '', notes: '' });
+
+      const responseData = res.data;
+      const actualPaid = responseData.amount_paid ?? Math.min(amountNum, payModal.item.remaining_amount);
+      const change = responseData.change ?? (isCash ? Math.max(0, cashReceivedNum - actualPaid) : 0);
+      const custName = payModal.item.customer_name;
+      const invoiceNo = payModal.item.receivable_no;
+
+      setPayModal({ open: false, item: null, amount: '', cash_received: '', payment_date: getTodayStr(), payment_method: 'CASH', reference_no: '', notes: '' });
       fetchData();
+
+      if (isCash && change > 0) {
+        confirmDialog({
+          title: '✅ Pembayaran Kasbon Berhasil!',
+          html: `<div style="text-align: left; font-size: 13.5px; line-height: 1.6;">
+            <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px; margin-bottom: 14px;">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                <span style="color: var(--text-muted);">Pelanggan / No. Nota:</span>
+                <strong style="color: #ffffff;">${custName} (${invoiceNo})</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                <span style="color: var(--text-muted);">Kasbon Dibayar:</span>
+                <strong style="color: #ffffff;">${rupiah(actualPaid)}</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                <span style="color: var(--text-muted);">Uang Tunai Diterima:</span>
+                <strong style="color: #38bdf8;">${rupiah(cashReceivedNum)}</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; border-top: 1px dashed rgba(255,255,255,0.15); padding-top: 8px; margin-top: 4px;">
+                <span style="font-weight: 700; color: #34d399; font-size: 14px;">Uang Kembalian:</span>
+                <strong style="color: #34d399; font-size: 18px; font-weight: 800;" class="mono">${rupiah(change)}</strong>
+              </div>
+            </div>
+            <p style="margin: 0; color: var(--text-secondary); font-size: 12px; text-align: center;">Jangan lupa serahkan uang kembalian <strong>${rupiah(change)}</strong> kepada pelanggan.</p>
+          </div>`,
+          confirmText: 'Selesai & Tutup',
+          showCancel: false,
+        });
+      } else {
+        toast.success(`Pembayaran ${rupiah(actualPaid)} untuk ${custName} berhasil dicatat!`);
+      }
     } catch (err) {
       console.error(err);
       toast.error(err.response?.data?.message || 'Gagal mencatat pembayaran');
@@ -732,6 +865,7 @@ export default function Receivables() {
       customerGroup: custGroup,
       selectedIds: allIds,
       amount: String(totalRemaining),
+      cash_received: String(totalRemaining),
       payment_date: getTodayStr(),
       payment_method: 'CASH',
       reference_no: '',
@@ -757,6 +891,7 @@ export default function Receivables() {
         ...prev,
         selectedIds: newSelected,
         amount: String(newTotal),
+        cash_received: String(newTotal),
       };
     });
   }
@@ -767,12 +902,22 @@ export default function Receivables() {
     if (!bulkPayModal.customerGroup) return;
 
     const amountNum = Number(bulkPayModal.amount);
+    const isCash = bulkPayModal.payment_method === 'CASH' || bulkPayModal.payment_method === 'TUNAI';
+    const cashReceivedNum = isCash
+      ? (bulkPayModal.cash_received !== '' ? Number(bulkPayModal.cash_received) : amountNum)
+      : amountNum;
+
     if (!amountNum || amountNum <= 0) {
       toast.error('Nominal pelunasan harus lebih dari 0');
       return;
     }
     if (bulkPayModal.selectedIds.length === 0) {
       toast.error('Pilih setidaknya 1 transaksi kasbon yang ingin dibayar');
+      return;
+    }
+
+    if (isCash && cashReceivedNum < amountNum) {
+      toast.error(`Uang tunai diterima (${rupiah(cashReceivedNum)}) kurang dari nominal pembayaran (${rupiah(amountNum)})`);
       return;
     }
 
@@ -783,15 +928,51 @@ export default function Receivables() {
         customer_name: bulkPayModal.customerGroup.customer_name,
         receivable_ids: bulkPayModal.selectedIds,
         amount: amountNum,
+        cash_received: isCash ? cashReceivedNum : undefined,
         payment_date: bulkPayModal.payment_date,
         payment_method: bulkPayModal.payment_method,
         reference_no: bulkPayModal.reference_no,
         notes: bulkPayModal.notes,
       });
 
-      toast.success(`Pembayaran sekaligus ${rupiah(amountNum)} untuk ${bulkPayModal.customerGroup.customer_name} berhasil dicatat!`);
-      setBulkPayModal({ open: false, customerGroup: null, selectedIds: [], amount: '', payment_date: getTodayStr(), payment_method: 'CASH', reference_no: '', notes: '' });
+      const responseData = res.data;
+      const actualPaid = responseData.amount_paid ?? amountNum;
+      const change = responseData.change ?? (isCash ? Math.max(0, cashReceivedNum - actualPaid) : 0);
+      const custName = bulkPayModal.customerGroup.customer_name;
+
+      setBulkPayModal({ open: false, customerGroup: null, selectedIds: [], amount: '', cash_received: '', payment_date: getTodayStr(), payment_method: 'CASH', reference_no: '', notes: '' });
       fetchData();
+
+      if (isCash && change > 0) {
+        confirmDialog({
+          title: '✅ Pelunasan Kasbon Berhasil!',
+          html: `<div style="text-align: left; font-size: 13.5px; line-height: 1.6;">
+            <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px; margin-bottom: 14px;">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                <span style="color: var(--text-muted);">Pelanggan:</span>
+                <strong style="color: #ffffff;">${custName}</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                <span style="color: var(--text-muted);">Pelunasan Kasbon:</span>
+                <strong style="color: #ffffff;">${rupiah(actualPaid)}</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                <span style="color: var(--text-muted);">Uang Tunai Diterima:</span>
+                <strong style="color: #38bdf8;">${rupiah(cashReceivedNum)}</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; border-top: 1px dashed rgba(255,255,255,0.15); padding-top: 8px; margin-top: 4px;">
+                <span style="font-weight: 700; color: #34d399; font-size: 14px;">Uang Kembalian:</span>
+                <strong style="color: #34d399; font-size: 18px; font-weight: 800;" class="mono">${rupiah(change)}</strong>
+              </div>
+            </div>
+            <p style="margin: 0; color: var(--text-secondary); font-size: 12px; text-align: center;">Jangan lupa serahkan uang kembalian <strong>${rupiah(change)}</strong> kepada pelanggan.</p>
+          </div>`,
+          confirmText: 'Selesai & Tutup',
+          showCancel: false,
+        });
+      } else {
+        toast.success(`Pembayaran sekaligus ${rupiah(actualPaid)} untuk ${custName} berhasil dicatat!`);
+      }
     } catch (err) {
       console.error(err);
       toast.error(err.response?.data?.message || 'Gagal memproses pelunasan sekaligus');
@@ -881,6 +1062,17 @@ export default function Receivables() {
   // Export to Excel
   async function handleExportExcel() {
     try {
+      if (activeTab === 'PAYMENTS') {
+        const fname = await exportReceivablePaymentsToExcel({
+          items: filteredPaymentLogs,
+          outletName,
+          businessName,
+          userName: currentUser?.name || 'Administrator',
+        });
+        toast.success(`Riwayat Pembayaran berhasil diekspor: ${fname}`);
+        return;
+      }
+
       let exportItems = filteredItems;
       if (activeTab === 'ECOMMERCE') {
         exportItems = ecommerceTree.flatMap(d => (d.shifts || []).flatMap(s => s.orders || []));
@@ -897,7 +1089,7 @@ export default function Receivables() {
       toast.success(`Buku Piutang berhasil diekspor: ${fname}`);
     } catch (err) {
       console.error(err);
-      toast.error('Gagal mengekspor data piutang ke Excel');
+      toast.error('Gagal mengekspor data ke Excel');
     }
   }
 
@@ -974,7 +1166,7 @@ export default function Receivables() {
 
           <button
             className="btn btn-primary btn-sm"
-            onClick={() => { resetForm(); setCreateModalOpen(true); }}
+            onClick={() => { resetForm(); setCreateModalOpen(true); searchHistoryCustomers(''); }}
             style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}
           >
             <PlusCircle size={15} /> + Tagihan Kasbon Baru
@@ -1368,7 +1560,7 @@ export default function Receivables() {
                                     item.remaining_amount > 0 && (
                                       <button
                                         className="btn btn-secondary btn-sm"
-                                        onClick={() => setPayModal({ open: true, item, amount: String(item.remaining_amount), payment_date: getTodayStr(), payment_method: 'CASH', reference_no: '', notes: '' })}
+                                        onClick={() => setPayModal({ open: true, item, amount: String(item.remaining_amount), cash_received: String(item.remaining_amount), payment_date: getTodayStr(), payment_method: 'CASH', reference_no: '', notes: '' })}
                                         style={{ padding: '3px 8px', fontSize: '11px' }}
                                       >
                                         Cicil / Bayar
@@ -1699,7 +1891,7 @@ export default function Receivables() {
                             !isPaid && (
                               <button
                                 className="btn btn-primary btn-sm"
-                                onClick={() => setPayModal({ open: true, item, amount: String(item.remaining_amount), payment_date: getTodayStr(), payment_method: 'CASH', reference_no: '', notes: '' })}
+                                onClick={() => setPayModal({ open: true, item, amount: String(item.remaining_amount), cash_received: String(item.remaining_amount), payment_date: getTodayStr(), payment_method: 'CASH', reference_no: '', notes: '' })}
                                 style={{ padding: '5px 10px', fontSize: '11.5px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}
                                 title="Catat Pembayaran / Cicilan"
                               >
@@ -1768,7 +1960,7 @@ export default function Receivables() {
                 <th style={{ padding: '14px 16px', fontWeight: 700 }}>No. Nota Kasbon</th>
                 <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'center' }}>Metode</th>
                 <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'right' }}>Nominal Dibayar</th>
-                <th style={{ padding: '14px 16px', fontWeight: 700 }}>Kasir / Penerima</th>
+                <th style={{ padding: '14px 16px', fontWeight: 700 }}>Kasir & Sesi Shift</th>
                 <th style={{ padding: '14px 16px', fontWeight: 700 }}>Keterangan / Ref</th>
                 <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'center', width: '100px' }}>Aksi</th>
               </tr>
@@ -1832,10 +2024,53 @@ export default function Receivables() {
                       + {rupiah(log.amount)}
                     </td>
 
-                    {/* Receiver */}
+                    {/* Receiver & Shift */}
                     <td style={{ padding: '14px 16px' }}>
-                      <div style={{ fontSize: '12.5px', color: '#ffffff' }}>
-                        {log.receiver?.name || 'Kasir'}
+                      <div style={{ fontSize: '12.5px', fontWeight: 600, color: '#ffffff' }}>
+                        {log.receiver?.name || log.received_by_name || 'Kasir'}
+                      </div>
+                      <div style={{ marginTop: '4px' }}>
+                        {log.shift_name ? (
+                          <span
+                            className="pill mono"
+                            style={{
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              padding: '2px 8px',
+                              background: 'rgba(139, 92, 246, 0.18)',
+                              color: 'var(--accent-bright)',
+                              border: '1px solid rgba(139, 92, 246, 0.35)',
+                              borderRadius: '6px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                            title={`ID Shift: #${log.shift_id || ''}`}
+                          >
+                            <Clock size={11} /> {log.shift_name}
+                          </span>
+                        ) : log.shift_id ? (
+                          <span
+                            className="pill mono"
+                            style={{
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              padding: '2px 8px',
+                              background: 'rgba(139, 92, 246, 0.18)',
+                              color: 'var(--accent-bright)',
+                              borderRadius: '6px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                          >
+                            <Clock size={11} /> Shift #{log.shift_id}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                            — Non-Shift
+                          </span>
+                        )}
                       </div>
                     </td>
 
@@ -2885,7 +3120,7 @@ export default function Receivables() {
       {settleModal.open && (
         <div className="modal-backdrop fade-in" style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.75)', zIndex: 999, display: 'flex',
+          background: 'rgba(0,0,0,0.75)', zIndex: 99999, display: 'flex',
           alignItems: 'center', justifyContent: 'center', padding: '16px'
         }}>
           <div className="card modal-content" style={{
@@ -3020,7 +3255,7 @@ export default function Receivables() {
       {shiftNetModal.open && (
         <div className="modal-backdrop fade-in" style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.75)', zIndex: 999, display: 'flex',
+          background: 'rgba(0,0,0,0.75)', zIndex: 99999, display: 'flex',
           alignItems: 'center', justifyContent: 'center', padding: '16px'
         }}>
           <div className="card modal-content" style={{
@@ -3141,7 +3376,7 @@ export default function Receivables() {
       {createModalOpen && (
         <div className="modal-backdrop fade-in" style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.75)', zIndex: 999, display: 'flex',
+          background: 'rgba(0,0,0,0.75)', zIndex: 99999, display: 'flex',
           alignItems: 'center', justifyContent: 'center', padding: '16px'
         }}>
           <div className="card modal-content" style={{
@@ -3159,24 +3394,375 @@ export default function Receivables() {
             </div>
 
             <form onSubmit={handleSaveReceivable}>
-              {/* Master Customer Selector */}
-              {masterCustomers.length > 0 && !form.id && (
-                <div className="form-group mb-3">
-                  <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
-                    Pilih Dari Master Pelanggan (Opsional)
-                  </label>
-                  <select
-                    className="form-control"
-                    value={form.customer_id}
-                    onChange={e => handleSelectCustomerInForm(e.target.value)}
-                  >
-                    <option value="">-- Pelanggan Baru / Input Manual --</option>
-                    {masterCustomers.map(c => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} {c.phone ? `(${c.phone})` : ''}
-                      </option>
-                    ))}
-                  </select>
+              {/* Customer History Autocomplete Search & Selector */}
+              {!form.id && (
+                <div className="card mb-4" style={{
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid rgba(56, 189, 248, 0.25)',
+                  padding: '14px 16px',
+                  borderRadius: '12px',
+                  position: 'relative'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
+                    <label className="form-label" style={{
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      color: '#38bdf8',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      marginBottom: 0
+                    }}>
+                      <Search size={14} /> Cari Dari Riwayat Pelanggan Kasbon / Member
+                    </label>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      Ketik Nama atau No. HP
+                    </span>
+                  </div>
+
+                  {selectedHistoryCustomer ? (
+                    /* Customer Selected Info Banner */
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      background: 'rgba(56, 189, 248, 0.08)',
+                      border: '1px solid rgba(56, 189, 248, 0.35)',
+                      padding: '10px 14px',
+                      borderRadius: '10px',
+                      flexWrap: 'wrap',
+                      gap: '10px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{
+                          width: '38px',
+                          height: '38px',
+                          borderRadius: '10px',
+                          background: selectedHistoryCustomer.total_remaining > 0 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(34, 197, 94, 0.2)',
+                          color: selectedHistoryCustomer.total_remaining > 0 ? '#fbbf24' : '#4ade80',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 800,
+                          fontSize: '15px',
+                          flexShrink: 0
+                        }}>
+                          {selectedHistoryCustomer.customer_name?.charAt(0)?.toUpperCase() || 'P'}
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 800, color: '#ffffff', fontSize: '14px' }}>
+                              {selectedHistoryCustomer.customer_name}
+                            </span>
+                            {selectedHistoryCustomer.customer_phone && (
+                              <span className="mono" style={{
+                                fontWeight: 700,
+                                color: '#38bdf8',
+                                fontSize: '12px',
+                                background: 'rgba(56, 189, 248, 0.12)',
+                                padding: '2px 7px',
+                                borderRadius: '4px'
+                              }}>
+                                📱 {selectedHistoryCustomer.customer_phone}
+                              </span>
+                            )}
+                            {selectedHistoryCustomer.member_code && (
+                              <span className="mono" style={{
+                                fontSize: '10px',
+                                color: '#a5b4fc',
+                                background: 'rgba(99, 102, 241, 0.2)',
+                                padding: '1px 6px',
+                                borderRadius: '4px'
+                              }}>
+                                ⭐ {selectedHistoryCustomer.member_code}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '2px', fontSize: '11px', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
+                            {selectedHistoryCustomer.total_remaining > 0 ? (
+                              <span style={{ color: '#fbbf24', fontWeight: 700 }}>
+                                ⚠️ Sisa Kasbon Berjalan: {rupiah(selectedHistoryCustomer.total_remaining)} ({selectedHistoryCustomer.unpaid_count} nota)
+                              </span>
+                            ) : (
+                              <span style={{ color: '#4ade80', fontWeight: 600 }}>
+                                ✓ Riwayat kasbon sebelumnya lunas
+                              </span>
+                            )}
+                            {selectedHistoryCustomer.customer_address && (
+                              <span>• 📍 {selectedHistoryCustomer.customer_address}</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleClearSelectedHistoryCustomer}
+                        className="btn btn-ghost btn-sm"
+                        style={{ color: '#ef4444', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 8px' }}
+                        title="Batal pilih dari riwayat / ganti pelanggan"
+                      >
+                        <X size={13} /> Ganti / Batal
+                      </button>
+                    </div>
+                  ) : (
+                    /* Search Input with floating Dropdown */
+                    <div style={{ position: 'relative' }}>
+                      <div style={{ position: 'relative' }}>
+                        <Search size={14} style={{
+                          position: 'absolute',
+                          left: 12,
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          color: '#38bdf8',
+                          pointerEvents: 'none'
+                        }} />
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="📱 Ketik Nama atau No. HP Pelanggan (cth: Pak Budi / 0812...)"
+                          value={customerSearchQuery}
+                          onFocus={() => {
+                            setCustomerSearchOpen(true);
+                            if (customerSearchResults.length === 0) {
+                              searchHistoryCustomers(customerSearchQuery);
+                            }
+                          }}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setCustomerSearchQuery(val);
+                            setCustomerSearchOpen(true);
+                            searchHistoryCustomers(val);
+                          }}
+                          onKeyDown={e => {
+                            if (e.key === 'Escape') {
+                              setCustomerSearchOpen(false);
+                            }
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              if (customerSearchResults.length === 1) {
+                                handleSelectHistoryCustomer(customerSearchResults[0]);
+                              } else if (customerSearchResults.length > 0) {
+                                handleSelectHistoryCustomer(customerSearchResults[0]);
+                              } else if (customerSearchQuery.trim()) {
+                                handleUseAsNewCustomer(customerSearchQuery);
+                              }
+                            }
+                          }}
+                          style={{
+                            paddingLeft: 34,
+                            paddingRight: customerSearchQuery ? 30 : 12,
+                            borderRadius: '10px',
+                            borderColor: customerSearchOpen ? '#38bdf8' : undefined
+                          }}
+                        />
+                        {customerSearchQuery && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-icon"
+                            onClick={() => {
+                              setCustomerSearchQuery('');
+                              searchHistoryCustomers('');
+                            }}
+                            style={{
+                              position: 'absolute',
+                              right: 6,
+                              top: '50%',
+                              transform: 'translateY(-50%)',
+                              padding: 3
+                            }}
+                          >
+                            <X size={13} />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Dropdown Backdrop to close on outside click */}
+                      {customerSearchOpen && (
+                        <div
+                          style={{ position: 'fixed', inset: 0, zIndex: 90 }}
+                          onClick={() => setCustomerSearchOpen(false)}
+                        />
+                      )}
+
+                      {/* Floating Autocomplete Dropdown */}
+                      {customerSearchOpen && (
+                        <div style={{
+                          position: 'absolute',
+                          top: '100%',
+                          left: 0,
+                          right: 0,
+                          zIndex: 100,
+                          marginTop: 6,
+                          background: '#161c38',
+                          border: '1px solid rgba(56, 189, 248, 0.4)',
+                          borderRadius: '12px',
+                          boxShadow: '0 16px 36px rgba(0, 0, 0, 0.65)',
+                          maxHeight: 280,
+                          overflowY: 'auto'
+                        }}>
+                          {/* Dropdown Header */}
+                          <div style={{
+                            padding: '8px 12px',
+                            fontSize: '11px',
+                            color: '#38bdf8',
+                            fontWeight: 700,
+                            borderBottom: '1px solid rgba(255,255,255,0.08)',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            background: 'rgba(56, 189, 248, 0.08)'
+                          }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <History size={13} />
+                              {customerSearchQuery ? 'HASIL PENCARIAN RIWAYAT KASBON & MEMBER' : 'RIWAYAT PELANGGAN KASBON TERBARU & MEMBER'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setCustomerSearchOpen(false)}
+                              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 11 }}
+                            >
+                              Tutup [Esc]
+                            </button>
+                          </div>
+
+                          {/* Dropdown Content */}
+                          {searchingCustomers ? (
+                            <div style={{ padding: '16px', textAlign: 'center', fontSize: '12px', color: 'var(--text-muted)' }}>
+                              <RefreshCw size={14} className="spin" style={{ display: 'inline', marginRight: 6 }} />
+                              Mencari data riwayat pelanggan...
+                            </div>
+                          ) : customerSearchResults.length === 0 ? (
+                            <div style={{ padding: '16px 12px', textAlign: 'center', fontSize: '12px', color: 'var(--text-muted)' }}>
+                              <div>Tidak ditemukan riwayat kasbon atau member dengan kata kunci ini.</div>
+                              {customerSearchQuery.trim() && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUseAsNewCustomer(customerSearchQuery)}
+                                  className="btn btn-ghost btn-sm"
+                                  style={{ color: '#34d399', fontSize: '12px', fontWeight: 700, marginTop: '8px', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                                >
+                                  <UserPlus size={13} /> Gunakan "{customerSearchQuery}" sebagai Pelanggan Baru
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            customerSearchResults.map(item => {
+                              const hasDebt = item.total_remaining > 0;
+                              return (
+                                <div
+                                  key={item.group_key || item.customer_id || item.customer_phone || item.customer_name}
+                                  onClick={() => handleSelectHistoryCustomer(item)}
+                                  style={{
+                                    padding: '10px 14px',
+                                    borderBottom: '1px solid rgba(255,255,255,0.05)',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    transition: 'background 0.15s',
+                                    gap: '12px'
+                                  }}
+                                  className="table-row-hover"
+                                >
+                                  {/* Left: Name, Phone & Address */}
+                                  <div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                      <span style={{ fontWeight: 800, color: '#ffffff', fontSize: '13.5px' }}>
+                                        👤 {item.customer_name}
+                                      </span>
+                                      {item.customer_phone ? (
+                                        <span className="mono" style={{
+                                          fontWeight: 800,
+                                          color: '#38bdf8',
+                                          fontSize: '12px',
+                                          background: 'rgba(56, 189, 248, 0.15)',
+                                          padding: '1px 6px',
+                                          borderRadius: 4
+                                        }}>
+                                          📱 {item.customer_phone}
+                                        </span>
+                                      ) : (
+                                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                          (Tanpa No. HP)
+                                        </span>
+                                      )}
+                                      {item.member_code && (
+                                        <span className="mono" style={{ fontSize: '10px', color: '#a5b4fc', background: 'rgba(99,102,241,0.2)', padding: '1px 5px', borderRadius: 4 }}>
+                                          ⭐ {item.member_code}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '3px', fontSize: '11px', color: 'var(--text-secondary)' }}>
+                                      {item.customer_address && (
+                                        <span>📍 {item.customer_address}</span>
+                                      )}
+                                      {item.latest_issue_date && (
+                                        <span>• Terakhir: {item.latest_issue_date}</span>
+                                      )}
+                                      {item.total_transactions > 0 && (
+                                        <span>• {item.total_transactions} total riwayat</span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Right: Sisa Kasbon Status */}
+                                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                    {hasDebt ? (
+                                      <div>
+                                        <div style={{
+                                          fontSize: '11px',
+                                          fontWeight: 800,
+                                          color: '#fbbf24',
+                                          background: 'rgba(245, 158, 11, 0.15)',
+                                          border: '1px solid rgba(245, 158, 11, 0.3)',
+                                          padding: '2px 8px',
+                                          borderRadius: 4,
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: 4
+                                        }}>
+                                          ⚠️ Sisa: {rupiah(item.total_remaining)}
+                                        </div>
+                                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: 2 }}>
+                                          {item.unpaid_count} nota belum lunas
+                                        </div>
+                                      </div>
+                                    ) : item.total_transactions > 0 ? (
+                                      <span style={{
+                                        fontSize: '11px',
+                                        fontWeight: 700,
+                                        color: '#34d399',
+                                        background: 'rgba(52, 211, 153, 0.12)',
+                                        border: '1px solid rgba(52, 211, 153, 0.25)',
+                                        padding: '2px 7px',
+                                        borderRadius: 4
+                                      }}>
+                                        ✓ Lunas
+                                      </span>
+                                    ) : (
+                                      <span style={{
+                                        fontSize: '11px',
+                                        fontWeight: 600,
+                                        color: '#60a5fa',
+                                        background: 'rgba(96, 165, 250, 0.12)',
+                                        border: '1px solid rgba(96, 165, 250, 0.25)',
+                                        padding: '2px 7px',
+                                        borderRadius: 4
+                                      }}>
+                                        Member Baru
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -3314,7 +3900,7 @@ export default function Receivables() {
       {bulkPayModal.open && bulkPayModal.customerGroup && (
         <div className="modal-backdrop fade-in" style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.75)', zIndex: 999, display: 'flex',
+          background: 'rgba(0,0,0,0.75)', zIndex: 99999, display: 'flex',
           alignItems: 'center', justifyContent: 'center', padding: '16px'
         }}>
           <div className="card modal-content" style={{
@@ -3387,15 +3973,29 @@ export default function Receivables() {
               {/* Amount & Payment Method */}
               <div className="grid-2 gap-3 mb-3">
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
-                    Nominal Pelunasan Diterima (Rp) <span style={{ color: 'var(--danger)' }}>*</span>
-                  </label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <label className="form-label" style={{ fontSize: '12px', fontWeight: 700, margin: 0 }}>
+                      Nominal Kasbon yang Dibayar (Rp) <span style={{ color: 'var(--danger)' }}>*</span>
+                    </label>
+                    <span className="mono" style={{ fontSize: '11.5px', color: '#fbbf24', fontWeight: 700 }}>
+                      {bulkPayModal.amount ? rupiah(bulkPayModal.amount) : 'Rp 0'}
+                    </span>
+                  </div>
                   <input
                     type="number"
+                    min={1}
                     className="form-control mono"
+                    style={{ fontSize: 15, fontWeight: 700 }}
                     placeholder="0"
                     value={bulkPayModal.amount}
-                    onChange={e => setBulkPayModal(prev => ({ ...prev, amount: e.target.value }))}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setBulkPayModal(prev => ({
+                        ...prev,
+                        amount: val,
+                        cash_received: (prev.cash_received === '' || Number(prev.cash_received) === Number(prev.amount)) ? val : prev.cash_received,
+                      }));
+                    }}
                     required
                   />
                   <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
@@ -3404,13 +4004,20 @@ export default function Receivables() {
                 </div>
 
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
+                  <label className="form-label" style={{ fontSize: '12px', fontWeight: 700, marginBottom: 4 }}>
                     Metode Pembayaran <span style={{ color: 'var(--danger)' }}>*</span>
                   </label>
                   <select
                     className="form-control"
                     value={bulkPayModal.payment_method}
-                    onChange={e => setBulkPayModal(prev => ({ ...prev, payment_method: e.target.value }))}
+                    onChange={e => {
+                      const meth = e.target.value;
+                      setBulkPayModal(prev => ({
+                        ...prev,
+                        payment_method: meth,
+                        cash_received: meth === 'CASH' ? (prev.cash_received || prev.amount) : '',
+                      }));
+                    }}
                   >
                     <option value="CASH">CASH (Tunai Kasir)</option>
                     <option value="QRIS">QRIS / E-Wallet</option>
@@ -3419,6 +4026,101 @@ export default function Receivables() {
                   </select>
                 </div>
               </div>
+
+              {/* CASH SPECIFIC FOR BULK PAYMENT: UANG TUNAI DITERIMA & KEMBALIAN */}
+              {bulkPayModal.payment_method === 'CASH' && (
+                <div style={{
+                  background: 'rgba(16, 185, 129, 0.08)',
+                  border: '1px solid rgba(16, 185, 129, 0.25)',
+                  borderRadius: 12,
+                  padding: '14px',
+                  marginBottom: 16
+                }}>
+                  <div className="form-group" style={{ marginBottom: 6 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <label className="form-label" style={{ fontSize: '12.5px', fontWeight: 700, color: '#34d399', margin: 0 }}>
+                        💵 Uang Tunai Diterima dari Pelanggan (Rp) <span style={{ color: 'var(--danger)' }}>*</span>
+                      </label>
+                      <span className="mono" style={{ fontSize: '12px', color: '#38bdf8', fontWeight: 700 }}>
+                        {bulkPayModal.cash_received ? rupiah(bulkPayModal.cash_received) : 'Rp 0'}
+                      </span>
+                    </div>
+                    <div style={{ position: 'relative' }}>
+                      <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontWeight: 700, color: 'var(--text-muted)' }}>
+                        Rp
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        className="form-control mono"
+                        style={{ paddingLeft: 40, fontSize: 16, fontWeight: 700, color: '#34d399' }}
+                        placeholder="Masukkan nominal uang tunai yang diberikan pelanggan"
+                        value={bulkPayModal.cash_received}
+                        onChange={e => setBulkPayModal(prev => ({ ...prev, cash_received: e.target.value }))}
+                        required
+                      />
+                    </div>
+
+                    {/* Preset Nominal Uang Tunai / Pecahan Rupiah */}
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        style={{ fontSize: 11, padding: '3px 8px' }}
+                        onClick={() => setBulkPayModal(prev => ({ ...prev, cash_received: prev.amount }))}
+                      >
+                        Uang Pas ({rupiah(bulkPayModal.amount || 0)})
+                      </button>
+                      {[50000, 100000, 200000, 500000, 1000000].map(nominal => {
+                        const targetAmt = Number(bulkPayModal.amount || 0);
+                        if (nominal < targetAmt && nominal < 100000) return null;
+                        return (
+                          <button
+                            key={nominal}
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ fontSize: 11, padding: '3px 8px' }}
+                            onClick={() => setBulkPayModal(prev => ({ ...prev, cash_received: String(nominal) }))}
+                          >
+                            {rupiah(nominal)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Kalkulasi Uang Kembalian */}
+                  {bulkPayModal.cash_received !== '' && (
+                    <div style={{
+                      marginTop: 10,
+                      padding: '10px 12px',
+                      borderRadius: 8,
+                      background: (Number(bulkPayModal.cash_received) - Number(bulkPayModal.amount || 0)) >= 0
+                        ? 'rgba(16, 185, 129, 0.15)'
+                        : 'rgba(239, 68, 68, 0.15)',
+                      border: (Number(bulkPayModal.cash_received) - Number(bulkPayModal.amount || 0)) >= 0
+                        ? '1px solid rgba(16, 185, 129, 0.4)'
+                        : '1px solid rgba(239, 68, 68, 0.4)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <span style={{ fontSize: 12.5, fontWeight: 700, color: (Number(bulkPayModal.cash_received) - Number(bulkPayModal.amount || 0)) >= 0 ? '#34d399' : '#f87171' }}>
+                        {(Number(bulkPayModal.cash_received) - Number(bulkPayModal.amount || 0)) >= 0
+                          ? 'Uang Kembalian (Kembali ke Pelanggan):'
+                          : '⚠️ Uang Tunai Kurang:'}
+                      </span>
+                      <strong className="mono" style={{
+                        fontSize: 16,
+                        fontWeight: 800,
+                        color: (Number(bulkPayModal.cash_received) - Number(bulkPayModal.amount || 0)) >= 0 ? '#34d399' : '#f87171'
+                      }}>
+                        {rupiah(Math.abs(Number(bulkPayModal.cash_received) - Number(bulkPayModal.amount || 0)))}
+                      </strong>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="grid-2 gap-3 mb-3">
                 <div className="form-group" style={{ marginBottom: 0 }}>
@@ -3480,18 +4182,20 @@ export default function Receivables() {
       {payModal.open && payModal.item && (
         <div className="modal-backdrop fade-in" style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.75)', zIndex: 999, display: 'flex',
-          alignItems: 'center', justifyContent: 'center', padding: '16px'
+          background: 'rgba(0,0,0,0.75)', zIndex: 99999, display: 'flex',
+          alignItems: 'center', justifyContent: 'center', padding: '16px',
+          overflowY: 'auto'
         }}>
           <div className="card modal-content" style={{
-            maxWidth: '500px', width: '100%', padding: '24px', borderRadius: '16px'
+            maxWidth: '520px', width: '100%', maxHeight: '90vh',
+            overflowY: 'auto', padding: '24px', borderRadius: '16px'
           }}>
             <div className="flex-between mb-3">
               <h3 style={{ fontSize: '17px', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <CreditCard size={18} style={{ color: 'var(--ok)' }} />
                 Pembayaran / Cicilan Kasbon
               </h3>
-              <button className="btn btn-ghost btn-icon" onClick={() => setPayModal({ open: false, item: null, amount: '', payment_date: getTodayStr(), payment_method: 'CASH', reference_no: '', notes: '' })}>
+              <button className="btn btn-ghost btn-icon" onClick={() => setPayModal({ open: false, item: null, amount: '', cash_received: '', payment_date: getTodayStr(), payment_method: 'CASH', reference_no: '', notes: '' })}>
                 <X size={16} />
               </button>
             </div>
@@ -3506,23 +4210,85 @@ export default function Receivables() {
             </div>
 
             <form onSubmit={handleAddPayment}>
+              {/* Nominal Kasbon yang Dibayar */}
               <div className="form-group mb-3">
-                <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
-                  Nominal Pembayaran Diterima (Rp) <span style={{ color: 'var(--danger)' }}>*</span>
-                </label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <label className="form-label" style={{ fontSize: '12px', fontWeight: 700, margin: 0 }}>
+                    Nominal Kasbon yang Dibayar (Rp) <span style={{ color: 'var(--danger)' }}>*</span>
+                  </label>
+                  <span className="mono" style={{ fontSize: '12px', color: '#fbbf24', fontWeight: 700 }}>
+                    {payModal.amount ? rupiah(payModal.amount) : 'Rp 0'}
+                  </span>
+                </div>
                 <input
                   type="number"
+                  min={1}
                   className="form-control mono"
+                  style={{ fontSize: 15, fontWeight: 700 }}
                   placeholder="0"
                   value={payModal.amount}
-                  onChange={e => setPayModal(p => ({ ...p, amount: e.target.value }))}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setPayModal(p => ({
+                      ...p,
+                      amount: val,
+                      cash_received: (p.cash_received === '' || Number(p.cash_received) === Number(p.amount)) ? val : p.cash_received,
+                    }));
+                  }}
                   required
                 />
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    style={{ fontSize: 11, padding: '3px 8px' }}
+                    onClick={() => setPayModal(p => ({ ...p, amount: String(p.item.remaining_amount), cash_received: String(p.item.remaining_amount) }))}
+                  >
+                    Lunasi Penuh ({rupiah(payModal.item.remaining_amount)})
+                  </button>
+                  {Number(payModal.item.remaining_amount) > 10000 && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      style={{ fontSize: 11, padding: '3px 8px' }}
+                      onClick={() => {
+                        const half = Math.round(Number(payModal.item.remaining_amount) / 2);
+                        setPayModal(p => ({ ...p, amount: String(half), cash_received: String(half) }));
+                      }}
+                    >
+                      50% ({rupiah(Math.round(Number(payModal.item.remaining_amount) / 2))})
+                    </button>
+                  )}
+                </div>
               </div>
 
+              {/* Metode Pembayaran & Tanggal */}
               <div className="grid-2 gap-3 mb-3">
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
+                  <label className="form-label" style={{ fontSize: '12px', fontWeight: 700, marginBottom: 4 }}>
+                    Metode Pembayaran <span style={{ color: 'var(--danger)' }}>*</span>
+                  </label>
+                  <select
+                    className="form-control"
+                    value={payModal.payment_method}
+                    onChange={e => {
+                      const meth = e.target.value;
+                      setPayModal(p => ({
+                        ...p,
+                        payment_method: meth,
+                        cash_received: meth === 'CASH' ? (p.cash_received || p.amount) : '',
+                      }));
+                    }}
+                  >
+                    <option value="CASH">CASH (Tunai Kasir)</option>
+                    <option value="QRIS">QRIS / E-Wallet</option>
+                    <option value="TRANSFER">Bank Transfer</option>
+                    <option value="DEBIT">Kartu Debit / Kredit</option>
+                  </select>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontSize: '12px', fontWeight: 600, marginBottom: 4 }}>
                     Tanggal Pembayaran <span style={{ color: 'var(--danger)' }}>*</span>
                   </label>
                   <input
@@ -3533,23 +4299,102 @@ export default function Receivables() {
                     required
                   />
                 </div>
-
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
-                    Metode Pembayaran <span style={{ color: 'var(--danger)' }}>*</span>
-                  </label>
-                  <select
-                    className="form-control"
-                    value={payModal.payment_method}
-                    onChange={e => setPayModal(p => ({ ...p, payment_method: e.target.value }))}
-                  >
-                    <option value="CASH">CASH (Tunai)</option>
-                    <option value="QRIS">QRIS / E-Wallet</option>
-                    <option value="TRANSFER">Bank Transfer</option>
-                    <option value="DEBIT">Kartu Debit / Kredit</option>
-                  </select>
-                </div>
               </div>
+
+              {/* CASH SPECIFIC: UANG TUNAI DITERIMA & KALKULATOR KEMBALIAN */}
+              {payModal.payment_method === 'CASH' && (
+                <div style={{
+                  background: 'rgba(16, 185, 129, 0.08)',
+                  border: '1px solid rgba(16, 185, 129, 0.25)',
+                  borderRadius: 12,
+                  padding: '14px',
+                  marginBottom: 16
+                }}>
+                  <div className="form-group" style={{ marginBottom: 6 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <label className="form-label" style={{ fontSize: '12.5px', fontWeight: 700, color: '#34d399', margin: 0 }}>
+                        💵 Uang Tunai Diterima dari Pelanggan (Rp) <span style={{ color: 'var(--danger)' }}>*</span>
+                      </label>
+                      <span className="mono" style={{ fontSize: '12px', color: '#38bdf8', fontWeight: 700 }}>
+                        {payModal.cash_received ? rupiah(payModal.cash_received) : 'Rp 0'}
+                      </span>
+                    </div>
+                    <div style={{ position: 'relative' }}>
+                      <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontWeight: 700, color: 'var(--text-muted)' }}>
+                        Rp
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        className="form-control mono"
+                        style={{ paddingLeft: 40, fontSize: 16, fontWeight: 700, color: '#34d399' }}
+                        placeholder="Masukkan nominal uang tunai yang diberikan pelanggan"
+                        value={payModal.cash_received}
+                        onChange={e => setPayModal(p => ({ ...p, cash_received: e.target.value }))}
+                        required
+                      />
+                    </div>
+
+                    {/* Preset Nominal Uang Tunai / Pecahan Rupiah */}
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        style={{ fontSize: 11, padding: '3px 8px' }}
+                        onClick={() => setPayModal(p => ({ ...p, cash_received: p.amount || String(p.item.remaining_amount) }))}
+                      >
+                        Uang Pas ({rupiah(payModal.amount || payModal.item.remaining_amount)})
+                      </button>
+                      {[20000, 50000, 100000, 200000, 500000].map(nominal => {
+                        const targetAmt = Number(payModal.amount || payModal.item.remaining_amount);
+                        if (nominal < targetAmt && nominal < 100000) return null;
+                        return (
+                          <button
+                            key={nominal}
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ fontSize: 11, padding: '3px 8px' }}
+                            onClick={() => setPayModal(p => ({ ...p, cash_received: String(nominal) }))}
+                          >
+                            {rupiah(nominal)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Kalkulasi Uang Kembalian */}
+                  {payModal.cash_received !== '' && (
+                    <div style={{
+                      marginTop: 10,
+                      padding: '10px 12px',
+                      borderRadius: 8,
+                      background: (Number(payModal.cash_received) - Number(payModal.amount || 0)) >= 0
+                        ? 'rgba(16, 185, 129, 0.15)'
+                        : 'rgba(239, 68, 68, 0.15)',
+                      border: (Number(payModal.cash_received) - Number(payModal.amount || 0)) >= 0
+                        ? '1px solid rgba(16, 185, 129, 0.4)'
+                        : '1px solid rgba(239, 68, 68, 0.4)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <span style={{ fontSize: 12.5, fontWeight: 700, color: (Number(payModal.cash_received) - Number(payModal.amount || 0)) >= 0 ? '#34d399' : '#f87171' }}>
+                        {(Number(payModal.cash_received) - Number(payModal.amount || 0)) >= 0
+                          ? 'Uang Kembalian (Kembali ke Pelanggan):'
+                          : '⚠️ Uang Tunai Kurang:'}
+                      </span>
+                      <strong className="mono" style={{
+                        fontSize: 16,
+                        fontWeight: 800,
+                        color: (Number(payModal.cash_received) - Number(payModal.amount || 0)) >= 0 ? '#34d399' : '#f87171'
+                      }}>
+                        {rupiah(Math.abs(Number(payModal.cash_received) - Number(payModal.amount || 0)))}
+                      </strong>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="form-group mb-3">
                 <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
@@ -3578,7 +4423,7 @@ export default function Receivables() {
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setPayModal({ open: false, item: null, amount: '', payment_date: getTodayStr(), payment_method: 'CASH', reference_no: '', notes: '' })}>
+                <button type="button" className="btn btn-secondary" onClick={() => setPayModal({ open: false, item: null, amount: '', cash_received: '', payment_date: getTodayStr(), payment_method: 'CASH', reference_no: '', notes: '' })}>
                   Batal
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={submitting}>
@@ -3596,7 +4441,7 @@ export default function Receivables() {
       {historyModal.open && historyModal.item && (
         <div className="modal-backdrop fade-in" style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.75)', zIndex: 999, display: 'flex',
+          background: 'rgba(0,0,0,0.75)', zIndex: 99999, display: 'flex',
           alignItems: 'center', justifyContent: 'center', padding: '16px'
         }}>
           <div className="card modal-content" style={{
@@ -3630,6 +4475,7 @@ export default function Receivables() {
                   <tr style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)' }}>
                     <th style={{ padding: '8px 10px', textAlign: 'left' }}>No. Pembayaran</th>
                     <th style={{ padding: '8px 10px', textAlign: 'left' }}>Tanggal</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'left' }}>Sesi Shift</th>
                     <th style={{ padding: '8px 10px', textAlign: 'left' }}>Metode</th>
                     <th style={{ padding: '8px 10px', textAlign: 'right' }}>Jumlah (Rp)</th>
                     <th style={{ padding: '8px 10px', textAlign: 'center' }}>Aksi</th>
@@ -3638,7 +4484,7 @@ export default function Receivables() {
                 <tbody>
                   {(!historyModal.item.payments || historyModal.item.payments.length === 0) ? (
                     <tr>
-                      <td colSpan={5} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
+                      <td colSpan={6} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
                         Belum ada riwayat pembayaran / cicilan tercatat
                       </td>
                     </tr>
@@ -3647,6 +4493,22 @@ export default function Receivables() {
                       <tr key={pay.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
                         <td style={{ padding: '8px 10px', fontWeight: 700, color: '#ffffff' }}>{pay.payment_no}</td>
                         <td style={{ padding: '8px 10px' }}>{pay.payment_date}</td>
+                        <td style={{ padding: '8px 10px' }}>
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontSize: '11px',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            background: 'rgba(59, 130, 246, 0.15)',
+                            color: '#60a5fa',
+                            fontWeight: 600
+                          }}>
+                            <Clock size={10} />
+                            {pay.shift_name || (pay.shift ? pay.shift.name : (pay.shift_id ? `Shift #${pay.shift_id}` : '— Non-Shift'))}
+                          </span>
+                        </td>
                         <td style={{ padding: '8px 10px' }}>{pay.payment_method}</td>
                         <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: 'var(--ok)' }}>{rupiah(pay.amount)}</td>
                         <td style={{ padding: '8px 10px', textAlign: 'center' }}>
@@ -3681,7 +4543,7 @@ export default function Receivables() {
       {invoiceModal.open && invoiceModal.item && (
         <div className="modal-backdrop fade-in" style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.75)', zIndex: 999, display: 'flex',
+          background: 'rgba(0,0,0,0.75)', zIndex: 99999, display: 'flex',
           alignItems: 'center', justifyContent: 'center', padding: '16px'
         }}>
           <div className="card modal-content" style={{

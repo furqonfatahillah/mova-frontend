@@ -329,7 +329,7 @@ export default function VarianceBahan() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 1100,
+            zIndex: 99999,
             padding: 16
           }}
           onClick={handleCloseDrill}
@@ -957,7 +957,7 @@ export default function VarianceBahan() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 1100,
+            zIndex: 99999,
             padding: 16
           }}
         >

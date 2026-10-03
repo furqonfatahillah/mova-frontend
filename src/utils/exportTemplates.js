@@ -350,30 +350,68 @@ export async function downloadPerlengkapanTemplate(outlets = [], businessName = 
 
 /**
  * 3.A Download Template Excel Saldo Awal Bahan Baku per Gudang / Cabang
+ * Menampilkan Dropdown Filter Nama Bahan Baku sesuai Master Bahan yang sudah diinputkan,
+ * serta formula lookup otomatis untuk Kode Bahan, Kategori, Satuan, dan Estimasi Harga Modal.
  */
-export async function downloadStockAwalBahanTemplate(outlets = [], businessName = '') {
+export async function downloadStockAwalBahanTemplate(outletsOrIngredients = [], maybeIngredients = [], maybeBusinessName = '') {
   const ExcelJS = await getExcelJS();
   const wb = new ExcelJS.Workbook();
   wb.creator = 'MOVA POS System';
   wb.created = new Date();
   wb.views = [{ x: 0, y: 0, width: 10000, height: 20000, firstSheet: 0, activeTab: 0, visibility: 'visible' }];
 
+  // Normalize arguments
+  let outlets = [];
+  let ingredients = [];
+  let businessName = '';
+
+  if (typeof maybeBusinessName === 'string' && maybeBusinessName.length > 0) {
+    outlets = Array.isArray(outletsOrIngredients) ? outletsOrIngredients : [];
+    ingredients = Array.isArray(maybeIngredients) ? maybeIngredients : [];
+    businessName = maybeBusinessName;
+  } else if (typeof maybeIngredients === 'string') {
+    outlets = Array.isArray(outletsOrIngredients) ? outletsOrIngredients : [];
+    businessName = maybeIngredients;
+    ingredients = [];
+  } else {
+    outlets = Array.isArray(outletsOrIngredients) ? outletsOrIngredients : [];
+    ingredients = Array.isArray(maybeIngredients) ? maybeIngredients : [];
+    businessName = typeof maybeBusinessName === 'string' ? maybeBusinessName : '';
+  }
+
   const { activeOutlets, mainOutlet, secondOutlet, outletListFormula } = prepareOutletData(outlets);
+
+  // Active master ingredients (filter for raw materials & semi-finished, exclude packaging)
+  const activeIngredients = Array.isArray(ingredients) && ingredients.length > 0
+    ? ingredients.filter(i => i.active !== false && i.active !== 0 && i.category !== 'PERLENGKAPAN' && i.category !== 'PACKAGING' && i.type !== 'PACKAGING')
+    : [];
+
+  const defaultIngredients = [
+    { code: 'BHN-001', name: 'Tepung Terigu Segitiga Biru', category: 'BAHAN_BAKU', unit_pakai: 'gram', unit_beli: 'kg', konversi: 1000, harga: 14000 },
+    { code: 'BHN-002', name: 'Minyak Goreng Bimoli', category: 'MINYAK', unit_pakai: 'ml', unit_beli: 'liter', konversi: 1000, harga: 20000 },
+    { code: 'BHN-003', name: 'Kopi Arabika Gayo Super', category: 'KOPI', unit_pakai: 'gram', unit_beli: 'kg', konversi: 1000, harga: 120000 },
+    { code: 'BHN-004', name: 'Gula Pasir Kristal Putih', category: 'GULA', unit_pakai: 'gram', unit_beli: 'kg', konversi: 1000, harga: 16000 },
+    { code: 'BHN-005', name: 'Fresh Milk Diamond 1L', category: 'SUSU', unit_pakai: 'ml', unit_beli: 'liter', konversi: 1000, harga: 22000 },
+    { code: 'BHN-006', name: 'Telur Ayam Negeri Fresh', category: 'BAHAN_BAKU', unit_pakai: 'butir', unit_beli: 'kg', konversi: 16, harga: 28000 },
+  ];
+  const sourceIngredients = activeIngredients.length > 0 ? activeIngredients : (Array.isArray(ingredients) && ingredients.length > 0 ? ingredients : defaultIngredients);
+
+  const ingValidationFormula = `DAFTAR_MASTER_BAHAN!$B$5:$B$${Math.max(sourceIngredients.length + 4, 100)}`;
 
   // --- SHEET 1: Saldo Awal Bahan ---
   const ws = wb.addWorksheet('Saldo Awal Bahan', { views: [{ showGridLines: true }] });
 
-  ws.mergeCells('A1:K1');
+  ws.mergeCells('A1:J1');
   const titleCell = ws.getCell('A1');
-  titleCell.value = `TEMPLATE IMPORT SALDO AWAL BAHAN BAKU PER GUDANG / CABANG — ${businessName || 'MOVA POS'}`;
+  titleCell.value = `TEMPLATE IMPORT SALDO AWAL BAHAN BAKU PER GUDANG / CABANG — ${businessName ? businessName.toUpperCase() : 'MOVA POS'}`;
   titleCell.font = { name: 'Segoe UI', size: 13, bold: true, color: { argb: 'FF1E293B' } };
   titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
   titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
   ws.getRow(1).height = 28;
 
-  ws.mergeCells('A2:K2');
+  ws.mergeCells('A2:J2');
   const noteCell = ws.getCell('A2');
-  noteCell.value = 'Petunjuk: Kolom bertanda (*) wajib diisi. Digunakan untuk mengalokasikan saldo awal stok fisik BAHAN BAKU ke kartu stok cabang/gudang terpilih.';
+  noteCell.value = 'Petunjuk: Kolom bertanda (*) wajib diisi. Pilih Nama Bahan Baku dari dropdown (▼) sesuai Master Bahan. Masukkan Kuantitas dan Total Nilai Saldo Awal (Rp). Sistem otomatis menghitung harga modal rata-rata (Harga Avg = Total Nilai / Kuantitas).';
   noteCell.font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF475569' } };
   ws.getRow(2).height = 20;
 
@@ -381,40 +419,124 @@ export async function downloadStockAwalBahanTemplate(outlets = [], businessName 
 
   const headerRow = ws.addRow([
     'Nama Cabang / Gudang (▼)*',
-    'Kode Bahan',
-    'Nama Bahan Baku*',
-    'Kategori (Opsional)',
+    'Kode Bahan (Otomatis)',
+    'Nama Bahan Baku (▼)*',
+    'Kategori (Otomatis / Opsional)',
     'Tipe Satuan Input (▼)*',
-    'Satuan (▼)*',
+    'Satuan (Otomatis / ▼)*',
     'Kuantitas Saldo Awal Fisik*',
-    'Harga / Nilai Modal Satuan (Rp)',
+    'Total Nilai Saldo Awal (Rp)*',
     'Stok Minimal Gudang',
-    'Tanggal Efektif (YYYY-MM-DD)',
     'Catatan / Keterangan',
   ]);
   applyHeaderStyle(headerRow, 'FF0369A1'); // Ocean Blue Dark
 
-  const sampleData = [
-    [mainOutlet.name, 'BHN-001', 'Tepung Terigu Segitiga', 'BAHAN_BAKU', 'PAKAI', 'gram', 15000, 14, 2000, '2026-09-28', 'Stok fisik awal tepung di Gudang Utama (15 kg)'],
-    [secondOutlet.name, 'BHN-001', 'Tepung Terigu Segitiga', 'BAHAN_BAKU', 'PAKAI', 'gram', 5000, 14, 1000, '2026-09-28', 'Stok fisik awal tepung di Cabang (5 kg)'],
-    [mainOutlet.name, 'BHN-002', 'Minyak Goreng Bimoli', 'BAHAN_BAKU', 'PAKAI', 'ml', 20000, 20, 5000, '2026-09-28', 'Stok awal minyak di Gudang Utama (20 liter)'],
-    [secondOutlet.name, 'BHN-002', 'Minyak Goreng Bimoli', 'BAHAN_BAKU', 'PAKAI', 'ml', 8000, 20, 2000, '2026-09-28', 'Stok awal minyak di Cabang (8 liter)'],
-    [mainOutlet.name, 'BHN-003', 'Kopi Arabika Gayo', 'KOPI', 'PAKAI', 'gram', 5000, 120, 1000, '2026-09-28', 'Stok awal roast bean di Gudang Utama (5 kg)'],
-  ];
-  sampleData.forEach((r) => ws.addRow(r));
+  // Build rows from actual existing Master Ingredients for the main outlet (and second outlet)
+  let initialRows = [];
 
-  ws.autoFilter = { from: 'A4', to: 'K4' };
+  if (activeIngredients.length > 0) {
+    // Pre-populate all active master ingredients for mainOutlet
+    activeIngredients.forEach((ing) => {
+      const konv = Math.max(Number(ing.konversi || 1), 1);
+      const unitCost = Number(ing.harga || 0) / konv;
+      initialRows.push({
+        outletName: mainOutlet.name,
+        code: ing.code || `BHN-${ing.id}`,
+        name: ing.name,
+        category: ing.category || 'BAHAN_BAKU',
+        unitType: 'PAKAI',
+        unit: ing.unit_pakai || 'gram',
+        qty: '', // User fills this in
+        totalVal: '', // User fills in total valuation in Rp
+        minStock: Number(ing.min_stock || 0) || '',
+        notes: `Saldo awal fisik ${ing.name} di ${mainOutlet.name}`,
+      });
+    });
+  } else {
+    // Fallback sample data
+    defaultIngredients.forEach((ing, idx) => {
+      const konv = Math.max(Number(ing.konversi || 1), 1);
+      const unitCost = Number(ing.harga || 0) / konv;
+      const sampleQty = idx === 0 ? 15000 : (idx === 1 ? 20000 : 5000);
+      initialRows.push({
+        outletName: idx % 2 === 0 ? mainOutlet.name : (secondOutlet?.name || mainOutlet.name),
+        code: ing.code,
+        name: ing.name,
+        category: ing.category,
+        unitType: 'PAKAI',
+        unit: ing.unit_pakai,
+        qty: sampleQty,
+        totalVal: Math.round(sampleQty * unitCost),
+        minStock: 1000,
+        notes: `Saldo fisik awal ${ing.name}`,
+      });
+    });
+  }
 
-  const ALL_UNITS_LIST = '"gram,ml,kg,liter,pcs,slop,pack,roll,botol,dus,can,sachet,porsi,sdm,sdt"';
+  // Insert initial rows
+  initialRows.forEach((r) => {
+    ws.addRow([
+      r.outletName, // A
+      '',           // B (Formula)
+      r.name,       // C
+      '',           // D (Formula)
+      r.unitType || 'PAKAI', // E
+      '',           // F (Formula)
+      r.qty !== '' && !isNaN(Number(r.qty)) ? Number(r.qty) : (r.qty || ''), // G
+      r.totalVal !== '' && !isNaN(Number(r.totalVal)) ? Number(r.totalVal) : (r.totalVal || ''), // H (Total Nilai Saldo Awal Rp)
+      r.minStock !== '' && !isNaN(Number(r.minStock)) ? Number(r.minStock) : (r.minStock || ''), // I
+      r.notes || '', // J
+    ]);
+  });
 
-  for (let r = 5; r <= 500; r++) {
+  ws.autoFilter = { from: 'A4', to: 'J4' };
+
+  const ALL_UNITS_LIST = '"gram,ml,kg,liter,pcs,slop,pack,roll,botol,dus,can,sachet,porsi,sdm,sdt,butir,lembar,buah"';
+  const totalValidationRows = Math.max(500, initialRows.length + 100);
+
+  // Pre-install dynamic lookup formulas and dropdowns across all 500 rows
+  for (let r = 5; r <= totalValidationRows; r++) {
+    const isBeyondInitial = r > 4 + initialRows.length;
+
+    // Formula B: Kode Bahan (Otomatis dari Master Bahan)
+    ws.getCell(`B${r}`).value = {
+      formula: `IF(C${r}="","",IFERROR(INDEX(DAFTAR_MASTER_BAHAN!$A$5:$A$1000,MATCH(C${r},DAFTAR_MASTER_BAHAN!$B$5:$B$1000,0)),""))`,
+      result: !isBeyondInitial ? initialRows[r - 5]?.code : '',
+    };
+
+    // Formula D: Kategori (Otomatis dari Master Bahan)
+    ws.getCell(`D${r}`).value = {
+      formula: `IF(C${r}="","",IFERROR(INDEX(DAFTAR_MASTER_BAHAN!$C$5:$C$1000,MATCH(C${r},DAFTAR_MASTER_BAHAN!$B$5:$B$1000,0)),"BAHAN_BAKU"))`,
+      result: !isBeyondInitial ? initialRows[r - 5]?.category : '',
+    };
+
+    // Formula F: Satuan (Otomatis berdasarkan pilihan PAKAI / BELI)
+    ws.getCell(`F${r}`).value = {
+      formula: `IF(C${r}="","",IF(E${r}="BELI",IFERROR(INDEX(DAFTAR_MASTER_BAHAN!$E$5:$E$1000,MATCH(C${r},DAFTAR_MASTER_BAHAN!$B$5:$B$1000,0)),"kg"),IFERROR(INDEX(DAFTAR_MASTER_BAHAN!$D$5:$D$1000,MATCH(C${r},DAFTAR_MASTER_BAHAN!$B$5:$B$1000,0)),"gram")))`,
+      result: !isBeyondInitial ? initialRows[r - 5]?.unit : '',
+    };
+
+    if (isBeyondInitial) {
+      ws.getCell(`E${r}`).value = 'PAKAI';
+    }
+
+    // Data Validations
     ws.getCell(`A${r}`).dataValidation = {
       type: 'list',
-      allowBlank: false,
+      allowBlank: true,
       formulae: [outletListFormula],
       showErrorMessage: true,
       errorTitle: 'Pilih Cabang / Gudang Resmi',
       error: 'Pilih nama cabang/gudang dari daftar master cabang usaha Anda.',
+    };
+
+    ws.getCell(`C${r}`).dataValidation = {
+      type: 'list',
+      allowBlank: true,
+      formulae: [ingValidationFormula],
+      showErrorMessage: true,
+      errorTitle: 'Pilih Bahan Baku Resmi',
+      error: 'Pilih nama bahan dari dropdown Master Bahan atau ketik nama bahan.',
     };
 
     ws.getCell(`E${r}`).dataValidation = {
@@ -428,7 +550,7 @@ export async function downloadStockAwalBahanTemplate(outlets = [], businessName 
 
     ws.getCell(`F${r}`).dataValidation = {
       type: 'list',
-      allowBlank: false,
+      allowBlank: true,
       formulae: [ALL_UNITS_LIST],
       showErrorMessage: true,
       errorTitle: 'Pilihan Satuan',
@@ -438,7 +560,43 @@ export async function downloadStockAwalBahanTemplate(outlets = [], businessName 
 
   autoFitColumns(ws);
 
-  // --- SHEET 2: DAFTAR_CABANG ---
+  // --- SHEET 2: DAFTAR_MASTER_BAHAN (Reference Sheet) ---
+  const wsIngs = wb.addWorksheet('DAFTAR_MASTER_BAHAN', { views: [{ showGridLines: true }] });
+  wsIngs.mergeCells('A1:G1');
+  const ingTitle = wsIngs.getCell('A1');
+  ingTitle.value = `DAFTAR MASTER BAHAN BAKU RESMI — ${businessName ? businessName.toUpperCase() : 'MOVA POS'}`;
+  ingTitle.font = { name: 'Segoe UI', size: 12, bold: true, color: { argb: 'FF1E293B' } };
+  ingTitle.alignment = { vertical: 'middle', horizontal: 'left' };
+  ingTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+  wsIngs.getRow(1).height = 26;
+
+  wsIngs.mergeCells('A2:G2');
+  const ingDesc = wsIngs.getCell('A2');
+  ingDesc.value = 'Daftar bahan baku ini terhubung otomatis dengan pilihan dropdown Nama Bahan di sheet Saldo Awal. Kode bahan, satuan, dan estimasi harga modal terisi otomatis.';
+  ingDesc.font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF475569' } };
+  wsIngs.getRow(2).height = 20;
+
+  wsIngs.addRow([]); // Row 3 spacer
+
+  const ingHeader = wsIngs.addRow(['Kode Bahan', 'Nama Bahan Baku (Master)', 'Kategori', 'Satuan Pakai (Resep)', 'Satuan Beli', 'Faktor Konversi', 'Estimasi Modal/Harga Satuan (Rp)']);
+  applyHeaderStyle(ingHeader, 'FF0369A1'); // Ocean Blue Dark
+
+  sourceIngredients.forEach((ing) => {
+    const konv = Math.max(Number(ing.konversi || 1), 1);
+    const unitCost = Number(ing.harga || 0) / konv;
+    wsIngs.addRow([
+      ing.code || `BHN-${ing.id}`,
+      ing.name,
+      ing.category || 'BAHAN_BAKU',
+      ing.unit_pakai || 'gram',
+      ing.unit_beli || 'kg',
+      konv,
+      Math.round(unitCost),
+    ]);
+  });
+  autoFitColumns(wsIngs);
+
+  // --- SHEET 3: DAFTAR_CABANG ---
   addDaftarCabangSheet(wb, activeOutlets, businessName);
 
   await saveWorkbook(wb, `Template_Import_Saldo_Awal_Bahan_${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -446,30 +604,65 @@ export async function downloadStockAwalBahanTemplate(outlets = [], businessName 
 
 /**
  * 3.B Download Template Excel Saldo Awal Perlengkapan & Packaging per Gudang / Cabang
+ * Menampilkan Dropdown Filter Nama Perlengkapan sesuai Master Perlengkapan yang sudah diinputkan.
  */
-export async function downloadStockAwalPerlengkapanTemplate(outlets = [], businessName = '') {
+export async function downloadStockAwalPerlengkapanTemplate(outletsOrPerlengkapans = [], maybePerlengkapans = [], maybeBusinessName = '') {
   const ExcelJS = await getExcelJS();
   const wb = new ExcelJS.Workbook();
   wb.creator = 'MOVA POS System';
   wb.created = new Date();
   wb.views = [{ x: 0, y: 0, width: 10000, height: 20000, firstSheet: 0, activeTab: 0, visibility: 'visible' }];
 
+  let outlets = [];
+  let perlengkapans = [];
+  let businessName = '';
+
+  if (typeof maybeBusinessName === 'string' && maybeBusinessName.length > 0) {
+    outlets = Array.isArray(outletsOrPerlengkapans) ? outletsOrPerlengkapans : [];
+    perlengkapans = Array.isArray(maybePerlengkapans) ? maybePerlengkapans : [];
+    businessName = maybeBusinessName;
+  } else if (typeof maybePerlengkapans === 'string') {
+    outlets = Array.isArray(outletsOrPerlengkapans) ? outletsOrPerlengkapans : [];
+    businessName = maybePerlengkapans;
+    perlengkapans = [];
+  } else {
+    outlets = Array.isArray(outletsOrPerlengkapans) ? outletsOrPerlengkapans : [];
+    perlengkapans = Array.isArray(maybePerlengkapans) ? maybePerlengkapans : [];
+    businessName = typeof maybeBusinessName === 'string' ? maybeBusinessName : '';
+  }
+
   const { activeOutlets, mainOutlet, secondOutlet, outletListFormula } = prepareOutletData(outlets);
+
+  // Filter perlengkapan / packaging items
+  const activePerlengkapans = Array.isArray(perlengkapans) && perlengkapans.length > 0
+    ? perlengkapans.filter(p => p.active !== false && p.active !== 0)
+    : [];
+
+  const defaultPerlengkapans = [
+    { code: 'PLK-001', name: 'Cup Dingin 16oz Sablon Logo', category: 'Cup & Gelas', unit_pakai: 'pcs', unit_beli: 'slop', konversi: 50, harga: 25000 },
+    { code: 'PLK-002', name: 'Sedotan Boba Steril (Wrap)', category: 'Sedotan / Pipet', unit_pakai: 'pcs', unit_beli: 'pack', konversi: 100, harga: 15000 },
+    { code: 'PLK-003', name: 'Tissue Makan Meja (Lunch Paper)', category: 'Tissue', unit_pakai: 'lembar', unit_beli: 'pack', konversi: 250, harga: 12500 },
+    { code: 'PLK-004', name: 'Paper Lunch Box Bento', category: 'Kotak & Dus', unit_pakai: 'pcs', unit_beli: 'pack', konversi: 50, harga: 45000 },
+    { code: 'PLK-005', name: 'Plastik Takeaway Single Cup', category: 'Kantong Plastik', unit_pakai: 'pcs', unit_beli: 'pack', konversi: 100, harga: 10000 },
+  ];
+  const sourcePerlengkapans = activePerlengkapans.length > 0 ? activePerlengkapans : defaultPerlengkapans;
+
+  const plkValidationFormula = `DAFTAR_MASTER_PERLENGKAPAN!$B$5:$B$${Math.max(sourcePerlengkapans.length + 4, 100)}`;
 
   // --- SHEET 1: Saldo Awal Perlengkapan ---
   const ws = wb.addWorksheet('Saldo Awal Perlengkapan', { views: [{ showGridLines: true }] });
 
-  ws.mergeCells('A1:K1');
+  ws.mergeCells('A1:J1');
   const titleCell = ws.getCell('A1');
-  titleCell.value = `TEMPLATE IMPORT SALDO AWAL PERLENGKAPAN & PACKAGING PER GUDANG / CABANG — ${businessName || 'MOVA POS'}`;
+  titleCell.value = `TEMPLATE IMPORT SALDO AWAL PERLENGKAPAN & PACKAGING PER GUDANG / CABANG — ${businessName ? businessName.toUpperCase() : 'MOVA POS'}`;
   titleCell.font = { name: 'Segoe UI', size: 13, bold: true, color: { argb: 'FF1E293B' } };
   titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
   titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
   ws.getRow(1).height = 28;
 
-  ws.mergeCells('A2:K2');
+  ws.mergeCells('A2:J2');
   const noteCell = ws.getCell('A2');
-  noteCell.value = 'Petunjuk: Kolom bertanda (*) wajib diisi. Digunakan untuk mengalokasikan saldo awal stok fisik PERLENGKAPAN/PACKAGING ke kartu stok cabang/gudang terpilih.';
+  noteCell.value = 'Petunjuk: Kolom bertanda (*) wajib diisi. Pilih Nama Perlengkapan dari dropdown (▼) sesuai Master Perlengkapan. Masukkan Kuantitas dan Total Nilai Saldo Awal (Rp). Sistem otomatis menghitung harga satuan rata-rata (Harga Avg = Total Nilai / Kuantitas).';
   noteCell.font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF475569' } };
   ws.getRow(2).height = 20;
 
@@ -477,40 +670,121 @@ export async function downloadStockAwalPerlengkapanTemplate(outlets = [], busine
 
   const headerRow = ws.addRow([
     'Nama Cabang / Gudang (▼)*',
-    'Kode Perlengkapan',
-    'Nama Perlengkapan / Kemasan*',
-    'Kategori (Opsional)',
+    'Kode Perlengkapan (Otomatis)',
+    'Nama Perlengkapan / Kemasan (▼)*',
+    'Kategori (Otomatis / Opsional)',
     'Tipe Satuan Input (▼)*',
-    'Satuan (▼)*',
+    'Satuan (Otomatis / ▼)*',
     'Kuantitas Saldo Awal Fisik*',
-    'Harga / Nilai Modal Satuan (Rp)',
+    'Total Nilai Saldo Awal (Rp)*',
     'Stok Minimal Gudang',
-    'Tanggal Efektif (YYYY-MM-DD)',
     'Catatan / Keterangan',
   ]);
   applyHeaderStyle(headerRow, 'FF047857'); // Emerald Dark
 
-  const sampleData = [
-    [mainOutlet.name, 'PLK-001', 'Cup Dingin 16oz Sablon Logo', 'Cup & Gelas', 'PAKAI', 'pcs', 1000, 500, 200, '2026-09-28', 'Stok fisik awal cup di Gudang Utama (1.000 pcs)'],
-    [secondOutlet.name, 'PLK-001', 'Cup Dingin 16oz Sablon Logo', 'Cup & Gelas', 'PAKAI', 'pcs', 300, 500, 100, '2026-09-28', 'Stok fisik awal cup di Cabang (300 pcs)'],
-    [mainOutlet.name, 'PLK-002', 'Sedotan Boba Steril (Wrap)', 'Sedotan / Pipet', 'PAKAI', 'pcs', 500, 150, 100, '2026-09-28', 'Stok awal sedotan di Gudang Utama (500 pcs)'],
-    [secondOutlet.name, 'PLK-002', 'Sedotan Boba Steril (Wrap)', 'Sedotan / Pipet', 'PAKAI', 'pcs', 200, 150, 50, '2026-09-28', 'Stok awal sedotan di Cabang (200 pcs)'],
-    [mainOutlet.name, 'PLK-003', 'Tissue Makan Meja (Lunch Paper)', 'Tissue', 'PAKAI', 'lembar', 2500, 50, 500, '2026-09-28', 'Stok awal tissue di Gudang Utama (10 pack = 2.500 lembar)'],
-  ];
-  sampleData.forEach((r) => ws.addRow(r));
+  let initialRows = [];
 
-  ws.autoFilter = { from: 'A4', to: 'K4' };
+  if (activePerlengkapans.length > 0) {
+    activePerlengkapans.forEach((plk) => {
+      const konv = Math.max(Number(plk.konversi || 1), 1);
+      const unitCost = Number(plk.harga || 0) / konv;
+      initialRows.push({
+        outletName: mainOutlet.name,
+        code: plk.code || `PLK-${plk.id}`,
+        name: plk.name,
+        category: plk.category || 'Packaging',
+        unitType: 'PAKAI',
+        unit: plk.unit_pakai || 'pcs',
+        qty: '',
+        totalVal: '',
+        minStock: Number(plk.min_stock || 0) || '',
+        notes: `Saldo awal fisik ${plk.name} di ${mainOutlet.name}`,
+      });
+    });
+  } else {
+    defaultPerlengkapans.forEach((plk, idx) => {
+      const konv = Math.max(Number(plk.konversi || 1), 1);
+      const unitCost = Number(plk.harga || 0) / konv;
+      const sampleQty = idx === 0 ? 1000 : 500;
+      initialRows.push({
+        outletName: idx % 2 === 0 ? mainOutlet.name : (secondOutlet?.name || mainOutlet.name),
+        code: plk.code,
+        name: plk.name,
+        category: plk.category,
+        unitType: 'PAKAI',
+        unit: plk.unit_pakai,
+        qty: sampleQty,
+        totalVal: Math.round(sampleQty * unitCost),
+        minStock: 200,
+        notes: `Saldo fisik awal ${plk.name}`,
+      });
+    });
+  }
+
+  // Insert initial rows
+  initialRows.forEach((r) => {
+    ws.addRow([
+      r.outletName,
+      '',
+      r.name,
+      '',
+      r.unitType || 'PAKAI',
+      '',
+      r.qty !== '' && !isNaN(Number(r.qty)) ? Number(r.qty) : (r.qty || ''),
+      r.totalVal !== '' && !isNaN(Number(r.totalVal)) ? Number(r.totalVal) : (r.totalVal || ''),
+      r.minStock !== '' && !isNaN(Number(r.minStock)) ? Number(r.minStock) : (r.minStock || ''),
+      r.notes || '',
+    ]);
+  });
+
+  ws.autoFilter = { from: 'A4', to: 'J4' };
 
   const ALL_UNITS_LIST = '"pcs,lembar,slop,pack,roll,dus,ikat,botol,kaleng,gram,ml"';
+  const totalValidationRows = Math.max(500, initialRows.length + 100);
 
-  for (let r = 5; r <= 500; r++) {
+  // Pre-install dynamic lookup formulas and dropdowns across all 500 rows
+  for (let r = 5; r <= totalValidationRows; r++) {
+    const isBeyondInitial = r > 4 + initialRows.length;
+
+    // Formula B: Kode Perlengkapan (Otomatis dari Master Perlengkapan)
+    ws.getCell(`B${r}`).value = {
+      formula: `IF(C${r}="","",IFERROR(INDEX(DAFTAR_MASTER_PERLENGKAPAN!$A$5:$A$1000,MATCH(C${r},DAFTAR_MASTER_PERLENGKAPAN!$B$5:$B$1000,0)),""))`,
+      result: !isBeyondInitial ? initialRows[r - 5]?.code : '',
+    };
+
+    // Formula D: Kategori (Otomatis dari Master Perlengkapan)
+    ws.getCell(`D${r}`).value = {
+      formula: `IF(C${r}="","",IFERROR(INDEX(DAFTAR_MASTER_PERLENGKAPAN!$C$5:$C$1000,MATCH(C${r},DAFTAR_MASTER_PERLENGKAPAN!$B$5:$B$1000,0)),"Packaging"))`,
+      result: !isBeyondInitial ? initialRows[r - 5]?.category : '',
+    };
+
+    // Formula F: Satuan (Otomatis berdasarkan pilihan PAKAI / BELI)
+    ws.getCell(`F${r}`).value = {
+      formula: `IF(C${r}="","",IF(E${r}="BELI",IFERROR(INDEX(DAFTAR_MASTER_PERLENGKAPAN!$E$5:$E$1000,MATCH(C${r},DAFTAR_MASTER_PERLENGKAPAN!$B$5:$B$1000,0)),"slop"),IFERROR(INDEX(DAFTAR_MASTER_PERLENGKAPAN!$D$5:$D$1000,MATCH(C${r},DAFTAR_MASTER_PERLENGKAPAN!$B$5:$B$1000,0)),"pcs")))`,
+      result: !isBeyondInitial ? initialRows[r - 5]?.unit : '',
+    };
+
+    if (isBeyondInitial) {
+      ws.getCell(`E${r}`).value = 'PAKAI';
+    }
+
+    // Data Validations
     ws.getCell(`A${r}`).dataValidation = {
       type: 'list',
-      allowBlank: false,
+      allowBlank: true,
       formulae: [outletListFormula],
       showErrorMessage: true,
       errorTitle: 'Pilih Cabang / Gudang Resmi',
       error: 'Pilih nama cabang/gudang dari daftar master cabang usaha Anda.',
+    };
+
+    ws.getCell(`C${r}`).dataValidation = {
+      type: 'list',
+      allowBlank: true,
+      formulae: [plkValidationFormula],
+      showErrorMessage: true,
+      errorTitle: 'Pilih Perlengkapan Resmi',
+      error: 'Pilih nama perlengkapan dari dropdown Master Perlengkapan atau ketik nama.',
     };
 
     ws.getCell(`E${r}`).dataValidation = {
@@ -524,7 +798,7 @@ export async function downloadStockAwalPerlengkapanTemplate(outlets = [], busine
 
     ws.getCell(`F${r}`).dataValidation = {
       type: 'list',
-      allowBlank: false,
+      allowBlank: true,
       formulae: [ALL_UNITS_LIST],
       showErrorMessage: true,
       errorTitle: 'Pilihan Satuan',
@@ -534,7 +808,43 @@ export async function downloadStockAwalPerlengkapanTemplate(outlets = [], busine
 
   autoFitColumns(ws);
 
-  // --- SHEET 2: DAFTAR_CABANG ---
+  // --- SHEET 2: DAFTAR_MASTER_PERLENGKAPAN (Reference Sheet) ---
+  const wsPlk = wb.addWorksheet('DAFTAR_MASTER_PERLENGKAPAN', { views: [{ showGridLines: true }] });
+  wsPlk.mergeCells('A1:G1');
+  const plkTitle = wsPlk.getCell('A1');
+  plkTitle.value = `DAFTAR MASTER PERLENGKAPAN & PACKAGING RESMI — ${businessName ? businessName.toUpperCase() : 'MOVA POS'}`;
+  plkTitle.font = { name: 'Segoe UI', size: 12, bold: true, color: { argb: 'FF1E293B' } };
+  plkTitle.alignment = { vertical: 'middle', horizontal: 'left' };
+  plkTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+  wsPlk.getRow(1).height = 26;
+
+  wsPlk.mergeCells('A2:G2');
+  const plkDesc = wsPlk.getCell('A2');
+  plkDesc.value = 'Daftar perlengkapan ini terhubung otomatis dengan pilihan dropdown Nama Perlengkapan di sheet Saldo Awal. Kode, satuan, dan estimasi modal terisi otomatis.';
+  plkDesc.font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF475569' } };
+  wsPlk.getRow(2).height = 20;
+
+  wsPlk.addRow([]); // Row 3 spacer
+
+  const plkHeader = wsPlk.addRow(['Kode Perlengkapan', 'Nama Perlengkapan (Master)', 'Kategori', 'Satuan Pakai', 'Satuan Beli', 'Faktor Konversi', 'Estimasi Modal/Harga Satuan (Rp)']);
+  applyHeaderStyle(plkHeader, 'FF047857'); // Emerald Dark
+
+  sourcePerlengkapans.forEach((plk) => {
+    const konv = Math.max(Number(plk.konversi || 1), 1);
+    const unitCost = Number(plk.harga || 0) / konv;
+    wsPlk.addRow([
+      plk.code || `PLK-${plk.id}`,
+      plk.name,
+      plk.category || 'Packaging',
+      plk.unit_pakai || 'pcs',
+      plk.unit_beli || 'pack',
+      konv,
+      Math.round(unitCost),
+    ]);
+  });
+  autoFitColumns(wsPlk);
+
+  // --- SHEET 3: DAFTAR_CABANG ---
   addDaftarCabangSheet(wb, activeOutlets, businessName);
 
   await saveWorkbook(wb, `Template_Import_Saldo_Awal_Perlengkapan_${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -556,7 +866,7 @@ export async function downloadMenuTemplate() {
 
   const ws = wb.addWorksheet('Master Menu', { views: [{ showGridLines: true }] });
 
-  ws.mergeCells('A1:H1');
+  ws.mergeCells('A1:G1');
   const titleCell = ws.getCell('A1');
   titleCell.value = 'TEMPLATE IMPORT MASTER MENU & F&B — MOVA POS';
   titleCell.font = { name: 'Segoe UI', size: 13, bold: true, color: { argb: 'FF1E293B' } };
@@ -564,7 +874,7 @@ export async function downloadMenuTemplate() {
   titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
   ws.getRow(1).height = 28;
 
-  ws.mergeCells('A2:H2');
+  ws.mergeCells('A2:G2');
   const noteCell = ws.getCell('A2');
   noteCell.value = 'Petunjuk: Kolom bertanda (*) wajib diisi. Gunakan dropdown pada kolom Tipe Item (RECIPE/DIRECT/SERVICE/BUNDLE). Status menu otomatis aktif/tersedia.';
   noteCell.font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF475569' } };
@@ -574,7 +884,6 @@ export async function downloadMenuTemplate() {
 
   const headerRow = ws.addRow([
     'Kode Menu',
-    'Barcode',
     'Nama Menu*',
     'Kategori*',
     'Tipe Item (▼)*',
@@ -585,17 +894,17 @@ export async function downloadMenuTemplate() {
   applyHeaderStyle(headerRow, 'FF4338CA'); // Indigo Dark
 
   const sampleData = [
-    ['MNU-001', '8991001001', 'Kopi Aren Spesial', 'Minuman', 'RECIPE', 20000, 8000, 'Espresso kopi arabika dengan gula aren murni'],
-    ['MNU-002', '8991001002', 'Air Mineral 600ml', 'Minuman Kemasan', 'DIRECT', 5000, 2500, 'Air mineral botol 600ml'],
-    ['MNU-003', '', 'Sewa Ruangan VVIP / Jam', 'Jasa / Layanan', 'SERVICE', 150000, 0, 'Sewa tempat meeting per jam'],
-    ['MNU-004', '', 'Paket Hemat Nongkrong', 'Paket Combo', 'BUNDLE', 45000, 20000, 'Combo Kopi Aren + Dimsum 4 pcs'],
+    ['MNU-001', 'Kopi Aren Spesial', 'Minuman', 'RECIPE', 20000, 8000, 'Espresso kopi arabika dengan gula aren murni'],
+    ['MNU-002', 'Air Mineral 600ml', 'Minuman Kemasan', 'DIRECT', 5000, 2500, 'Air mineral botol 600ml'],
+    ['MNU-003', 'Sewa Ruangan VVIP / Jam', 'Jasa / Layanan', 'SERVICE', 150000, 0, 'Sewa tempat meeting per jam'],
+    ['MNU-004', 'Paket Hemat Nongkrong', 'Paket Combo', 'BUNDLE', 45000, 20000, 'Combo Kopi Aren + Dimsum 4 pcs'],
   ];
   sampleData.forEach((r) => ws.addRow(r));
 
-  ws.autoFilter = { from: 'A4', to: 'H4' };
+  ws.autoFilter = { from: 'A4', to: 'G4' };
 
   for (let r = 5; r <= 300; r++) {
-    ws.getCell(`E${r}`).dataValidation = {
+    ws.getCell(`D${r}`).dataValidation = {
       type: 'list',
       allowBlank: false,
       formulae: ['"RECIPE,DIRECT,SERVICE,BUNDLE"'],
@@ -796,14 +1105,10 @@ export async function downloadRecipeTemplate(menusOrIngredients = [], maybeIngre
   const sourceIngredients = activeIngredients.length > 0 ? activeIngredients : defaultIngredients;
 
   // Validation dropdown formula for Menu
-  const menuNamesClean = sourceMenus.map((m) => String(m.name || '').replace(/,/g, ' ').trim()).filter(Boolean);
-  const menuListInline = `"${menuNamesClean.slice(0, 30).join(',')}"`;
-  const menuValidationFormula = menuListInline.length < 240 ? menuListInline : 'DAFTAR_MASTER_MENU!$B$5:$B$500';
+  const menuValidationFormula = `DAFTAR_MASTER_MENU!$B$5:$B$${Math.max(sourceMenus.length + 4, 100)}`;
 
   // Validation dropdown formula for Ingredient
-  const ingNamesClean = sourceIngredients.map((i) => String(i.name || '').replace(/,/g, ' ').trim()).filter(Boolean);
-  const ingListInline = `"${ingNamesClean.slice(0, 30).join(',')}"`;
-  const ingValidationFormula = ingListInline.length < 240 ? ingListInline : 'DAFTAR_MASTER_BAHAN!$B$5:$B$500';
+  const ingValidationFormula = `DAFTAR_MASTER_BAHAN!$B$5:$B$${Math.max(sourceIngredients.length + 4, 100)}`;
 
   // --- SHEET 1: Resep & Gramasi Menu ---
   const ws = wb.addWorksheet('Resep & Gramasi Menu', { views: [{ showGridLines: true }] });
@@ -818,7 +1123,7 @@ export async function downloadRecipeTemplate(menusOrIngredients = [], maybeIngre
 
   ws.mergeCells('A2:H2');
   const noteCell = ws.getCell('A2');
-  noteCell.value = 'Petunjuk: Pilih Nama Menu & Nama Bahan dari menu dropdown (▼). Kode Menu, Kode Bahan, dan Satuan Pakai akan OTOMATIS terisi dari Master Data. Anda hanya perlu mengisi Gramasi (Qty) & Catatan.';
+  noteCell.value = 'Petunjuk: Nama Menu & Kode Menu sudah otomatis terisi dari Master Menu Anda. Pilih Nama Bahan dari menu dropdown (▼). Kode Bahan dan Satuan Pakai akan OTOMATIS terisi dari Master Data. Anda hanya perlu mengisi Gramasi (Qty) & Catatan.';
   noteCell.font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF475569' } };
   ws.getRow(2).height = 20;
 
@@ -836,67 +1141,116 @@ export async function downloadRecipeTemplate(menusOrIngredients = [], maybeIngre
   ]);
   applyHeaderStyle(headerRow, 'FF7C3AED'); // Violet Purple
 
-  const sampleItems = [
+  const sampleFallbackItems = [
     // Menu 1: Es Kopi Susu Gula Aren
-    { menuName: 'Es Kopi Susu Gula Aren', ingName: 'Espresso Roasted Bean Arabica', qty: 18, waste: 0, notes: 'Double shot espresso 36ml' },
-    { menuName: 'Es Kopi Susu Gula Aren', ingName: 'Fresh Milk Diamond', qty: 120, waste: 0, notes: 'Susu segar dingin' },
-    { menuName: 'Es Kopi Susu Gula Aren', ingName: 'Gula Aren Cair Organik', qty: 25, waste: 0, notes: 'Otomatis terkunci ke satuan ml' },
-    { menuName: 'Es Kopi Susu Gula Aren', ingName: 'Cup Plastik Dingin 16oz', qty: 1, waste: 0, notes: 'Kemasan take-away' },
-    { menuName: 'Es Kopi Susu Gula Aren', ingName: 'Sedotan Steril Higienis', qty: 1, waste: 0, notes: 'Sedotan steril' },
+    { menuName: 'Es Kopi Susu Gula Aren', menuCode: 'MNU-001', ingName: 'Espresso Roasted Bean Arabica', ingCode: 'BHN-001', qty: 18, unit: 'gram', waste: 0, notes: 'Double shot espresso 36ml' },
+    { menuName: 'Es Kopi Susu Gula Aren', menuCode: 'MNU-001', ingName: 'Fresh Milk Diamond', ingCode: 'BHN-002', qty: 120, unit: 'ml', waste: 0, notes: 'Susu segar dingin' },
+    { menuName: 'Es Kopi Susu Gula Aren', menuCode: 'MNU-001', ingName: 'Gula Aren Cair Organik', ingCode: 'BHN-003', qty: 25, unit: 'ml', waste: 0, notes: 'Otomatis terkunci ke satuan ml' },
+    { menuName: 'Es Kopi Susu Gula Aren', menuCode: 'MNU-001', ingName: 'Cup Plastik Dingin 16oz', ingCode: 'PLK-001', qty: 1, unit: 'pcs', waste: 0, notes: 'Kemasan take-away' },
+    { menuName: 'Es Kopi Susu Gula Aren', menuCode: 'MNU-001', ingName: 'Sedotan Steril Higienis', ingCode: 'PLK-002', qty: 1, unit: 'pcs', waste: 0, notes: 'Sedotan steril' },
 
     // Menu 2: Matcha Latte Ice
-    { menuName: 'Matcha Latte Ice', ingName: 'Matcha Powder Pure Uji', qty: 10, waste: 0, notes: 'Bubuk matcha murni di-whisk' },
-    { menuName: 'Matcha Latte Ice', ingName: 'Fresh Milk Diamond', qty: 150, waste: 0, notes: 'Susu segar dingin' },
-    { menuName: 'Matcha Latte Ice', ingName: 'Simple Syrup Cair', qty: 20, waste: 0, notes: 'Gula tebu cair' },
-    { menuName: 'Matcha Latte Ice', ingName: 'Cup Plastik Dingin 16oz', qty: 1, waste: 0, notes: 'Kemasan take-away' },
+    { menuName: 'Matcha Latte Ice', menuCode: 'MNU-002', ingName: 'Matcha Powder Pure Uji', ingCode: 'BHN-004', qty: 10, unit: 'gram', waste: 0, notes: 'Bubuk matcha murni di-whisk' },
+    { menuName: 'Matcha Latte Ice', menuCode: 'MNU-002', ingName: 'Fresh Milk Diamond', ingCode: 'BHN-002', qty: 150, unit: 'ml', waste: 0, notes: 'Susu segar dingin' },
+    { menuName: 'Matcha Latte Ice', menuCode: 'MNU-002', ingName: 'Simple Syrup Cair', ingCode: 'BHN-005', qty: 20, unit: 'ml', waste: 0, notes: 'Gula tebu cair' },
+    { menuName: 'Matcha Latte Ice', menuCode: 'MNU-002', ingName: 'Cup Plastik Dingin 16oz', ingCode: 'PLK-001', qty: 1, unit: 'pcs', waste: 0, notes: 'Kemasan take-away' },
 
     // Menu 3: Nasi Goreng Spesial
-    { menuName: 'Nasi Goreng Spesial', ingName: 'Beras Pulen Masak (Nasi Putih)', qty: 180, waste: 2, notes: 'Nasi matang porsi standar' },
-    { menuName: 'Nasi Goreng Spesial', ingName: 'Telur Ayam Negeri', qty: 1, waste: 0, notes: 'Diceplok / orak arik' },
-    { menuName: 'Nasi Goreng Spesial', ingName: 'Daging Ayam Fillet Potong', qty: 40, waste: 5, notes: 'Susut matang 5%' },
-    { menuName: 'Nasi Goreng Spesial', ingName: 'Minyak Goreng Sawit', qty: 15, waste: 0, notes: 'Minyak tumis bumbu' },
-    { menuName: 'Nasi Goreng Spesial', ingName: 'Kotak Makan / Paper Lunchbox', qty: 1, waste: 0, notes: 'Box kemasan saji' },
+    { menuName: 'Nasi Goreng Spesial', menuCode: 'MNU-003', ingName: 'Beras Pulen Masak (Nasi Putih)', ingCode: 'BHN-006', qty: 180, unit: 'gram', waste: 2, notes: 'Nasi matang porsi standar' },
+    { menuName: 'Nasi Goreng Spesial', menuCode: 'MNU-003', ingName: 'Telur Ayam Negeri', ingCode: 'BHN-007', qty: 1, unit: 'butir', waste: 0, notes: 'Diceplok / orak arik' },
+    { menuName: 'Nasi Goreng Spesial', menuCode: 'MNU-003', ingName: 'Daging Ayam Fillet Potong', ingCode: 'BHN-008', qty: 40, unit: 'gram', waste: 5, notes: 'Susut matang 5%' },
+    { menuName: 'Nasi Goreng Spesial', menuCode: 'MNU-003', ingName: 'Minyak Goreng Sawit', ingCode: 'BHN-009', qty: 15, unit: 'ml', waste: 0, notes: 'Minyak tumis bumbu' },
+    { menuName: 'Nasi Goreng Spesial', menuCode: 'MNU-003', ingName: 'Kotak Makan / Paper Lunchbox', ingCode: 'PLK-003', qty: 1, unit: 'pcs', waste: 0, notes: 'Box kemasan saji' },
   ];
 
-  // Insert sample rows (Row 5 to Row 18)
-  sampleItems.forEach((it, idx) => {
-    const rowNum = 5 + idx;
-    const row = ws.addRow([
+  // Build rows from actual existing Master Menus
+  let initialItems = [];
+  if (activeMenus.length > 0) {
+    activeMenus.forEach((m) => {
+      const activeRecipe = m.recipes && m.recipes.length > 0
+        ? m.recipes[0]
+        : (m.recipe || null);
+
+      if (activeRecipe && Array.isArray(activeRecipe.items) && activeRecipe.items.length > 0) {
+        activeRecipe.items.forEach((it) => {
+          initialItems.push({
+            menuName: m.name,
+            menuCode: m.code || `MNU-${m.id}`,
+            ingName: it.ingredient?.name || '',
+            ingCode: it.ingredient?.code || '',
+            qty: it.qty ?? '',
+            unit: it.unit || it.ingredient?.unit_pakai || '',
+            waste: it.waste_std ?? 0,
+            notes: it.note || it.notes || '',
+          });
+        });
+      } else {
+        // Menu without recipe yet: pre-fill menu name and code row for immediate input
+        initialItems.push({
+          menuName: m.name,
+          menuCode: m.code || `MNU-${m.id}`,
+          ingName: '',
+          ingCode: '',
+          qty: '',
+          unit: '',
+          waste: 0,
+          notes: '',
+        });
+      }
+    });
+  }
+
+  // Fallback if no active menus exist
+  if (initialItems.length === 0) {
+    initialItems = sampleFallbackItems;
+  }
+
+  // Insert rows
+  // Insert initial rows
+  initialItems.forEach((it) => {
+    ws.addRow([
       '', // A: Kode Menu (will be set via formula)
       it.menuName, // B: Nama Menu
       '', // C: Kode Bahan (will be set via formula)
       it.ingName, // D: Nama Bahan
-      it.qty, // E: Qty
+      it.qty !== '' && !isNaN(Number(it.qty)) ? Number(it.qty) : (it.qty || ''), // E: Qty
       '', // F: Satuan (will be set via formula)
-      it.waste, // G: Waste
-      it.notes, // H: Notes
+      it.waste !== undefined && it.waste !== null && it.waste !== '' && !isNaN(Number(it.waste)) ? Number(it.waste) : 0, // G: Waste
+      it.notes || '', // H: Notes
     ]);
-
-    // Lookup matching menu & ingredient codes for formula result preview
-    const matchedMenu = sourceMenus.find((m) => m.name === it.menuName);
-    const matchedIng = sourceIngredients.find((i) => i.name === it.ingName);
-
-    row.getCell(1).value = {
-      formula: `IF(B${rowNum}="","",IFERROR(INDEX(DAFTAR_MASTER_MENU!$A$5:$A$500,MATCH(B${rowNum},DAFTAR_MASTER_MENU!$B$5:$B$500,0)),""))`,
-      result: matchedMenu?.code || 'MNU-001',
-    };
-    row.getCell(3).value = {
-      formula: `IF(D${rowNum}="","",IFERROR(INDEX(DAFTAR_MASTER_BAHAN!$A$5:$A$500,MATCH(D${rowNum},DAFTAR_MASTER_BAHAN!$B$5:$B$500,0)),""))`,
-      result: matchedIng?.code || 'BHN-001',
-    };
-    row.getCell(6).value = {
-      formula: `IF(D${rowNum}="","",IFERROR(INDEX(DAFTAR_MASTER_BAHAN!$E$5:$E$500,MATCH(D${rowNum},DAFTAR_MASTER_BAHAN!$B$5:$B$500,0)),"gram"))`,
-      result: matchedIng?.unit_pakai || 'gram',
-    };
   });
 
   // Set autoFilter on table header
   ws.autoFilter = { from: 'A4', to: 'H4' };
 
   const RECIPE_UNITS_LIST = '"gram,ml,shot,pcs,lembar,buah,butir,porsi,sdm,sdt,cup,pack,slop,roll,botol,sachet,can,dus"';
+  const totalValidationRows = Math.max(500, initialItems.length + 100);
 
-  // Apply dropdown data validation across sample rows and subsequent rows
-  for (let r = 5; r <= 100; r++) {
+  // Pre-install dynamic lookup formulas and dropdowns across all 500 rows
+  for (let r = 5; r <= totalValidationRows; r++) {
+    const isBeyondInitial = r > 4 + initialItems.length;
+    const it = !isBeyondInitial ? initialItems[r - 5] : null;
+    const matchedMenu = it ? sourceMenus.find((m) => m.name === it.menuName) : null;
+    const matchedIng = it ? sourceIngredients.find((i) => i.name === it.ingName) : null;
+
+    // Formula A: Kode Menu (Otomatis dari Master Menu)
+    ws.getCell(`A${r}`).value = {
+      formula: `IF(B${r}="","",IFERROR(INDEX(DAFTAR_MASTER_MENU!$A$5:$A$1000,MATCH(B${r},DAFTAR_MASTER_MENU!$B$5:$B$1000,0)),""))`,
+      result: it ? (it.menuCode || matchedMenu?.code || '') : '',
+    };
+
+    // Formula C: Kode Bahan (Otomatis dari Master Bahan)
+    ws.getCell(`C${r}`).value = {
+      formula: `IF(D${r}="","",IFERROR(INDEX(DAFTAR_MASTER_BAHAN!$A$5:$A$1000,MATCH(D${r},DAFTAR_MASTER_BAHAN!$B$5:$B$1000,0)),""))`,
+      result: it ? (it.ingCode || matchedIng?.code || '') : '',
+    };
+
+    // Formula F: Satuan Pakai (Otomatis dari Master Bahan)
+    ws.getCell(`F${r}`).value = {
+      formula: `IF(D${r}="","",IFERROR(INDEX(DAFTAR_MASTER_BAHAN!$E$5:$E$1000,MATCH(D${r},DAFTAR_MASTER_BAHAN!$B$5:$B$1000,0)),"gram"))`,
+      result: it ? (it.unit || matchedIng?.unit_pakai || (it.ingName ? 'gram' : '')) : '',
+    };
+
     // Column B: Nama Menu Dropdown Filter
     ws.getCell(`B${r}`).dataValidation = {
       type: 'list',

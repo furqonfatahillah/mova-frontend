@@ -7,14 +7,17 @@ export function rupiah(n, maxDecimals = 2, minDecimals = null) {
   const absVal = Math.abs(numVal);
   
   // Deteksi apakah angka memiliki nilai pecahan desimal
-  const hasFraction = (absVal % 1) !== 0;
+  const roundDiff = Math.abs(absVal - Math.round(absVal));
+  const isEssentiallyInteger = roundDiff < 0.05;
+  const cleanVal = isEssentiallyInteger ? Math.round(absVal) : absVal;
+  const hasFraction = !isEssentiallyInteger && (cleanVal % 1) !== 0;
   
   // Format desimal sampai 2 angka di belakang koma (misal: Rp12,50 atau Rp12,35)
-  // Untuk bilangan bulat murni: tetap bersih tanpa ,00 (misal: Rp50.000)
+  // Untuk bilangan bulat: tetap bersih tanpa ,00 (misal: Rp50.000)
   const minDigits = minDecimals !== null ? minDecimals : (hasFraction ? 2 : 0);
   const maxDigits = maxDecimals !== null ? maxDecimals : 2;
 
-  const s = absVal.toLocaleString('id-ID', {
+  const s = cleanVal.toLocaleString('id-ID', {
     minimumFractionDigits: minDigits,
     maximumFractionDigits: maxDigits,
   });
@@ -113,11 +116,12 @@ export function PageHeader({ title, subtitle, action }) {
   );
 }
 
-export function MiniCard({ label, value, color }) {
+export function MiniCard({ label, value, color, subtext }) {
   return (
     <div className="mini-card">
       <div className="mini-label">{label}</div>
       <div className="mini-value" style={{ color: color || 'var(--text-primary)' }}>{value}</div>
+      {subtext && <div style={{ fontSize: 10.5, color: 'var(--text-secondary)', marginTop: 3 }}>{subtext}</div>}
     </div>
   );
 }

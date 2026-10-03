@@ -597,7 +597,14 @@ export default function StockMovement({ defaultFilterType }) {
                         </div>
                       </td>
                       <td className="mono right" style={{ color: ti.color, fontWeight: 600 }}>
-                        {ti.sign}{fmtQtyVal(m.qty, m.ingredient?.unit_pakai, m.cost_after || (m.ingredient?.konversi > 0 ? (m.ingredient.harga / m.ingredient.konversi) : 0))}
+                        {ti.sign}{fmtQtyVal(
+                          m.qty,
+                          m.ingredient?.unit_pakai,
+                          m.total_price && Number(m.total_price) > 0
+                            ? Math.abs(Number(m.total_price))
+                            : (m.cost_after || m.unit_price || (m.ingredient?.konversi > 0 ? (m.ingredient.harga / m.ingredient.konversi) : 0)),
+                          { isTotalVal: Boolean(m.total_price && Number(m.total_price) > 0) }
+                        )}
                       </td>
 
                       {/* Harga Beli & Moving Average Column */}

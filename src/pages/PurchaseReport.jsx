@@ -627,6 +627,16 @@ export default function PurchaseReport() {
                   </p>
                 </div>
               )
+            ) : activeTab === 'shipments' ? (
+              <div>
+                <Truck size={42} style={{ color: 'var(--text-muted)', marginBottom: 12, opacity: 0.5 }} />
+                <h4 style={{ margin: '0 0 6px 0', fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Tidak Ada Pengiriman Ekspedisi / Belanja Online
+                </h4>
+                <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)', maxWidth: 480, marginInline: 'auto', lineHeight: 1.5 }}>
+                  Seluruh transaksi pembelian pada periode ini adalah <strong>Belanja Langsung</strong> (langsung masuk stok gudang). Tidak ada pengiriman via ekspedisi atau persediaan dalam perjalanan (in-transit).
+                </p>
+              </div>
             ) : (
               <div>
                 <ShoppingBag size={42} style={{ color: 'var(--text-muted)', marginBottom: 12, opacity: 0.5 }} />
@@ -640,10 +650,10 @@ export default function PurchaseReport() {
             )}
           </div>
         ) : (
-          <div className="table-responsive">
+          <div className="table-wrap" style={{ overflowX: 'auto', width: '100%', WebkitOverflowScrolling: 'touch' }}>
             {/* 1. TRANSAKSI PEMBELIAN (DETAIL BARANG MASUK) */}
             {activeTab === 'transactions' && (
-              <table className="table" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+              <table style={{ fontSize: 12, whiteSpace: 'nowrap', minWidth: 1600, width: '100%' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-elevated)' }}>
                     <th style={{ width: 45 }}>No.</th>
@@ -733,7 +743,7 @@ export default function PurchaseReport() {
 
             {/* 2. PEMBELIAN PER PRODUK */}
             {activeTab === 'by-product' && (
-              <table className="table" style={{ fontSize: 12 }}>
+              <table style={{ fontSize: 12, whiteSpace: 'nowrap', minWidth: 1000, width: '100%' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-elevated)' }}>
                     <th style={{ width: 45 }}>No.</th>
@@ -787,7 +797,7 @@ export default function PurchaseReport() {
 
             {/* 3. PEMBELIAN PER SUPPLIER */}
             {activeTab === 'by-supplier' && (
-              <table className="table" style={{ fontSize: 12 }}>
+              <table style={{ fontSize: 12, whiteSpace: 'nowrap', minWidth: 950, width: '100%' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-elevated)' }}>
                     <th style={{ width: 45 }}>No.</th>
@@ -844,7 +854,7 @@ export default function PurchaseReport() {
 
             {/* 4. HUTANG SUPPLIER (HOLDING) */}
             {activeTab === 'payables' && (
-              <table className="table" style={{ fontSize: 12 }}>
+              <table style={{ fontSize: 12, whiteSpace: 'nowrap', minWidth: 1100, width: '100%' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-elevated)' }}>
                     <th style={{ width: 45 }}>No.</th>
@@ -907,7 +917,7 @@ export default function PurchaseReport() {
 
             {/* 5. PENGIRIMAN PEMBELIAN */}
             {activeTab === 'shipments' && (
-              <table className="table" style={{ fontSize: 12 }}>
+              <table style={{ fontSize: 12, whiteSpace: 'nowrap', minWidth: 950, width: '100%' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-elevated)' }}>
                     <th style={{ width: 45 }}>No.</th>

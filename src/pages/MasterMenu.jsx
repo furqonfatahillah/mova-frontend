@@ -884,34 +884,34 @@ export default function MasterMenu() {
 
   const bomHpp = activeRecipe
     ? (activeRecipe.items || []).reduce((sum, it) => {
-        const ing = ingredients.find(i => i.id === it.ingredient_id);
-        return ing ? sum + (Number(it.qty) || 0) * (Number(ing.harga || 0) / Math.max(Number(ing.konversi || 1), 1)) : sum;
-      }, 0)
+      const ing = ingredients.find(i => i.id === it.ingredient_id);
+      return ing ? sum + (Number(it.qty) || 0) * (Number(ing.harga || 0) / Math.max(Number(ing.konversi || 1), 1)) : sum;
+    }, 0)
     : 0;
 
   const draftHpp = draft
     ? draft.reduce((sum, it) => {
-        const ing = ingredients.find(i => i.id === it.ingredient_id);
-        return ing ? sum + (Number(it.qty) || 0) * (Number(ing.harga || 0) / Math.max(Number(ing.konversi || 1), 1)) : sum;
-      }, 0)
+      const ing = ingredients.find(i => i.id === it.ingredient_id);
+      return ing ? sum + (Number(it.qty) || 0) * (Number(ing.harga || 0) / Math.max(Number(ing.konversi || 1), 1)) : sum;
+    }, 0)
     : 0;
 
   const effectiveRecipeHpp = draft ? draftHpp : bomHpp;
 
   const hpp = isBundle
     ? (selected?.bundle_items || selected?.bundleItems || []).reduce((sum, bi) => {
-        const bm = menus.find(m => m.id === (bi.bundled_menu_id || bi.bundledMenu?.id));
-        if (bm) {
-          const bmHpp = bm.item_type === 'DIRECT' || bm.item_type === 'SERVICE'
-            ? Number(bm.cost_price || 0)
-            : (bm.recipes?.[0] ? (bm.recipes[0].items || []).reduce((s, it) => {
-                const ing = ingredients.find(i => i.id === it.ingredient_id);
-                return ing ? s + it.qty * (ing.harga / (ing.konversi || 1)) : s;
-              }, 0) : Number(bm.cost_price || 0));
-          return sum + (Number(bi.qty || 1) * bmHpp);
-        }
-        return sum;
-      }, 0)
+      const bm = menus.find(m => m.id === (bi.bundled_menu_id || bi.bundledMenu?.id));
+      if (bm) {
+        const bmHpp = bm.item_type === 'DIRECT' || bm.item_type === 'SERVICE'
+          ? Number(bm.cost_price || 0)
+          : (bm.recipes?.[0] ? (bm.recipes[0].items || []).reduce((s, it) => {
+            const ing = ingredients.find(i => i.id === it.ingredient_id);
+            return ing ? s + it.qty * (ing.harga / (ing.konversi || 1)) : s;
+          }, 0) : Number(bm.cost_price || 0));
+        return sum + (Number(bi.qty || 1) * bmHpp);
+      }
+      return sum;
+    }, 0)
     : (isDirect || isService
       ? estimatedHpp
       : (activeRecipe || draft ? effectiveRecipeHpp : estimatedHpp));
@@ -987,6 +987,78 @@ export default function MasterMenu() {
       const errors = err.response?.data?.errors;
       if (errors) Object.values(errors).flat().forEach(m => toast.error(m));
       else toast.error('Gagal menyimpan recipe');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteRecipe(recipeId, recipeVersion) {
+    if (!selected) return;
+    const confirmed = await confirmDialog({
+      title: 'Hapus Resep Ini?',
+      text: `Apakah Anda yakin ingin menghapus komposisi Resep Versi ${recipeVersion || ''} untuk menu "${selected.name}"?`,
+      confirmText: 'Ya, Hapus Resep',
+      cancelText: 'Batal',
+      isDanger: true,
+    });
+    if (!confirmed) return;
+
+    setSaving(true);
+    try {
+      await api.delete(`/menus/${selected.id}/recipes/${recipeId}`);
+      toast.success(`Resep Versi ${recipeVersion || ''} berhasil dihapus.`);
+      await fetchAll(selected.id);
+      setDraft(null);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal menghapus resep');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteRecipeItem(recipeId, itemId, ingredientName) {
+    if (!selected) return;
+    const confirmed = await confirmDialog({
+      title: 'Hapus Bahan Ini dari Resep?',
+      text: `Apakah Anda yakin ingin menghapus bahan "${ingredientName}" dari resep menu "${selected.name}"?`,
+      confirmText: 'Ya, Hapus Bahan',
+      cancelText: 'Batal',
+      isDanger: true,
+    });
+    if (!confirmed) return;
+
+    setSaving(true);
+    try {
+      await api.delete(`/menus/${selected.id}/recipes/${recipeId}/items/${itemId}`);
+      toast.success(`Bahan "${ingredientName}" berhasil dihapus dari resep.`);
+      await fetchAll(selected.id);
+      setDraft(null);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal menghapus bahan dari resep');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteAllRecipes() {
+    if (!selected) return;
+    const confirmed = await confirmDialog({
+      title: 'Hapus Seluruh Resep (BOM)?',
+      text: `Semua versi resep dan rincian bahan baku untuk menu "${selected.name}" akan dihapus. Menu akan kembali ke status tanpa resep.`,
+      confirmText: 'Ya, Hapus Semua Resep',
+      cancelText: 'Batal',
+      isDanger: true,
+    });
+    if (!confirmed) return;
+
+    setSaving(true);
+    try {
+      await api.delete(`/menus/${selected.id}/recipes`);
+      toast.success(`Seluruh resep untuk menu "${selected.name}" berhasil dihapus.`);
+      await fetchAll(selected.id);
+      setDraft(null);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal menghapus semua resep');
     } finally {
       setSaving(false);
     }
@@ -1685,17 +1757,19 @@ export default function MasterMenu() {
                                 <th>Satuan</th>
                                 <th className="right">Waste Std</th>
                                 <th className="right">Estimasi Cost</th>
+                                <th className="center" style={{ width: 60 }}>Aksi</th>
                               </tr>
                             </thead>
                             <tbody>
                               {activeRecipe.items.map((it, idx) => {
                                 const ing = ingredients.find(i => i.id === it.ingredient_id);
                                 const cost = ing ? it.qty * (ing.harga / (ing.konversi || 1)) : 0;
+                                const ingName = it.ingredient?.name || ing?.name || `Bahan #${it.ingredient_id}`;
                                 return (
-                                  <tr key={idx}>
+                                  <tr key={it.id || idx}>
                                     <td style={{ fontWeight: 500 }}>
                                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                        <span>{it.ingredient?.name || ing?.name || '?'}</span>
+                                        <span>{ingName}</span>
                                         {(it.ingredient?.type === 'SEMI_FINISHED' || ing?.type === 'SEMI_FINISHED') && (
                                           <span className="pill" style={{ fontSize: 9.5, background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', border: '1px solid rgba(168, 85, 247, 0.3)' }}>
                                             Olahan
@@ -1712,6 +1786,17 @@ export default function MasterMenu() {
                                     <td>{it.unit}</td>
                                     <td className="mono right">{it.waste_std}%</td>
                                     <td className="mono right" style={{ color: 'var(--accent)', fontWeight: 600 }}>{rupiah(cost)}</td>
+                                    <td className="center">
+                                      <button
+                                        type="button"
+                                        className="btn btn-ghost btn-sm"
+                                        style={{ color: '#fb7185', padding: '3px 6px' }}
+                                        onClick={() => handleDeleteRecipeItem(activeRecipe.id, it.id || it.ingredient_id, ingName)}
+                                        title={`Hapus ${ingName} dari resep ini`}
+                                      >
+                                        <Trash2 size={13} />
+                                      </button>
+                                    </td>
                                   </tr>
                                 );
                               })}
@@ -1724,6 +1809,7 @@ export default function MasterMenu() {
                                 <td className="mono right" style={{ color: 'var(--accent-bright)', fontSize: 14 }}>
                                   {rupiah(bomHpp)}
                                 </td>
+                                <td></td>
                               </tr>
                             </tfoot>
                           </table>
@@ -1801,7 +1887,7 @@ export default function MasterMenu() {
                                   <td className="mono right" style={{ fontWeight: 700, color: estimatedHpp > 0 ? (hppDiff <= 0 ? '#34d399' : '#fb7185') : 'var(--text-muted)' }}>
                                     {estimatedHpp > 0 ? (
                                       hppDiff < 0 ? `-${rupiah(Math.abs(hppDiff))} (${Math.abs(Math.round((hppDiff / estimatedHpp) * 100))}%)` :
-                                      (hppDiff > 0 ? `+${rupiah(hppDiff)} (+${Math.round((hppDiff / estimatedHpp) * 100)}%)` : 'Rp0 (0%)')
+                                        (hppDiff > 0 ? `+${rupiah(hppDiff)} (+${Math.round((hppDiff / estimatedHpp) * 100)}%)` : 'Rp0 (0%)')
                                     ) : '-'}
                                   </td>
                                   <td className="center">
@@ -1863,7 +1949,7 @@ export default function MasterMenu() {
                           </div>
                         </div>
 
-                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                           <button className="btn btn-primary" onClick={startEdit}>
                             + Revisi Resep (Versi Baru)
                           </button>
@@ -1878,6 +1964,35 @@ export default function MasterMenu() {
                           >
                             <FileSpreadsheet size={14} /> Import Resep Excel
                           </button>
+                          {activeRecipe && (
+                            <button
+                              type="button"
+                              className="btn"
+                              onClick={() => handleDeleteRecipe(activeRecipe.id, activeRecipe.version)}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                background: 'rgba(244, 63, 94, 0.1)',
+                                color: '#fb7185',
+                                border: '1px solid rgba(244, 63, 94, 0.3)'
+                              }}
+                              title="Hapus versi resep yang sedang aktif ini"
+                            >
+                              <Trash2 size={14} /> Hapus Resep (v{activeRecipe.version})
+                            </button>
+                          )}
+                          {selected.recipes?.length > 1 && (
+                            <button
+                              type="button"
+                              className="btn btn-ghost"
+                              onClick={handleDeleteAllRecipes}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--text-muted)', fontSize: 12 }}
+                              title="Hapus seluruh riwayat resep menu ini"
+                            >
+                              Hapus Semua Versi Resep
+                            </button>
+                          )}
                         </div>
                       </>
                     ) : isBundle ? (
@@ -2120,15 +2235,29 @@ export default function MasterMenu() {
                       </div>
                     )}
 
-                    {selected.recipes?.length > 1 && (
+                    {selected.recipes?.length > 0 && (
                       <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-                        <div style={{ marginBottom: 6, fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Histori Versi Resep:</div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Histori Versi Resep:</div>
+                          {selected.recipes.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={handleDeleteAllRecipes}
+                              style={{ background: 'none', border: 'none', color: '#f43f5e', fontSize: 11, cursor: 'pointer', padding: 0 }}
+                            >
+                              Hapus Semua Versi
+                            </button>
+                          )}
+                        </div>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                           {selected.recipes.map(v => (
                             <div
                               key={v.id}
                               className="mono"
                               style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
                                 padding: '4px 10px',
                                 background: v.id === activeRecipe?.id ? 'var(--accent-dim)' : 'rgba(255,255,255,0.03)',
                                 border: `1px solid ${v.id === activeRecipe?.id ? 'var(--border-accent)' : 'var(--border)'}`,
@@ -2137,7 +2266,30 @@ export default function MasterMenu() {
                                 color: v.id === activeRecipe?.id ? 'var(--accent-bright)' : 'var(--text-secondary)'
                               }}
                             >
-                              v{v.version} ({v.date}) {v.id === activeRecipe?.id && '● Aktif'}
+                              <span>v{v.version} ({v.date}) {v.id === activeRecipe?.id && '● Aktif'}</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteRecipe(v.id, v.version);
+                                }}
+                                style={{
+                                  background: 'transparent',
+                                  border: 'none',
+                                  color: '#fb7185',
+                                  cursor: 'pointer',
+                                  padding: '2px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  opacity: 0.7,
+                                  transition: 'opacity 0.15s'
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                                onMouseLeave={e => e.currentTarget.style.opacity = '0.7'}
+                                title={`Hapus Resep Versi ${v.version}`}
+                              >
+                                <Trash2 size={12} />
+                              </button>
                             </div>
                           ))}
                         </div>
@@ -2756,8 +2908,8 @@ export default function MasterMenu() {
                       {(hppHistoryData?.stats?.latest_diff || 0) > 0
                         ? `+${rupiah(hppHistoryData.stats.latest_diff)} (+${hppHistoryData.stats.latest_pct_change}%)`
                         : ((hppHistoryData?.stats?.latest_diff || 0) < 0
-                            ? `-${rupiah(Math.abs(hppHistoryData.stats.latest_diff))} (${hppHistoryData.stats.latest_pct_change}%)`
-                            : 'Rp0 (Stabil)')}
+                          ? `-${rupiah(Math.abs(hppHistoryData.stats.latest_diff))} (${hppHistoryData.stats.latest_pct_change}%)`
+                          : 'Rp0 (Stabil)')}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
                       Tanggal: <span className="mono" style={{ color: 'var(--text-secondary)' }}>{hppHistoryData?.stats?.latest_change_date || '-'}</span>

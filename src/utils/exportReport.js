@@ -214,12 +214,12 @@ export async function exportVarianceBahanToExcel({ varData = [], period, outletN
       iv.ingredient?.unit_beli || '-',
       iv.ingredient?.unit_pakai || '-',
       Math.round(iv.ingredient?.harga || 0),
-      iv.stok_awal ?? '-',
-      iv.total_masuk ?? '-',
+      iv.stok_awal_periode ?? iv.stok_awal ?? '-',
+      iv.pembelian !== undefined ? Number(((iv.pembelian || 0) + (iv.transfer_in || 0) + (iv.prep_output || 0)).toFixed(2)) : (iv.total_masuk ?? '-'),
       iv.pemakaian_teoritis ?? '-',
       iv.waste_qty ?? 0,
       iv.pemakaian_aktual ?? '-',
-      iv.variance_qty ?? 0,
+      iv.variance_qty ?? iv.unaccounted_qty ?? 0,
       Number((iv.variance_pct || 0).toFixed(2)),
       vVal,
       wVal,
@@ -400,6 +400,7 @@ export async function exportReceivablesToExcel({ items = [], stats = {}, outletN
       'Net Amount (Rp)',
       'Sudah Dibayar / Cair (Rp)',
       'Sisa Piutang (Rp)',
+      'Metode Pembayaran',
       'Status Settlement',
       'Rekening Bank Settlement',
       'Keterangan / Rincian',
@@ -415,6 +416,8 @@ export async function exportReceivablesToExcel({ items = [], stats = {}, outletN
       ? `${r.merchant_channel || 'MERCHANT'} - ${r.customer_name || ''}`
       : (r.customer_name || '-');
 
+    const paymentMethodDisplay = r.payment_method || (Array.isArray(r.payments) && r.payments.length ? r.payments.map(p => p.payment_method).filter(Boolean).join(', ') : '-');
+
     rows.push([
       idx + 1,
       r.receivable_no || r.order_number || '-',
@@ -428,6 +431,7 @@ export async function exportReceivablesToExcel({ items = [], stats = {}, outletN
       Number(r.net_amount || r.total_amount) || 0,
       Number(r.paid_amount) || 0,
       Number(r.remaining_amount) || 0,
+      paymentMethodDisplay,
       r.settlement_status ? `${r.settlement_status} (${r.status || '-'})` : (r.status_label || r.status || '-'),
       r.settlement_bank || '-',
       r.notes || '-',
@@ -1003,6 +1007,7 @@ export async function exportCustomerReceivablesToExcel({ items = [], summary = {
       'Net Piutang (Rp)',
       'Dibayar / Dicairkan (Rp)',
       'Sisa Piutang (Rp)',
+      'Metode Bayar',
       'Status Settlement',
       'Usia Piutang',
       'Jatuh Tempo',
@@ -1026,6 +1031,7 @@ export async function exportCustomerReceivablesToExcel({ items = [], summary = {
       Number(item.net_amount || item.piutang) || 0,
       Number(item.dibayar) || 0,
       Number(item.sisa_piutang) || 0,
+      item.payment_method || '-',
       item.settlement_status || (item.sisa_piutang <= 0 ? 'LUNAS' : 'BELUM LUNAS'),
       item.usia_piutang || '0 Hari',
       item.jatuh_tempo || '-',
@@ -1045,6 +1051,7 @@ export async function exportCustomerReceivablesToExcel({ items = [], summary = {
     Number(summary.total_net_piutang) || 0,
     Number(summary.total_dibayar) || 0,
     Number(summary.total_sisa_piutang) || 0,
+    '',
     '',
     '',
     '',
@@ -1152,8 +1159,8 @@ export async function exportSupplierPayablesToExcel({
   const periodText = typeof period === 'string'
     ? period
     : (period.from_formatted && period.to_formatted
-        ? `Per ${period.from_formatted} s/d ${period.to_formatted}`
-        : (period.from && period.to ? `Per ${period.from} s/d ${period.to}` : 'Semua Periode'));
+      ? `Per ${period.from_formatted} s/d ${period.to_formatted}`
+      : (period.from && period.to ? `Per ${period.from} s/d ${period.to}` : 'Semua Periode'));
 
   // Row 3: Period subtitle in italics
   ws.getCell('B3').value = periodText;
@@ -1494,17 +1501,7 @@ export async function exportBalanceSheetToExcel({
   });
   addSubtotalRow('Jumlah Aset Lancar', data.current_assets?.subtotal ?? 0);
 
-  // 2. Aset Tetap
-  addSectionHeader('Aset Tetap');
-  const fixedAssets = data.fixed_assets?.accounts || [];
-  if (fixedAssets.length > 0) {
-    fixedAssets.forEach((acc) => {
-      addAccountRow(acc.code, acc.name, acc.amount);
-    });
-  } else {
-    addAccountRow('', 'Depresiasi & Amortisasi', 0);
-  }
-  addSubtotalRow('Jumlah Aset Tetap', data.fixed_assets?.subtotal ?? 0);
+
 
   // 3. Liabilitas
   addSectionHeader('Liabilitas');
@@ -1666,23 +1663,7 @@ export function printBalanceSheetReport({
       </tfoot>
     </table>
 
-    <!-- ASET TETAP -->
-    <table>
-      <thead>
-        <tr>
-          <th colspan="3" class="section-title" style="text-align: left;">Aset Tetap</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${data.fixed_assets?.accounts?.length ? renderAccountRows(data.fixed_assets?.accounts) : '<tr><td style="color:#64748b;">-</td><td>Depresiasi & Amortisasi</td><td style="text-align:right;">0</td></tr>'}
-      </tbody>
-      <tfoot>
-        <tr class="subtotal-row">
-          <td colspan="2">Jumlah Aset Tetap</td>
-          <td style="text-align: right;">${numFmt(data.fixed_assets?.subtotal)}</td>
-        </tr>
-      </tfoot>
-    </table>
+
 
     <!-- LIABILITAS -->
     <table>
@@ -1931,6 +1912,136 @@ export async function exportPurchaseShipmentsToExcel({ businessName = 'URBAE CAF
   ws['!cols'] = fitColumns(rows);
   XLSX.utils.book_append_sheet(wb, ws, 'Pengiriman Pembelian');
   XLSX.writeFile(wb, `Laporan_Pengiriman_Pembelian_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+/**
+ * 25. Export Riwayat Pembayaran / Pelunasan Kasbon to Excel
+ */
+export async function exportReceivablePaymentsToExcel({ items = [], outletName = 'Semua Cabang', businessName = 'MOVA POS', userName = 'Administrator' }) {
+  const XLSX = await getXLSX();
+  const wb = XLSX.utils.book_new();
+  const dateStr = new Date().toLocaleString('id-ID');
+
+  const rows = [
+    ['RIWAYAT PEMBAYARAN & PELUNASAN KASBON / PIUTANG'],
+    ['MOVA POS — Customer Receivable Payments & Settlement Logs'],
+    [],
+    ['Bisnis / Brand', businessName, '', 'Waktu Ekspor', dateStr],
+    ['Cabang / Outlet', outletName, '', 'Dicetak Oleh', userName],
+    ['Total Transaksi Pembayaran', items.length, '', 'Total Dana Diterima', items.reduce((sum, it) => sum + (Number(it.amount) || 0), 0)],
+    [],
+    [
+      'No',
+      'No. Pembayaran',
+      'Tanggal Pembayaran',
+      'Sesi Shift',
+      'Pelanggan / Peminjam',
+      'No. Telp Pelanggan',
+      'No. Nota Kasbon',
+      'Metode Pembayaran',
+      'Akun Setor / Kas Bank',
+      'Nominal Dibayar (Rp)',
+      'Kasir / Penerima',
+      'Keterangan / Ref',
+    ],
+  ];
+
+  let totalAmount = 0;
+  items.forEach((log, idx) => {
+    const amt = Number(log.amount) || 0;
+    totalAmount += amt;
+    rows.push([
+      idx + 1,
+      log.payment_no || `PAY-${log.id}`,
+      log.payment_date || log.created_at || '-',
+      log.shift_name || (log.shift_id ? `Shift #${log.shift_id}` : '-'),
+      log.customer_name || '-',
+      log.customer_phone || '-',
+      log.receivable_no || '-',
+      log.payment_method || 'CASH',
+      log.deposit_account || '-',
+      amt,
+      log.receiver_name || log.receiver?.name || '-',
+      log.notes || '-',
+    ]);
+  });
+
+  rows.push([
+    'Total',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    totalAmount,
+    '',
+    '',
+  ]);
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = fitColumns(rows);
+  XLSX.utils.book_append_sheet(wb, ws, 'Riwayat Pembayaran');
+
+  const filename = `Riwayat_Pelunasan_Kasbon_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  XLSX.writeFile(wb, filename);
+  return filename;
+}
+  
+/**
+ * 23. Export Balance Sheet Detail Audit Trail to Excel
+ */
+export async function exportBalanceSheetDetailToExcel({ detailData, period, outletName = 'Semua Cabang', businessName = 'MOVA POS' }) {
+  if (!detailData) return;
+  const XLSX = await getXLSX();
+  const wb = XLSX.utils.book_new();
+  const dateStr = new Date().toLocaleString('id-ID');
+
+  const rows = [
+    [`RINCIAN AUDIT NERACA: [${detailData.account_code || ''}] ${detailData.account_name || ''}`],
+    ['MOVA POS — Balance Sheet Account Breakdown & Audit Trail'],
+    [],
+    ['Bisnis / Brand', businessName, '', 'Waktu Ekspor', dateStr],
+    ['Cabang / Outlet', outletName, '', 'Periode', `${period?.from || ''} s/d ${period?.to || ''}`],
+    ['Akun / Pos', `[${detailData.account_code || ''}] ${detailData.account_name || ''}`, '', 'Kategori', detailData.category_label || detailData.account_type || '-'],
+    ['Total Nilai Akun', Number(detailData.amount) || 0, '', 'Rumus', detailData.formula || '-'],
+    ['Penjelasan Sumber Nilai', detailData.explanation || '-'],
+    [],
+  ];
+
+  if (detailData.components && detailData.components.length > 0) {
+    rows.push(['KOMPONEN PEMBENTUK NILAI:']);
+    detailData.components.forEach(c => {
+      rows.push([c.label, c.value]);
+    });
+    rows.push([]);
+  }
+
+  if (detailData.columns && detailData.columns.length > 0 && detailData.items && detailData.items.length > 0) {
+    rows.push(['DATA RINCIAN TRANSAKSI / ITEM:']);
+    const headers = ['No', ...detailData.columns.map(c => c.label)];
+    rows.push(headers);
+
+    detailData.items.forEach((item, idx) => {
+      const row = [idx + 1];
+      detailData.columns.forEach(col => {
+        row.push(item[col.key] !== undefined && item[col.key] !== null ? item[col.key] : '-');
+      });
+      rows.push(row);
+    });
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = fitColumns(rows);
+  const sheetName = (detailData.account_name || 'Rincian').substring(0, 31).replace(/[\\/*?:[\]]/g, '_');
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+
+  const safeCode = (detailData.account_code || 'Detail').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `Rincian_Neraca_${safeCode}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  XLSX.writeFile(wb, filename);
+  return filename;
 }
 
 

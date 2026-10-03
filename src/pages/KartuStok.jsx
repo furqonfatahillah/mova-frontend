@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ScrollText, Plus, Search, Filter, ArrowUpRight, ArrowDownLeft,
   AlertTriangle, AlertOctagon, Calendar, Printer, X, Check, RefreshCw, Eye, Store,
-  ArrowLeft, Building2, ChevronRight, Calculator,
+  ArrowLeft, Building2, ChevronRight, Calculator, Flame,
   Truck, PackageCheck, CheckCircle2, ShieldCheck, Clock, ArrowRight, RotateCcw, AlertCircle,
   ShoppingBag, FileSpreadsheet, Trash2, Edit2
 } from 'lucide-react';
@@ -78,6 +79,7 @@ export function getItemClassification(it) {
 }
 
 export default function KartuStok() {
+  const navigate = useNavigate();
   const {
     activeOutletId,
     activeOutlet,
@@ -181,6 +183,11 @@ export default function KartuStok() {
   });
   const [saving, setSaving] = useState(false);
   const [recalculating, setRecalculating] = useState(false);
+  const [resetModalOpen, setResetModalOpen] = useState(false);
+  const [resetScope, setResetScope] = useState('CURRENT_OUTLET'); // 'SELECTED_INGREDIENT' | 'CURRENT_OUTLET' | 'ALL_OUTLETS'
+  const [resetTargetIngId, setResetTargetIngId] = useState('');
+  const [resetKeepInitial, setResetKeepInitial] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   // Initial fetch ingredients & suppliers for master list
   useEffect(() => {
@@ -685,6 +692,72 @@ export default function KartuStok() {
     }
   }
 
+  // Reset Kartu Stok & Riwayat Mutasi (Khusus Owner Bisnis / Admin Platform)
+  async function handleResetStockCard() {
+    const isOwner = Boolean(isOwnerBisnis || isPlatformAdmin);
+    if (!isOwner) {
+      toast.error('Hanya Owner Bisnis atau Admin Platform yang berwenang mereset kartu stok.');
+      return;
+    }
+
+    let scopeLabel = '';
+    if (resetScope === 'SELECTED_INGREDIENT') {
+      const targetIng = ingredients.find(i => Number(i.id) === Number(resetTargetIngId || selectedIngId));
+      if (!targetIng) {
+        toast.error('Pilih bahan yang ingin di-reset kartu stoknya.');
+        return;
+      }
+      scopeLabel = `Bahan "${targetIng.name}" di ${currentOutlet?.name || 'Cabang Terpilih'}`;
+    } else if (resetScope === 'CURRENT_OUTLET') {
+      scopeLabel = `Seluruh Bahan di ${currentOutlet?.name || 'Cabang Terpilih'}`;
+    } else {
+      scopeLabel = 'Seluruh Bahan di Semua Cabang Bisnis';
+    }
+
+    const modeLabel = resetKeepInitial
+      ? 'Hapus Mutasi Operasional (Pertahankan Saldo Awal Fisik)'
+      : 'Reset Menyeluruh (Hapus Semua Mutasi & Saldo Awal, Stok Menjadi 0)';
+
+    const confirmed = await ownerConfirmDialog({
+      title: 'PERINGATAN RESET KARTU STOK',
+      targetName: `Reset kartu stok untuk ${scopeLabel}? (${modeLabel})`,
+      bullets: [
+        resetKeepInitial
+          ? 'Menghapus mutasi penjualan, pembelian, transfer, dan waste, serta mengembalikan saldo stok ke saldo awal fisik.'
+          : 'Menghapus SEMUA baris mutasi kartu stok termasuk saldo awal, dan mereset total stok ke angka 0.',
+        'Menghapus pencatatan hutang pembelian supplier yang terkait dengan mutasi yang dihapus.',
+        'Mengkalkulasikan ulang Moving Average (HPP) dan menyinkronkan saldo persediaan secara real-time.'
+      ],
+      confirmText: 'Ya, Reset Kartu Stok',
+      cancelText: 'Batal'
+    });
+
+    if (!confirmed) return;
+
+    setResetting(true);
+    try {
+      const payload = {
+        scope: resetScope,
+        outlet_id: selectedOutletId,
+        ingredient_id: resetScope === 'SELECTED_INGREDIENT' ? (resetTargetIngId || selectedIngId) : undefined,
+        keep_initial: resetKeepInitial,
+      };
+
+      const { data } = await api.post('/stock-card/reset', payload);
+      toast.success(data.message || 'Kartu stok berhasil di-reset!');
+      setResetModalOpen(false);
+
+      if (selectedIngId) await fetchStockCard();
+      await fetchSummary();
+      await fetchIngredients();
+      await fetchInTransitTransfers();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal mereset kartu stok');
+    } finally {
+      setResetting(false);
+    }
+  }
+
   // Open Edit Modal untuk Mutasi Tertentu (Khusus Owner Bisnis)
   function handleOpenEditMovement(row) {
     const isOwner = Boolean(isOwnerBisnis || isPlatformAdmin);
@@ -1058,6 +1131,21 @@ export default function KartuStok() {
                 {recalculating ? 'Menyinkronkan...' : 'Sinkronkan HPP Cabang'}
               </button>
             )}
+            {(isOwnerBisnis || isPlatformAdmin) && (
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  setResetTargetIngId(selectedIngId || '');
+                  setResetScope(selectedIngId ? 'SELECTED_INGREDIENT' : 'CURRENT_OUTLET');
+                  setResetKeepInitial(false);
+                  setResetModalOpen(true);
+                }}
+                title="Reset Kartu Stok & Riwayat Mutasi Bahan"
+                style={{ color: '#f87171', borderColor: 'rgba(239, 68, 68, 0.4)', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                <RotateCcw size={14} /> Reset Kartu Stok
+              </button>
+            )}
             <button
               className="btn btn-secondary"
               onClick={() => {
@@ -1214,72 +1302,330 @@ export default function KartuStok() {
           {/* ========================================================================= */}
           {!selectedIngId && (
             <div className="fade-in">
-              {/* Warehouse KPI Summary Cards */}
-              <div className="stat-cards mb-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
-                <div className="stat-card accent">
-                  <div className="stat-label">Gudang / Cabang Aktif</div>
-                  <div className="stat-value accent" style={{ fontSize: 18, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {currentOutlet?.name || 'Gudang Pusat'}
-                  </div>
-                  <div className="stat-sub">{currentOutlet?.is_main ? 'Gudang Distribusi Pusat' : 'Outlet Operasional Cabang'}</div>
-                </div>
-
-                {/* 🟢 Saldo Persediaan Aman (Positif) */}
-                <div className="stat-card ok" style={{ borderLeft: '4px solid #10b981' }}>
-                  <div className="stat-label" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ fontSize: 13 }}>🟢</span> Nilai Persediaan Aman (Positif)
-                  </div>
-                  <div className="stat-value ok" style={{ color: '#34d399' }}>
-                    {rupiah(summaryData?.summary?.total_safe_valuation ?? summaryData?.summary?.total_nilai ?? 0)}
-                  </div>
-                  <div className="stat-sub">
-                    {summaryData?.summary?.total_safe_items ?? filterCounts.SAFE} bahan dengan saldo fisik positif & aman
-                  </div>
-                </div>
-
-                {/* 🔴 Saldo Defisit / Stok Minus (Minus Rp) */}
+              {/* Warehouse KPI Summary Widgets */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))',
+                  gap: 12,
+                  marginBottom: 18,
+                }}
+              >
+                {/* WIDGET 1: GUDANG / CABANG AKTIF */}
                 <div
-                  className={`stat-card ${(summaryData?.summary?.total_negative_items || 0) > 0 ? 'danger' : ''}`}
                   style={{
-                    borderLeft: '4px solid #ef4444',
-                    background: (summaryData?.summary?.total_negative_items || 0) > 0 ? 'rgba(239, 68, 68, 0.08)' : undefined,
-                    borderColor: (summaryData?.summary?.total_negative_items || 0) > 0 ? 'rgba(239, 68, 68, 0.35)' : undefined
+                    background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.9) 100%)',
+                    border: '1px solid rgba(139, 92, 246, 0.25)',
+                    borderRadius: 14,
+                    padding: '14px 16px',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    boxShadow: '0 4px 18px rgba(0, 0, 0, 0.25)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
                   }}
                 >
-                  <div className="stat-label" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ fontSize: 13 }}>🔴</span> Defisit Stok Minus (Nota Urgent)
+                  <div style={{ position: 'absolute', top: -10, right: -10, width: 70, height: 70, borderRadius: '50%', background: 'radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, transparent 70%)', pointerEvents: 'none' }} />
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.05em', color: '#a78bfa', textTransform: 'uppercase' }}>
+                        Gudang / Cabang Aktif
+                      </span>
+                      <div style={{ width: 26, height: 26, borderRadius: 7, background: 'rgba(139, 92, 246, 0.15)', color: '#c084fc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Building2 size={14} />
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 17, fontWeight: 800, color: '#ffffff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {currentOutlet?.name || 'Gudang Pusat'}
+                    </div>
                   </div>
-                  <div className="stat-value danger" style={{ color: '#f87171' }}>
-                    {rupiah(summaryData?.summary?.total_deficit_valuation || 0)}
-                  </div>
-                  <div className="stat-sub" style={{ color: (summaryData?.summary?.total_negative_items || 0) > 0 ? '#fca5a5' : undefined }}>
-                    {(summaryData?.summary?.total_negative_items || 0) > 0
-                      ? `⚠️ ${summaryData?.summary?.total_negative_items} bahan minus (terpisah dari saldo persediaan aman)`
-                      : '✓ Tidak ada defisit stok minus'}
-                  </div>
-                </div>
-
-                {/* 🔷 Net Saldo Buku Persediaan */}
-                <div className="stat-card" style={{ borderLeft: '4px solid #6366f1' }}>
-                  <div className="stat-label" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ fontSize: 13 }}>🔷</span> Net Saldo Buku Persediaan
-                  </div>
-                  <div className="stat-value" style={{ color: '#818cf8' }}>
-                    {rupiah(summaryData?.summary?.net_total_valuation ?? summaryData?.summary?.total_nilai ?? 0)}
-                  </div>
-                  <div className="stat-sub">
-                    Saldo Bersih Persediaan = Positif + Minus
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#a78bfa' }} />
+                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentOutlet?.is_main ? 'Gudang Distribusi Pusat' : 'Outlet Operasional Cabang'}</span>
                   </div>
                 </div>
 
-                {/* ⚠️ Bahan Kritis / Menipis */}
-                <div className={`stat-card ${(summaryData?.summary?.total_low_stock || 0) > 0 ? 'warn' : 'ok'}`}>
-                  <div className="stat-label">Bahan Kritis / Menipis</div>
-                  <div className={`stat-value ${(summaryData?.summary?.total_low_stock || 0) > 0 ? 'warn' : 'ok'}`} style={{ color: (summaryData?.summary?.total_low_stock || 0) > 0 ? '#fbbf24' : '#34d399' }}>
-                    {summaryData?.summary?.total_low_stock || 0} <span style={{ fontSize: 14, fontWeight: 500 }}>Bahan</span>
+                {/* WIDGET 2: NILAI PERSEDIAAN AMAN */}
+                <div
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.9) 100%)',
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                    borderRadius: 14,
+                    padding: '14px 16px',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    boxShadow: '0 4px 18px rgba(0, 0, 0, 0.25)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <div style={{ position: 'absolute', top: -10, right: -10, width: 70, height: 70, borderRadius: '50%', background: 'radial-gradient(circle, rgba(16, 185, 129, 0.15) 0%, transparent 70%)', pointerEvents: 'none' }} />
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.05em', color: '#34d399', textTransform: 'uppercase' }}>
+                        Nilai Persediaan Aman
+                      </span>
+                      <div style={{ width: 26, height: 26, borderRadius: 7, background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <PackageCheck size={14} />
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 19, fontWeight: 800, color: '#34d399', fontFamily: 'monospace', letterSpacing: '-0.02em' }}>
+                      {rupiah(summaryData?.summary?.total_safe_valuation ?? summaryData?.summary?.total_nilai ?? 0)}
+                    </div>
                   </div>
-                  <div className="stat-sub">
-                    {(summaryData?.summary?.total_low_stock || 0) > 0 ? '⚠️ Memerlukan restock segera' : '✓ Seluruh stok di atas batas minimum'}
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#34d399' }} />
+                    <span>{summaryData?.summary?.total_safe_items ?? filterCounts.SAFE} bahan saldo positif & aman</span>
+                  </div>
+                </div>
+
+                {/* WIDGET 3: DEFISIT STOK MINUS */}
+                <div
+                  style={{
+                    background: (summaryData?.summary?.total_negative_items || 0) > 0
+                      ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, rgba(15, 23, 42, 0.9) 100%)'
+                      : 'linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.9) 100%)',
+                    border: (summaryData?.summary?.total_negative_items || 0) > 0 ? '1px solid rgba(239, 68, 68, 0.45)' : '1px solid rgba(239, 68, 68, 0.2)',
+                    borderRadius: 14,
+                    padding: '14px 16px',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    boxShadow: '0 4px 18px rgba(0, 0, 0, 0.25)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <div style={{ position: 'absolute', top: -10, right: -10, width: 70, height: 70, borderRadius: '50%', background: 'radial-gradient(circle, rgba(239, 68, 68, 0.15) 0%, transparent 70%)', pointerEvents: 'none' }} />
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.05em', color: '#f87171', textTransform: 'uppercase' }}>
+                        Defisit Stok Minus
+                      </span>
+                      <div style={{ width: 26, height: 26, borderRadius: 7, background: 'rgba(239, 68, 68, 0.15)', color: '#f87171', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <AlertOctagon size={14} />
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 19, fontWeight: 800, color: (summaryData?.summary?.total_negative_items || 0) > 0 ? '#f87171' : '#cbd5e1', fontFamily: 'monospace', letterSpacing: '-0.02em' }}>
+                      {rupiah(summaryData?.summary?.total_deficit_valuation || 0)}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: (summaryData?.summary?.total_negative_items || 0) > 0 ? '#fca5a5' : 'var(--text-secondary)', marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: (summaryData?.summary?.total_negative_items || 0) > 0 ? '#ef4444' : '#64748b' }} />
+                    <span>
+                      {(summaryData?.summary?.total_negative_items || 0) > 0
+                        ? `⚠️ ${summaryData?.summary?.total_negative_items} bahan defisit (nota urgent)`
+                        : '✓ Tidak ada defisit stok minus'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* WIDGET 4: NET SALDO BUKU PERSEDIAAN */}
+                <div
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.9) 100%)',
+                    border: '1px solid rgba(99, 102, 241, 0.3)',
+                    borderRadius: 14,
+                    padding: '14px 16px',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    boxShadow: '0 4px 18px rgba(0, 0, 0, 0.25)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <div style={{ position: 'absolute', top: -10, right: -10, width: 70, height: 70, borderRadius: '50%', background: 'radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%)', pointerEvents: 'none' }} />
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.05em', color: '#818cf8', textTransform: 'uppercase' }}>
+                        Net Saldo Persediaan
+                      </span>
+                      <div style={{ width: 26, height: 26, borderRadius: 7, background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Calculator size={14} />
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 19, fontWeight: 800, color: '#818cf8', fontFamily: 'monospace', letterSpacing: '-0.02em' }}>
+                      {rupiah(summaryData?.summary?.net_total_valuation ?? summaryData?.summary?.total_nilai ?? 0)}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#818cf8' }} />
+                    <span>Saldo Bersih = Positif + Minus</span>
+                  </div>
+                </div>
+
+                {/* WIDGET 5: TOTAL RUPIAH HPP (PEMAKAIAN BAHAN) [BARU] */}
+                <div
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(14, 165, 233, 0.08) 0%, rgba(15, 23, 42, 0.9) 100%)',
+                    border: '1px solid rgba(56, 189, 248, 0.35)',
+                    borderRadius: 14,
+                    padding: '14px 16px',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    boxShadow: '0 4px 18px rgba(0, 0, 0, 0.25)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <div style={{ position: 'absolute', top: -10, right: -10, width: 70, height: 70, borderRadius: '50%', background: 'radial-gradient(circle, rgba(56, 189, 248, 0.15) 0%, transparent 70%)', pointerEvents: 'none' }} />
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.05em', color: '#38bdf8', textTransform: 'uppercase' }}>
+                        Total Rupiah HPP (Pemakaian)
+                      </span>
+                      <div style={{ width: 26, height: 26, borderRadius: 7, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Flame size={14} />
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 19, fontWeight: 800, color: '#38bdf8', fontFamily: 'monospace', letterSpacing: '-0.02em' }}>
+                      {rupiah(summaryData?.summary?.total_hpp_rp || 0)}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#38bdf8' }} />
+                    <span>HPP Bahan Terpakai (POS & Olahan)</span>
+                  </div>
+                </div>
+
+                {/* WIDGET 6: TOTAL RUPIAH WASTED (RUSAK & TERBUANG) */}
+                <div
+                  onClick={() => navigate('/waste')}
+                  title="Klik untuk membuka pelacakan & log waste bahan / menu"
+                  style={{
+                    background: (summaryData?.summary?.total_waste_rp || 0) > 0
+                      ? 'linear-gradient(135deg, rgba(244, 63, 94, 0.12) 0%, rgba(15, 23, 42, 0.9) 100%)'
+                      : 'linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.9) 100%)',
+                    border: (summaryData?.summary?.total_waste_rp || 0) > 0 ? '1px solid rgba(244, 63, 94, 0.45)' : '1px solid rgba(244, 63, 94, 0.25)',
+                    borderRadius: 14,
+                    padding: '14px 16px',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    boxShadow: '0 4px 18px rgba(0, 0, 0, 0.25)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+                  onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+                >
+                  <div style={{ position: 'absolute', top: -10, right: -10, width: 70, height: 70, borderRadius: '50%', background: 'radial-gradient(circle, rgba(244, 63, 94, 0.15) 0%, transparent 70%)', pointerEvents: 'none' }} />
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.05em', color: '#fb7185', textTransform: 'uppercase' }}>
+                        Total Rupiah Wasted
+                      </span>
+                      <div style={{ width: 26, height: 26, borderRadius: 7, background: 'rgba(244, 63, 94, 0.15)', color: '#fb7185', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Trash2 size={14} />
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 19, fontWeight: 800, color: (summaryData?.summary?.total_waste_rp || 0) > 0 ? '#fb7185' : '#cbd5e1', fontFamily: 'monospace', letterSpacing: '-0.02em' }}>
+                      {rupiah(summaryData?.summary?.total_waste_rp || 0)}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: (summaryData?.summary?.total_waste_rp || 0) > 0 ? '#fca5a5' : 'var(--text-secondary)', marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: (summaryData?.summary?.total_waste_rp || 0) > 0 ? '#f43f5e' : '#64748b' }} />
+                    <span>
+                      {(summaryData?.summary?.total_waste_rp || 0) > 0
+                        ? `${summaryData?.summary?.total_waste_count ? `${summaryData.summary.total_waste_count} insiden · ` : ''}Bahan rusak/basi (Loss)`
+                        : '✓ Tidak ada bahan terbuang / rusak'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* WIDGET 7: MUTASI TRANSFER KELUAR / MASUK [BARU] */}
+                <div
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(15, 23, 42, 0.9) 100%)',
+                    border: '1px solid rgba(245, 158, 11, 0.35)',
+                    borderRadius: 14,
+                    padding: '14px 16px',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    boxShadow: '0 4px 18px rgba(0, 0, 0, 0.25)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <div style={{ position: 'absolute', top: -10, right: -10, width: 70, height: 70, borderRadius: '50%', background: 'radial-gradient(circle, rgba(245, 158, 11, 0.15) 0%, transparent 70%)', pointerEvents: 'none' }} />
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.05em', color: '#fbbf24', textTransform: 'uppercase' }}>
+                        Transfer Keluar / Masuk
+                      </span>
+                      <div style={{ width: 26, height: 26, borderRadius: 7, background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Truck size={14} />
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                      <div title="Transfer Masuk (+)" style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
+                        <span style={{ fontSize: 9.5, color: '#34d399', fontWeight: 800 }}>IN:</span>
+                        <span style={{ fontSize: 13.5, fontWeight: 800, color: '#34d399', fontFamily: 'monospace' }}>
+                          +{rupiah(summaryData?.summary?.total_transfer_in_rp || 0)}
+                        </span>
+                      </div>
+                      <div title="Transfer Keluar (-)" style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
+                        <span style={{ fontSize: 9.5, color: '#f87171', fontWeight: 800 }}>OUT:</span>
+                        <span style={{ fontSize: 13.5, fontWeight: 800, color: '#f87171', fontFamily: 'monospace' }}>
+                          -{rupiah(summaryData?.summary?.total_transfer_out_rp || 0)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#fbbf24' }} />
+                      <span>{summaryData?.summary?.total_transfer_in_count || 0} In · {summaryData?.summary?.total_transfer_out_count || 0} Out</span>
+                    </div>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: '#cbd5e1' }}>
+                      Net: {rupiah((summaryData?.summary?.total_transfer_in_rp || 0) - (summaryData?.summary?.total_transfer_out_rp || 0))}
+                    </span>
+                  </div>
+                </div>
+
+                {/* WIDGET 7: BAHAN KRITIS / MENIPIS */}
+                <div
+                  style={{
+                    background: (summaryData?.summary?.total_low_stock || 0) > 0
+                      ? 'linear-gradient(135deg, rgba(234, 179, 8, 0.12) 0%, rgba(15, 23, 42, 0.9) 100%)'
+                      : 'linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.9) 100%)',
+                    border: (summaryData?.summary?.total_low_stock || 0) > 0 ? '1px solid rgba(234, 179, 8, 0.45)' : '1px solid rgba(234, 179, 8, 0.2)',
+                    borderRadius: 14,
+                    padding: '14px 16px',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    boxShadow: '0 4px 18px rgba(0, 0, 0, 0.25)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <div style={{ position: 'absolute', top: -10, right: -10, width: 70, height: 70, borderRadius: '50%', background: 'radial-gradient(circle, rgba(234, 179, 8, 0.15) 0%, transparent 70%)', pointerEvents: 'none' }} />
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.05em', color: '#facc15', textTransform: 'uppercase' }}>
+                        Bahan Kritis / Menipis
+                      </span>
+                      <div style={{ width: 26, height: 26, borderRadius: 7, background: 'rgba(234, 179, 8, 0.15)', color: '#facc15', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <AlertTriangle size={14} />
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 19, fontWeight: 800, color: (summaryData?.summary?.total_low_stock || 0) > 0 ? '#facc15' : '#34d399', letterSpacing: '-0.02em' }}>
+                      {summaryData?.summary?.total_low_stock || 0} <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Bahan</span>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: (summaryData?.summary?.total_low_stock || 0) > 0 ? '#fde047' : 'var(--text-secondary)', marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: (summaryData?.summary?.total_low_stock || 0) > 0 ? '#eab308' : '#34d399' }} />
+                    <span>
+                      {(summaryData?.summary?.total_low_stock || 0) > 0 ? '⚠️ Memerlukan restock segera' : '✓ Seluruh stok di atas batas minimum'}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -1440,26 +1786,29 @@ export default function KartuStok() {
                     <table>
                       <thead>
                         <tr>
-                          <th style={{ width: 45 }} className="center">No</th>
-                          <th style={{ width: 95 }}>Kode</th>
-                          <th style={{ minWidth: 200 }}>Nama Bahan Baku</th>
-                          <th style={{ width: 100 }}>Kategori</th>
-                          <th className="right" style={{ width: 110 }}>Stok Awal ({period.from})</th>
-                          <th className="right" style={{ width: 95 }}>Masuk (+)</th>
-                          <th className="right" style={{ width: 95 }}>Keluar (-)</th>
-                          <th className="right" style={{ width: 115 }}>Stok Akhir ({period.to})</th>
-                          <th style={{ width: 75 }}>Satuan</th>
-                          <th className="right" style={{ width: 120 }}>Harga Satuan</th>
-                          <th className="right" style={{ width: 145 }}>Nilai Stok (Rp)</th>
-                          <th className="right" style={{ width: 85 }}>Stok Min</th>
-                          <th className="center" style={{ width: 110 }}>Status</th>
-                          <th className="center" style={{ width: 115 }}>Aksi</th>
+                          <th style={{ width: 45 }} className="center">NO</th>
+                          <th style={{ width: 95 }}>KODE</th>
+                          <th style={{ minWidth: 190 }}>NAMA BAHAN BAKU</th>
+                          <th style={{ width: 95 }}>KATEGORI</th>
+                          <th style={{ width: 75 }}>SATUAN</th>
+                          <th className="right" style={{ width: 105 }}>STOK AWAL ({period.from})</th>
+                          <th className="right" style={{ width: 125 }}>NILAI SALDO AWAL (RP)</th>
+                          <th className="right" style={{ width: 120 }}>HARGA SATUAN</th>
+                          <th className="right" style={{ width: 95 }}>MASUK (+)</th>
+                          <th className="right" style={{ width: 95 }}>KELUAR (-)</th>
+                          <th className="right" style={{ width: 130 }}>NILAI MASUK (+) (RP)</th>
+                          <th className="right" style={{ width: 130 }}>NILAI KELUAR (-) (RP)</th>
+                          <th className="right" style={{ width: 120 }}>SALDO BERJALAN ({period.to})</th>
+                          <th className="right" style={{ width: 135 }}>NILAI SALDO (RP)</th>
+                          <th className="right" style={{ width: 80 }}>STOK MIN</th>
+                          <th className="center" style={{ width: 100 }}>STATUS</th>
+                          <th className="center" style={{ width: 110 }}>AKSI</th>
                         </tr>
                       </thead>
                       <tbody>
                         {filteredSummaryItems.length === 0 ? (
                           <tr>
-                            <td colSpan={14} style={{ textAlign: 'center', padding: '36px 0', color: 'var(--text-muted)' }}>
+                            <td colSpan={17} style={{ textAlign: 'center', padding: '36px 0', color: 'var(--text-muted)' }}>
                               Tidak ada item yang sesuai dengan filter atau kriteria pencarian.
                             </td>
                           </tr>
@@ -1471,6 +1820,17 @@ export default function KartuStok() {
 
                             const statusClass = isNegative ? 'pill-danger' : (isEmpty ? 'pill-warn' : (isLow ? 'pill-warn' : 'pill-ok'));
                             const statusLabel = isNegative ? 'STOK MINUS' : (isEmpty ? 'HABIS' : (isLow ? 'MENIPIS' : 'AMAN'));
+
+                            const unitPrice = it.harga_satuan || (it.harga_beli && it.konversi ? it.harga_beli / it.konversi : 0);
+                            const nilaiSaldoAwalVal = it.nilai_saldo_awal !== undefined && it.nilai_saldo_awal !== null
+                              ? Number(it.nilai_saldo_awal)
+                              : (Number(it.stok_awal || 0) * unitPrice);
+                            const nominalMasukVal = it.nominal_masuk !== undefined && it.nominal_masuk !== null
+                              ? Number(it.nominal_masuk)
+                              : (Number(it.total_masuk || 0) * unitPrice);
+                            const nominalKeluarVal = it.nominal_keluar !== undefined && it.nominal_keluar !== null
+                              ? Number(it.nominal_keluar)
+                              : (Number(it.total_keluar || 0) * unitPrice);
 
                             return (
                               <tr
@@ -1576,8 +1936,22 @@ export default function KartuStok() {
                                     );
                                   })()}
                                 </td>
+                                <td style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
+                                  {it.unit_pakai}
+                                </td>
                                 <td className="mono right" style={{ color: Number(it.stok_awal) < 0 ? 'var(--danger)' : 'var(--text-secondary)' }}>
                                   {num(it.stok_awal)}
+                                </td>
+                                <td className="mono right" style={{ fontSize: 12, fontWeight: 600, color: Number(it.stok_awal) < 0 ? 'var(--danger)' : 'var(--text-secondary)' }}>
+                                  {rupiah(nilaiSaldoAwalVal)}
+                                </td>
+                                <td className="mono right" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                                  <div style={{ display: 'inline-flex', alignItems: 'baseline', gap: 3, justifyContent: 'flex-end' }}>
+                                    <span style={{ fontWeight: 600, color: '#ffffff' }}>
+                                      {rupiah(unitPrice)}
+                                    </span>
+                                    <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>/{it.unit_pakai}</span>
+                                  </div>
                                 </td>
                                 <td className="mono right" style={{ color: it.total_masuk > 0 ? 'var(--ok)' : 'var(--text-muted)', fontWeight: it.total_masuk > 0 ? 600 : 400 }}>
                                   {it.total_masuk > 0 ? `+${num(it.total_masuk)}` : '0'}
@@ -1585,19 +1959,24 @@ export default function KartuStok() {
                                 <td className="mono right" style={{ color: it.total_keluar > 0 ? 'var(--danger)' : 'var(--text-muted)', fontWeight: it.total_keluar > 0 ? 600 : 400 }}>
                                   {it.total_keluar > 0 ? `-${num(it.total_keluar)}` : '0'}
                                 </td>
-                                <td className="mono right" style={{ fontWeight: 700, fontSize: 13.5, color: isNegative ? 'var(--danger)' : (isLow ? 'var(--warn)' : 'var(--accent-bright)') }}>
-                                  {num(it.stok_akhir)}
+                                <td className="mono right" style={{
+                                  fontWeight: 700,
+                                  fontSize: 12,
+                                  color: it.total_masuk > 0 ? '#34d399' : 'var(--text-muted)'
+                                }}>
+                                  {it.total_masuk > 0 ? `+${rupiah(nominalMasukVal)}` : '—'}
                                 </td>
-                                <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-                                  {it.unit_pakai}
+                                <td className="mono right" style={{
+                                  fontWeight: 700,
+                                  fontSize: 12,
+                                  color: it.total_keluar > 0 ? '#f87171' : 'var(--text-muted)'
+                                }}>
+                                  {it.total_keluar > 0 ? `-${rupiah(nominalKeluarVal)}` : '—'}
                                 </td>
-                                {/* Harga Satuan */}
-                                <td className="mono right" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                                  {rupiah(it.harga_satuan || (it.harga_beli && it.konversi ? it.harga_beli / it.konversi : 0))}
-                                  <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 2 }}>/{it.unit_pakai}</span>
+                                <td className="mono right" style={{ fontWeight: 700, fontSize: 13, color: isNegative ? 'var(--danger)' : (isLow ? 'var(--warn)' : 'var(--accent-bright)') }}>
+                                  {num(it.stok_akhir)} {it.unit_pakai}
                                 </td>
-                                {/* Nilai Stok (Rp) */}
-                                <td className="mono right" style={{ fontWeight: 800, fontSize: 13, color: isNegative ? 'var(--danger)' : '#34d399' }} title={isNegative ? "Defisit Nilai Persediaan Stok Minus (Terpisah dari Saldo Aman)" : "Estimasi Nilai Persediaan Stok Aman"}>
+                                <td className="mono right" style={{ fontWeight: 800, fontSize: 12.5, color: isNegative ? 'var(--danger)' : '#34d399' }} title={isNegative ? "Defisit Nilai Persediaan Stok Minus (Terpisah dari Saldo Aman)" : "Estimasi Nilai Persediaan Stok Aman"}>
                                   {rupiah(it.nilai_stok || 0)}
                                   {isNegative && (
                                     <div style={{ fontSize: 9.5, color: 'var(--danger)', fontWeight: 700 }}>
@@ -1634,27 +2013,64 @@ export default function KartuStok() {
                         const totalDeficitVal = negativeItems.reduce((acc, x) => acc + Number(x.saldo_minus_rp ?? (Number(x.stok_akhir) < 0 ? x.nilai_stok : 0) ?? 0), 0);
                         const netVal = totalSafeVal + totalDeficitVal;
 
+                        const getItemPrice = (x) => x.harga_satuan || (x.harga_beli && x.konversi ? x.harga_beli / x.konversi : 0);
+                        const getItemAwalNom = (x) => x.nilai_saldo_awal !== undefined && x.nilai_saldo_awal !== null ? Number(x.nilai_saldo_awal) : (Number(x.stok_awal || 0) * getItemPrice(x));
+                        const getItemMasukNom = (x) => x.nominal_masuk !== undefined && x.nominal_masuk !== null ? Number(x.nominal_masuk) : (Number(x.total_masuk || 0) * getItemPrice(x));
+                        const getItemKeluarNom = (x) => x.nominal_keluar !== undefined && x.nominal_keluar !== null ? Number(x.nominal_keluar) : (Number(x.total_keluar || 0) * getItemPrice(x));
+
+                        const safeStokAwal = safeItems.reduce((acc, x) => acc + Number(x.stok_awal || 0), 0);
+                        const safeNilaiAwal = safeItems.reduce((acc, x) => acc + getItemAwalNom(x), 0);
+                        const safeTotalMasuk = safeItems.reduce((acc, x) => acc + Number(x.total_masuk || 0), 0);
+                        const safeTotalKeluar = safeItems.reduce((acc, x) => acc + Number(x.total_keluar || 0), 0);
+                        const safeNomMasuk = safeItems.reduce((acc, x) => acc + getItemMasukNom(x), 0);
+                        const safeNomKeluar = safeItems.reduce((acc, x) => acc + getItemKeluarNom(x), 0);
+                        const safeStokAkhir = safeItems.reduce((acc, x) => acc + Number(x.stok_akhir || 0), 0);
+
+                        const defStokAwal = negativeItems.reduce((acc, x) => acc + Number(x.stok_awal || 0), 0);
+                        const defNilaiAwal = negativeItems.reduce((acc, x) => acc + getItemAwalNom(x), 0);
+                        const defTotalMasuk = negativeItems.reduce((acc, x) => acc + Number(x.total_masuk || 0), 0);
+                        const defTotalKeluar = negativeItems.reduce((acc, x) => acc + Number(x.total_keluar || 0), 0);
+                        const defNomMasuk = negativeItems.reduce((acc, x) => acc + getItemMasukNom(x), 0);
+                        const defNomKeluar = negativeItems.reduce((acc, x) => acc + getItemKeluarNom(x), 0);
+                        const defStokAkhir = negativeItems.reduce((acc, x) => acc + Number(x.stok_akhir || 0), 0);
+
+                        const netStokAwal = filteredSummaryItems.reduce((acc, x) => acc + Number(x.stok_awal || 0), 0);
+                        const netNilaiAwal = filteredSummaryItems.reduce((acc, x) => acc + getItemAwalNom(x), 0);
+                        const netTotalMasuk = filteredSummaryItems.reduce((acc, x) => acc + Number(x.total_masuk || 0), 0);
+                        const netTotalKeluar = filteredSummaryItems.reduce((acc, x) => acc + Number(x.total_keluar || 0), 0);
+                        const netNomMasuk = filteredSummaryItems.reduce((acc, x) => acc + getItemMasukNom(x), 0);
+                        const netNomKeluar = filteredSummaryItems.reduce((acc, x) => acc + getItemKeluarNom(x), 0);
+                        const netStokAkhir = filteredSummaryItems.reduce((acc, x) => acc + Number(x.stok_akhir || 0), 0);
+
                         return (
                           <tfoot>
                             {/* Summary Tier 1: Total Saldo Persediaan Aman (Positif) */}
                             <tr style={{ background: 'rgba(16, 185, 129, 0.06)', fontWeight: 700, borderTop: '2px solid var(--border)' }}>
-                              <td colSpan={4} style={{ textAlign: 'right', padding: '9px 14px', fontSize: 12, color: '#34d399' }}>
+                              <td colSpan={5} style={{ textAlign: 'right', padding: '9px 14px', fontSize: 12, color: '#34d399' }}>
                                 🟢 TOTAL PERSEDIAAN AMAN ({safeItems.length} ITEM):
                               </td>
                               <td className="mono right" style={{ color: 'var(--text-secondary)' }}>
-                                {num(safeItems.reduce((acc, x) => acc + Number(x.stok_awal || 0), 0))}
+                                {num(safeStokAwal)}
                               </td>
+                              <td className="mono right" style={{ color: 'var(--text-secondary)' }}>
+                                {rupiah(safeNilaiAwal)}
+                              </td>
+                              <td></td>
                               <td className="mono right" style={{ color: 'var(--ok)' }}>
-                                +{num(safeItems.reduce((acc, x) => acc + Number(x.total_masuk || 0), 0))}
+                                +{num(safeTotalMasuk)}
                               </td>
                               <td className="mono right" style={{ color: 'var(--danger)' }}>
-                                -{num(safeItems.reduce((acc, x) => acc + Number(x.total_keluar || 0), 0))}
+                                -{num(safeTotalKeluar)}
+                              </td>
+                              <td className="mono right" style={{ color: 'var(--ok)', fontWeight: 700 }}>
+                                +{rupiah(safeNomMasuk)}
+                              </td>
+                              <td className="mono right" style={{ color: 'var(--danger)', fontWeight: 700 }}>
+                                -{rupiah(safeNomKeluar)}
                               </td>
                               <td className="mono right" style={{ color: '#34d399', fontWeight: 800 }}>
-                                {num(safeItems.reduce((acc, x) => acc + Number(x.stok_akhir || 0), 0))}
+                                {num(safeStokAkhir)}
                               </td>
-                              <td></td>
-                              <td></td>
                               <td className="mono right" style={{ color: '#34d399', fontSize: 13, fontWeight: 800 }}>
                                 {rupiah(totalSafeVal)}
                               </td>
@@ -1666,23 +2082,31 @@ export default function KartuStok() {
                             {/* Summary Tier 2: Total Defisit Stok Minus (Hanya Tampil Jika Ada Item Minus) */}
                             {negativeItems.length > 0 && (
                               <tr style={{ background: 'rgba(239, 68, 68, 0.09)', fontWeight: 700, borderTop: '1px solid rgba(239, 68, 68, 0.3)' }}>
-                                <td colSpan={4} style={{ textAlign: 'right', padding: '9px 14px', fontSize: 12, color: '#f87171' }}>
+                                <td colSpan={5} style={{ textAlign: 'right', padding: '9px 14px', fontSize: 12, color: '#f87171' }}>
                                   🔴 TOTAL DEFISIT STOK MINUS ({negativeItems.length} ITEM):
                                 </td>
                                 <td className="mono right" style={{ color: '#fca5a5' }}>
-                                  {num(negativeItems.reduce((acc, x) => acc + Number(x.stok_awal || 0), 0))}
+                                  {num(defStokAwal)}
                                 </td>
+                                <td className="mono right" style={{ color: '#fca5a5' }}>
+                                  {rupiah(defNilaiAwal)}
+                                </td>
+                                <td></td>
                                 <td className="mono right" style={{ color: 'var(--ok)' }}>
-                                  +{num(negativeItems.reduce((acc, x) => acc + Number(x.total_masuk || 0), 0))}
+                                  +{num(defTotalMasuk)}
                                 </td>
                                 <td className="mono right" style={{ color: 'var(--danger)' }}>
-                                  -{num(negativeItems.reduce((acc, x) => acc + Number(x.total_keluar || 0), 0))}
+                                  -{num(defTotalKeluar)}
+                                </td>
+                                <td className="mono right" style={{ color: 'var(--ok)', fontWeight: 700 }}>
+                                  +{rupiah(defNomMasuk)}
+                                </td>
+                                <td className="mono right" style={{ color: 'var(--danger)', fontWeight: 700 }}>
+                                  -{rupiah(defNomKeluar)}
                                 </td>
                                 <td className="mono right" style={{ color: 'var(--danger)', fontWeight: 800 }}>
-                                  {num(negativeItems.reduce((acc, x) => acc + Number(x.stok_akhir || 0), 0))}
+                                  {num(defStokAkhir)}
                                 </td>
-                                <td></td>
-                                <td></td>
                                 <td className="mono right" style={{ color: 'var(--danger)', fontSize: 13, fontWeight: 800 }}>
                                   {rupiah(totalDeficitVal)}
                                 </td>
@@ -1694,23 +2118,31 @@ export default function KartuStok() {
 
                             {/* Summary Tier 3: Net Total Saldo Keseluruhan */}
                             <tr style={{ background: 'rgba(255, 255, 255, 0.04)', fontWeight: 800, borderTop: '2px solid var(--border-accent)' }}>
-                              <td colSpan={4} style={{ textAlign: 'right', padding: '10px 14px', fontSize: 12.5, color: '#818cf8' }}>
+                              <td colSpan={5} style={{ textAlign: 'right', padding: '10px 14px', fontSize: 12.5, color: '#818cf8' }}>
                                 🔷 NET SALDO BUKU PERSEDIAAN ({filteredSummaryItems.length} ITEM):
                               </td>
                               <td className="mono right" style={{ color: 'var(--text-secondary)' }}>
-                                {num(filteredSummaryItems.reduce((acc, x) => acc + Number(x.stok_awal || 0), 0))}
+                                {num(netStokAwal)}
                               </td>
+                              <td className="mono right" style={{ color: 'var(--text-secondary)' }}>
+                                {rupiah(netNilaiAwal)}
+                              </td>
+                              <td></td>
                               <td className="mono right" style={{ color: 'var(--ok)' }}>
-                                +{num(filteredSummaryItems.reduce((acc, x) => acc + Number(x.total_masuk || 0), 0))}
+                                +{num(netTotalMasuk)}
                               </td>
                               <td className="mono right" style={{ color: 'var(--danger)' }}>
-                                -{num(filteredSummaryItems.reduce((acc, x) => acc + Number(x.total_keluar || 0), 0))}
+                                -{num(netTotalKeluar)}
+                              </td>
+                              <td className="mono right" style={{ color: 'var(--ok)', fontWeight: 700 }}>
+                                +{rupiah(netNomMasuk)}
+                              </td>
+                              <td className="mono right" style={{ color: 'var(--danger)', fontWeight: 700 }}>
+                                -{rupiah(netNomKeluar)}
                               </td>
                               <td className="mono right" style={{ color: 'var(--accent-bright)', fontSize: 13.5 }}>
-                                {num(filteredSummaryItems.reduce((acc, x) => acc + Number(x.stok_akhir || 0), 0))}
+                                {num(netStokAkhir)}
                               </td>
-                              <td></td>
-                              <td></td>
                               <td className="mono right" style={{ color: '#818cf8', fontSize: 13.5, fontWeight: 800 }}>
                                 {rupiah(netVal)}
                               </td>
@@ -1859,7 +2291,14 @@ export default function KartuStok() {
                       <div className="stat-value danger">
                         -{num(stockCard.total_keluar)} <span style={{ fontSize: 14, fontWeight: 500 }}>{stockCard.ingredient.unit_pakai}</span>
                       </div>
-                      <div className="stat-sub">POS: {num(stockCard.total_penjualan)} · Waste: {num(stockCard.total_waste)}</div>
+                      <div className="stat-sub">
+                        POS: {num(stockCard.total_penjualan)} · Waste: {num(stockCard.total_waste)}
+                        {Number(stockCard.total_waste_nominal || 0) > 0 && (
+                          <span style={{ color: '#fb7185', fontWeight: 700, marginLeft: 4 }}>
+                            ({rupiah(stockCard.total_waste_nominal)})
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Saldo Akhir */}
@@ -2001,8 +2440,10 @@ export default function KartuStok() {
                         <th>KETERANGAN / AKTIVITAS</th>
                         <th style={{ width: 135 }}>TIPE MUTASI</th>
                         <th className="right" style={{ width: 140 }}>HARGA SATUAN</th>
-                        <th className="right" style={{ width: 110 }}>MASUK (+)</th>
-                        <th className="right" style={{ width: 110 }}>KELUAR (-)</th>
+                        <th className="right" style={{ width: 105 }}>MASUK (+)</th>
+                        <th className="right" style={{ width: 105 }}>KELUAR (-)</th>
+                        <th className="right" style={{ width: 135 }}>NILAI MASUK (+) (RP)</th>
+                        <th className="right" style={{ width: 135 }}>NILAI KELUAR (-) (RP)</th>
                         <th className="right" style={{ width: 130 }}>SALDO BERJALAN</th>
                         <th className="right" style={{ width: 145 }}>NILAI SALDO (RP)</th>
                         <th style={{ minWidth: 160 }}>PETUGAS / AKSI</th>
@@ -2021,16 +2462,18 @@ export default function KartuStok() {
                           ? Number(stockCard.nilai_saldo_awal)
                           : (Number(stockCard?.stok_awal || 0) * initialOpeningCostPerPakai);
 
+                        const displayInitialDate = stockCard?.tanggal_saldo_awal || period.from;
+
                         return (
                           <tr style={{ background: isOpeningNegative ? 'rgba(239, 68, 68, 0.08)' : 'var(--accent-dim)', fontStyle: 'italic' }}>
                             <td className="mono center">—</td>
-                            <td className="mono" style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{period.from}</td>
+                            <td className="mono" style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{displayInitialDate}</td>
                             <td><span style={{ fontSize: 11, color: isOpeningNegative ? '#f87171' : 'var(--accent-bright)', fontWeight: 600 }}>{stockCard?.outlet_name || currentOutlet?.name}</span></td>
                             <td className="mono" style={{ color: 'var(--text-muted)' }}>SALDO-AWAL</td>
                             <td style={{ fontWeight: 600, color: isOpeningNegative ? '#f87171' : 'var(--accent)' }}>
-                              Saldo Awal per {period.from} {isOpeningNegative ? '(Defisit Mines)' : ''}
+                              Saldo Pembuka per {displayInitialDate} {isOpeningNegative ? '(Defisit Mines)' : ''}
                             </td>
-                            <td><span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Saldo Awal</span></td>
+                            <td><span style={{ fontSize: 11, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: 4 }}>Saldo Pembuka</span></td>
                             <td className="mono right" style={{ fontSize: 12.5 }}>
                               <div style={{ display: 'inline-flex', alignItems: 'baseline', gap: 3, justifyContent: 'flex-end' }}>
                                 <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>
@@ -2041,6 +2484,8 @@ export default function KartuStok() {
                             </td>
                             <td className="mono right">—</td>
                             <td className="mono right">—</td>
+                            <td className="mono right" style={{ color: 'var(--text-muted)' }}>—</td>
+                            <td className="mono right" style={{ color: 'var(--text-muted)' }}>—</td>
                             <td className="mono right" style={{ fontWeight: 700, color: isOpeningNegative ? 'var(--danger)' : 'var(--accent)', fontSize: 13.5 }}>
                               {num(stockCard?.stok_awal)} {selectedIng?.unit_pakai}
                             </td>
@@ -2080,6 +2525,22 @@ export default function KartuStok() {
                             ? Number(row.balance_nominal)
                             : (Number(row.balance || 0) * unitPriceVal);
 
+                          const mutationInNominal = row.qty_in > 0
+                            ? (row.in_nominal !== undefined && row.in_nominal !== null && Number(row.in_nominal) > 0
+                              ? Number(row.in_nominal)
+                              : (row.total_price !== undefined && row.total_price !== null && Number(row.total_price) > 0
+                                ? Number(row.total_price)
+                                : (Number(row.qty_in) * unitPriceVal)))
+                            : 0;
+
+                          const mutationOutNominal = row.qty_out > 0
+                            ? (row.out_nominal !== undefined && row.out_nominal !== null && Number(row.out_nominal) > 0
+                              ? Number(row.out_nominal)
+                              : (row.total_price !== undefined && row.total_price !== null && Number(row.total_price) > 0
+                                ? Number(row.total_price)
+                                : (Number(row.qty_out) * unitPriceVal)))
+                            : 0;
+
                           return (
                             <tr
                               key={row.id || idx}
@@ -2116,7 +2577,7 @@ export default function KartuStok() {
                                     onClick={() => handleOpenShiftDetail(row.shift_id)}
                                     title="Klik untuk melihat rincian transaksi POS di shift ini"
                                   >
-                                    <Eye size={12} /> {row.ref}
+                                    <Eye size={12} /> {row.shift_name || (row.ref ? String(row.ref).replace(/^Shift #(\d+)/i, 'Shift $1') : (row.shift_id ? `Shift ${row.shift_id}` : 'Shift'))}
                                   </button>
                                 ) : (
                                   <span style={{ color: 'var(--accent-bright)' }}>{row.ref}</span>
@@ -2168,6 +2629,20 @@ export default function KartuStok() {
                               </td>
                               <td className="mono right" style={{ color: row.qty_out > 0 ? 'var(--danger)' : 'var(--text-muted)', fontWeight: row.qty_out > 0 ? 600 : 400 }}>
                                 {row.qty_out > 0 ? `-${num(row.qty_out)}` : '—'}
+                              </td>
+                              <td className="mono right" style={{
+                                fontWeight: 700,
+                                fontSize: 12.5,
+                                color: row.qty_in > 0 ? '#34d399' : 'var(--text-muted)'
+                              }}>
+                                {row.qty_in > 0 ? `+${rupiah(mutationInNominal)}` : '—'}
+                              </td>
+                              <td className="mono right" style={{
+                                fontWeight: 700,
+                                fontSize: 12.5,
+                                color: row.qty_out > 0 ? '#f87171' : 'var(--text-muted)'
+                              }}>
+                                {row.qty_out > 0 ? `-${rupiah(mutationOutNominal)}` : '—'}
                               </td>
                               <td className="mono right" style={{ fontWeight: 700, fontSize: 13, color: isNegativeRow ? 'var(--danger)' : 'var(--text-primary)' }}>
                                 {num(row.balance)} {selectedIng?.unit_pakai}
@@ -2221,40 +2696,68 @@ export default function KartuStok() {
                         });
                       })() : (
                         <tr>
-                          <td colSpan={12} style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--text-muted)' }}>
+                          <td colSpan={14} style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--text-muted)' }}>
                             Tidak ada transaksi mutasi stok yang sesuai dengan filter.
                           </td>
                         </tr>
                       )}
                     </tbody>
                     {/* Table Footer with Totals */}
-                    {stockCard && (
-                      <tfoot>
-                        <tr style={{ background: 'rgba(255,255,255,0.03)', fontWeight: 700, borderTop: '2px solid var(--border-strong)' }}>
-                          <td colSpan={7} style={{ textTransform: 'uppercase', letterSpacing: '0.04em', fontSize: 11, color: 'var(--text-secondary)' }}>
-                            Total Periode ({period.from} s/d {period.to})
-                          </td>
-                          <td className="mono right" style={{ color: 'var(--ok)', fontSize: 13 }}>
-                            +{num(stockCard.total_masuk)}
-                          </td>
-                          <td className="mono right" style={{ color: 'var(--danger)', fontSize: 13 }}>
-                            -{num(stockCard.total_keluar)}
-                          </td>
-                          <td className="mono right" style={{ color: stockCard.stok_akhir < 0 ? 'var(--danger)' : 'var(--accent)', fontSize: 14, fontWeight: 800 }}>
-                            {num(stockCard.stok_akhir)} {selectedIng?.unit_pakai}
-                          </td>
-                          <td className="mono right" style={{ color: stockCard.stok_akhir < 0 ? 'var(--danger)' : '#34d399', fontSize: 13.5, fontWeight: 800 }}>
-                            {rupiah(stockCard.nilai_stok_akhir || 0)}
-                            {stockCard.stok_akhir < 0 && (
-                              <div style={{ fontSize: 9.5, color: 'var(--danger)', fontWeight: 700 }}>
-                                (Defisit Mines)
-                              </div>
-                            )}
-                          </td>
-                          <td></td>
-                        </tr>
-                      </tfoot>
-                    )}
+                    {stockCard && (() => {
+                      const fallbackPrice = (Number(stockCard?.ingredient?.harga ?? selectedIng?.harga ?? 0)) / Math.max(Number(selectedIng?.konversi || 1), 1);
+                      let totInNom = 0;
+                      let totOutNom = 0;
+                      filteredDetailRows.forEach(r => {
+                        let up = fallbackPrice;
+                        if (r.cost_after && Number(r.cost_after) > 0) up = Number(r.cost_after);
+                        else if (r.cost_before && Number(r.cost_before) > 0) up = Number(r.cost_before);
+
+                        if (r.qty_in > 0) {
+                          totInNom += (r.in_nominal !== undefined && Number(r.in_nominal) > 0
+                            ? Number(r.in_nominal)
+                            : (r.total_price !== undefined && Number(r.total_price) > 0 ? Number(r.total_price) : Number(r.qty_in) * up));
+                        }
+                        if (r.qty_out > 0) {
+                          totOutNom += (r.out_nominal !== undefined && Number(r.out_nominal) > 0
+                            ? Number(r.out_nominal)
+                            : (r.total_price !== undefined && Number(r.total_price) > 0 ? Number(r.total_price) : Number(r.qty_out) * up));
+                        }
+                      });
+
+                      return (
+                        <tfoot>
+                          <tr style={{ background: 'rgba(255,255,255,0.03)', fontWeight: 700, borderTop: '2px solid var(--border-strong)' }}>
+                            <td colSpan={7} style={{ textTransform: 'uppercase', letterSpacing: '0.04em', fontSize: 11, color: 'var(--text-secondary)' }}>
+                              Total Periode ({period.from} s/d {period.to})
+                            </td>
+                            <td className="mono right" style={{ color: 'var(--ok)', fontSize: 13 }}>
+                              +{num(stockCard.total_masuk)}
+                            </td>
+                            <td className="mono right" style={{ color: 'var(--danger)', fontSize: 13 }}>
+                              -{num(stockCard.total_keluar)}
+                            </td>
+                            <td className="mono right" style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--ok)' }}>
+                              +{rupiah(totInNom)}
+                            </td>
+                            <td className="mono right" style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--danger)' }}>
+                              -{rupiah(totOutNom)}
+                            </td>
+                            <td className="mono right" style={{ color: stockCard.stok_akhir < 0 ? 'var(--danger)' : 'var(--accent)', fontSize: 14, fontWeight: 800 }}>
+                              {num(stockCard.stok_akhir)} {selectedIng?.unit_pakai}
+                            </td>
+                            <td className="mono right" style={{ color: stockCard.stok_akhir < 0 ? 'var(--danger)' : '#34d399', fontSize: 13.5, fontWeight: 800 }}>
+                              {rupiah(stockCard.nilai_stok_akhir || 0)}
+                              {stockCard.stok_akhir < 0 && (
+                                <div style={{ fontSize: 9.5, color: 'var(--danger)', fontWeight: 700 }}>
+                                  (Defisit Mines)
+                                </div>
+                              )}
+                            </td>
+                            <td></td>
+                          </tr>
+                        </tfoot>
+                      );
+                    })()}
                   </table>
                 </div>
               </div>
@@ -3811,7 +4314,7 @@ export default function KartuStok() {
             <div className="modal-header">
               <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Eye size={18} style={{ color: 'var(--accent-bright)' }} />
-                Rincian Transaksi Shift #{shiftModal} — {selectedIng?.name}
+                Rincian Transaksi {shiftModalData?.shift?.shift_name || (shiftModal ? `Shift ${shiftModal}` : '')} — {selectedIng?.name}
               </div>
               <button className="btn btn-ghost btn-icon" onClick={() => setShiftModal(null)}>
                 <X size={18} />
@@ -3828,7 +4331,7 @@ export default function KartuStok() {
                     <div style={{ padding: '10px 12px', background: 'rgba(15, 20, 42, 0.6)', border: '1px solid var(--border)', borderRadius: 10 }}>
                       <div style={{ fontSize: 10.5, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Sesi Shift</div>
                       <div style={{ fontWeight: 700, fontSize: 13, marginTop: 2, color: '#ffffff' }}>
-                        {shiftModalData?.shift?.shift_name || `Shift #${shiftModal}`}
+                        {shiftModalData?.shift?.shift_name || `Shift ${shiftModal}`}
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                         Kasir: {shiftModalData?.shift?.user?.name || 'Kasir'}
@@ -4033,8 +4536,10 @@ export default function KartuStok() {
                   <th style={{ textAlign: 'left', border: '1px solid #000000', padding: '4px 6px' }}>KETERANGAN / AKTIVITAS</th>
                   <th style={{ width: 90, textAlign: 'left', border: '1px solid #000000', padding: '4px 6px' }}>TIPE</th>
                   <th style={{ width: 90, textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>HARGA SATUAN</th>
-                  <th style={{ width: 75, textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>MASUK (+)</th>
-                  <th style={{ width: 75, textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>KELUAR (-)</th>
+                  <th style={{ width: 70, textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>MASUK (+)</th>
+                  <th style={{ width: 70, textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>KELUAR (-)</th>
+                  <th style={{ width: 90, textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>NILAI MASUK (+) (RP)</th>
+                  <th style={{ width: 90, textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>NILAI KELUAR (-) (RP)</th>
                   <th style={{ width: 90, textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>SALDO (QTY)</th>
                   <th style={{ width: 100, textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>NILAI SALDO (RP)</th>
                   <th style={{ width: 80, textAlign: 'left', border: '1px solid #000000', padding: '4px 6px' }}>PETUGAS</th>
@@ -4044,11 +4549,13 @@ export default function KartuStok() {
                 {/* Opening Balance Row */}
                 <tr style={{ background: '#fafafa', fontStyle: 'italic', borderBottom: '1px solid #000000' }}>
                   <td style={{ textAlign: 'center', border: '1px solid #000000', padding: '4px 6px' }}>—</td>
-                  <td style={{ border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace' }}>{period.from}</td>
+                  <td style={{ border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace' }}>{stockCard?.tanggal_saldo_awal || period.from}</td>
                   <td style={{ border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace' }}>SALDO-AWAL</td>
-                  <td style={{ border: '1px solid #000000', padding: '4px 6px', fontWeight: 700 }}>Saldo Awal Fisik per {period.from}</td>
+                  <td style={{ border: '1px solid #000000', padding: '4px 6px', fontWeight: 700 }}>Saldo Awal Fisik per {stockCard?.tanggal_saldo_awal || period.from}</td>
                   <td style={{ border: '1px solid #000000', padding: '4px 6px' }}>Saldo Awal</td>
                   <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace' }}>{rupiah(stockCard?.cost_awal_per_pakai ?? ((stockCard?.ingredient?.harga ?? selectedIng?.harga ?? 0) / (selectedIng?.konversi || 1)))}/{selectedIng?.unit_pakai}</td>
+                  <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>—</td>
+                  <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>—</td>
                   <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>—</td>
                   <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>—</td>
                   <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace', fontWeight: 800 }}>{num(stockCard?.stok_awal)} {selectedIng?.unit_pakai}</td>
@@ -4075,6 +4582,22 @@ export default function KartuStok() {
                     ? Number(row.balance_nominal)
                     : (Number(row.balance || 0) * unitPriceVal);
 
+                  const mutationInNominal = row.qty_in > 0
+                    ? (row.in_nominal !== undefined && row.in_nominal !== null && Number(row.in_nominal) > 0
+                      ? Number(row.in_nominal)
+                      : (row.total_price !== undefined && row.total_price !== null && Number(row.total_price) > 0
+                        ? Number(row.total_price)
+                        : (Number(row.qty_in) * unitPriceVal)))
+                    : 0;
+
+                  const mutationOutNominal = row.qty_out > 0
+                    ? (row.out_nominal !== undefined && row.out_nominal !== null && Number(row.out_nominal) > 0
+                      ? Number(row.out_nominal)
+                      : (row.total_price !== undefined && row.total_price !== null && Number(row.total_price) > 0
+                        ? Number(row.total_price)
+                        : (Number(row.qty_out) * unitPriceVal)))
+                    : 0;
+
                   return (
                     <tr key={row.id || idx} style={{ borderBottom: '1px solid #cccccc' }}>
                       <td style={{ textAlign: 'center', border: '1px solid #000000', padding: '4px 6px' }}>{idx + 1}</td>
@@ -4092,6 +4615,12 @@ export default function KartuStok() {
                       <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace', fontWeight: row.qty_out > 0 ? 700 : 400 }}>
                         {row.qty_out > 0 ? `-${num(row.qty_out)}` : '—'}
                       </td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace', fontWeight: 700 }}>
+                        {row.qty_in > 0 ? `+${rupiah(mutationInNominal)}` : '—'}
+                      </td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace', fontWeight: 700 }}>
+                        {row.qty_out > 0 ? `-${rupiah(mutationOutNominal)}` : '—'}
+                      </td>
                       <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace', fontWeight: 800 }}>
                         {num(row.balance)} {selectedIng?.unit_pakai}
                       </td>
@@ -4106,24 +4635,54 @@ export default function KartuStok() {
                 })}
               </tbody>
               <tfoot>
-                <tr style={{ background: '#f4f4f4', fontWeight: 800, borderTop: '2px solid #000000' }}>
-                  <td colSpan={6} style={{ textAlign: 'right', border: '1px solid #000000', padding: '6px 8px', textTransform: 'uppercase' }}>
-                    TOTAL AKUMULASI PERIODE INI
-                  </td>
-                  <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '6px 8px', fontFamily: 'monospace', fontWeight: 800 }}>
-                    +{num(stockCard?.total_masuk)}
-                  </td>
-                  <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '6px 8px', fontFamily: 'monospace', fontWeight: 800 }}>
-                    -{num(stockCard?.total_keluar)}
-                  </td>
-                  <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '6px 8px', fontFamily: 'monospace', fontWeight: 900 }}>
-                    {num(stockCard?.stok_akhir)} {selectedIng?.unit_pakai}
-                  </td>
-                  <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '6px 8px', fontFamily: 'monospace', fontWeight: 900 }}>
-                    {rupiah(stockCard?.nilai_stok_akhir)}
-                  </td>
-                  <td style={{ border: '1px solid #000000' }}></td>
-                </tr>
+                {(() => {
+                  const fallbackPrice = (Number(stockCard?.ingredient?.harga ?? selectedIng?.harga ?? 0)) / Math.max(Number(selectedIng?.konversi || 1), 1);
+                  let totInNom = 0;
+                  let totOutNom = 0;
+                  filteredDetailRows.forEach(r => {
+                    let up = fallbackPrice;
+                    if (r.cost_after && Number(r.cost_after) > 0) up = Number(r.cost_after);
+                    else if (r.cost_before && Number(r.cost_before) > 0) up = Number(r.cost_before);
+
+                    if (r.qty_in > 0) {
+                      totInNom += (r.in_nominal !== undefined && Number(r.in_nominal) > 0
+                        ? Number(r.in_nominal)
+                        : (r.total_price !== undefined && Number(r.total_price) > 0 ? Number(r.total_price) : Number(r.qty_in) * up));
+                    }
+                    if (r.qty_out > 0) {
+                      totOutNom += (r.out_nominal !== undefined && Number(r.out_nominal) > 0
+                        ? Number(r.out_nominal)
+                        : (r.total_price !== undefined && Number(r.total_price) > 0 ? Number(r.total_price) : Number(r.qty_out) * up));
+                    }
+                  });
+
+                  return (
+                    <tr style={{ background: '#f4f4f4', fontWeight: 800, borderTop: '2px solid #000000' }}>
+                      <td colSpan={6} style={{ textAlign: 'right', border: '1px solid #000000', padding: '6px 8px', textTransform: 'uppercase' }}>
+                        TOTAL AKUMULASI PERIODE INI
+                      </td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '6px 8px', fontFamily: 'monospace', fontWeight: 800 }}>
+                        +{num(stockCard?.total_masuk)}
+                      </td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '6px 8px', fontFamily: 'monospace', fontWeight: 800 }}>
+                        -{num(stockCard?.total_keluar)}
+                      </td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '6px 8px', fontFamily: 'monospace', fontWeight: 800 }}>
+                        +{rupiah(totInNom)}
+                      </td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '6px 8px', fontFamily: 'monospace', fontWeight: 800 }}>
+                        -{rupiah(totOutNom)}
+                      </td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '6px 8px', fontFamily: 'monospace', fontWeight: 900 }}>
+                        {num(stockCard?.stok_akhir)} {selectedIng?.unit_pakai}
+                      </td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '6px 8px', fontFamily: 'monospace', fontWeight: 900 }}>
+                        {rupiah(stockCard?.nilai_stok_akhir)}
+                      </td>
+                      <td style={{ border: '1px solid #000000' }}></td>
+                    </tr>
+                  );
+                })()}
               </tfoot>
             </table>
 
@@ -4206,46 +4765,169 @@ export default function KartuStok() {
             </div>
 
             {/* Summary Table */}
-            <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #000000', fontSize: 10, margin: '8px 0' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #000000', fontSize: 9.5, margin: '8px 0' }}>
               <thead>
                 <tr style={{ background: '#f0f0f0', borderBottom: '1.5px solid #000000' }}>
-                  <th style={{ width: 30, textAlign: 'center', border: '1px solid #000000', padding: '4px 6px' }}>NO</th>
-                  <th style={{ width: 75, textAlign: 'left', border: '1px solid #000000', padding: '4px 6px' }}>KODE</th>
-                  <th style={{ textAlign: 'left', border: '1px solid #000000', padding: '4px 6px' }}>NAMA BAHAN BAKU</th>
-                  <th style={{ width: 85, textAlign: 'left', border: '1px solid #000000', padding: '4px 6px' }}>KATEGORI</th>
-                  <th style={{ width: 80, textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>STOK AWAL</th>
-                  <th style={{ width: 75, textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>MASUK (+)</th>
-                  <th style={{ width: 75, textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>KELUAR (-)</th>
-                  <th style={{ width: 85, textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>STOK AKHIR</th>
-                  <th style={{ width: 55, textAlign: 'center', border: '1px solid #000000', padding: '4px 6px' }}>SATUAN</th>
-                  <th style={{ width: 85, textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>HARGA SATUAN</th>
-                  <th style={{ width: 100, textAlign: 'right', border: '1px solid #000000', padding: '4px 6px' }}>NILAI STOK (RP)</th>
-                  <th style={{ width: 75, textAlign: 'center', border: '1px solid #000000', padding: '4px 6px' }}>STATUS</th>
+                  <th style={{ width: 26, textAlign: 'center', border: '1px solid #000000', padding: '4px 5px' }}>NO</th>
+                  <th style={{ width: 65, textAlign: 'left', border: '1px solid #000000', padding: '4px 5px' }}>KODE</th>
+                  <th style={{ textAlign: 'left', border: '1px solid #000000', padding: '4px 5px' }}>NAMA BAHAN BAKU</th>
+                  <th style={{ width: 75, textAlign: 'left', border: '1px solid #000000', padding: '4px 5px' }}>KATEGORI</th>
+                  <th style={{ width: 45, textAlign: 'center', border: '1px solid #000000', padding: '4px 5px' }}>SATUAN</th>
+                  <th style={{ width: 65, textAlign: 'right', border: '1px solid #000000', padding: '4px 5px' }}>STOK AWAL</th>
+                  <th style={{ width: 85, textAlign: 'right', border: '1px solid #000000', padding: '4px 5px' }}>NILAI SALDO AWAL (RP)</th>
+                  <th style={{ width: 75, textAlign: 'right', border: '1px solid #000000', padding: '4px 5px' }}>HARGA SATUAN</th>
+                  <th style={{ width: 60, textAlign: 'right', border: '1px solid #000000', padding: '4px 5px' }}>MASUK (+)</th>
+                  <th style={{ width: 60, textAlign: 'right', border: '1px solid #000000', padding: '4px 5px' }}>KELUAR (-)</th>
+                  <th style={{ width: 85, textAlign: 'right', border: '1px solid #000000', padding: '4px 5px' }}>NILAI MASUK (+) (RP)</th>
+                  <th style={{ width: 85, textAlign: 'right', border: '1px solid #000000', padding: '4px 5px' }}>NILAI KELUAR (-) (RP)</th>
+                  <th style={{ width: 75, textAlign: 'right', border: '1px solid #000000', padding: '4px 5px' }}>SALDO BERJALAN</th>
+                  <th style={{ width: 90, textAlign: 'right', border: '1px solid #000000', padding: '4px 5px' }}>NILAI SALDO (RP)</th>
+                  <th style={{ width: 55, textAlign: 'center', border: '1px solid #000000', padding: '4px 5px' }}>STATUS</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredSummaryItems.map((it, idx) => {
                   const isNeg = Number(it.stok_akhir) < 0;
+                  const unitPrice = it.harga_satuan || (it.harga_beli && it.konversi ? it.harga_beli / it.konversi : 0);
+                  const nilaiAwal = it.nilai_saldo_awal !== undefined && it.nilai_saldo_awal !== null ? Number(it.nilai_saldo_awal) : (Number(it.stok_awal || 0) * unitPrice);
+                  const nomMasuk = it.nominal_masuk !== undefined && it.nominal_masuk !== null ? Number(it.nominal_masuk) : (Number(it.total_masuk || 0) * unitPrice);
+                  const nomKeluar = it.nominal_keluar !== undefined && it.nominal_keluar !== null ? Number(it.nominal_keluar) : (Number(it.total_keluar || 0) * unitPrice);
+
                   return (
                     <tr key={it.id || idx} style={{ borderBottom: '1px solid #cccccc', background: isNeg ? '#fff5f5' : 'transparent' }}>
-                      <td style={{ textAlign: 'center', border: '1px solid #000000', padding: '4px 6px' }}>{idx + 1}</td>
-                      <td style={{ border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace' }}>{it.code}</td>
-                      <td style={{ border: '1px solid #000000', padding: '4px 6px', fontWeight: 700 }}>{it.name}</td>
-                      <td style={{ border: '1px solid #000000', padding: '4px 6px' }}>{it.category || 'Umum'}</td>
-                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace' }}>{num(it.stok_awal)}</td>
-                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace' }}>{num(it.total_masuk)}</td>
-                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace' }}>{num(it.total_keluar)}</td>
-                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace', fontWeight: 800 }}>{num(it.stok_akhir)}</td>
-                      <td style={{ textAlign: 'center', border: '1px solid #000000', padding: '4px 6px' }}>{it.unit_pakai}</td>
-                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace' }}>{rupiah(it.harga_satuan)}</td>
-                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace', fontWeight: 800 }}>{rupiah(it.nilai_stok)}</td>
-                      <td style={{ textAlign: 'center', border: '1px solid #000000', padding: '4px 6px', fontWeight: 700 }}>
+                      <td style={{ textAlign: 'center', border: '1px solid #000000', padding: '4px 5px' }}>{idx + 1}</td>
+                      <td style={{ border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace' }}>{it.code}</td>
+                      <td style={{ border: '1px solid #000000', padding: '4px 5px', fontWeight: 700 }}>{it.name}</td>
+                      <td style={{ border: '1px solid #000000', padding: '4px 5px' }}>{it.category || 'Umum'}</td>
+                      <td style={{ textAlign: 'center', border: '1px solid #000000', padding: '4px 5px' }}>{it.unit_pakai}</td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace' }}>{num(it.stok_awal)}</td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace' }}>{rupiah(nilaiAwal)}</td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace' }}>{rupiah(unitPrice)}</td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace' }}>{num(it.total_masuk)}</td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace' }}>{num(it.total_keluar)}</td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace' }}>{rupiah(nomMasuk)}</td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace' }}>{rupiah(nomKeluar)}</td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace', fontWeight: 800 }}>{num(it.stok_akhir)} {it.unit_pakai}</td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace', fontWeight: 800 }}>{rupiah(it.nilai_stok)}</td>
+                      <td style={{ textAlign: 'center', border: '1px solid #000000', padding: '4px 5px', fontWeight: 700 }}>
                         {isNeg ? 'MINUS' : (it.is_low ? 'MENIPIS' : 'AMAN')}
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
+              {filteredSummaryItems.length > 0 && (() => {
+                const safeItems = filteredSummaryItems.filter(x => Number(x.stok_akhir || 0) > 0);
+                const negativeItems = filteredSummaryItems.filter(x => Number(x.stok_akhir || 0) < 0);
+                const totalSafeVal = safeItems.reduce((acc, x) => acc + Number(x.saldo_aman_rp ?? (Number(x.stok_akhir) > 0 ? x.nilai_stok : 0) ?? 0), 0);
+                const totalDeficitVal = negativeItems.reduce((acc, x) => acc + Number(x.saldo_minus_rp ?? (Number(x.stok_akhir) < 0 ? x.nilai_stok : 0) ?? 0), 0);
+                const netVal = totalSafeVal + totalDeficitVal;
+
+                const getItemPrice = (x) => x.harga_satuan || (x.harga_beli && x.konversi ? x.harga_beli / x.konversi : 0);
+                const getItemAwalNom = (x) => x.nilai_saldo_awal !== undefined && x.nilai_saldo_awal !== null ? Number(x.nilai_saldo_awal) : (Number(x.stok_awal || 0) * getItemPrice(x));
+                const getItemMasukNom = (x) => x.nominal_masuk !== undefined && x.nominal_masuk !== null ? Number(x.nominal_masuk) : (Number(x.total_masuk || 0) * getItemPrice(x));
+                const getItemKeluarNom = (x) => x.nominal_keluar !== undefined && x.nominal_keluar !== null ? Number(x.nominal_keluar) : (Number(x.total_keluar || 0) * getItemPrice(x));
+
+                return (
+                  <tfoot>
+                    <tr style={{ background: '#f5f5f5', fontWeight: 700, borderTop: '2px solid #000000' }}>
+                      <td colSpan={5} style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px' }}>
+                        TOTAL PERSEDIAAN AMAN ({safeItems.length} ITEM):
+                      </td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace' }}>
+                        {num(safeItems.reduce((acc, x) => acc + Number(x.stok_awal || 0), 0))}
+                      </td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace' }}>
+                        {rupiah(safeItems.reduce((acc, x) => acc + getItemAwalNom(x), 0))}
+                      </td>
+                      <td style={{ border: '1px solid #000000', padding: '4px 5px' }}></td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace' }}>
+                        +{num(safeItems.reduce((acc, x) => acc + Number(x.total_masuk || 0), 0))}
+                      </td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace' }}>
+                        -{num(safeItems.reduce((acc, x) => acc + Number(x.total_keluar || 0), 0))}
+                      </td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace' }}>
+                        +{rupiah(safeItems.reduce((acc, x) => acc + getItemMasukNom(x), 0))}
+                      </td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace' }}>
+                        -{rupiah(safeItems.reduce((acc, x) => acc + getItemKeluarNom(x), 0))}
+                      </td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace', fontWeight: 800 }}>
+                        {num(safeItems.reduce((acc, x) => acc + Number(x.stok_akhir || 0), 0))}
+                      </td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace', fontWeight: 800 }}>
+                        {rupiah(totalSafeVal)}
+                      </td>
+                      <td style={{ textAlign: 'center', border: '1px solid #000000', padding: '4px 5px' }}>Aman</td>
+                    </tr>
+                    {negativeItems.length > 0 && (
+                      <tr style={{ background: '#fff0f0', fontWeight: 700, borderTop: '1px solid #000000' }}>
+                        <td colSpan={5} style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', color: '#c00' }}>
+                          TOTAL DEFISIT STOK MINUS ({negativeItems.length} ITEM):
+                        </td>
+                        <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace', color: '#c00' }}>
+                          {num(negativeItems.reduce((acc, x) => acc + Number(x.stok_awal || 0), 0))}
+                        </td>
+                        <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace', color: '#c00' }}>
+                          {rupiah(negativeItems.reduce((acc, x) => acc + getItemAwalNom(x), 0))}
+                        </td>
+                        <td style={{ border: '1px solid #000000', padding: '4px 5px' }}></td>
+                        <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace' }}>
+                          +{num(negativeItems.reduce((acc, x) => acc + Number(x.total_masuk || 0), 0))}
+                        </td>
+                        <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace' }}>
+                          -{num(negativeItems.reduce((acc, x) => acc + Number(x.total_keluar || 0), 0))}
+                        </td>
+                        <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace' }}>
+                          +{rupiah(negativeItems.reduce((acc, x) => acc + getItemMasukNom(x), 0))}
+                        </td>
+                        <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace' }}>
+                          -{rupiah(negativeItems.reduce((acc, x) => acc + getItemKeluarNom(x), 0))}
+                        </td>
+                        <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace', fontWeight: 800, color: '#c00' }}>
+                          {num(negativeItems.reduce((acc, x) => acc + Number(x.stok_akhir || 0), 0))}
+                        </td>
+                        <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace', fontWeight: 800, color: '#c00' }}>
+                          {rupiah(totalDeficitVal)}
+                        </td>
+                        <td style={{ textAlign: 'center', border: '1px solid #000000', padding: '4px 5px', color: '#c00' }}>Defisit</td>
+                      </tr>
+                    )}
+                    <tr style={{ background: '#e8e8e8', fontWeight: 800, borderTop: '2px solid #000000' }}>
+                      <td colSpan={5} style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px' }}>
+                        NET SALDO BUKU PERSEDIAAN ({filteredSummaryItems.length} ITEM):
+                      </td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace' }}>
+                        {num(filteredSummaryItems.reduce((acc, x) => acc + Number(x.stok_awal || 0), 0))}
+                      </td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace' }}>
+                        {rupiah(filteredSummaryItems.reduce((acc, x) => acc + getItemAwalNom(x), 0))}
+                      </td>
+                      <td style={{ border: '1px solid #000000', padding: '4px 5px' }}></td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace' }}>
+                        +{num(filteredSummaryItems.reduce((acc, x) => acc + Number(x.total_masuk || 0), 0))}
+                      </td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace' }}>
+                        -{num(filteredSummaryItems.reduce((acc, x) => acc + Number(x.total_keluar || 0), 0))}
+                      </td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace' }}>
+                        +{rupiah(filteredSummaryItems.reduce((acc, x) => acc + getItemMasukNom(x), 0))}
+                      </td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace' }}>
+                        -{rupiah(filteredSummaryItems.reduce((acc, x) => acc + getItemKeluarNom(x), 0))}
+                      </td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace', fontWeight: 800 }}>
+                        {num(filteredSummaryItems.reduce((acc, x) => acc + Number(x.stok_akhir || 0), 0))}
+                      </td>
+                      <td style={{ textAlign: 'right', border: '1px solid #000000', padding: '4px 5px', fontFamily: 'monospace', fontWeight: 800 }}>
+                        {rupiah(netVal)}
+                      </td>
+                      <td style={{ textAlign: 'center', border: '1px solid #000000', padding: '4px 5px' }}>Net Saldo</td>
+                    </tr>
+                  </tfoot>
+                );
+              })()}
             </table>
 
             {/* Lembar Pengesahan */}
@@ -4287,6 +4969,189 @@ export default function KartuStok() {
           if (selectedIngId) fetchStockCard();
         }}
       />
+
+      {/* Modal Reset Kartu Stok */}
+      {resetModalOpen && (
+        <div className="modal-backdrop fade-in" style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(4, 7, 18, 0.88)', backdropFilter: 'blur(14px)',
+          zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px'
+        }}>
+          <div className="card modal-content" style={{
+            maxWidth: '560px', width: '100%', maxHeight: '90vh', overflowY: 'auto',
+            padding: '24px', borderRadius: '20px', background: '#11162d', border: '1px solid rgba(239, 68, 68, 0.4)',
+            boxShadow: '0 25px 60px rgba(239, 68, 68, 0.15)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                <div style={{
+                  width: 42, height: 42, borderRadius: 12,
+                  background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.35)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#f87171'
+                }}>
+                  <RotateCcw size={22} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: 17, fontWeight: 800, color: '#ffffff', margin: 0 }}>
+                    Reset Kartu Stok
+                  </h3>
+                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                    Hapus riwayat mutasi stok untuk mengosongkan atau memulai ulang kartu stok.
+                  </span>
+                </div>
+              </div>
+              <button className="btn btn-ghost btn-icon" onClick={() => setResetModalOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Scope Selection */}
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: '#ffffff', marginBottom: 6, display: 'block' }}>
+                  Pilih Lingkup Reset Kartu Stok:
+                </label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {selectedIngId && (
+                    <label style={{
+                      display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10,
+                      background: resetScope === 'SELECTED_INGREDIENT' ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                      border: `1px solid ${resetScope === 'SELECTED_INGREDIENT' ? 'var(--primary)' : 'var(--border)'}`,
+                      cursor: 'pointer'
+                    }}>
+                      <input
+                        type="radio"
+                        name="reset_scope"
+                        checked={resetScope === 'SELECTED_INGREDIENT'}
+                        onChange={() => setResetScope('SELECTED_INGREDIENT')}
+                        style={{ accentColor: 'var(--primary)' }}
+                      />
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#ffffff' }}>
+                          Bahan Ini Saja ({selectedIng?.name || 'Bahan Terpilih'})
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                          Hanya menghapus mutasi bahan {selectedIng?.name} di {currentOutlet?.name || 'cabang aktif'}.
+                        </div>
+                      </div>
+                    </label>
+                  )}
+
+                  <label style={{
+                    display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10,
+                    background: resetScope === 'CURRENT_OUTLET' ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                    border: `1px solid ${resetScope === 'CURRENT_OUTLET' ? 'var(--primary)' : 'var(--border)'}`,
+                    cursor: 'pointer'
+                  }}>
+                    <input
+                      type="radio"
+                      name="reset_scope"
+                      checked={resetScope === 'CURRENT_OUTLET'}
+                      onChange={() => setResetScope('CURRENT_OUTLET')}
+                      style={{ accentColor: 'var(--primary)' }}
+                    />
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#ffffff' }}>
+                        Semua Bahan di Cabang Terpilih ({currentOutlet?.name || 'Cabang Aktif'})
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                        Mereset mutasi seluruh bahan baku & perlengkapan pada cabang {currentOutlet?.name}.
+                      </div>
+                    </div>
+                  </label>
+
+                  <label style={{
+                    display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10,
+                    background: resetScope === 'ALL_OUTLETS' ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                    border: `1px solid ${resetScope === 'ALL_OUTLETS' ? 'var(--primary)' : 'var(--border)'}`,
+                    cursor: 'pointer'
+                  }}>
+                    <input
+                      type="radio"
+                      name="reset_scope"
+                      checked={resetScope === 'ALL_OUTLETS'}
+                      onChange={() => setResetScope('ALL_OUTLETS')}
+                      style={{ accentColor: 'var(--primary)' }}
+                    />
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#ffffff' }}>
+                        Seluruh Cabang Bisnis (Semua Cabang)
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                        Mereset kartu stok seluruh bahan baku & perlengkapan di semua cabang usaha Anda.
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Keep Initial Checkbox */}
+              <div
+                style={{
+                  padding: '12px 14px', borderRadius: 10,
+                  background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border)',
+                  display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer'
+                }}
+                onClick={() => setResetKeepInitial(!resetKeepInitial)}
+              >
+                <input
+                  type="checkbox"
+                  checked={resetKeepInitial}
+                  onChange={(e) => setResetKeepInitial(e.target.checked)}
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ marginTop: 2, accentColor: 'var(--primary)', cursor: 'pointer' }}
+                />
+                <div>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: '#ffffff' }}>
+                    Pertahankan Saldo Awal Fisik (Initial Stock)
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2, lineHeight: 1.4 }}>
+                    {resetKeepInitial
+                      ? '✓ Saldo awal fisik tetap ada, hanya mutasi penjualan, pembelian, transfer, dan waste yang dihapus.'
+                      : '✗ Reset Total: Semua mutasi termasuk saldo awal akan dihapus bersih (Stok fisik menjadi 0).'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Warning Alert */}
+              <div style={{
+                background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)',
+                borderRadius: 10, padding: '12px 14px', display: 'flex', gap: 10, alignItems: 'flex-start'
+              }}>
+                <AlertOctagon size={18} color="#f87171" style={{ flexShrink: 0, marginTop: 2 }} />
+                <div style={{ fontSize: 11.5, color: '#fca5a5', lineHeight: 1.45 }}>
+                  <strong>Perhatian:</strong> Tindakan reset kartu stok ini bersifat permanen. Riwayat mutasi stok yang telah dihapus tidak dapat dikembalikan. HPP Moving Average akan disinkronkan kembali secara otomatis.
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setResetModalOpen(false)}
+                  disabled={resetting}
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={handleResetStockCard}
+                  disabled={resetting}
+                  style={{
+                    background: '#dc2626', color: '#ffffff', border: '1px solid #ef4444',
+                    fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 6
+                  }}
+                >
+                  <RotateCcw size={14} className={resetting ? 'spin' : ''} />
+                  {resetting ? 'Mereset Kartu Stok...' : 'Lanjutkan Reset Kartu Stok'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

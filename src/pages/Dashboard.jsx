@@ -40,7 +40,7 @@ const WIDGET_CATALOG = [
   {
     id: 'pnl',
     title: 'Laba/Rugi Periode Ini',
-    subtitle: 'Menampilkan pendapatan, nilai HPP, pengeluaran beban, dan laba bersih',
+    subtitle: 'Menampilkan omset kotor, nilai HPP, pengeluaran beban, dan laba bersih',
     icon: PieChart,
     color: '#10b981', // emerald
     bg: 'rgba(16, 185, 129, 0.12)',
@@ -72,6 +72,15 @@ const WIDGET_CATALOG = [
     color: '#a855f7', // purple
     bg: 'rgba(168, 85, 247, 0.12)',
     category: 'penjualan',
+  },
+  {
+    id: 'purchases',
+    title: 'Pembelian & Hutang Supplier',
+    subtitle: 'Menampilkan total belanja barang masuk, pembayaran tunai/bank, dan hutang tempo ke supplier',
+    icon: ShoppingBag,
+    color: '#0ea5e9', // ocean blue
+    bg: 'rgba(14, 165, 233, 0.12)',
+    category: 'pembelian',
   },
   {
     id: 'min_stock',
@@ -124,21 +133,26 @@ const PRESET_LAYOUTS = {
   all: {
     id: 'all',
     name: 'Dashboard Utama (Lengkap)',
-    widgets: ['activity', 'sales_trend', 'pnl', 'expenses', 'cash_flow', 'sales_summary', 'min_stock', 'top_products', 'cost_control', 'waste'],
+    widgets: ['activity', 'sales_trend', 'pnl', 'expenses', 'cash_flow', 'purchases', 'sales_summary', 'min_stock', 'top_products', 'cost_control', 'waste'],
   },
   finance: {
     id: 'finance',
-    name: 'Fokus Keuangan & Laba Rugi',
-    widgets: ['pnl', 'expenses', 'cash_flow', 'sales_summary', 'sales_trend'],
+    name: '💰 Fokus Keuangan & Laba Rugi',
+    widgets: ['pnl', 'expenses', 'cash_flow', 'purchases', 'sales_summary', 'sales_trend'],
+  },
+  purchasing: {
+    id: 'purchasing',
+    name: '🛒 Fokus Pengadaan & Pembelian',
+    widgets: ['purchases', 'min_stock', 'expenses', 'cash_flow', 'activity'],
   },
   stock: {
     id: 'stock',
-    name: 'Fokus Dapur & Stok',
+    name: '🍳 Fokus Dapur & Stok',
     widgets: ['min_stock', 'cost_control', 'waste', 'activity'],
   },
   sales: {
     id: 'sales',
-    name: 'Fokus Kasir & Penjualan',
+    name: '🏷️ Fokus Kasir & Penjualan',
     widgets: ['sales_trend', 'top_products', 'sales_summary', 'active_shift', 'activity'],
   },
 };
@@ -455,6 +469,7 @@ export default function Dashboard() {
   const pnl = wgt.pnl || {};
   const cash = wgt.cash_flow || {};
   const salesRec = wgt.sales_receivables || {};
+  const purchases = wgt.purchases || {};
   const minStock = wgt.min_stock_items || [];
   const activities = wgt.recent_activities || [];
   const topProducts = wgt.top_products || [];
@@ -535,6 +550,7 @@ export default function Dashboard() {
             >
               <option value="all">Dashboard Utama (Lengkap)</option>
               <option value="finance">💰 Fokus Keuangan & Laba Rugi</option>
+              <option value="purchasing">🛒 Fokus Pengadaan & Pembelian</option>
               <option value="stock">🍳 Fokus Dapur & Stok</option>
               <option value="sales">🏷️ Fokus Kasir & Penjualan</option>
               {selectedPreset === 'custom' && <option value="custom">⚙️ Tampilan Kustom Saya</option>}
@@ -597,7 +613,7 @@ export default function Dashboard() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 1200,
+            zIndex: 99999,
             padding: 16,
           }}
         >
@@ -675,6 +691,7 @@ export default function Dashboard() {
                   { id: 'all', label: 'Semua Widget' },
                   { id: 'keuangan', label: '💰 Keuangan & Laba' },
                   { id: 'penjualan', label: '🏷️ Penjualan & Kasir' },
+                  { id: 'pembelian', label: '🛒 Pembelian & Hutang' },
                   { id: 'stok', label: '🍳 Stok & Dapur' },
                   { id: 'operasional', label: '⏱️ Operasional' },
                 ].map((c) => (
@@ -937,7 +954,7 @@ export default function Dashboard() {
                 title="Tren Penjualan"
                 icon={TrendingUp}
                 color="#6366f1"
-                badge={`Total: ${rupiah(pnl.net_sales || 0)}`}
+                badge={`Total: ${rupiah(pnl.gross_sales || pnl.net_sales || 0)}`}
                 onRefresh={() => fetchAll(true)}
                 onClose={() => toggleWidget('sales_trend')}
               />
@@ -1048,9 +1065,9 @@ export default function Dashboard() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)' }}>
                       <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981' }} />
-                      Pendapatan Bersih
+                      Omset Kotor
                     </span>
-                    <strong style={{ color: '#ffffff' }}>{rupiah(pnl.net_sales || 0)}</strong>
+                    <strong style={{ color: '#ffffff' }}>{rupiah(pnl.gross_sales || pnl.net_sales || 0)}</strong>
                   </div>
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1221,6 +1238,126 @@ export default function Dashboard() {
                       'Belum Jatuh Tempo'
                     )}
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================
+              WIDGET: PEMBELIAN & HUTANG SUPPLIER (ACCURATE PURCHASES)
+              ======================================================== */}
+          {activeWidgets.includes('purchases') && (
+            <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
+              <WidgetHeader
+                title="Pembelian & Hutang Supplier"
+                icon={ShoppingBag}
+                color="#0ea5e9"
+                badge={`Total: ${rupiah(purchases.total_purchase || 0)}`}
+                onRefresh={() => fetchAll(true)}
+                onClose={() => toggleWidget('purchases')}
+              />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: 1 }}>
+                {/* 3 Metric Summary Cards */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                  <div style={{ padding: '10px 12px', background: 'rgba(14, 165, 233, 0.08)', border: '1px solid rgba(14, 165, 233, 0.25)', borderRadius: 10 }}>
+                    <div style={{ fontSize: 11, color: '#38bdf8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <ShoppingBag size={13} /> Total Belanja
+                    </div>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: '#ffffff', marginTop: 4 }}>
+                      {rupiah(purchases.total_purchase || 0)}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 2 }}>
+                      {purchases.transaction_count || 0} Barang Masuk
+                    </div>
+                  </div>
+
+                  <div style={{ padding: '10px 12px', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: 10 }}>
+                    <div style={{ fontSize: 11, color: '#34d399', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Check size={13} /> Lunas (Kas/Bank)
+                    </div>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: '#34d399', marginTop: 4 }}>
+                      {rupiah(purchases.paid_purchases || 0)}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 2 }}>
+                      Kas: {rupiah(purchases.cash_purchases || 0)}
+                    </div>
+                  </div>
+
+                  <div style={{ padding: '10px 12px', background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: 10 }}>
+                    <div style={{ fontSize: 11, color: '#fbbf24', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Clock size={13} /> Hutang Tempo
+                    </div>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: '#fbbf24', marginTop: 4 }}>
+                      {rupiah(purchases.unpaid_payables || purchases.credit_purchases || 0)}
+                    </div>
+                    <div style={{ fontSize: 10, color: Number(purchases.overdue_payables || 0) > 0 ? '#ef4444' : 'var(--text-secondary)', marginTop: 2 }}>
+                      {Number(purchases.overdue_payables || 0) > 0 ? `⚠️ Lewat: ${rupiah(purchases.overdue_payables)}` : 'Tempo Aktif'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Top Purchased Items or Suppliers */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, flex: 1 }}>
+                  {/* Left: Top Bahan Baku */}
+                  <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(165, 180, 252, 0.08)', borderRadius: 8, padding: '10px 12px' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                      📦 Bahan Paling Banyak Dibeli
+                    </div>
+                    {(purchases.top_ingredients || []).length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {(purchases.top_ingredients || []).slice(0, 3).map((item, idx) => (
+                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5 }}>
+                            <span style={{ color: '#ffffff', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }}>
+                              {item.name}
+                            </span>
+                            <span className="mono" style={{ color: '#38bdf8', fontWeight: 600 }}>
+                              {rupiah(item.total_cost)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'center', padding: '10px 0' }}>
+                        Belum ada pembelian bahan baku
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right: Top Suppliers */}
+                  <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(165, 180, 252, 0.08)', borderRadius: 8, padding: '10px 12px' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                      🏢 Pemasok / Vendor Terbesar
+                    </div>
+                    {(purchases.top_suppliers || []).length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {(purchases.top_suppliers || []).slice(0, 3).map((sup, idx) => (
+                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5 }}>
+                            <span style={{ color: '#ffffff', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }}>
+                              {sup.supplier_name}
+                            </span>
+                            <span className="mono" style={{ color: '#fbbf24', fontWeight: 600 }}>
+                              {rupiah(sup.total_amount)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'center', padding: '10px 0' }}>
+                        Belum ada vendor terdaftar
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Quick Link to Purchase Report */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 2 }}>
+                  <button
+                    onClick={() => navigate('/purchase-report')}
+                    className="btn btn-ghost btn-sm"
+                    style={{ fontSize: 11.5, color: '#38bdf8', padding: '4px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                  >
+                    Buka Laporan Pembelian Lengkap <ArrowRight size={13} />
+                  </button>
                 </div>
               </div>
             </div>
@@ -1506,7 +1643,7 @@ export default function Dashboard() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 1100,
+            zIndex: 99999,
             padding: 16
           }}
         >

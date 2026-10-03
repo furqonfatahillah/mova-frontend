@@ -4,7 +4,7 @@ import {
   Download, RefreshCw, AlertOctagon, Check, ArrowRight, ArrowLeft,
   Table, Store, Layers, Package, Boxes, Scale, Utensils,
   FlaskConical, CreditCard, ChevronRight, HelpCircle, Info, Sparkles,
-  ListOrdered, LayoutGrid
+  ListOrdered, LayoutGrid, Calendar
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, num, LoadingState } from './ui';
@@ -268,9 +268,11 @@ export default function ImportMasterModal({
   const [fileName, setFileName] = useState('');
   const [parsedRows, setParsedRows] = useState([]);
   const [loadingFile, setLoadingFile] = useState(false);
+  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [previewFilter, setPreviewFilter] = useState('ALL');
+  const [initialStockDate, setInitialStockDate] = useState(new Date().toISOString().slice(0, 10));
   const fileInputRef = useRef(null);
 
   // Sync selectedMaster when targetMaster or isOpen changes
@@ -365,28 +367,28 @@ export default function ImportMasterModal({
       title: 'Saldo Awal Bahan Baku per Gudang / Cabang',
       downloadFn: downloadStockAwalBahanTemplate,
       endpoint: '/stock-card/bulk-import-initial',
-      columns: ['Cabang / Gudang*', 'Kode Bahan', 'Nama Bahan Baku*', 'Kategori', 'Tipe Satuan*', 'Satuan*', 'Saldo Awal Fisik*', 'Harga/Modal Satuan', 'Stok Minimal', 'Tanggal Efektif'],
-      sampleHint: 'Alokasikan saldo awal fisik BAHAN BAKU spesifik per cabang atau gudang (Gudang Utama, Cabang A, Cabang B). Langsung tercatat di Kartu Stok masing-masing cabang.',
+      columns: ['Cabang / Gudang*', 'Kode Bahan', 'Nama Bahan Baku*', 'Kategori', 'Tipe Satuan*', 'Satuan*', 'Kuantitas Saldo Awal*', 'Total Nilai Saldo Awal (Rp)*', 'Stok Minimal', 'Catatan'],
+      sampleHint: 'Alokasikan saldo awal fisik BAHAN BAKU spesifik per cabang atau gudang. Sistem otomatis menghitung harga modal satuan rata-rata (Moving Average) dari Total Nilai Saldo Awal dibagi Kuantitas.',
     },
     STOCK_AWAL_PERLENGKAPAN: {
       title: 'Saldo Awal Perlengkapan & Packaging per Gudang / Cabang',
       downloadFn: downloadStockAwalPerlengkapanTemplate,
       endpoint: '/stock-card/bulk-import-initial',
-      columns: ['Cabang / Gudang*', 'Kode Perlengkapan', 'Nama Perlengkapan*', 'Kategori', 'Tipe Satuan*', 'Satuan*', 'Saldo Awal Fisik*', 'Harga/Modal Satuan', 'Stok Minimal', 'Tanggal Efektif'],
-      sampleHint: 'Alokasikan saldo awal fisik PERLENGKAPAN & PACKAGING spesifik per cabang atau gudang. Langsung tercatat di Kartu Stok masing-masing cabang.',
+      columns: ['Cabang / Gudang*', 'Kode Perlengkapan', 'Nama Perlengkapan*', 'Kategori', 'Tipe Satuan*', 'Satuan*', 'Kuantitas Saldo Awal*', 'Total Nilai Saldo Awal (Rp)*', 'Stok Minimal', 'Catatan'],
+      sampleHint: 'Alokasikan saldo awal fisik PERLENGKAPAN & PACKAGING spesifik per cabang atau gudang. Sistem otomatis menghitung harga modal satuan rata-rata (Moving Average) dari Total Nilai Saldo Awal dibagi Kuantitas.',
     },
     STOCK_AWAL_GUDANG: {
       title: 'Saldo Awal Bahan Baku per Gudang / Cabang',
       downloadFn: downloadStockAwalBahanTemplate,
       endpoint: '/stock-card/bulk-import-initial',
-      columns: ['Cabang / Gudang*', 'Kode Bahan', 'Nama Bahan Baku*', 'Kategori', 'Tipe Satuan*', 'Satuan*', 'Saldo Awal Fisik*', 'Harga/Modal Satuan', 'Stok Minimal', 'Tanggal Efektif'],
-      sampleHint: 'Alokasikan saldo awal fisik spesifik per cabang atau gudang. Langsung tercatat di Kartu Stok masing-masing cabang.',
+      columns: ['Cabang / Gudang*', 'Kode Bahan', 'Nama Bahan Baku*', 'Kategori', 'Tipe Satuan*', 'Satuan*', 'Kuantitas Saldo Awal*', 'Total Nilai Saldo Awal (Rp)*', 'Stok Minimal', 'Catatan'],
+      sampleHint: 'Alokasikan saldo awal fisik spesifik per cabang atau gudang. Sistem otomatis menghitung harga modal satuan rata-rata dari Total Nilai Saldo Awal.',
     },
     MENU: {
       title: 'Master Menu & F&B',
       downloadFn: downloadMenuTemplate,
       endpoint: '/menus/bulk-import',
-      columns: ['Kode Menu', 'Barcode', 'Nama Menu*', 'Kategori*', 'Tipe Item*', 'Harga Jual*', 'HPP (Modal)', 'Deskripsi'],
+      columns: ['Kode Menu', 'Nama Menu*', 'Kategori*', 'Tipe Item*', 'Harga Jual*', 'HPP (Modal)', 'Deskripsi'],
       sampleHint: 'Contoh: Kopi Aren, Kategori: Minuman, Tipe: RECIPE, Harga Jual: 20000, HPP: 8000',
     },
     RECIPE: {
@@ -416,17 +418,51 @@ export default function ImportMasterModal({
 
   // Handle template download with Owner's Master Cabang, Master Menu & Master Bahan
   async function handleDownloadTemplate() {
+    setDownloadingTemplate(true);
+    const toastId = toast.loading(`Menyiapkan template Excel ${activeConfig.title}...`);
     try {
       const effectiveOutlets = modalOutlets.length > 0 ? modalOutlets : outlets;
       if (currentMasterType === 'RECIPE') {
-        await activeConfig.downloadFn(modalMenus, modalIngredients, businessName);
+        let currentMenus = modalMenus;
+        let currentIngredients = modalIngredients;
+        if (!currentMenus || currentMenus.length === 0) {
+          try {
+            const resM = await api.get('/menus');
+            currentMenus = Array.isArray(resM.data) ? resM.data : (resM.data?.data || []);
+            setModalMenus(currentMenus);
+          } catch (_) { }
+        }
+        if (!currentIngredients || currentIngredients.length === 0) {
+          try {
+            const resI = await api.get('/ingredients');
+            currentIngredients = Array.isArray(resI.data) ? resI.data : (resI.data?.data || []);
+            setModalIngredients(currentIngredients);
+          } catch (_) { }
+        }
+        await activeConfig.downloadFn(currentMenus, currentIngredients, businessName);
+      } else if (
+        currentMasterType === 'STOCK_AWAL_BAHAN' ||
+        currentMasterType === 'STOCK_AWAL_PERLENGKAPAN' ||
+        currentMasterType === 'STOCK_AWAL_GUDANG'
+      ) {
+        let currentIngredients = modalIngredients;
+        if (!currentIngredients || currentIngredients.length === 0) {
+          try {
+            const resI = await api.get('/ingredients');
+            currentIngredients = Array.isArray(resI.data) ? resI.data : (resI.data?.data || []);
+            setModalIngredients(currentIngredients);
+          } catch (_) { }
+        }
+        await activeConfig.downloadFn(effectiveOutlets, currentIngredients, businessName);
       } else {
         await activeConfig.downloadFn(effectiveOutlets, businessName);
       }
-      toast.success(`Template Excel ${activeConfig.title} berhasil terunduh!`);
+      toast.success(`Template Excel ${activeConfig.title} berhasil terunduh!`, { id: toastId });
     } catch (err) {
       console.error(err);
-      toast.error('Gagal mengunduh template Excel.');
+      toast.error('Gagal mengunduh template Excel.', { id: toastId });
+    } finally {
+      setDownloadingTemplate(false);
     }
   }
 
@@ -752,24 +788,40 @@ export default function ImportMasterModal({
 
           const initialStock = parseDecimal(getVal(row, [
             'kuantitassaldoawalfisik', 'kuantitasstockawalfisik', 'kuantitasstokawalfisik', 'saldoawalfisik', 'stockawalfisik', 'stokawalfisik',
+            'kuantitassaldoawal', 'kuantitasstokawal', 'kuantitasstockawal',
             'stockawal', 'stokawal', 'stock_awal', 'stok_awal', 'qty', 'kuantitas', 'jumlahstok', 'jumlah'
           ]), 0);
 
-          const harga = parseDecimal(getVal(row, [
+          let totalNilai = parseDecimal(getVal(row, [
+            'totalnilaisaldoawalrp', 'totalnilaisaldoawal', 'totalsaldoawalrp', 'totalsaldoawal', 'totalnilai', 'totalnilaiawal',
+            'totalhargamodal', 'totalmodal', 'total'
+          ]), 0);
+
+          let harga = parseDecimal(getVal(row, [
             'harganilaimodalsatuanrp', 'harganilaimodalsatuan', 'harganilaimodal', 'hargasatuan', 'hargamodal', 'harga', 'hargabeli', 'modal', 'cost'
           ]), 0);
+
+          // If user provided Total Nilai Saldo Awal, calculate average unit cost automatically
+          if (totalNilai > 0 && initialStock > 0) {
+            harga = Math.round((totalNilai / initialStock) * 100) / 100;
+          } else if (totalNilai <= 0 && harga > 0 && initialStock > 0) {
+            totalNilai = Math.round(harga * initialStock);
+          }
 
           const minStock = parseDecimal(getVal(row, [
             'stokminimalgudang', 'stokminimal', 'stokmin', 'minstok', 'minimumstok', 'minstock'
           ]), 0);
 
-          const rawEffectiveDate = getVal(row, ['tanggalefektif', 'tanggalefektifyyyymmdd', 'tanggal', 'date', 'tgl', 'efektif']);
-          const effectiveDate = parseExcelDate(rawEffectiveDate);
+          const rawEffectiveDate = getVal(row, [
+            'tanggalmulaisaldoawalyyyymmdd', 'tanggalmulaisaldoawal', 'tanggalmulai', 'tanggalmulai(yyyymmdd)',
+            'tanggalefektif', 'tanggalefektifyyyymmdd', 'tanggal', 'date', 'tgl', 'efektif', 'startdate'
+          ]);
+          const effectiveDate = rawEffectiveDate ? parseExcelDate(rawEffectiveDate) : (initialStockDate || new Date().toISOString().slice(0, 10));
           const notes = getVal(row, ['catatanketerangan', 'catatan', 'keterangan']);
 
           if (!name) errors.push('Nama item wajib diisi.');
           if (initialStock <= 0) errors.push('Kuantitas saldo awal fisik harus lebih dari 0.');
-          if (harga < 0) errors.push('Harga/modal tidak boleh negatif.');
+          if (totalNilai < 0 || harga < 0) errors.push('Total nilai / modal tidak boleh negatif.');
 
           mappedData = {
             outlet_name: outletName,
@@ -781,10 +833,14 @@ export default function ImportMasterModal({
             initial_stock: initialStock,
             stok_awal: initialStock,
             qty: initialStock,
+            total_nilai: totalNilai,
+            total_price: totalNilai,
+            total_saldo_awal: totalNilai,
             harga,
             unit_price: harga,
             stok_min: minStock,
             date: effectiveDate,
+            effective_date: effectiveDate,
             notes: notes || `Saldo awal fisik per gudang: ${outletName || 'Gudang Utama'}`,
             _uRaw: uUnit,
           };
@@ -991,7 +1047,11 @@ export default function ImportMasterModal({
 
   // Submit parsed valid rows to backend
   async function handleSubmitImport() {
-    const validItems = parsedRows.filter(r => r.isValid).map(r => r.data);
+    const validItems = parsedRows.filter(r => r.isValid).map(r => ({
+      ...r.data,
+      effective_date: r.data.effective_date || initialStockDate || new Date().toISOString().slice(0, 10),
+      date: r.data.date || initialStockDate || new Date().toISOString().slice(0, 10),
+    }));
     if (validItems.length === 0) {
       toast.error('Tidak ada baris data valid yang siap di-import.');
       return;
@@ -999,7 +1059,11 @@ export default function ImportMasterModal({
 
     setSubmitting(true);
     try {
-      const res = await api.post(activeConfig.endpoint, { items: validItems });
+      const res = await api.post(activeConfig.endpoint, {
+        items: validItems,
+        effective_date: initialStockDate,
+        date: initialStockDate,
+      });
       const importedCount = res.data?.imported_count || res.data?.count || validItems.length;
 
       setImportResult({
@@ -1428,7 +1492,7 @@ export default function ImportMasterModal({
           flexWrap: 'wrap',
           gap: '12px'
         }}>
-          <div>
+          <div style={{ flex: 1, minWidth: '260px' }}>
             <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Download size={16} color="var(--accent-bright)" /> Download Template Format Excel ({activeConfig.title})
             </div>
@@ -1440,11 +1504,128 @@ export default function ImportMasterModal({
             type="button"
             className="btn btn-secondary btn-sm"
             onClick={handleDownloadTemplate}
-            style={{ fontWeight: 800, color: '#ffffff', borderColor: 'rgba(255,255,255,0.3)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            disabled={downloadingTemplate}
+            style={{
+              fontWeight: 800,
+              color: '#ffffff',
+              borderColor: downloadingTemplate ? 'var(--primary)' : 'rgba(255,255,255,0.3)',
+              background: downloadingTemplate ? 'rgba(124, 58, 237, 0.3)' : undefined,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              opacity: downloadingTemplate ? 0.85 : 1,
+              cursor: downloadingTemplate ? 'not-allowed' : 'pointer',
+              transition: 'all 0.2s ease'
+            }}
           >
-            <Download size={14} /> Download Template .xlsx
+            {downloadingTemplate ? (
+              <>
+                <RefreshCw size={14} className="spin" style={{ color: 'var(--accent-bright)' }} />
+                <span>Menyiapkan File...</span>
+              </>
+            ) : (
+              <>
+                <Download size={14} />
+                <span>Download Template .xlsx</span>
+              </>
+            )}
           </button>
+
+          {downloadingTemplate && (
+            <div style={{
+              width: '100%',
+              marginTop: '4px',
+              padding: '8px 12px',
+              borderRadius: '8px',
+              background: 'rgba(99, 102, 241, 0.2)',
+              border: '1px solid rgba(99, 102, 241, 0.4)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              color: '#e0e7ff',
+              fontSize: '11.5px',
+              fontWeight: 600
+            }}>
+              <RefreshCw size={13} className="spin" style={{ color: 'var(--accent-bright)', flexShrink: 0 }} />
+              <span>Sedang memuat data master & merender formula Excel... Mohon tunggu sejenak hingga file terunduh otomatis.</span>
+            </div>
+          )}
         </div>
+
+        {/* Tanggal Efektif Saldo Awal Fisik (Khusus Langkah 3: Saldo Awal Gudang / Cabang) */}
+        {(currentMasterType === 'STOCK_AWAL_BAHAN' ||
+          currentMasterType === 'STOCK_AWAL_PERLENGKAPAN' ||
+          currentMasterType === 'STOCK_AWAL_GUDANG') && (
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.85) 100%)',
+            border: '1px solid rgba(99, 102, 241, 0.35)',
+            borderRadius: '12px',
+            padding: '14px 18px',
+            marginBottom: '18px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '12px',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{
+                width: '38px',
+                height: '38px',
+                borderRadius: '10px',
+                background: 'rgba(99, 102, 241, 0.15)',
+                border: '1px solid rgba(99, 102, 241, 0.35)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--accent-bright)'
+              }}>
+                <Calendar size={20} />
+              </div>
+              <div>
+                <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#ffffff' }}>
+                  Tanggal Awal Saldo Awal (Tanggal Efektif)
+                </div>
+                <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  Tentukan tanggal mulai berlakunya baseline saldo awal fisik di Kartu Stok
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input
+                type="date"
+                value={initialStockDate}
+                onChange={(e) => {
+                  const newDate = e.target.value;
+                  setInitialStockDate(newDate);
+                  if (parsedRows.length > 0) {
+                    setParsedRows(prev => prev.map(r => ({
+                      ...r,
+                      data: {
+                        ...r.data,
+                        date: newDate,
+                        effective_date: newDate,
+                      }
+                    })));
+                  }
+                }}
+                style={{
+                  background: 'rgba(15, 23, 42, 0.9)',
+                  border: '1.5px solid rgba(99, 102, 241, 0.6)',
+                  borderRadius: '8px',
+                  padding: '8px 14px',
+                  color: '#ffffff',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  outline: 'none',
+                  cursor: 'pointer'
+                }}
+              />
+            </div>
+          </div>
+        )}
 
         {/* File Upload Dropzone */}
         <div
@@ -1705,10 +1886,11 @@ export default function ImportMasterModal({
                               📍 {row.data.outlet_name || 'Gudang Utama'}
                             </span>
                             <span>
-                              Saldo Awal Fisik: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit}</strong> ({row.data.unit_type === 'BELI' ? 'Satuan Beli' : 'Satuan Pakai'})
-                              {row.data.harga > 0 ? ` · Modal: ${rupiah(row.data.harga)}` : ''}
+                              Saldo Awal: <strong style={{ color: 'var(--accent-bright)' }}>{num(row.data.initial_stock)} {row.data.unit}</strong> ({row.data.unit_type === 'BELI' ? 'Satuan Beli' : 'Satuan Pakai'})
+                              {row.data.total_nilai > 0 ? ` · Total Nilai: ${rupiah(row.data.total_nilai)}` : ''}
+                              {row.data.harga > 0 ? ` (Avg: ${rupiah(row.data.harga)}/${row.data.unit})` : ''}
                               {row.data.stok_min > 0 ? ` · Min: ${num(row.data.stok_min)}` : ''}
-                              {row.data.date ? ` · Tgl: ${row.data.date}` : ''}
+                              {row.data.date ? ` · Tgl Mulai: ${row.data.date}` : ''}
                             </span>
                             {row.data._uRaw?.isFixed && (
                               <span style={{ background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }} title="Typo/singkatan otomatis diperbaiki ke format standar">

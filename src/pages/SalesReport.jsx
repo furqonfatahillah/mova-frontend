@@ -1546,7 +1546,7 @@ export default function SalesReport() {
                   ))}
                 </div>
 
-                <table style={{ fontSize: 12.5 }}>
+                  <table style={{ fontSize: 12.5 }}>
                   <thead>
                     <tr>
                       <th style={{ width: 40 }}>No.</th>
@@ -1559,6 +1559,7 @@ export default function SalesReport() {
                       <th className="right">Net Piutang</th>
                       <th className="right">Dibayar / Cair</th>
                       <th className="right">Sisa Piutang</th>
+                      <th style={{ textAlign: 'center' }}>Metode Bayar</th>
                       <th style={{ textAlign: 'center' }}>Status Settlement</th>
                       <th>Jatuh Tempo</th>
                     </tr>
@@ -1566,7 +1567,7 @@ export default function SalesReport() {
                   <tbody>
                     {filteredItems.length === 0 ? (
                       <tr>
-                        <td colSpan={12} className="text-center" style={{ padding: 32, color: 'var(--text-muted)' }}>
+                        <td colSpan={13} className="text-center" style={{ padding: 32, color: 'var(--text-muted)' }}>
                           Tidak ada catatan piutang usaha ({arTypeFilter === 'ALL' ? 'Customer & Merchant' : arTypeFilter}) dalam periode ini.
                         </td>
                       </tr>
@@ -1614,6 +1615,23 @@ export default function SalesReport() {
                               {rupiah(item.sisa_piutang)}
                             </td>
                             <td style={{ textAlign: 'center' }}>
+                              {item.payment_method ? (
+                                <span
+                                  className="badge"
+                                  style={{
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    background: 'rgba(59, 130, 246, 0.15)',
+                                    color: '#60a5fa',
+                                  }}
+                                >
+                                  {item.payment_method}
+                                </span>
+                              ) : (
+                                <span style={{ color: 'var(--text-muted)' }}>-</span>
+                              )}
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
                               <span
                                 className="badge"
                                 style={{
@@ -1644,7 +1662,7 @@ export default function SalesReport() {
                       <td className="right">{rupiah(activeSummary?.total_net_piutang || 0)}</td>
                       <td className="right" style={{ color: '#34d399' }}>{rupiah(activeSummary?.total_dibayar || 0)}</td>
                       <td className="right" style={{ color: '#f43f5e' }}>{rupiah(activeSummary?.total_sisa_piutang || 0)}</td>
-                      <td colSpan={2}></td>
+                      <td colSpan={3}></td>
                     </tr>
                   </tfoot>
                 </table>
@@ -2152,6 +2170,7 @@ export default function SalesReport() {
                 <th style={{ border: '1px solid #000', padding: '5px 4px', textAlign: 'right' }}>Net Piutang</th>
                 <th style={{ border: '1px solid #000', padding: '5px 4px', textAlign: 'right' }}>Dibayar / Cair</th>
                 <th style={{ border: '1px solid #000', padding: '5px 4px', textAlign: 'right' }}>Sisa Piutang</th>
+                <th style={{ border: '1px solid #000', padding: '5px 4px', textAlign: 'center' }}>Metode Bayar</th>
                 <th style={{ border: '1px solid #000', padding: '5px 4px', textAlign: 'center' }}>Status Settlement</th>
                 <th style={{ border: '1px solid #000', padding: '5px 4px', textAlign: 'left' }}>Jatuh Tempo</th>
               </tr>
@@ -2176,6 +2195,7 @@ export default function SalesReport() {
                     <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'right', fontWeight: 'bold' }}>{Number(it.net_amount || it.piutang).toLocaleString('id-ID')}</td>
                     <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'right' }}>{Number(it.dibayar).toLocaleString('id-ID')}</td>
                     <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'right', fontWeight: 'bold' }}>{Number(it.sisa_piutang).toLocaleString('id-ID')}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'center' }}>{it.payment_method || '-'}</td>
                     <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'center' }}>{it.settlement_status || (it.sisa_piutang <= 0 ? 'SETTLED' : 'UNSETTLED')}</td>
                     <td style={{ border: '1px solid #000', padding: '4px' }}>{it.jatuh_tempo || '-'}</td>
                   </tr>
@@ -2190,7 +2210,7 @@ export default function SalesReport() {
                 <td style={{ border: '1px solid #000', padding: '6px 4px', textAlign: 'right' }}>{Number(activeSummary?.total_net_piutang || 0).toLocaleString('id-ID')}</td>
                 <td style={{ border: '1px solid #000', padding: '6px 4px', textAlign: 'right' }}>{Number(activeSummary?.total_dibayar || 0).toLocaleString('id-ID')}</td>
                 <td style={{ border: '1px solid #000', padding: '6px 4px', textAlign: 'right' }}>{Number(activeSummary?.total_sisa_piutang || 0).toLocaleString('id-ID')}</td>
-                <td colSpan={2} style={{ border: '1px solid #000', padding: '6px 4px' }}></td>
+                <td colSpan={3} style={{ border: '1px solid #000', padding: '6px 4px' }}></td>
               </tr>
             </tfoot>
           </table>

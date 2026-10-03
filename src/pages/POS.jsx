@@ -224,6 +224,7 @@ export default function POS() {
     open: false,
     order: null,
     reason: '',
+    voidType: 'WRONG_INPUT', // 'WRONG_INPUT' | 'WASTED'
     submitting: false,
   });
   const [supervisors, setSupervisors] = useState([]);
@@ -470,7 +471,7 @@ export default function POS() {
           cashier_name: t.user?.name || 'Kasir',
           cashier_id: t.user?.id || t.user_id || null,
           shift_id: t.shift_id || t.shift?.id || null,
-          shift_name: t.shift?.shift_name || (t.shift_id ? `Shift #${t.shift_id}` : 'Shift Reguler'),
+          shift_name: t.shift?.shift_name || (t.shift_id ? `Shift ${t.shift_id}` : 'Shift Reguler'),
           shift_opened_at: t.shift?.opened_at || null,
           shift_closed_at: t.shift?.closed_at || null,
           shift_status: t.shift?.status || null,
@@ -636,9 +637,11 @@ export default function POS() {
     const validOrders = filteredGroupedHistory.filter(ord => ord.status === 'PAID');
     const cancelledOrders = filteredGroupedHistory.filter(ord => ord.status === 'CANCELLED');
     const pendingVoidOrders = filteredGroupedHistory.filter(ord => ord.status === 'VOID_PENDING');
+    const holdOrders = filteredGroupedHistory.filter(ord => ord.status === 'HOLD');
     const totalOrders = filteredGroupedHistory.length;
     const totalOmset = validOrders.reduce((sum, ord) => sum + (ord.total_price || 0), 0);
     const totalCancelledOmset = cancelledOrders.reduce((sum, ord) => sum + (ord.total_price || 0), 0);
+    const totalPendingVoidOmset = pendingVoidOrders.reduce((sum, ord) => sum + (ord.total_price || 0), 0);
     const totalItems = validOrders.reduce((sum, ord) => sum + (ord.total_qty || 0), 0);
     const aov = validOrders.length > 0 ? Math.round(totalOmset / validOrders.length) : 0;
     return {
@@ -646,8 +649,10 @@ export default function POS() {
       validOrdersCount: validOrders.length,
       cancelledOrdersCount: cancelledOrders.length,
       pendingVoidOrdersCount: pendingVoidOrders.length,
+      holdOrdersCount: holdOrders.length,
       totalOmset,
       totalCancelledOmset,
+      totalPendingVoidOmset,
       totalItems,
       aov
     };
@@ -1058,6 +1063,45 @@ export default function POS() {
       };
     }).filter(i => i.isDeficit);
   }, [cart, menus, ingredients]);
+
+  // Helper to prepare cart items for backend with partial stock auto-split (normal vs urgent)
+  const prepareCartItemsForSubmission = (itemsList) => {
+    const result = [];
+    (itemsList || []).forEach(item => {
+      const st = getMenuStockStatus(item.menu);
+      const avail = Math.max(0, Math.floor(st.availableServings ?? 0));
+      // Auto-split: if partially in stock, normal portion uses stock, remaining is urgent
+      if (item.menu.item_type !== 'SERVICE' && !item.isUrgent && avail > 0 && item.qty > avail) {
+        result.push({
+          menu_id: item.menu.id,
+          qty: avail,
+          notes: item.notes || undefined,
+          is_urgent: false,
+          modifier_option_ids: (item.selectedModifiers || []).map(m => m.id),
+          modifiers: item.selectedModifiers || [],
+        });
+        result.push({
+          menu_id: item.menu.id,
+          qty: item.qty - avail,
+          notes: item.notes ? `${item.notes} (Urgent Defisit)` : 'Urgent Defisit',
+          is_urgent: true,
+          modifier_option_ids: (item.selectedModifiers || []).map(m => m.id),
+          modifiers: item.selectedModifiers || [],
+        });
+      } else {
+        const hasDeficit = st.availableServings < item.qty && item.menu.item_type !== 'SERVICE';
+        result.push({
+          menu_id: item.menu.id,
+          qty: item.qty,
+          notes: item.notes || undefined,
+          is_urgent: Boolean(item.isUrgent || hasDeficit),
+          modifier_option_ids: (item.selectedModifiers || []).map(m => m.id),
+          modifiers: item.selectedModifiers || [],
+        });
+      }
+    });
+    return result;
+  };
 
   // Total to be paid in payment modal (either active open bill or current cart total)
   const payableTotal = activeOpenBillPayment ? Number(activeOpenBillPayment.total_price) : cartTotal;
@@ -1994,18 +2038,7 @@ export default function POS() {
         discount_type: appliedDiscount?.type || undefined,
         discount_rate: appliedDiscount?.value ?? appliedDiscount?.rate ?? undefined,
         is_urgent_note: Boolean(cartDeficitItems.length > 0 || cart.some(i => i.isUrgent)),
-        items: cart.map(item => {
-          const st = getMenuStockStatus(item.menu);
-          const hasDeficit = st.availableServings < item.qty && item.menu.item_type !== 'SERVICE';
-          return {
-            menu_id: item.menu.id,
-            qty: item.qty,
-            notes: item.notes || undefined,
-            is_urgent: Boolean(item.isUrgent || hasDeficit),
-            modifier_option_ids: (item.selectedModifiers || []).map(m => m.id),
-            modifiers: item.selectedModifiers || [],
-          };
-        }),
+        items: prepareCartItemsForSubmission(cart),
       };
 
       const { data } = await api.post('/transactions', payload);
@@ -2066,18 +2099,7 @@ export default function POS() {
     try {
       const payload = {
         is_urgent_note: Boolean(cartDeficitItems.length > 0 || cart.some(i => i.isUrgent)),
-        items: cart.map(item => {
-          const st = getMenuStockStatus(item.menu);
-          const hasDeficit = st.availableServings < item.qty && item.menu.item_type !== 'SERVICE';
-          return {
-            menu_id: item.menu.id,
-            qty: item.qty,
-            notes: item.notes || undefined,
-            is_urgent: Boolean(item.isUrgent || hasDeficit),
-            modifier_option_ids: (item.selectedModifiers || []).map(m => m.id),
-            modifiers: item.selectedModifiers || [],
-          };
-        }),
+        items: prepareCartItemsForSubmission(cart),
       };
 
       const { data } = await api.post(`/transactions/${activeTarget.order_number}/add-items`, payload);
@@ -2331,18 +2353,7 @@ export default function POS() {
           discount_type: appliedDiscount?.type || undefined,
           discount_rate: appliedDiscount?.value ?? appliedDiscount?.rate ?? undefined,
           is_urgent_note: Boolean(cartDeficitItems.length > 0 || cart.some(i => i.isUrgent)),
-          items: cart.map(item => {
-            const st = getMenuStockStatus(item.menu);
-            const hasDeficit = st.availableServings < item.qty && item.menu.item_type !== 'SERVICE';
-            return {
-              menu_id: item.menu.id,
-              qty: item.qty,
-              notes: item.notes || undefined,
-              is_urgent: Boolean(item.isUrgent || hasDeficit),
-              modifier_option_ids: (item.selectedModifiers || []).map(m => m.id),
-              modifiers: item.selectedModifiers || [],
-            };
-          }),
+          items: prepareCartItemsForSubmission(cart),
         };
 
         const { data } = await api.post('/transactions', payload);
@@ -2485,13 +2496,14 @@ export default function POS() {
       const orderNum = voidPaidModal.order.order_number || voidPaidModal.order.id;
       const payload = {
         reason: voidPaidModal.reason,
+        void_type: voidPaidModal.voidType || 'WRONG_INPUT',
       };
 
       const { data } = await api.post(`/transactions/${orderNum}/void`, payload);
 
       if (data.status === 'VOID_PENDING' || data.is_pending_approval) {
         toast.success(data.message || 'Permohonan void nota berhasil diajukan ke Manajer/Owner!');
-        setVoidPaidModal({ open: false, order: null, reason: '', submitting: false });
+        setVoidPaidModal({ open: false, order: null, reason: '', voidType: 'WRONG_INPUT', submitting: false });
         if (showHistory) fetchHistory();
         fetchAll();
         return;
@@ -2502,12 +2514,13 @@ export default function POS() {
       const voidedOrder = {
         ...voidPaidModal.order,
         status: 'CANCELLED',
+        void_type: data.void_type || voidPaidModal.voidType,
         cancellation_reason: voidPaidModal.reason,
         cancelled_at: data.cancelled_at || new Date().toLocaleString('id-ID'),
         cancelled_by_name: data.void_approved_by || data.cancelled_by_name || currentUser.name || 'Kasir',
       };
 
-      setVoidPaidModal({ open: false, order: null, reason: '', submitting: false });
+      setVoidPaidModal({ open: false, order: null, reason: '', voidType: 'WRONG_INPUT', submitting: false });
       if (showHistory) {
         fetchHistory();
       }
@@ -2522,24 +2535,31 @@ export default function POS() {
   // Approve a pending void request (Manager / Owner)
   async function handleApproveVoid(order) {
     if (!order) return;
+    const isWasted = order.void_type === 'WASTED';
+    const confirmMsg = isWasted
+      ? `Transaksi #${order.order_number} akan DIBATALKAN (Wasted). Stok bahan tetap tercatat keluar dan dicatat ke Laporan Kerugian Waste.`
+      : `Transaksi #${order.order_number} akan DIBATALKAN (Salah Input). Seluruh riwayat mutasi bahan akan DIHAPUS dari Kartu Stok & HPP Laba Rugi dibersihkan.`;
+
     const ok = await confirmDialog(
-      `Setujui Void Nota #${order.order_number}?`,
-      `Seluruh stok bahan baku resep (${order.items.length} item) akan otomatis dikembalikan ke Kartu Stok (ADJUSTMENT_IN) dan transaksi berstatus DIBATALKAN.`,
-      'Ya, Setujui & Kembalikan Stok',
+      `Setujui Void Nota #${order.order_number}? (${isWasted ? 'Wasted / Terbuang' : 'Salah Input'})`,
+      confirmMsg,
+      'Ya, Setujui Void',
       true
     );
     if (!ok) return;
 
     try {
       const { data } = await api.post(`/transactions/${order.order_number}/void-approve`, {
-        reason: order.cancellation_reason || 'Disetujui Manajer/Owner'
+        reason: order.cancellation_reason || 'Disetujui Manajer/Owner',
+        void_type: order.void_type || 'WRONG_INPUT',
       });
-      toast.success(data.message || 'Void nota berhasil disetujui dan stok bahan telah dikembalikan!');
+      toast.success(data.message || 'Void nota berhasil disetujui!');
       fetchHistory();
       fetchAll();
       handlePrintVoidReceipt({
         ...order,
         status: 'CANCELLED',
+        void_type: data.void_type || order.void_type,
         cancelled_at: data.void_approved_at || new Date().toLocaleString('id-ID'),
         cancelled_by_name: data.void_approved_by || currentUser.name || 'Manajer'
       });
@@ -2939,63 +2959,138 @@ export default function POS() {
           {/* KPI Summary Metrics for the Filtered Period */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
             gap: 12,
             marginBottom: 20
           }}>
+            {/* 1. Total Omset Lunas */}
             <div style={{
-              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(17, 22, 45, 0.6) 100%)',
-              border: '1px solid rgba(16, 185, 129, 0.25)',
+              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(17, 22, 45, 0.7) 100%)',
+              border: '1px solid rgba(16, 185, 129, 0.3)',
               borderRadius: 12,
-              padding: '12px 16px'
+              padding: '12px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
             }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ok)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                Total Omset ({filteredGroupedHistory.length} Nota)
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#34d399', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Total Omset ({historyStats.validOrdersCount} Nota Lunas)
+                </div>
+                <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: '#34d399', marginTop: 4 }}>
+                  {rupiah(historyStats.totalOmset)}
+                </div>
               </div>
-              <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: '#34d399', marginTop: 4 }}>
-                {rupiah(historyStats.totalOmset)}
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                Omset bersih riil kasir
               </div>
             </div>
 
+            {/* 2. Total Transaksi */}
             <div style={{
-              background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(17, 22, 45, 0.6) 100%)',
-              border: '1px solid rgba(99, 102, 241, 0.25)',
+              background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(17, 22, 45, 0.7) 100%)',
+              border: '1px solid rgba(99, 102, 241, 0.3)',
               borderRadius: 12,
-              padding: '12px 16px'
+              padding: '12px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
             }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#818cf8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                Total Transaksi (Nota)
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#818cf8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Total Transaksi (Nota)
+                </div>
+                <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: '#a5b4fc', marginTop: 4 }}>
+                  {historyStats.totalOrders} <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)' }}>nota</span>
+                </div>
               </div>
-              <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: '#a5b4fc', marginTop: 4 }}>
-                {historyStats.totalOrders} <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)' }}>nota</span>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                {historyStats.validOrdersCount} lunas · {historyStats.cancelledOrdersCount} void
               </div>
             </div>
 
-            <div style={{
-              background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(17, 22, 45, 0.6) 100%)',
-              border: '1px solid rgba(245, 158, 11, 0.25)',
-              borderRadius: 12,
-              padding: '12px 16px'
-            }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                Rata-Rata per Nota (AOV)
+            {/* 3. Nilai Nota Void / Dibatalkan (NEW) */}
+            <div
+              onClick={() => setHistoryStatus(historyStatus === 'CANCELLED' ? 'ALL' : 'CANCELLED')}
+              style={{
+                background: historyStatus === 'CANCELLED'
+                  ? 'linear-gradient(135deg, rgba(244, 63, 94, 0.25) 0%, rgba(30, 15, 25, 0.9) 100%)'
+                  : 'linear-gradient(135deg, rgba(244, 63, 94, 0.12) 0%, rgba(17, 22, 45, 0.7) 100%)',
+                border: historyStatus === 'CANCELLED' ? '1.5px solid #f43f5e' : '1px solid rgba(244, 63, 94, 0.35)',
+                borderRadius: 12,
+                padding: '12px 16px',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                boxShadow: historyStatus === 'CANCELLED' ? '0 0 16px rgba(244, 63, 94, 0.3)' : 'none',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+              }}
+              title="Klik untuk memfilter daftar riwayat khusus nota yang di-void / dibatalkan"
+            >
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#fb7185', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Nilai Nota Void ({historyStats.cancelledOrdersCount} Nota)
+                  </div>
+                  {historyStats.pendingVoidOrdersCount > 0 && (
+                    <span style={{ fontSize: 9.5, padding: '1px 6px', borderRadius: 4, background: 'rgba(251, 191, 36, 0.2)', color: '#fbbf24', fontWeight: 800, border: '1px solid rgba(251, 191, 36, 0.4)' }}>
+                      {historyStats.pendingVoidOrdersCount} Ajuan
+                    </span>
+                  )}
+                </div>
+                <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: '#f43f5e', marginTop: 4 }}>
+                  {rupiah(historyStats.totalCancelledOmset)}
+                </div>
               </div>
-              <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: '#fde047', marginTop: 4 }}>
-                {rupiah(historyStats.aov)}
+              <div style={{ fontSize: 11, color: historyStatus === 'CANCELLED' ? '#fda4af' : 'var(--text-muted)', marginTop: 4 }}>
+                {historyStats.cancelledOrdersCount} nota batal {historyStats.pendingVoidOrdersCount > 0 ? `(+${rupiah(historyStats.totalPendingVoidOmset)} pending)` : '· Klik untuk filter'}
               </div>
             </div>
 
+            {/* 4. Rata-Rata per Nota (AOV) */}
             <div style={{
-              background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.1) 0%, rgba(17, 22, 45, 0.6) 100%)',
-              border: '1px solid rgba(168, 85, 247, 0.25)',
+              background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.12) 0%, rgba(17, 22, 45, 0.7) 100%)',
+              border: '1px solid rgba(245, 158, 11, 0.3)',
               borderRadius: 12,
-              padding: '12px 16px'
+              padding: '12px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
             }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#c084fc', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                Total Item Terjual
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Rata-Rata per Nota (AOV)
+                </div>
+                <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: '#fde047', marginTop: 4 }}>
+                  {rupiah(historyStats.aov)}
+                </div>
               </div>
-              <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: '#e9d5ff', marginTop: 4 }}>
-                {historyStats.totalItems} <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)' }}>item</span>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                Rata-rata belanja per nota lunas
+              </div>
+            </div>
+
+            {/* 5. Total Item Terjual */}
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.12) 0%, rgba(17, 22, 45, 0.7) 100%)',
+              border: '1px solid rgba(168, 85, 247, 0.3)',
+              borderRadius: 12,
+              padding: '12px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+            }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#c084fc', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Total Item Terjual
+                </div>
+                <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: '#e9d5ff', marginTop: 4 }}>
+                  {historyStats.totalItems} <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)' }}>item</span>
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                Dari transaksi lunas
               </div>
             </div>
           </div>
@@ -3534,6 +3629,7 @@ export default function POS() {
                                               open: true,
                                               order: order,
                                               reason: '',
+                                              voidType: 'WRONG_INPUT',
                                               submitting: false,
                                             });
                                           }}
@@ -3919,6 +4015,7 @@ export default function POS() {
                                     open: true,
                                     order: order,
                                     reason: '',
+                                    voidType: 'WRONG_INPUT',
                                     submitting: false,
                                   });
                                 }}
@@ -4042,7 +4139,7 @@ export default function POS() {
                         </td>
                         <td>
                           <span className="badge" style={{ fontSize: 11, background: 'rgba(99, 102, 241, 0.15)', color: '#a5b4fc', border: '1px solid rgba(99, 102, 241, 0.3)' }}>
-                            🏷️ {t.shift?.shift_name || (t.shift_id ? `Shift #${t.shift_id}` : 'Reguler')}
+                            🏷️ {t.shift?.shift_name || (t.shift_id ? `Shift ${t.shift_id}` : 'Reguler')}
                           </span>
                         </td>
                         <td>
@@ -4125,7 +4222,7 @@ export default function POS() {
                                 {t.status === 'PAID' && (
                                   <button
                                     className="btn btn-ghost btn-sm"
-                                    onClick={() => setVoidPaidModal({ open: true, order: t, reason: '', submitting: false })}
+                                    onClick={() => setVoidPaidModal({ open: true, order: t, reason: '', voidType: 'WRONG_INPUT', submitting: false })}
                                     title="Void Transaksi"
                                     style={{ padding: '4px 6px', color: '#fb7185' }}
                                   >
@@ -7439,8 +7536,8 @@ export default function POS() {
           MODAL VOID TRANSAKSI SELESAI (APPROVAL MANAGER / OWNER)
          ======================================================== */}
       {voidPaidModal.open && voidPaidModal.order && (
-        <div className="modal-overlay" onClick={() => setVoidPaidModal({ open: false, order: null, reason: '', submitting: false })}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
+        <div className="modal-overlay" onClick={() => setVoidPaidModal({ open: false, order: null, reason: '', voidType: 'WRONG_INPUT', submitting: false })}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 540 }}>
             {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
               <div style={{
@@ -7462,20 +7559,125 @@ export default function POS() {
               </div>
             </div>
 
+            {/* Pilihan 2 Jenis Void */}
+            <div className="form-group mb-3">
+              <label className="form-label" style={{ fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                Pilih Tipe Pembatalan (Void) <span style={{ color: 'var(--danger)' }}>*</span>
+              </label>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                {/* Option 1: Salah Input */}
+                <div
+                  onClick={() => setVoidPaidModal(p => ({ ...p, voidType: 'WRONG_INPUT' }))}
+                  style={{
+                    border: `1.5px solid ${voidPaidModal.voidType === 'WRONG_INPUT' ? 'var(--accent-bright, #38bdf8)' : 'var(--border)'}`,
+                    background: voidPaidModal.voidType === 'WRONG_INPUT' ? 'rgba(56, 189, 248, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                    borderRadius: 10,
+                    padding: '12px 10px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, fontSize: 12.5, color: voidPaidModal.voidType === 'WRONG_INPUT' ? '#38bdf8' : '#ffffff' }}>
+                      <RotateCcw size={15} /> Salah Input
+                    </div>
+                    <div style={{
+                      width: 16, height: 16, borderRadius: '50%',
+                      border: `2px solid ${voidPaidModal.voidType === 'WRONG_INPUT' ? '#38bdf8' : 'var(--border)'}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    }}>
+                      {voidPaidModal.voidType === 'WRONG_INPUT' && (
+                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#38bdf8' }} />
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.35, marginTop: 2 }}>
+                    Kasir salah klik / salah ketik atau belum sempat dimasak.
+                  </div>
+                  <div style={{
+                    marginTop: 4,
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: '#38bdf8',
+                    background: 'rgba(56, 189, 248, 0.15)',
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    display: 'inline-block'
+                  }}>
+                    ⚡ Hapus Riwayat Kartu Stok & HPP
+                  </div>
+                </div>
+
+                {/* Option 2: Wasted */}
+                <div
+                  onClick={() => setVoidPaidModal(p => ({ ...p, voidType: 'WASTED' }))}
+                  style={{
+                    border: `1.5px solid ${voidPaidModal.voidType === 'WASTED' ? '#f43f5e' : 'var(--border)'}`,
+                    background: voidPaidModal.voidType === 'WASTED' ? 'rgba(244, 63, 94, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                    borderRadius: 10,
+                    padding: '12px 10px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, fontSize: 12.5, color: voidPaidModal.voidType === 'WASTED' ? '#fb7185' : '#ffffff' }}>
+                      <Trash2 size={15} /> Wasted (Terbuang)
+                    </div>
+                    <div style={{
+                      width: 16, height: 16, borderRadius: '50%',
+                      border: `2px solid ${voidPaidModal.voidType === 'WASTED' ? '#fb7185' : 'var(--border)'}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    }}>
+                      {voidPaidModal.voidType === 'WASTED' && (
+                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#fb7185' }} />
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.35, marginTop: 2 }}>
+                    Sudah terlanjur dimasak / rusak / komplain tamu.
+                  </div>
+                  <div style={{
+                    marginTop: 4,
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: '#fb7185',
+                    background: 'rgba(244, 63, 94, 0.15)',
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    display: 'inline-block'
+                  }}>
+                    🗑️ Stok Tetap Keluar (Laporan Waste)
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Approval Context Banner */}
             {isOwnerOrManager ? (
               <div style={{
                 display: 'flex', alignItems: 'flex-start', gap: 10,
-                background: 'rgba(16, 185, 129, 0.12)',
-                border: '1px solid rgba(16, 185, 129, 0.3)',
+                background: voidPaidModal.voidType === 'WASTED' ? 'rgba(244, 63, 94, 0.1)' : 'rgba(16, 185, 129, 0.12)',
+                border: `1px solid ${voidPaidModal.voidType === 'WASTED' ? 'rgba(244, 63, 94, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`,
                 borderRadius: 8, padding: '10px 12px', marginBottom: 14,
-                fontSize: 12, color: '#6ee7b7'
+                fontSize: 12, color: voidPaidModal.voidType === 'WASTED' ? '#fca5a5' : '#6ee7b7'
               }}>
-                <ShieldCheck size={20} style={{ color: '#10b981', flexShrink: 0, marginTop: 1 }} />
+                <ShieldCheck size={20} style={{ color: voidPaidModal.voidType === 'WASTED' ? '#fb7185' : '#10b981', flexShrink: 0, marginTop: 1 }} />
                 <div>
                   <strong style={{ color: '#ffffff' }}>Otorisasi Manajer / Owner: {currentUser.name || 'Manager'}</strong>
-                  <div style={{ fontSize: 11.5, color: '#a7f3d0', marginTop: 2, lineHeight: 1.4 }}>
-                    Anda memiliki hak otorisasi penuh. Menyetujui permohonan ini akan <strong>langsung membatalkan transaksi dan mengembalikan seluruh stok bahan baku ke Kartu Stok (ADJUSTMENT_IN)</strong>.
+                  <div style={{ fontSize: 11.5, color: voidPaidModal.voidType === 'WASTED' ? '#fecdd3' : '#a7f3d0', marginTop: 2, lineHeight: 1.4 }}>
+                    {voidPaidModal.voidType === 'WASTED' ? (
+                      <>Transaksi akan <strong>dibatalkan</strong>. Bahan baku <strong>tetap tercatat keluar (tidak dikembalikan)</strong> dan masuk ke Laporan Kerugian Waste (Laba Rugi).</>
+                    ) : (
+                      <>Transaksi akan <strong>dibatalkan</strong>. Seluruh riwayat mutasi bahan akan <strong>dihapus bersih dari Kartu Stok dan HPP Laba Rugi dinolkan</strong>.</>
+                    )}
                   </div>
                 </div>
               </div>
@@ -7490,7 +7692,10 @@ export default function POS() {
                   <ShieldAlert size={14} /> SOP Persetujuan Void Nota:
                 </div>
                 <div>
-                  Permohonan pembatalan nota ini akan otomatis diteruskan ke <strong>Halaman Persetujuan Manajer / Owner</strong>. Stok bahan baku resep di Kartu Stok akan dikembalikan begitu permohonan disetujui.
+                  Permohonan void ({voidPaidModal.voidType === 'WASTED' ? 'Makanan Terbuang / Waste' : 'Salah Input'}) akan diteruskan ke <strong>Persetujuan Manajer/Owner</strong>.
+                  {voidPaidModal.voidType === 'WASTED'
+                    ? ' Bahan tetap tercatat keluar setelah disetujui.'
+                    : ' Riwayat di Kartu Stok & HPP akan dibersihkan setelah disetujui.'}
                 </div>
               </div>
             )}
@@ -7503,7 +7708,7 @@ export default function POS() {
               <textarea
                 className="form-control"
                 rows={3}
-                placeholder="Contoh: Tamu membatalkan pesanan / Salah ketik nominal / Double order kasir..."
+                placeholder={voidPaidModal.voidType === 'WASTED' ? 'Contoh: Makanan gosong / tumpah / tamu komplain rasa...' : 'Contoh: Tamu batal pesan / Salah klik menu / Double input kasir...'}
                 value={voidPaidModal.reason}
                 onChange={e => setVoidPaidModal(p => ({ ...p, reason: e.target.value }))}
                 style={{ fontSize: 12.5 }}
@@ -7518,7 +7723,7 @@ export default function POS() {
                 type="button"
                 className="btn btn-secondary"
                 onClick={() => {
-                  setVoidPaidModal({ open: false, order: null, reason: '', submitting: false });
+                  setVoidPaidModal({ open: false, order: null, reason: '', voidType: 'WRONG_INPUT', submitting: false });
                 }}
                 style={{ flex: 1, justifyContent: 'center' }}
               >
@@ -7534,7 +7739,7 @@ export default function POS() {
                 {voidPaidModal.submitting
                   ? 'Mengirim Permohonan...'
                   : isOwnerOrManager
-                    ? 'Ya, Setujui & Void Transaksi'
+                    ? `Ya, Setujui & Void (${voidPaidModal.voidType === 'WASTED' ? 'Wasted' : 'Salah Input'})`
                     : 'Kirim Permohonan Void ke Manajer'}
               </button>
             </div>

@@ -855,7 +855,7 @@ export default function BatchPrep() {
       {/* MODAL: MASAK BATCH OLAHAN BARU */}
       {cookModalOpen && (
         <div className="modal-backdrop" style={{
-          position: 'fixed', inset: 0, zIndex: 999, background: 'rgba(0,0,0,0.75)',
+          position: 'fixed', inset: 0, zIndex: 99999, background: 'rgba(0,0,0,0.75)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16
         }}>
           <div className="card" style={{
@@ -1363,7 +1363,7 @@ export default function BatchPrep() {
       {/* MODAL: DETAIL RIWAYAT BATCH */}
       {detailModalBatch && (
         <div className="modal-backdrop" style={{
-          position: 'fixed', inset: 0, zIndex: 999, background: 'rgba(0,0,0,0.75)',
+          position: 'fixed', inset: 0, zIndex: 99999, background: 'rgba(0,0,0,0.75)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16
         }}>
           <div className="card" style={{
@@ -1541,7 +1541,7 @@ export default function BatchPrep() {
       {/* MODAL: BUAT / EDIT RESEP BAHAN OLAHAN */}
       {subRecipeModal && (
         <div className="modal-backdrop" style={{
-          position: 'fixed', inset: 0, zIndex: 999, background: 'rgba(0,0,0,0.75)',
+          position: 'fixed', inset: 0, zIndex: 99999, background: 'rgba(0,0,0,0.75)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16
         }}>
           <div className="card" style={{

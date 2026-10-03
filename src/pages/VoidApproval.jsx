@@ -60,7 +60,7 @@ export default function VoidApproval() {
   }, [activeOutletId]);
 
   // Modals
-  const [approveModal, setApproveModal] = useState({ open: false, order: null, submitting: false, reason: '' });
+  const [approveModal, setApproveModal] = useState({ open: false, order: null, submitting: false, reason: '', voidType: 'WRONG_INPUT' });
   const [rejectModal, setRejectModal] = useState({ open: false, order: null, submitting: false, reason: '' });
   const [printModal, setPrintModal] = useState({ open: false, order: null });
 
@@ -110,11 +110,12 @@ export default function VoidApproval() {
     const orderNum = approveModal.order.order_number;
     try {
       const res = await api.post(`/transactions/${orderNum}/void-approve`, {
-        reason: approveModal.reason || approveModal.order.cancellation_reason || 'Disetujui Manajer/Owner'
+        reason: approveModal.reason || approveModal.order.cancellation_reason || 'Disetujui Manajer/Owner',
+        void_type: approveModal.voidType || 'WRONG_INPUT'
       });
 
-      toast.success(res.data?.message || `Void nota #${orderNum} berhasil disetujui! Stok bahan telah dikembalikan.`);
-      setApproveModal({ open: false, order: null, submitting: false, reason: '' });
+      toast.success(res.data?.message || `Void nota #${orderNum} berhasil disetujui!`);
+      setApproveModal({ open: false, order: null, submitting: false, reason: '', voidType: 'WRONG_INPUT' });
       fetchVoidRequests(true);
     } catch (err) {
       console.error('Error approving void', err);
@@ -523,6 +524,39 @@ export default function VoidApproval() {
                       <Store size={12} /> {order.outlet_name}
                     </span>
 
+                    {/* Void Type Badge */}
+                    {order.void_type === 'WASTED' ? (
+                      <span style={{
+                        background: 'rgba(244, 63, 94, 0.15)',
+                        border: '1px solid rgba(244, 63, 94, 0.35)',
+                        color: '#fb7185',
+                        padding: '3px 9px',
+                        borderRadius: 8,
+                        fontSize: 11,
+                        fontWeight: 800,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5
+                      }}>
+                        <Trash2 size={13} /> Wasted (Makanan Terbuang)
+                      </span>
+                    ) : (
+                      <span style={{
+                        background: 'rgba(56, 189, 248, 0.15)',
+                        border: '1px solid rgba(56, 189, 248, 0.35)',
+                        color: '#38bdf8',
+                        padding: '3px 9px',
+                        borderRadius: 8,
+                        fontSize: 11,
+                        fontWeight: 800,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5
+                      }}>
+                        <RotateCcw size={13} /> Salah Input
+                      </span>
+                    )}
+
                     {/* Status Badge */}
                     {isPending ? (
                       <span style={{
@@ -721,16 +755,20 @@ export default function VoidApproval() {
                         </div>
                       </div>
 
-                      {/* Right Column: Raw Material Restoration Breakdown */}
+                      {/* Right Column: Raw Material Impact Breakdown */}
                       <div style={{
-                        background: 'rgba(16, 185, 129, 0.05)',
-                        border: '1px solid rgba(16, 185, 129, 0.25)',
+                        background: order.void_type === 'WASTED' ? 'rgba(244, 63, 94, 0.05)' : 'rgba(16, 185, 129, 0.05)',
+                        border: `1px solid ${order.void_type === 'WASTED' ? 'rgba(244, 63, 94, 0.25)' : 'rgba(16, 185, 129, 0.25)'}`,
                         borderRadius: 10,
                         padding: 14
                       }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 800, color: '#6ee7b7', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <Boxes size={14} style={{ color: '#34d399' }} />
-                          {isCancelled ? 'Bahan Baku yang Telah Dikembalikan ke Kartu Stok:' : 'Bahan Baku yang Akan Dikembalikan ke Kartu Stok:'}
+                        <div style={{ fontSize: 12.5, fontWeight: 800, color: order.void_type === 'WASTED' ? '#fb7185' : '#6ee7b7', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {order.void_type === 'WASTED' ? <Trash2 size={14} style={{ color: '#fb7185' }} /> : <Boxes size={14} style={{ color: '#34d399' }} />}
+                          {order.void_type === 'WASTED'
+                            ? 'Bahan Baku Tercatat Keluar (Masuk Laporan Kerugian Waste):'
+                            : isCancelled
+                              ? 'Bahan Baku yang Telah Dihapus dari Kartu Stok:'
+                              : 'Bahan Baku yang Akan Dihapus dari Kartu Stok:'}
                         </div>
 
                         {(!order.ingredients_breakdown || order.ingredients_breakdown.length === 0) ? (
@@ -753,11 +791,19 @@ export default function VoidApproval() {
                                 }}
                               >
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  <span style={{ color: '#34d399', fontWeight: 800 }}>+</span>
+                                  <span style={{ color: order.void_type === 'WASTED' ? '#fb7185' : '#34d399', fontWeight: 800 }}>
+                                    {order.void_type === 'WASTED' ? '🗑️' : '⚡'}
+                                  </span>
                                   <span style={{ color: '#ffffff', fontWeight: 600 }}>{ing.name}</span>
                                 </div>
-                                <span className="mono" style={{ color: '#34d399', fontWeight: 800, background: 'rgba(16, 185, 129, 0.15)', padding: '2px 8px', borderRadius: 4 }}>
-                                  +{formatQty(ing.qty)} {ing.unit}
+                                <span className="mono" style={{
+                                  color: order.void_type === 'WASTED' ? '#fb7185' : '#34d399',
+                                  fontWeight: 800,
+                                  background: order.void_type === 'WASTED' ? 'rgba(244, 63, 94, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                                  padding: '2px 8px',
+                                  borderRadius: 4
+                                }}>
+                                  {formatQty(ing.qty)} {ing.unit}
                                 </span>
                               </div>
                             ))}
@@ -791,7 +837,13 @@ export default function VoidApproval() {
                         <button
                           type="button"
                           className="btn btn-primary"
-                          onClick={() => setApproveModal({ open: true, order, submitting: false, reason: order.cancellation_reason || '' })}
+                          onClick={() => setApproveModal({
+                            open: true,
+                            order,
+                            submitting: false,
+                            reason: order.cancellation_reason || '',
+                            voidType: order.void_type || 'WRONG_INPUT'
+                          })}
                           style={{
                             background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                             borderColor: '#10b981',
@@ -800,7 +852,7 @@ export default function VoidApproval() {
                             boxShadow: '0 4px 14px rgba(16, 185, 129, 0.3)'
                           }}
                         >
-                          <CheckCircle2 size={15} style={{ marginRight: 6 }} /> Setujui Void & Kembalikan Stok
+                          <CheckCircle2 size={15} style={{ marginRight: 6 }} /> Setujui Void ({order.void_type === 'WASTED' ? 'Wasted' : 'Salah Input'})
                         </button>
                       </>
                     ) : isCancelled ? (
@@ -824,11 +876,11 @@ export default function VoidApproval() {
       )}
 
       {/* ========================================================
-          MODAL 1: SETUJUI VOID & KEMBALIKAN STOK
+          MODAL 1: SETUJUI VOID & EKSEKUSI
          ======================================================== */}
       {approveModal.open && approveModal.order && (
-        <div className="modal-overlay" onClick={() => setApproveModal({ open: false, order: null, submitting: false, reason: '' })}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
+        <div className="modal-overlay" onClick={() => setApproveModal({ open: false, order: null, submitting: false, reason: '', voidType: 'WRONG_INPUT' })}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 540 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
               <div style={{
                 width: 44, height: 44, borderRadius: 12,
@@ -849,28 +901,85 @@ export default function VoidApproval() {
               </div>
             </div>
 
+            {/* Tipe Void Selector di Modal Persetujuan */}
+            <div className="form-group mb-3">
+              <label className="form-label" style={{ fontWeight: 700, fontSize: 12 }}>
+                Pilih / Konfirmasi Tipe Pembatalan (Void):
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div
+                  onClick={() => setApproveModal(p => ({ ...p, voidType: 'WRONG_INPUT' }))}
+                  style={{
+                    border: `1.5px solid ${approveModal.voidType === 'WRONG_INPUT' ? '#38bdf8' : 'var(--border)'}`,
+                    background: approveModal.voidType === 'WRONG_INPUT' ? 'rgba(56, 189, 248, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                    borderRadius: 10,
+                    padding: '10px 12px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, fontSize: 12, color: approveModal.voidType === 'WRONG_INPUT' ? '#38bdf8' : '#ffffff' }}>
+                    <RotateCcw size={14} /> Salah Input
+                  </div>
+                  <div style={{ fontSize: 10.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+                    Hapus mutasi dari Kartu Stok & bersihkan HPP Laba Rugi
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => setApproveModal(p => ({ ...p, voidType: 'WASTED' }))}
+                  style={{
+                    border: `1.5px solid ${approveModal.voidType === 'WASTED' ? '#f43f5e' : 'var(--border)'}`,
+                    background: approveModal.voidType === 'WASTED' ? 'rgba(244, 63, 94, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                    borderRadius: 10,
+                    padding: '10px 12px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, fontSize: 12, color: approveModal.voidType === 'WASTED' ? '#fb7185' : '#ffffff' }}>
+                    <Trash2 size={14} /> Wasted (Terbuang)
+                  </div>
+                  <div style={{ fontSize: 10.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+                    Stok tetap berkurang & masuk Laporan Waste
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div style={{
-              background: 'rgba(16, 185, 129, 0.08)',
-              border: '1px solid rgba(16, 185, 129, 0.25)',
+              background: approveModal.voidType === 'WASTED' ? 'rgba(244, 63, 94, 0.08)' : 'rgba(16, 185, 129, 0.08)',
+              border: `1px solid ${approveModal.voidType === 'WASTED' ? 'rgba(244, 63, 94, 0.25)' : 'rgba(16, 185, 129, 0.25)'}`,
               borderRadius: 10,
               padding: '12px 14px',
               fontSize: 12.5,
-              color: '#a7f3d0',
+              color: approveModal.voidType === 'WASTED' ? '#fca5a5' : '#a7f3d0',
               lineHeight: 1.4,
               marginBottom: 16
             }}>
-              Dengan menyetujui void ini:
+              Dengan menyetujui void <strong>{approveModal.voidType === 'WASTED' ? 'Wasted (Makanan Terbuang)' : 'Salah Input'}</strong> ini:
               <ul style={{ margin: '6px 0 0 16px', padding: 0 }}>
                 <li>Transaksi resmi <strong>DIBATALKAN (Status: CANCELLED)</strong>.</li>
-                <li>Seluruh stok bahan baku resep ({approveModal.order.ingredients_breakdown?.length || 0} bahan) akan <strong>otomatis dikembalikan ke Kartu Stok (ADJUSTMENT_IN)</strong>.</li>
-                <li>Omzet kasir & laporan penjualan akan disesuaikan.</li>
+                {approveModal.voidType === 'WASTED' ? (
+                  <>
+                    <li>Bahan baku <strong>tetap tercatat keluar (tidak dikembalikan ke stok fisik)</strong>.</li>
+                    <li>Otomatis dicatat ke <strong>Laporan Kerugian Waste</strong> dan masuk ke analisis HPP / Laba Rugi.</li>
+                  </>
+                ) : (
+                  <>
+                    <li>Seluruh riwayat mutasi bahan ({approveModal.order.ingredients_breakdown?.length || 0} bahan) akan <strong>dihapus bersih dari Kartu Stok</strong>.</li>
+                    <li>HPP pada Laba Rugi dan omzet kasir dinolkan.</li>
+                  </>
+                )}
               </ul>
             </div>
 
             {/* Ingredients Summary */}
             {approveModal.order.ingredients_breakdown && approveModal.order.ingredients_breakdown.length > 0 && (
               <div style={{ marginBottom: 16 }}>
-                <label className="form-label" style={{ fontSize: 11.5 }}>Daftar Bahan Baku yang Dikembalikan:</label>
+                <label className="form-label" style={{ fontSize: 11.5 }}>
+                  {approveModal.voidType === 'WASTED' ? 'Daftar Bahan Baku yang Tercatat Terbuang:' : 'Daftar Bahan Baku yang Dihapus dari Kartu Stok:'}
+                </label>
                 <div style={{
                   maxHeight: 130,
                   overflowY: 'auto',
@@ -885,7 +994,9 @@ export default function VoidApproval() {
                   {approveModal.order.ingredients_breakdown.map((ing, idx) => (
                     <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5 }}>
                       <span style={{ color: '#ffffff' }}>• {ing.name}</span>
-                      <strong className="mono" style={{ color: '#34d399' }}>+{formatQty(ing.qty)} {ing.unit}</strong>
+                      <strong className="mono" style={{ color: approveModal.voidType === 'WASTED' ? '#fb7185' : '#34d399' }}>
+                        {formatQty(ing.qty)} {ing.unit}
+                      </strong>
                     </div>
                   ))}
                 </div>
@@ -897,7 +1008,7 @@ export default function VoidApproval() {
               <input
                 type="text"
                 className="form-control"
-                placeholder="Contoh: Disetujui karena pesanan salah input"
+                placeholder={approveModal.voidType === 'WASTED' ? 'Contoh: Disetujui karena makanan rusak/gosong' : 'Contoh: Disetujui karena kasir salah input'}
                 value={approveModal.reason}
                 onChange={e => setApproveModal(p => ({ ...p, reason: e.target.value }))}
                 style={{ fontSize: 12.5 }}
@@ -908,7 +1019,7 @@ export default function VoidApproval() {
               <button
                 type="button"
                 className="btn btn-secondary"
-                onClick={() => setApproveModal({ open: false, order: null, submitting: false, reason: '' })}
+                onClick={() => setApproveModal({ open: false, order: null, submitting: false, reason: '', voidType: 'WRONG_INPUT' })}
                 disabled={approveModal.submitting}
                 style={{ flex: 1, justifyContent: 'center' }}
               >
@@ -927,7 +1038,7 @@ export default function VoidApproval() {
                   borderColor: '#10b981'
                 }}
               >
-                {approveModal.submitting ? 'Memproses Void...' : 'Ya, Setujui & Kembalikan Stok'}
+                {approveModal.submitting ? 'Memproses Void...' : `Ya, Setujui Void (${approveModal.voidType === 'WASTED' ? 'Wasted' : 'Salah Input'})`}
               </button>
             </div>
           </div>
@@ -1082,7 +1193,9 @@ export default function VoidApproval() {
                   *** NOTA DIBATALKAN (VOID) ***
                 </div>
                 <div style={{ fontSize: 9, fontWeight: 700, color: '#b91c1c' }}>
-                  STATUS: TRANSAKSI DIBATALKAN & STOK DIKEMBALIKAN
+                  {printModal.order.void_type === 'WASTED'
+                    ? 'TIPE: WASTED (MAKANAN TERBUANG / STOK KELUAR)'
+                    : 'TIPE: SALAH INPUT (DIHAPUS DARI KARTU STOK)'}
                 </div>
               </div>
 
@@ -1181,7 +1294,11 @@ export default function VoidApproval() {
 
               <div style={{ textAlign: 'center', fontSize: 9, lineHeight: 1.3, opacity: 0.9 }}>
                 <div>* DOKUMEN BUKTI SAH VOID TRANSAKSI *</div>
-                <div>Stok bahan baku telah otomatis dikembalikan ke Kartu Stok.</div>
+                <div>
+                  {printModal.order.void_type === 'WASTED'
+                    ? 'Bahan tetap tercatat keluar dan dicatat ke Laporan Waste.'
+                    : 'Riwayat mutasi bahan telah dihapus bersih dari Kartu Stok.'}
+                </div>
               </div>
             </div>
 
