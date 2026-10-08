@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import api from '../api/client';
 import { num, pct, rupiah, StatusPill, LoadingState, PeriodPicker, PageHeader, MiniCard } from '../components/ui';
 import { getWasteReason } from './StockMovement';
@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 import { exportVarianceBahanToExcel } from '../utils/exportReport';
 import { printElement } from '../utils/print';
+import ReportPreviewModal from '../components/ReportPreviewModal';
 
 export default function VarianceBahan() {
   const [varData, setVarData] = useState([]);
@@ -16,6 +17,8 @@ export default function VarianceBahan() {
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState('cost_control'); // 'standard' | 'cost_control'
   const [showReportModal, setShowReportModal] = useState(false);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const { activeOutletId, activeOutlet, currentBusiness, dateRange: period } = useOutlet();
   const currentUser = JSON.parse(localStorage.getItem('pos_user') || '{}');
@@ -37,6 +40,7 @@ export default function VarianceBahan() {
   }
 
   async function handleExportExcel() {
+    setExporting(true);
     try {
       const fname = await exportVarianceBahanToExcel({
         varData,
@@ -49,6 +53,8 @@ export default function VarianceBahan() {
     } catch (err) {
       console.error(err);
       toast.error('Gagal mengekspor laporan ke Excel');
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -72,6 +78,89 @@ export default function VarianceBahan() {
   const totalWasteLoss = varData.reduce((acc, iv) => acc + (iv.waste_value || 0), 0);
   const totalUnaccountedLoss = varData.reduce((acc, iv) => acc + (iv.unaccounted_value > 0 ? iv.unaccounted_value : 0), 0);
   const totalGrossLoss = totalWasteLoss + totalUnaccountedLoss;
+
+  // Preview Modal Sheets & KPIs
+  const previewKpis = useMemo(() => [
+    { label: 'Kerugian Waste Terdata', value: totalWasteLoss, format: 'rupiah', color: '#fb923c' },
+    { label: 'Selisih Tak Terjelaskan (Shrinkage)', value: totalUnaccountedLoss, format: 'rupiah', color: '#fb7185' },
+    { label: 'Total Kerugian F&B', value: totalGrossLoss, format: 'rupiah', color: '#c084fc' },
+    { label: 'Total Bahan Diaudit', value: `${varData.length} Bahan`, color: '#38bdf8' }
+  ], [totalWasteLoss, totalUnaccountedLoss, totalGrossLoss, varData.length]);
+
+  const previewSheets = useMemo(() => {
+    const auditRows = varData.map(iv => ({
+      name: iv.ingredient?.name || '-',
+      unit: iv.ingredient?.unit_pakai || '-',
+      harga: Number(iv.ingredient?.harga || 0),
+      stok_awal: Number(iv.stok_awal || 0),
+      total_masuk: Number(iv.total_masuk || 0),
+      pemakaian_teoritis: Number(iv.pemakaian_teoritis || 0),
+      waste_qty: Number(iv.waste_qty || 0),
+      pemakaian_aktual: iv.pemakaian_aktual !== null ? Number(iv.pemakaian_aktual) : 0,
+      variance_qty: Number(iv.variance_qty || 0),
+      variance_pct: Number(iv.variance_pct || 0),
+      variance_value: Number(iv.variance_value || 0),
+      waste_value: Number(iv.waste_value || 0),
+      unaccounted_value: Number(iv.unaccounted_value || 0),
+      status: iv.status || 'NORMAL'
+    }));
+
+    const wasteRows = varData.filter(iv => (iv.waste_qty || 0) > 0).map(iv => ({
+      name: iv.ingredient?.name || '-',
+      unit: iv.ingredient?.unit_pakai || '-',
+      harga: Number(iv.ingredient?.harga || 0),
+      waste_qty: Number(iv.waste_qty || 0),
+      waste_value: Number(iv.waste_value || 0),
+      unaccounted_value: Number(iv.unaccounted_value || 0),
+      status: iv.status || 'NORMAL'
+    }));
+
+    return [
+      {
+        id: 'audit_variansi',
+        name: 'Audit Variansi Lengkap',
+        columns: [
+          { key: 'name', label: 'Bahan Baku', align: 'left', width: 22 },
+          { key: 'unit', label: 'Satuan', align: 'left', width: 9 },
+          { key: 'harga', label: 'HPP Satuan', align: 'right', format: 'rupiah', width: 13 },
+          { key: 'stok_awal', label: 'Stok Awal', align: 'right', format: 'number', width: 10 },
+          { key: 'total_masuk', label: 'Total Masuk', align: 'right', format: 'number', width: 11 },
+          { key: 'pemakaian_teoritis', label: 'Teoritis POS', align: 'right', format: 'number', width: 12 },
+          { key: 'waste_qty', label: 'Waste Terdata', align: 'right', format: 'number', width: 12 },
+          { key: 'pemakaian_aktual', label: 'Aktual Fisik', align: 'right', format: 'number', width: 12 },
+          { key: 'variance_qty', label: 'Selisih Qty', align: 'right', format: 'number', width: 11 },
+          { key: 'variance_pct', label: '% Selisih', align: 'right', format: 'percent', width: 10 },
+          { key: 'variance_value', label: 'Nilai Selisih', align: 'right', format: 'rupiah', width: 14 },
+          { key: 'waste_value', label: 'Kerugian Waste', align: 'right', format: 'rupiah', width: 14 },
+          { key: 'unaccounted_value', label: 'Kerugian Shrinkage', align: 'right', format: 'rupiah', width: 15 },
+          { key: 'status', label: 'Status', align: 'center', width: 10 }
+        ],
+        data: auditRows,
+        totals: [
+          { label: 'Total Kerugian Waste', value: totalWasteLoss, format: 'rupiah' },
+          { label: 'Total Selisih Shrinkage', value: totalUnaccountedLoss, format: 'rupiah' },
+          { label: 'Total Kerugian F&B (Waste + Shrinkage)', value: totalGrossLoss, format: 'rupiah' }
+        ]
+      },
+      ...(wasteRows.length > 0 ? [{
+        id: 'waste_breakdown',
+        name: `Bahan dengan Waste (${wasteRows.length})`,
+        columns: [
+          { key: 'name', label: 'Bahan Baku', align: 'left', width: 25 },
+          { key: 'unit', label: 'Satuan', align: 'left', width: 10 },
+          { key: 'harga', label: 'HPP Satuan', align: 'right', format: 'rupiah', width: 14 },
+          { key: 'waste_qty', label: 'Waste Terdata', align: 'right', format: 'number', width: 14 },
+          { key: 'waste_value', label: 'Total Nilai Waste', align: 'right', format: 'rupiah', width: 16 },
+          { key: 'unaccounted_value', label: 'Shrinkage Tak Terjelaskan', align: 'right', format: 'rupiah', width: 18 },
+          { key: 'status', label: 'Status', align: 'center', width: 12 }
+        ],
+        data: wasteRows,
+        totals: [
+          { label: 'Total Kerugian Waste Terdata', value: totalWasteLoss, format: 'rupiah' }
+        ]
+      }] : [])
+    ];
+  }, [varData, totalWasteLoss, totalUnaccountedLoss, totalGrossLoss]);
 
   if (loading) return <LoadingState />;
 
@@ -106,15 +195,32 @@ export default function VarianceBahan() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: 6,
+                borderColor: 'rgba(99, 102, 241, 0.4)',
+                color: 'var(--accent-bright)',
+                background: 'rgba(99, 102, 241, 0.08)',
+                fontWeight: 600
+              }}
+              onClick={() => setShowPreviewModal(true)}
+              title="Pratinjau interaktif laporan audit variansi di layar"
+            >
+              <Eye size={15} /> Pratinjau Laporan
+            </button>
+            <button
+              className="btn btn-secondary btn-sm"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
                 borderColor: 'rgba(16, 185, 129, 0.4)',
                 color: '#34d399',
                 background: 'rgba(16, 185, 129, 0.08)',
                 fontWeight: 600
               }}
               onClick={handleExportExcel}
+              disabled={exporting}
               title="Unduh Audit Variansi Bahan ke format Excel (.xlsx)"
             >
-              <FileSpreadsheet size={15} /> Export Excel
+              <FileSpreadsheet size={15} /> {exporting ? 'Mengekspor...' : 'Export Excel'}
             </button>
             <button
               className="btn btn-primary btn-sm"
@@ -1201,6 +1307,22 @@ export default function VarianceBahan() {
           </div>
         </div>
       )}
+
+      {/* Universal Report Preview Modal */}
+      <ReportPreviewModal
+        isOpen={showPreviewModal}
+        onClose={() => setShowPreviewModal(false)}
+        title="Pratinjau Laporan Variansi Bahan & Cost Control"
+        reportTitle="LAPORAN AUDIT VARIANSI BAHAN BAKU & WASTE"
+        businessName={businessName}
+        outletName={outletName}
+        periodText={`${period.from} s/d ${period.to}`}
+        kpis={previewKpis}
+        sheets={previewSheets}
+        onExportExcel={handleExportExcel}
+        onPrint={handlePrintPdf}
+        exporting={exporting}
+      />
     </div>
   );
 }

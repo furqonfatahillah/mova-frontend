@@ -240,14 +240,16 @@ export default function DateRangePicker({
             top: 'calc(100% + 8px)',
             [align]: 0,
             zIndex: 99999,
-            width: 320,
-            padding: 16,
+            width: 'min(320px, calc(100vw - 28px))',
+            maxWidth: 'calc(100vw - 28px)',
+            padding: 14,
             background: '#13182e',
             color: '#f8fafc',
             borderRadius: 14,
             border: '1px solid rgba(99, 102, 241, 0.4)',
             boxShadow: '0 20px 45px rgba(0, 0, 0, 0.95), 0 0 0 1px rgba(99, 102, 241, 0.25)',
-            fontFamily: "'Plus Jakarta Sans', sans-serif"
+            fontFamily: "'Plus Jakarta Sans', sans-serif",
+            boxSizing: 'border-box'
           }}
         >
           {/* Header Navigation Bar (e.g., SEP 2026  <  >) */}

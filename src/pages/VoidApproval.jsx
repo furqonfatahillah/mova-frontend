@@ -24,6 +24,7 @@ export default function VoidApproval() {
   const {
     outlets,
     activeOutletId,
+    dateRange,
     currentUser,
     isOwnerBisnis,
     isOwnerOutlet,
@@ -43,21 +44,10 @@ export default function VoidApproval() {
 
   // Filters
   const [statusTab, setStatusTab] = useState('VOID_PENDING'); // 'VOID_PENDING' | 'CANCELLED' | 'REJECTED' | 'ALL'
-  const [selectedOutletId, setSelectedOutletId] = useState('');
-  const [startDate, setStartDate] = useState(getMonthStartStr());
-  const [endDate, setEndDate] = useState(getTodayStr());
   const [searchQuery, setSearchQuery] = useState('');
 
   // Expandable cards state
   const [expandedOrders, setExpandedOrders] = useState({});
-
-  useEffect(() => {
-    if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
-      setSelectedOutletId(String(activeOutletId));
-    } else {
-      setSelectedOutletId('');
-    }
-  }, [activeOutletId]);
 
   // Modals
   const [approveModal, setApproveModal] = useState({ open: false, order: null, submitting: false, reason: '', voidType: 'WRONG_INPUT' });
@@ -76,11 +66,15 @@ export default function VoidApproval() {
     else setRefreshing(true);
 
     try {
+      const outletParam = (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all')
+        ? activeOutletId
+        : undefined;
+
       const params = {
         status: statusTab,
-        outlet_id: selectedOutletId || undefined,
-        start_date: startDate || undefined,
-        end_date: endDate || undefined,
+        outlet_id: outletParam,
+        start_date: dateRange?.from || undefined,
+        end_date: dateRange?.to || undefined,
         search: searchQuery || undefined,
       };
 
@@ -96,7 +90,7 @@ export default function VoidApproval() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [statusTab, selectedOutletId, startDate, endDate, searchQuery]);
+  }, [statusTab, activeOutletId, dateRange?.from, dateRange?.to, searchQuery]);
 
   useEffect(() => {
     fetchVoidRequests();
@@ -390,59 +384,17 @@ export default function VoidApproval() {
           })}
         </div>
 
-        {/* Search & Select Controls */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, alignItems: 'center' }}>
-          {/* Search Box */}
-          <div style={{ position: 'relative' }}>
-            <Search size={15} style={{ position: 'absolute', left: 12, top: 11, color: 'var(--text-muted)' }} />
-            <input
-              type="text"
-              className="form-control"
-              placeholder="Cari no nota, kasir, alasan..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              style={{ paddingLeft: 34, fontSize: 12.5 }}
-            />
-          </div>
-
-          {/* Outlet Selector */}
-          <div>
-            <select
-              className="form-control"
-              value={selectedOutletId}
-              onChange={e => setSelectedOutletId(e.target.value)}
-              style={{ fontSize: 12.5 }}
-            >
-              <option value="">Semua Cabang Outlet</option>
-              {outlets.map(o => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Start Date */}
-          <div>
-            <input
-              type="date"
-              className="form-control"
-              value={startDate}
-              onChange={e => setStartDate(e.target.value)}
-              style={{ fontSize: 12.5 }}
-            />
-          </div>
-
-          {/* End Date */}
-          <div>
-            <input
-              type="date"
-              className="form-control"
-              value={endDate}
-              onChange={e => setEndDate(e.target.value)}
-              style={{ fontSize: 12.5 }}
-            />
-          </div>
+        {/* Search Control */}
+        <div style={{ position: 'relative' }}>
+          <Search size={15} style={{ position: 'absolute', left: 12, top: 11, color: 'var(--text-muted)' }} />
+          <input
+            type="text"
+            className="form-control"
+            placeholder="Cari no nota, nama kasir, alasan void..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            style={{ paddingLeft: 34, fontSize: 12.5 }}
+          />
         </div>
       </div>
 

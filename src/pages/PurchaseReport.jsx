@@ -24,9 +24,11 @@ import {
   Receipt,
   FileText,
   DollarSign,
-  X
+  X,
+  Eye,
 } from 'lucide-react';
 import { printElement } from '../utils/print';
+import ReportPreviewModal from '../components/ReportPreviewModal';
 import {
   exportPurchaseTransactionsToExcel,
   exportPurchasesByProductToExcel,
@@ -108,6 +110,7 @@ export default function PurchaseReport() {
 
   // Data States
   const [loading, setLoading] = useState(false);
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [reportData, setReportData] = useState(null);
   const [suppliersList, setSuppliersList] = useState([]);
   const [exporting, setExporting] = useState(false);
@@ -220,6 +223,157 @@ export default function PurchaseReport() {
     return TABS.find(t => t.id === activeTab) || TABS[0];
   }, [activeTab]);
 
+  const previewSheets = useMemo(() => {
+    if (!reportData?.items) return [];
+
+    let columns = [];
+    let totals = [];
+    const data = reportData.items || [];
+    const summary = reportData.summary || {};
+
+    if (activeTab === 'transactions') {
+      columns = [
+        { key: 'tgl_dibuat', label: 'Tgl Transaksi', align: 'center', width: 14 },
+        { key: 'no_transaksi', label: 'No PO / Faktur', align: 'center', width: 18 },
+        { key: 'outlet_name', label: 'Cabang Tujuan', align: 'left', width: 22 },
+        { key: 'supplier_name', label: 'Nama Supplier', align: 'left', width: 26 },
+        { key: 'nama_produk', label: 'Nama Bahan Baku / Produk', align: 'left', width: 28 },
+        { key: 'qty', label: 'Qty', align: 'right', format: 'number', width: 10 },
+        { key: 'satuan', label: 'Satuan', align: 'center', width: 10 },
+        { key: 'harga_beli', label: 'Harga Satuan', align: 'right', format: 'currency', width: 16 },
+        { key: 'pajak', label: 'PPN / Pajak', align: 'right', format: 'currency', width: 14 },
+        { key: 'ongkir', label: 'Ongkos Kirim', align: 'right', format: 'currency', width: 14 },
+        { key: 'diskon', label: 'Diskon', align: 'right', format: 'currency', width: 14 },
+        { key: 'total_beli', label: 'Total Belanja', align: 'right', format: 'currency', width: 20 },
+        { key: 'metode_bayar', label: 'Metode Bayar', align: 'center', width: 16 },
+        { key: 'status_pembayaran', label: 'Status Bayar', align: 'center', width: 14 },
+      ];
+      totals = [
+        {
+          label: 'TOTAL BELANJA PENGADAAN',
+          pajak: summary.total_pajak || 0,
+          ongkir: summary.total_ongkir || 0,
+          diskon: summary.total_diskon || 0,
+          total_beli: summary.total_beli || summary.grand_total || 0,
+        },
+      ];
+    } else if (activeTab === 'by-product') {
+      columns = [
+        { key: 'kode_produk', label: 'Kode Produk', align: 'center', width: 14 },
+        { key: 'nama_produk', label: 'Nama Bahan / Produk', align: 'left', width: 30 },
+        { key: 'kategori', label: 'Kategori', align: 'left', width: 18 },
+        { key: 'satuan', label: 'Satuan Beli', align: 'center', width: 12 },
+        { key: 'qty_beli', label: 'Qty Beli', align: 'right', format: 'number', width: 12 },
+        { key: 'qty_refund', label: 'Qty Refund', align: 'right', format: 'number', width: 12 },
+        { key: 'avg_harga', label: 'Rata-rata Harga', align: 'right', format: 'currency', width: 16 },
+        { key: 'total_diskon', label: 'Total Diskon', align: 'right', format: 'currency', width: 16 },
+        { key: 'total_beli', label: 'Total Belanja', align: 'right', format: 'currency', width: 20 },
+      ];
+      totals = [
+        {
+          label: 'TOTAL PEMBELIAN PRODUK',
+          qty_beli: summary.total_qty_beli || 0,
+          qty_refund: summary.total_qty_refund || 0,
+          total_diskon: summary.total_diskon || 0,
+          total_beli: summary.total_beli || 0,
+        },
+      ];
+    } else if (activeTab === 'by-supplier') {
+      columns = [
+        { key: 'supplier_code', label: 'Kode Vendor', align: 'center', width: 14 },
+        { key: 'supplier_name', label: 'Nama Supplier', align: 'left', width: 28 },
+        { key: 'no_transaksi', label: 'No Faktur / PO', align: 'center', width: 18 },
+        { key: 'tanggal', label: 'Tgl Transaksi', align: 'center', width: 14 },
+        { key: 'total_pembelian', label: 'Total Beli', align: 'right', format: 'currency', width: 18 },
+        { key: 'total_ppn', label: 'Pajak PPN', align: 'right', format: 'currency', width: 14 },
+        { key: 'total_ongkir', label: 'Ongkos Kirim', align: 'right', format: 'currency', width: 14 },
+        { key: 'sisa_hutang', label: 'Sisa Hutang', align: 'right', format: 'currency', width: 18 },
+      ];
+      totals = [
+        {
+          label: 'TOTAL PER SUPPLIER',
+          total_pembelian: summary.total_pembelian || 0,
+          total_ppn: summary.total_ppn || 0,
+          total_ongkir: summary.total_ongkir || 0,
+          sisa_hutang: summary.total_sisa_hutang || 0,
+        },
+      ];
+    } else if (activeTab === 'payables') {
+      columns = [
+        { key: 'no_ref', label: 'No PO / Faktur', align: 'center', width: 18 },
+        { key: 'supplier_name', label: 'Supplier / Vendor', align: 'left', width: 28 },
+        { key: 'tgl_beli', label: 'Tgl Transaksi', align: 'center', width: 14 },
+        { key: 'jatuh_tempo', label: 'Jatuh Tempo', align: 'center', width: 14 },
+        { key: 'total_hutang', label: 'Total Hutang', align: 'right', format: 'currency', width: 18 },
+        { key: 'dibayar', label: 'Telah Dibayar', align: 'right', format: 'currency', width: 18 },
+        { key: 'sisa_hutang', label: 'Sisa Hutang (AP)', align: 'right', format: 'currency', width: 18 },
+        { key: 'status', label: 'Status Tempo', align: 'center', width: 14 },
+      ];
+      totals = [
+        {
+          label: 'TOTAL HUTANG SUPPLIER',
+          total_hutang: summary.total_hutang || 0,
+          dibayar: summary.total_dibayar || 0,
+          sisa_hutang: summary.total_sisa_hutang || 0,
+        },
+      ];
+    } else if (activeTab === 'shipments') {
+      columns = [
+        { key: 'no_transaksi', label: 'No PO / Pesanan', align: 'center', width: 18 },
+        { key: 'supplier_name', label: 'Supplier Pengirim', align: 'left', width: 26 },
+        { key: 'tgl_dibuat', label: 'Tgl Buat', align: 'center', width: 14 },
+        { key: 'ekspedisi', label: 'Kurir / Ekspedisi', align: 'left', width: 20 },
+        { key: 'no_ref', label: 'No Resi / Tracking', align: 'center', width: 18 },
+        { key: 'nama_produk', label: 'Bahan / Produk', align: 'left', width: 26 },
+        { key: 'qty', label: 'Qty', align: 'right', format: 'number', width: 10 },
+        { key: 'satuan', label: 'Satuan', align: 'center', width: 10 },
+        { key: 'jumlah', label: 'Nilai Barang', align: 'right', format: 'currency', width: 18 },
+      ];
+      totals = [
+        {
+          label: 'TOTAL PENGIRIMAN',
+          qty: summary.total_qty || 0,
+          jumlah: summary.total_jumlah || 0,
+        },
+      ];
+    }
+
+    return [
+      {
+        id: activeTab,
+        name: currentTabMeta.label,
+        columns,
+        data,
+        totals,
+      },
+    ];
+  }, [activeTab, reportData, currentTabMeta]);
+
+  const previewKpis = useMemo(() => {
+    if (!reportData?.summary) return [];
+    const sum = reportData.summary;
+
+    if (activeTab === 'transactions') {
+      return [
+        { label: 'Total Belanja (Gross)', value: sum.total_beli || sum.grand_total || 0, format: 'currency', color: '#10b981' },
+        { label: 'Total Pajak PPN', value: sum.total_pajak || 0, format: 'currency', color: '#38bdf8' },
+        { label: 'Total Ongkir', value: sum.total_ongkir || 0, format: 'currency', color: '#f59e0b' },
+        { label: 'Total Diskon Vendor', value: sum.total_diskon || 0, format: 'currency', color: '#a78bfa' },
+      ];
+    }
+    if (activeTab === 'payables') {
+      return [
+        { label: 'Total Sisa Hutang (AP)', value: sum.total_sisa_hutang || 0, format: 'currency', color: '#f43f5e' },
+        { label: 'Hutang Telah Dibayar', value: sum.total_dibayar || 0, format: 'currency', color: '#10b981' },
+        { label: 'Total Kewajiban Terbit', value: sum.total_hutang || 0, format: 'currency', color: '#38bdf8' },
+      ];
+    }
+    return [
+      { label: 'Total Nilai Belanja', value: sum.total_beli || sum.total_pembelian || sum.total_jumlah || 0, format: 'currency', color: '#10b981' },
+      { label: 'Total Item Pengadaan', value: reportData.items?.length || 0, format: 'number', color: '#38bdf8' },
+    ];
+  }, [activeTab, reportData]);
+
   return (
     <div className="page-container" style={{ paddingBottom: 60 }}>
       {/* HEADER */}
@@ -228,6 +382,23 @@ export default function PurchaseReport() {
         subtitle="Analisis terpusat barang masuk, komparasi produk, buku hutang supplier holding, dan belanja kas operasional outlet cabang."
         actions={
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button
+              onClick={() => setPreviewModalOpen(true)}
+              className="btn btn-secondary"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                color: '#38bdf8',
+                borderColor: 'rgba(56, 189, 248, 0.4)',
+                background: 'rgba(56, 189, 248, 0.08)',
+                fontWeight: 600,
+              }}
+              disabled={loading || !reportData}
+            >
+              <Eye size={15} />
+              <span>Pratinjau Laporan</span>
+            </button>
             <button
               onClick={handlePrint}
               className="btn btn-secondary"
@@ -971,6 +1142,22 @@ export default function PurchaseReport() {
           </div>
         )}
       </div>
+
+      {/* Report Preview & Export Modal */}
+      <ReportPreviewModal
+        isOpen={previewModalOpen}
+        onClose={() => setPreviewModalOpen(false)}
+        title={`Pratinjau ${currentTabMeta?.label || 'Laporan Pembelian'}`}
+        reportTitle={currentTabMeta?.title || 'LAPORAN PEMBELIAN'}
+        businessName={businessName}
+        outletName={outletName}
+        periodText={`Per ${from} s/d ${to}`}
+        kpis={previewKpis}
+        sheets={previewSheets}
+        onExportExcel={handleExportExcel}
+        onPrint={handlePrint}
+        exporting={exporting}
+      />
     </div>
   );
 }

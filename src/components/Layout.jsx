@@ -5,7 +5,7 @@ import {
   ArrowUpDown, ClipboardList, BarChart2, TrendingUp, DollarSign,
   AlertTriangle, LogOut, ScrollText, Menu, X, Clock,
   Store, Send, Users, UserCheck, Building2, ChefHat, Trash2, Percent, Landmark, Wallet, Coins, Gift, Copy, Check, Receipt, Headset,
-  AlertOctagon, CreditCard, Boxes, FileSpreadsheet, BookOpen, ChevronDown, ChevronRight, ShoppingBag, Scale, RotateCcw
+  AlertOctagon, CreditCard, Boxes, FileSpreadsheet, BookOpen, ChevronDown, ChevronRight, ShoppingBag, Scale, RotateCcw, Sparkles
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
@@ -99,7 +99,7 @@ export default function Layout() {
         .then(res => {
           setPendingVoidCount(res.data?.stats?.pending_count || 0);
         })
-        .catch(() => {});
+        .catch(() => { });
     }
   }, [isOwnerBisnis, isOwnerOutlet, isPlatformAdmin, location.pathname]);
 
@@ -155,7 +155,9 @@ export default function Layout() {
                 children: [
                   { to: '/profit-loss', label: 'Laba Rugi (P&L)', icon: TrendingUp },
                   { to: '/cash-flow', label: 'Arus Kas (Cash Flow)', icon: Wallet },
+                  { to: '/kas-aplikasi', label: 'Kas Aplikasi', icon: Sparkles },
                   { to: '/neraca', label: 'Laporan Neraca', icon: Scale },
+                  { to: '/jurnal-umum', label: 'Jurnal Umum & Buku Besar', icon: BookOpen },
                 ],
               },
               {
@@ -267,7 +269,9 @@ export default function Layout() {
               children: [
                 { to: '/profit-loss', label: 'Laba Rugi (P&L)', icon: TrendingUp },
                 { to: '/cash-flow', label: 'Arus Kas (Cash Flow)', icon: Wallet },
+                { to: '/kas-aplikasi', label: 'Kas Aplikasi', icon: Sparkles },
                 { to: '/neraca', label: 'Laporan Neraca', icon: Scale },
+                { to: '/jurnal-umum', label: 'Jurnal Umum & Buku Besar', icon: BookOpen },
               ],
             },
             {
@@ -359,6 +363,16 @@ export default function Layout() {
         {
           label: 'Analitik Cabang',
           items: [
+            {
+              id: 'laporan-keuangan',
+              label: 'Laporan Keuangan',
+              icon: Landmark,
+              children: [
+                { to: '/kas-aplikasi', label: 'Kas Aplikasi', icon: Sparkles },
+                { to: '/neraca', label: 'Laporan Neraca', icon: Scale },
+                { to: '/jurnal-umum', label: 'Jurnal Umum & Buku Besar', icon: BookOpen },
+              ],
+            },
             {
               id: 'laporan-penjualan-pembelian',
               label: 'Laporan Penjualan & Pembelian',

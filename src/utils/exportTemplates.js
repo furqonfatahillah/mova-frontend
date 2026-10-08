@@ -876,7 +876,7 @@ export async function downloadMenuTemplate() {
 
   ws.mergeCells('A2:G2');
   const noteCell = ws.getCell('A2');
-  noteCell.value = 'Petunjuk: Kolom bertanda (*) wajib diisi. Gunakan dropdown pada kolom Tipe Item (RECIPE/DIRECT/SERVICE/BUNDLE). Status menu otomatis aktif/tersedia.';
+  noteCell.value = 'Petunjuk: Kolom bertanda (*) wajib diisi. Kolom "Estimasi HPP Dasar" digunakan untuk mengisi target modal / Estimasi HPP Dasar menu. Gunakan dropdown pada kolom Tipe Item (RECIPE/DIRECT/SERVICE/BUNDLE). Status menu otomatis aktif/tersedia.';
   noteCell.font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF475569' } };
   ws.getRow(2).height = 20;
 
@@ -888,7 +888,7 @@ export async function downloadMenuTemplate() {
     'Kategori*',
     'Tipe Item (▼)*',
     'Harga Jual (Rp)*',
-    'HPP / Modal (Rp)',
+    'Estimasi HPP Dasar (Rp)',
     'Deskripsi',
   ]);
   applyHeaderStyle(headerRow, 'FF4338CA'); // Indigo Dark

@@ -167,6 +167,7 @@ export default function ResetDataModal({ isOpen, onClose, onSuccess }) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            flexWrap: 'wrap',
             gap: 12,
           }}
         >
@@ -181,7 +182,7 @@ export default function ResetDataModal({ isOpen, onClose, onSuccess }) {
               </div>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
             <span
               style={{
                 fontSize: 11,
@@ -216,7 +217,7 @@ export default function ResetDataModal({ isOpen, onClose, onSuccess }) {
           <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8, display: 'block' }}>
             PILIH JANGKAUAN PEMBERSIHAN DATA:
           </label>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: 10 }}>
             {/* Mode 1: Full Reset */}
             <div
               onClick={() => !loading && setMode('all')}
@@ -298,7 +299,7 @@ export default function ResetDataModal({ isOpen, onClose, onSuccess }) {
               </span>
             )}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, fontSize: 11.5 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 150px), 1fr))', gap: 8, fontSize: 11.5 }}>
             <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '6px 10px', borderRadius: 8 }}>
               <div style={{ color: 'var(--text-secondary)', fontSize: 10.5 }}>Penjualan & POS</div>
               <div style={{ fontWeight: 800, color: '#f87171', fontSize: 13 }}>

@@ -6,7 +6,8 @@ import {
   Layers, FileText, ArrowDownRight, Edit3, Trash, Info,
   Store, CreditCard, PieChart, ShieldAlert, Sparkles, Building2, Flame,
   ArrowUpRight, ArrowDownLeft, AlertTriangle, GitCompare, HelpCircle,
-  BarChart3, Award, Trophy, ArrowUpDown, ChevronUp, ChevronDown, Check, Zap, Tag
+  BarChart3, Award, Trophy, ArrowUpDown, ChevronUp, ChevronDown, Check, Zap, Tag,
+  Eye, FileSpreadsheet
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, num, pct, LoadingState, PageHeader, PeriodPicker } from '../components/ui';
@@ -15,6 +16,8 @@ import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 import { printElement } from '../utils/print';
 import { confirmDialog } from '../utils/swal';
+import { exportProfitLossToExcel } from '../utils/exportReport';
+import ReportPreviewModal from '../components/ReportPreviewModal';
 
 export const EXPENSE_CATEGORIES = [
   { value: 'SALARY',        label: 'Gaji & Upah Karyawan',            color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' },
@@ -24,14 +27,16 @@ export const EXPENSE_CATEGORIES = [
   { value: 'MAINTENANCE',   label: 'Pemeliharaan, Sanitasi & Servis',   color: '#06b6d4', bg: 'rgba(6, 182, 212, 0.12)' },
   { value: 'MARKETING',     label: 'Pemasaran & Promosi',              color: '#ec4899', bg: 'rgba(236, 72, 153, 0.12)' },
   { value: 'LOGISTICS',     label: 'Logistik & Transportasi',          color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' },
-  { value: 'CASH_SHORTAGE', label: 'Beban Selisih Kurang Kasir (Tekor)', color: '#f43f5e', bg: 'rgba(244, 63, 94, 0.12)' },
-  { value: 'OTHER',         label: 'Beban Operasional Lain-lain',      color: '#94a3b8', bg: 'rgba(148, 163, 184, 0.12)' },
+  { value: 'CASH_SHORTAGE',     label: 'Beban Selisih Kurang Kasir (Tekor Closing)',         color: '#f43f5e', bg: 'rgba(244, 63, 94, 0.12)' },
+  { value: 'HANDOVER_SHORTAGE', label: 'Beban Selisih Antar Kasir (Tekor Antar Kasir)', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.12)' },
+  { value: 'OTHER',             label: 'Beban Operasional Lain-lain',                        color: '#94a3b8', bg: 'rgba(148, 163, 184, 0.12)' },
 ];
 
 export const PAYMENT_METHODS = [
-  { value: 'CASH',       label: 'Kas Operasional / Kas Kecil (Tunai)' },
-  { value: 'TRANSFER',   label: 'Transfer Bank' },
-  { value: 'DEBIT',      label: 'Debit / Kartu EDC' },
+  { value: 'CASH',       label: 'Kas Kecil (Kasir / Outlet)' },
+  { value: 'KAS_BESAR',  label: 'Kas Besar (Brankas / Holding)' },
+  { value: 'TRANSFER',   label: 'Bank (Transfer Rekening)' },
+  { value: 'DEBIT',      label: 'Bank (Debit / EDC)' },
 ];
 
 export const COMPARISON_OPTIONS = [
@@ -57,6 +62,7 @@ export default function ProfitLoss() {
 
   // Data states
   const [loading, setLoading] = useState(true);
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [plData, setPlData] = useState(null);
   const [expenses, setExpenses] = useState([]);
   const [expenseSummary, setExpenseSummary] = useState(null);
@@ -161,12 +167,30 @@ export default function ProfitLoss() {
         loading: false,
         items: overShifts,
       });
+    } else if (type === 'HANDOVER_SURPLUS') {
+      const surplusShifts = plData?.revenue?.handover_surplus_shifts || plData?.cash_discrepancy?.handover_surplus_shifts || [];
+      setDetailModal({
+        open: true,
+        type: 'HANDOVER_SURPLUS',
+        title: 'Rincian Pendapatan Selisih Lebih Antar Kasir (Surplus Kas Awal Kasir)',
+        loading: false,
+        items: surplusShifts,
+      });
     } else if (type === 'CASH_SHORTAGE') {
       const shortShifts = plData?.opex?.cash_short_shifts || plData?.cash_discrepancy?.cash_short_shifts || [];
       setDetailModal({
         open: true,
         type: 'CASH_SHORTAGE',
         title: 'Rincian Beban Selisih Kurang Kasir / Kasir Tekor (Closing Shift)',
+        loading: false,
+        items: shortShifts,
+      });
+    } else if (type === 'HANDOVER_SHORTAGE') {
+      const shortShifts = plData?.opex?.handover_short_shifts || plData?.cash_discrepancy?.handover_short_shifts || [];
+      setDetailModal({
+        open: true,
+        type: 'HANDOVER_SHORTAGE',
+        title: 'Rincian Beban Selisih Antar Kasir (Tekor Antar Kasir)',
         loading: false,
         items: shortShifts,
       });
@@ -424,6 +448,51 @@ export default function ProfitLoss() {
     });
   }, [expenses, expenseCategoryFilter, expenseSearch]);
 
+  const reportData = useMemo(() => {
+    if (!plData) return null;
+    return {
+      revenue: plData.revenue?.net_sales || 0,
+      total_revenue: plData.revenue?.net_sales || 0,
+      total_cogs: plData.cogs?.total_cogs || 0,
+      gross_profit: plData.cogs?.gross_profit || 0,
+      total_opex: plData.opex?.total_opex || 0,
+      net_profit: plData.bottom_line?.net_profit || 0,
+      revenue_items: [
+        { code: '4-41001', label: 'Penjualan Kotor (Gross Sales)', amount: plData.revenue?.gross_sales || 0 },
+        { code: '4-41003', label: '(-) Diskon Penjualan & Promosi', amount: -(plData.revenue?.total_discount || 0) },
+        ...(plData.revenue?.cash_over > 0 ? [{ code: '4-41002', label: '(+) Pendapatan Selisih Lebih Kasir', amount: plData.revenue?.cash_over }] : []),
+      ],
+      cogs_items: [
+        { code: '5-51001 & 5-51002', label: 'HPP Bahan Baku & Kemasan Terjual', amount: plData.cogs?.cogs_recipes || 0 },
+        { code: '5-51003', label: 'Biaya Kerugian / Waste Bahan Rusak', amount: plData.waste?.total_waste_loss || 0 },
+        { code: '5-51004 & 5-51005', label: 'Variansi Selisih Stok Opname', amount: plData.cogs?.cogs_variance || 0 },
+      ],
+      opex_items: (plData.opex?.breakdown || []).map(b => ({
+        code: b.account_code || '6-61009',
+        label: b.label || b.category,
+        amount: b.total || b.amount || 0,
+      })),
+    };
+  }, [plData]);
+
+  async function handleExportExcel() {
+    if (!reportData) return;
+    try {
+      toast.loading('Menyiapkan file Excel Laba Rugi...', { id: 'export-pl' });
+      await exportProfitLossToExcel({
+        reportData,
+        period: { from: dateFrom, to: dateTo },
+        outletName: outletTitle,
+        businessName: businessTitle,
+        userName: currentUser?.name || 'Administrator',
+      });
+      toast.success('Laporan Laba Rugi berhasil diekspor ke Excel!', { id: 'export-pl' });
+    } catch (err) {
+      console.error(err);
+      toast.error('Gagal mengekspor laporan Laba Rugi ke Excel', { id: 'export-pl' });
+    }
+  }
+
   function handlePrintReport() {
     printElement(
       'printable-pl-statement',
@@ -495,6 +564,101 @@ export default function ProfitLoss() {
   const outletTitle = (activeOutlet && activeOutletId !== 'ALL' && activeOutletId !== 'all')
     ? activeOutlet.name
     : 'Semua Cabang (Konsolidasi Usaha)';
+
+  const previewSheets = useMemo(() => {
+    if (!plData) return [];
+
+    const revData = plData.revenue || {};
+    const cogsData = plData.cogs || {};
+    const wasteData = plData.waste || {};
+    const opexData = plData.opex || {};
+    const bottomData = plData.bottom_line || {};
+
+    const mainSheetRows = [
+      { item: '1. PENDAPATAN PENJUALAN (REVENUE)', category: 'REVENUE', amount: null },
+      { item: '  (+) Penjualan Kotor (Gross Sales - 4-41001)', category: 'Penjualan', amount: Number(revData.gross_sales) || 0 },
+      { item: '  (-) Diskon Penjualan & Promosi (4-41003)', category: 'Potongan', amount: -(Number(revData.total_discount) || 0) },
+      ...(Number(revData.cash_over || 0) > 0 ? [{ item: '  (+) Pendapatan Selisih Lebih Kasir (4-41002)', category: 'Pendapatan Lain', amount: Number(revData.cash_over) }] : []),
+      { item: 'TOTAL PENJUALAN BERSIH (NET SALES)', category: 'SUBTOTAL', amount: Number(revData.net_sales) || 0 },
+      { item: '2. BEBAN POKOK PENJUALAN (HPP - AKUN 5)', category: 'COGS', amount: null },
+      { item: '  (-) HPP Bahan Baku & Kemasan Terjual (5-51001 & 5-51002)', category: 'HPP Resep', amount: -(Number(cogsData.cogs_recipes) || 0) },
+      { item: '  (-) Biaya Kerugian / Waste Bahan Rusak (5-51003)', category: 'Waste', amount: -(Number(wasteData.total_waste_loss) || 0) },
+      { item: '  (+/-) Variansi Selisih Stok Opname (5-51004 & 5-51005)', category: 'Opname', amount: -(Number(cogsData.cogs_variance) || 0) },
+      { item: 'TOTAL BEBAN POKOK PENJUALAN (HPP - AKUN 5)', category: 'SUBTOTAL', amount: -(Number(cogsData.total_cogs) || 0) },
+      { item: 'LABA KOTOR USAHA (GROSS PROFIT)', category: 'PROFIT', amount: Number(cogsData.gross_profit) || 0 },
+      { item: '3. BEBAN OPERASIONAL TOKO (OPEX - AKUN 6)', category: 'OPEX', amount: null },
+    ];
+
+    (opexData.breakdown || []).forEach((b) => {
+      mainSheetRows.push({
+        item: `  (-) ${b.label || b.category}`,
+        category: 'Beban Operasional',
+        amount: -(Number(b.amount) || 0),
+      });
+    });
+
+    mainSheetRows.push({
+      item: 'TOTAL BEBAN OPERASIONAL (OPEX)',
+      category: 'SUBTOTAL',
+      amount: -(Number(opexData.total_opex) || 0),
+    });
+
+    const sheets = [
+      {
+        id: 'pl_main',
+        name: 'Laba Rugi Komprehensif',
+        columns: [
+          { key: 'item', label: 'Pos Keuangan Laba Rugi', align: 'left', width: 44 },
+          { key: 'category', label: 'Golongan', align: 'left', width: 22 },
+          { key: 'amount', label: 'Nilai Finansial (Rp)', align: 'right', format: 'currency', width: 22 },
+        ],
+        data: mainSheetRows,
+        totals: [
+          {
+            label: `LABA BERSIH USAHA (NET PROFIT) [Margin: ${bottomData.net_margin_pct || 0}%]`,
+            amount: Number(bottomData.net_profit) || 0,
+          },
+        ],
+      },
+    ];
+
+    if (opexData.breakdown && opexData.breakdown.length > 0) {
+      sheets.push({
+        id: 'opex_detail',
+        name: 'Rincian Beban OPEX',
+        columns: [
+          { key: 'category', label: 'Kategori Biaya', align: 'left', width: 26 },
+          { key: 'label', label: 'Nama Beban', align: 'left', width: 34 },
+          { key: 'ratio_pct', label: 'Rasio thd Omset', align: 'right', width: 20 },
+          { key: 'amount', label: 'Nominal Biaya (Rp)', align: 'right', format: 'currency', width: 22 },
+        ],
+        data: opexData.breakdown.map((b) => ({
+          category: b.category,
+          label: b.label,
+          ratio_pct: `${b.ratio_pct || 0}%`,
+          amount: Number(b.amount) || 0,
+        })),
+        totals: [
+          {
+            label: 'TOTAL BEBAN OPEX',
+            amount: Number(opexData.total_opex) || 0,
+          },
+        ],
+      });
+    }
+
+    return sheets;
+  }, [plData]);
+
+  const previewKpis = useMemo(() => {
+    if (!plData) return [];
+    return [
+      { label: 'Penjualan Bersih', value: plData.revenue?.net_sales || 0, format: 'currency', color: '#10b981' },
+      { label: 'HPP Bahan Baku (COGS)', value: plData.cogs?.total_cogs || 0, format: 'currency', color: '#f59e0b' },
+      { label: 'Total Beban OPEX', value: plData.opex?.total_opex || 0, format: 'currency', color: '#f43f5e' },
+      { label: 'Laba Bersih (Net Profit)', value: plData.bottom_line?.net_profit || 0, format: 'currency', color: (plData.bottom_line?.net_profit || 0) >= 0 ? '#10b981' : '#f43f5e', subtext: `Margin: ${plData.bottom_line?.net_margin_pct || 0}% (${plData.bottom_line?.health_label || 'Sehat'})` },
+    ];
+  }, [plData]);
 
   if (loading && !plData) return <LoadingState />;
 
@@ -614,7 +778,8 @@ export default function ProfitLoss() {
           </button>
           <button
             className="btn btn-secondary btn-sm"
-            onClick={handlePrintReport}
+            onClick={() => setPreviewModalOpen(true)}
+            title="Lihat Pratinjau Dokumen Laporan Laba Rugi Resmi"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -625,7 +790,38 @@ export default function ProfitLoss() {
               fontWeight: 600,
             }}
           >
-            <Printer size={15} /> Cetak Laporan P&L
+            <Eye size={15} /> Pratinjau Laporan
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={handleExportExcel}
+            title="Unduh format spreadsheet Microsoft Excel (.xlsx)"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              borderColor: 'rgba(16, 185, 129, 0.4)',
+              color: '#10b981',
+              background: 'rgba(16, 185, 129, 0.08)',
+              fontWeight: 600,
+            }}
+          >
+            <FileSpreadsheet size={15} /> Export Excel (.xlsx)
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={handlePrintReport}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              borderColor: 'rgba(167, 139, 250, 0.4)',
+              color: '#a78bfa',
+              background: 'rgba(167, 139, 250, 0.08)',
+              fontWeight: 600,
+            }}
+          >
+            <Printer size={15} /> Cetak / PDF
           </button>
           <button
             className="btn btn-primary btn-sm"
@@ -873,7 +1069,7 @@ export default function ProfitLoss() {
           marginBottom: 20,
         }}
       >
-        {/* Card 1: Omset Kotor */}
+        {/* Card 1: Total Pendapatan (Akun 4) */}
         <div
           className="card"
           onClick={() => handleCardClick('REVENUE')}
@@ -885,18 +1081,20 @@ export default function ProfitLoss() {
             cursor: 'pointer',
             transition: 'transform 0.2s, boxShadow 0.2s',
           }}
-          title="Klik untuk melihat rincian transaksi omset"
+          title="Klik untuk melihat rincian transaksi pendapatan"
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#34d399', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Omset Kotor
+              Total Pendapatan (Akun 4)
             </span>
           </div>
           <div style={{ fontSize: 22, fontWeight: 800, color: '#ffffff', letterSpacing: -0.5, marginBottom: 4 }}>
-            {rupiah(rev.gross_sales || rev.net_sales)}
+            {rupiah(rev.net_revenue_total)}
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-            <span>Bersih: {rupiah(rev.net_sales)}</span>
+            <span title={`Penjualan Produk: ${rupiah(rev.net_sales)}${Number(rev.cash_over || 0) > 0 ? ` • Lebih Kasir: +${rupiah(rev.cash_over)}` : ''}`}>
+              Penjualan: {rupiah(rev.net_sales)}{Number(rev.cash_over || 0) > 0 ? ` + Lebih Kasir: ${rupiah(rev.cash_over)}` : ''}
+            </span>
             <span>{rev.transaction_count} pesanan</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, flexWrap: 'wrap', marginTop: 4 }}>
@@ -915,6 +1113,18 @@ export default function ProfitLoss() {
             >
               Manual: {rupiah(manBd.gross_sales || manBd.net_sales)} ({manBd.share_pct}%)
             </span>
+            {Number(rev.cash_over || 0) > 0 && (
+              <>
+                <span style={{ color: 'rgba(255,255,255,0.2)' }}>•</span>
+                <span
+                  onClick={(e) => { e.stopPropagation(); handleCardClick('CASH_OVER'); }}
+                  style={{ color: '#34d399', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', padding: '1px 6px', borderRadius: 4, background: 'rgba(16,185,129,0.15)' }}
+                  title="Klik rincian pendapatan selisih lebih kasir (4-41002)"
+                >
+                  Lebih Kasir: +{rupiah(rev.cash_over)}
+                </span>
+              </>
+            )}
             {Number(rev.total_discount || 0) > 0 && (
               <>
                 <span style={{ color: 'rgba(255,255,255,0.2)' }}>•</span>
@@ -927,26 +1137,14 @@ export default function ProfitLoss() {
                 </span>
               </>
             )}
-            {Number(rev.cash_over || 0) > 0 && (
-              <>
-                <span style={{ color: 'rgba(255,255,255,0.2)' }}>•</span>
-                <span
-                  onClick={(e) => { e.stopPropagation(); handleCardClick('CASH_OVER'); }}
-                  style={{ color: '#34d399', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', padding: '1px 6px', borderRadius: 4, background: 'rgba(16,185,129,0.15)' }}
-                  title="Klik rincian pendapatan selisih lebih kasir"
-                >
-                  Lebih Kasir: +{rupiah(rev.cash_over)}
-                </span>
-              </>
-            )}
           </div>
           <div style={{ fontSize: 10, color: '#34d399', fontWeight: 600, marginTop: 4 }}>
             Lihat rincian transaksi →
           </div>
-          {renderDeltaBadge(delta?.revenue?.gross_sales || delta?.revenue?.net_sales)}
+          {renderDeltaBadge(delta?.revenue?.net_revenue_total || delta?.revenue?.gross_sales || delta?.revenue?.net_sales)}
         </div>
 
-        {/* Card 2: HPP Riil (COGS) */}
+        {/* Card 2: Total HPP Riil (COGS / Akun 5) */}
         <div
           className="card"
           onClick={() => handleCardClick('COGS')}
@@ -958,21 +1156,23 @@ export default function ProfitLoss() {
             cursor: 'pointer',
             transition: 'transform 0.2s, boxShadow 0.2s',
           }}
-          title="Klik untuk melihat rincian HPP resep & susut opname"
+          title="Klik untuk melihat rincian Total HPP (Resep, Kemasan, Waste, Susut Opname)"
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#818cf8', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              HPP Riil (COGS)
+              Total HPP (Akun 5)
             </span>
           </div>
           <div style={{ fontSize: 22, fontWeight: 800, color: '#ffffff', letterSpacing: -0.5, marginBottom: 4 }}>
             {rupiah(cogs.total_cogs)}
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: cogs.cogs_ratio_pct <= 35 ? '#34d399' : '#f59e0b', fontWeight: 600 }}>
+            <span style={{ color: cogs.cogs_ratio_pct <= 45 ? '#34d399' : '#f59e0b', fontWeight: 600 }}>
               Rasio: {cogs.cogs_ratio_pct}%
             </span>
-            <span>Resep + Susut Opname</span>
+            <span title={`HPP Resep: ${rupiah(cogs.cogs_recipes)} | Waste: ${rupiah(wst.total_waste_loss)}`}>
+              Resep ({rupiah(cogs.cogs_recipes)}) + Waste ({rupiah(wst.total_waste_loss)})
+            </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, flexWrap: 'wrap', marginTop: 4 }}>
             <span
@@ -1013,7 +1213,7 @@ export default function ProfitLoss() {
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#fb7185', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Kerugian Waste
+              Kerugian Waste (5-51003)
             </span>
           </div>
           <div style={{ fontSize: 22, fontWeight: 800, color: '#ffffff', letterSpacing: -0.5, marginBottom: 4 }}>
@@ -1023,7 +1223,7 @@ export default function ProfitLoss() {
             <span style={{ color: wst.waste_ratio_pct < 2 ? '#34d399' : '#f43f5e', fontWeight: 600 }}>
               Rasio: {wst.waste_ratio_pct}%
             </span>
-            <span>{wst.total_records || 0} log kejadian</span>
+            <span>{wst.total_records || 0} log kejadian (Bagian HPP)</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, flexWrap: 'wrap', marginTop: 4 }}>
             <span
@@ -1214,11 +1414,11 @@ export default function ProfitLoss() {
             <>
               <div
                 style={{
-                  width: `${Math.min(100, Math.max(0, cogs.cogs_ratio_pct))}%`,
+                  width: `${Math.min(100, Math.max(0, cogs.recipes_ratio_pct || (cogs.cogs_ratio_pct - wst.waste_ratio_pct)))}%`,
                   background: '#6366f1',
                   transition: 'width 0.4s ease',
                 }}
-                title={`HPP Riil: ${cogs.cogs_ratio_pct}% (${rupiah(cogs.total_cogs)})`}
+                title={`HPP Resep Terjual: ${cogs.recipes_ratio_pct || 37}% (${rupiah(cogs.cogs_recipes)})`}
               />
               <div
                 style={{
@@ -1226,7 +1426,7 @@ export default function ProfitLoss() {
                   background: '#f43f5e',
                   transition: 'width 0.4s ease',
                 }}
-                title={`Kerugian Waste: ${wst.waste_ratio_pct}% (${rupiah(wst.total_waste_loss)})`}
+                title={`Kerugian Waste (5-51003): ${wst.waste_ratio_pct}% (${rupiah(wst.total_waste_loss)})`}
               />
               <div
                 style={{
@@ -1252,8 +1452,8 @@ export default function ProfitLoss() {
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ width: 10, height: 10, borderRadius: 2, background: '#6366f1', display: 'inline-block' }} />
-            <span style={{ color: 'var(--text-muted)' }}>HPP Riil:</span>
-            <strong style={{ color: '#c7d2fe' }}>{cogs.cogs_ratio_pct}%</strong>
+            <span style={{ color: 'var(--text-muted)' }}>HPP Resep:</span>
+            <strong style={{ color: '#c7d2fe' }}>{cogs.recipes_ratio_pct || 37}%</strong>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ width: 10, height: 10, borderRadius: 2, background: '#f43f5e', display: 'inline-block' }} />
@@ -1809,7 +2009,7 @@ export default function ProfitLoss() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 14, fontWeight: 800, color: '#34d399', letterSpacing: 0.5 }}>
-                    1. PENDAPATAN OPERASIONAL USAHA (REVENUE)
+                    1. PENDAPATAN OPERASIONAL USAHA (REVENUE - AKUN 4)
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1833,7 +2033,7 @@ export default function ProfitLoss() {
                   </button>
                   {!isComp && (
                     <span style={{ fontSize: 15, fontWeight: 800, color: '#34d399' }}>
-                      {rupiah(rev.net_sales)}
+                      {rupiah(rev.net_revenue_total)}
                     </span>
                   )}
                 </div>
@@ -1990,19 +2190,58 @@ export default function ProfitLoss() {
                     </div>
                   </div>
 
+                  {/* Selisih Lebih Antar Kasir Row - CLICKABLE */}
+                  {((rev.handover_surplus || 0) > 0 || (prev?.revenue?.handover_surplus || 0) > 0) && (
+                    <div
+                      onClick={(e) => { e.stopPropagation(); handleCardClick('HANDOVER_SURPLUS'); }}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr',
+                        gap: 8,
+                        padding: '7px 6px',
+                        borderBottom: '1px dashed rgba(255, 255, 255, 0.08)',
+                        cursor: 'pointer',
+                        borderRadius: 6,
+                        background: (rev.handover_surplus || 0) > 0 ? 'rgba(245, 158, 11, 0.08)' : 'rgba(245, 158, 11, 0.03)',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(245, 158, 11, 0.14)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = (rev.handover_surplus || 0) > 0 ? 'rgba(245, 158, 11, 0.08)' : 'rgba(245, 158, 11, 0.03)'}
+                      title="Klik untuk melihat rincian pendapatan selisih lebih antar kasir"
+                    >
+                      <div style={{ color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span style={{ padding: '1px 6px', borderRadius: 4, background: 'rgba(245, 158, 11, 0.2)', fontSize: 10.5, fontWeight: 700, color: '#fbbf24' }}>
+                          Antar Kasir Lebih
+                        </span>
+                        <span>(+) Selisih Lebih Antar Kasir ({rev.handover_surplus_count || 0} shift)</span>
+                        <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 10, background: 'rgba(245, 158, 11, 0.25)', color: '#fde68a', fontWeight: 700 }}>
+                          Lihat rincian →
+                        </span>
+                      </div>
+                      <div style={{ textAlign: 'right', fontWeight: 700, color: '#fbbf24' }}>+{rupiah(rev.handover_surplus || 0)}</div>
+                      <div style={{ textAlign: 'right', color: 'var(--text-muted)' }}>+{rupiah(prev?.revenue?.handover_surplus || 0)}</div>
+                      <div style={{ textAlign: 'right', color: delta?.revenue?.handover_surplus?.diff_nominal >= 0 ? '#34d399' : '#f87171', fontWeight: 600 }}>
+                        {delta?.revenue?.handover_surplus?.diff_nominal >= 0 ? '+' : ''}{rupiah(delta?.revenue?.handover_surplus?.diff_nominal || 0)}
+                      </div>
+                      <div style={{ textAlign: 'right', color: delta?.revenue?.handover_surplus?.diff_pct >= 0 ? '#34d399' : '#f87171', fontWeight: 700 }}>
+                        {delta?.revenue?.handover_surplus?.diff_pct >= 0 ? '+' : ''}{delta?.revenue?.handover_surplus?.diff_pct || 0}%
+                      </div>
+                    </div>
+                  )}
+
                   {/* Omset Bersih */}
                   <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: 8, padding: '8px 6px 4px', fontWeight: 800, color: '#34d399', fontSize: 13.5 }}>
                     <div>
                       TOTAL PENDAPATAN OPERASIONAL BERSIH (NET REVENUE)
-                      {(rev.cash_over || 0) > 0 && (
+                      {((rev.cash_over || 0) > 0 || (rev.handover_surplus || 0) > 0) && (
                         <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500 }}>
-                          (Omset Penjualan: {rupiah(rev.net_sales)} + Lebih Kasir: {rupiah(rev.cash_over)})
+                          (Omset Penjualan: {rupiah(rev.net_sales)}{(rev.cash_over || 0) > 0 ? ` + Lebih Kasir: ${rupiah(rev.cash_over)}` : ''}{(rev.handover_surplus || 0) > 0 ? ` + Surplus Modal: ${rupiah(rev.handover_surplus)}` : ''})
                         </div>
                       )}
                     </div>
-                    <div style={{ textAlign: 'right' }}>{rupiah(rev.net_revenue_total || ((rev.net_sales || 0) + (rev.cash_over || 0)))}</div>
+                    <div style={{ textAlign: 'right' }}>{rupiah(rev.net_revenue_total || ((rev.net_sales || 0) + (rev.cash_over || 0) + (rev.handover_surplus || 0)))}</div>
                     <div style={{ textAlign: 'right', color: '#cbd5e1' }}>
-                      {rupiah(prev?.revenue?.net_revenue_total || ((prev?.revenue?.net_sales || 0) + (prev?.revenue?.cash_over || 0)))}
+                      {rupiah(prev?.revenue?.net_revenue_total || ((prev?.revenue?.net_sales || 0) + (prev?.revenue?.cash_over || 0) + (prev?.revenue?.handover_surplus || 0)))}
                     </div>
                     <div style={{ textAlign: 'right', color: delta?.revenue?.net_sales?.diff_nominal >= 0 ? '#34d399' : '#f87171' }}>
                       {delta?.revenue?.net_sales?.diff_nominal >= 0 ? '+' : ''}{rupiah(delta?.revenue?.net_sales?.diff_nominal)}
@@ -2153,18 +2392,51 @@ export default function ProfitLoss() {
                       </td>
                     </tr>
 
+                    {/* Pendapatan Selisih Lebih Antar Kasir - CLICKABLE */}
+                    {(rev.handover_surplus || 0) > 0 && (
+                      <tr
+                        onClick={(e) => { e.stopPropagation(); handleCardClick('HANDOVER_SURPLUS'); }}
+                        style={{
+                          borderBottom: '1px dashed rgba(255, 255, 255, 0.08)',
+                          cursor: 'pointer',
+                          background: 'rgba(245, 158, 11, 0.08)',
+                          transition: 'background 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(245, 158, 11, 0.14)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(245, 158, 11, 0.08)'}
+                        title="Klik untuk melihat rincian pendapatan selisih lebih antar kasir"
+                      >
+                        <td style={{ padding: '7px 6px', color: '#fbbf24' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <span style={{ padding: '2px 7px', borderRadius: 4, background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', fontSize: 11, fontWeight: 700 }}>
+                              Antar Kasir Lebih
+                            </span>
+                            <span>
+                              <em>Ditambah:</em> Selisih Lebih Antar Kasir ({rev.handover_surplus_count || 0} shift)
+                            </span>
+                            <span style={{ fontSize: 10.5, padding: '1px 8px', borderRadius: 10, background: 'rgba(245, 158, 11, 0.25)', color: '#fde68a', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              Lihat rincian →
+                            </span>
+                          </div>
+                        </td>
+                        <td style={{ padding: '7px 6px', textAlign: 'right', fontWeight: 700, color: '#fbbf24' }}>
+                          +{rupiah(rev.handover_surplus || 0)}
+                        </td>
+                      </tr>
+                    )}
+
                     {/* Total Net Revenue */}
                     <tr style={{ fontWeight: 700, color: '#34d399' }}>
                       <td style={{ padding: '10px 6px 4px', fontSize: 13.5 }}>
                         TOTAL PENDAPATAN OPERASIONAL BERSIH (NET REVENUE)
-                        {(rev.cash_over || 0) > 0 && (
+                        {((rev.cash_over || 0) > 0 || (rev.handover_surplus || 0) > 0) && (
                           <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500 }}>
-                            (Omset Penjualan Bersih: {rupiah(rev.net_sales)} + Selisih Lebih: {rupiah(rev.cash_over)})
+                            (Omset Penjualan Bersih: {rupiah(rev.net_sales)}{(rev.cash_over || 0) > 0 ? ` + Selisih Lebih: ${rupiah(rev.cash_over)}` : ''}{(rev.handover_surplus || 0) > 0 ? ` + Lebih Antar Kasir: ${rupiah(rev.handover_surplus)}` : ''})
                           </div>
                         )}
                       </td>
                       <td style={{ padding: '10px 6px 4px', textAlign: 'right', fontSize: 15, fontWeight: 800 }}>
-                        {rupiah(rev.net_revenue_total || ((rev.net_sales || 0) + (rev.cash_over || 0)))}
+                        {rupiah(rev.net_revenue_total)}
                       </td>
                     </tr>
                   </tbody>
@@ -2254,7 +2526,7 @@ export default function ProfitLoss() {
                   <tbody>
                     <tr style={{ borderBottom: '1px dashed rgba(255, 255, 255, 0.06)' }}>
                       <td style={{ padding: '6px 0', color: '#cbd5e1' }}>
-                        HPP Bahan Baku Resep Menu Terjual (Berdasarkan HPP Moving Average aktual bahan)
+                        5-51001 & 5-51002 HPP Bahan Baku & Kemasan Terjual (Resep POS)
                       </td>
                       <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 600, color: '#f8fafc' }}>
                         {rupiah(cogs.cogs_recipes)}
@@ -2262,14 +2534,22 @@ export default function ProfitLoss() {
                     </tr>
                     <tr style={{ borderBottom: '1px dashed rgba(255, 255, 255, 0.06)' }}>
                       <td style={{ padding: '6px 0', color: '#cbd5e1' }}>
-                        Selisih Opname Fisik / Susut Stok (Inventory Shrinkage Variance)
+                        5-51003 Biaya Kerugian / Waste Bahan Rusak (Waste Log)
+                      </td>
+                      <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 600, color: '#fb7185' }}>
+                        {rupiah(wst.total_waste_loss)}
+                      </td>
+                    </tr>
+                    <tr style={{ borderBottom: '1px dashed rgba(255, 255, 255, 0.06)' }}>
+                      <td style={{ padding: '6px 0', color: '#cbd5e1' }}>
+                        5-51004 & 5-51005 Selisih Opname Fisik / Susut Persediaan (Shrinkage)
                       </td>
                       <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 600, color: cogs.cogs_variance > 0 ? '#f87171' : '#34d399' }}>
                         {cogs.cogs_variance > 0 ? `+${rupiah(cogs.cogs_variance)} (Susut)` : rupiah(cogs.cogs_variance)}
                       </td>
                     </tr>
                     <tr style={{ fontWeight: 700, color: '#818cf8' }}>
-                      <td style={{ padding: '8px 0 4px' }}>TOTAL HPP RIIL (Rasio: {cogs.cogs_ratio_pct}%)</td>
+                      <td style={{ padding: '8px 0 4px' }}>TOTAL BEBAN POKOK PENJUALAN (HPP - AKUN 5) [Rasio: {cogs.cogs_ratio_pct}%]</td>
                       <td style={{ padding: '8px 0 4px', textAlign: 'right' }}>({rupiah(cogs.total_cogs)})</td>
                     </tr>
                   </tbody>
@@ -2462,6 +2742,9 @@ export default function ProfitLoss() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
                   {EXPENSE_CATEGORIES.map(cat => {
                     const isShortage = cat.value === 'CASH_SHORTAGE';
+                    const isHandoverShortage = cat.value === 'HANDOVER_SHORTAGE';
+                    const isClickable = isShortage || isHandoverShortage;
+                    const clickType = isShortage ? 'CASH_SHORTAGE' : (isHandoverShortage ? 'HANDOVER_SHORTAGE' : null);
                     const currItem = opx.breakdown?.find(b => b.category === cat.value);
                     const prevItem = prev?.opex?.breakdown?.find(b => b.category === cat.value);
                     const currAmt = currItem ? currItem.total : 0;
@@ -2471,39 +2754,48 @@ export default function ProfitLoss() {
 
                     if (currAmt === 0 && prevAmt === 0) return null;
 
+                    const rowBg = isShortage ? 'rgba(244, 63, 94, 0.06)' : (isHandoverShortage ? 'rgba(245, 158, 11, 0.06)' : 'transparent');
+                    const rowHoverBg = isShortage ? 'rgba(244, 63, 94, 0.14)' : (isHandoverShortage ? 'rgba(245, 158, 11, 0.14)' : 'transparent');
+                    const textCol = isShortage ? '#f87171' : (isHandoverShortage ? '#fbbf24' : '#cbd5e1');
+
                     return (
                       <div
                         key={cat.value}
-                        onClick={isShortage ? (e) => { e.stopPropagation(); handleCardClick('CASH_SHORTAGE'); } : undefined}
+                        onClick={isClickable ? (e) => { e.stopPropagation(); handleCardClick(clickType); } : undefined}
                         style={{
                           display: 'grid',
                           gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr',
                           gap: 8,
                           padding: '6px 6px',
                           borderBottom: '1px dashed rgba(255, 255, 255, 0.06)',
-                          cursor: isShortage ? 'pointer' : 'default',
+                          cursor: isClickable ? 'pointer' : 'default',
                           borderRadius: 6,
-                          background: isShortage ? 'rgba(244, 63, 94, 0.06)' : 'transparent',
+                          background: rowBg,
                           transition: 'background 0.15s ease',
                         }}
-                        onMouseEnter={isShortage ? (e) => e.currentTarget.style.background = 'rgba(244, 63, 94, 0.14)' : undefined}
-                        onMouseLeave={isShortage ? (e) => e.currentTarget.style.background = 'rgba(244, 63, 94, 0.06)' : undefined}
-                        title={isShortage ? "Klik untuk melihat rincian beban selisih kurang kasir (closing shift)" : undefined}
+                        onMouseEnter={isClickable ? (e) => e.currentTarget.style.background = rowHoverBg : undefined}
+                        onMouseLeave={isClickable ? (e) => e.currentTarget.style.background = rowBg : undefined}
+                        title={isShortage ? "Klik untuk melihat rincian beban selisih kurang kasir (closing shift)" : (isHandoverShortage ? "Klik untuk melihat rincian beban selisih antar kasir (tekor modal awal)" : undefined)}
                       >
-                        <div style={{ color: isShortage ? '#f87171' : '#cbd5e1', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <div style={{ color: textCol, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                           {isShortage && (
                             <span style={{ padding: '1px 6px', borderRadius: 4, background: 'rgba(244, 63, 94, 0.2)', color: '#fb7185', fontSize: 10.5, fontWeight: 700 }}>
                               Kasir Tekor
                             </span>
                           )}
+                          {isHandoverShortage && (
+                            <span style={{ padding: '1px 6px', borderRadius: 4, background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', fontSize: 10.5, fontWeight: 700 }}>
+                              Antar Kasir Tekor
+                            </span>
+                          )}
                           <span>{cat.label}</span>
-                          {isShortage && (
-                            <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 10, background: 'rgba(244, 63, 94, 0.25)', color: '#fecdd3', fontWeight: 700 }}>
+                          {isClickable && (
+                            <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 10, background: isShortage ? 'rgba(244, 63, 94, 0.25)' : 'rgba(245, 158, 11, 0.25)', color: isShortage ? '#fecdd3' : '#fde68a', fontWeight: 700 }}>
                               Lihat rincian →
                             </span>
                           )}
                         </div>
-                        <div style={{ textAlign: 'right', fontWeight: 600, color: isShortage ? '#f87171' : undefined }}>{rupiah(currAmt)}</div>
+                        <div style={{ textAlign: 'right', fontWeight: 600, color: isClickable ? textCol : undefined }}>{rupiah(currAmt)}</div>
                         <div style={{ textAlign: 'right', color: 'var(--text-muted)' }}>{rupiah(prevAmt)}</div>
                         <div style={{ textAlign: 'right', color: diffAmt > 0 ? '#f87171' : '#34d399' }}>
                           {diffAmt >= 0 ? '+' : ''}{rupiah(diffAmt)}
@@ -2533,36 +2825,52 @@ export default function ProfitLoss() {
                     {opx.breakdown && opx.breakdown.length > 0 ? (
                       opx.breakdown.map(o => {
                         const isShortage = o.category === 'CASH_SHORTAGE';
+                        const isHandoverShortage = o.category === 'HANDOVER_SHORTAGE';
+                        const isClickable = isShortage || isHandoverShortage;
+                        const clickType = isShortage ? 'CASH_SHORTAGE' : (isHandoverShortage ? 'HANDOVER_SHORTAGE' : null);
+                        const rowBg = isShortage ? 'rgba(244, 63, 94, 0.06)' : (isHandoverShortage ? 'rgba(245, 158, 11, 0.06)' : 'transparent');
+                        const rowHoverBg = isShortage ? 'rgba(244, 63, 94, 0.14)' : (isHandoverShortage ? 'rgba(245, 158, 11, 0.14)' : 'transparent');
+                        const textCol = isShortage ? '#f87171' : (isHandoverShortage ? '#fbbf24' : '#cbd5e1');
+
+                        let countUnit = 'pos pengeluaran';
+                        if (isShortage) countUnit = 'shift closing';
+                        else if (isHandoverShortage) countUnit = 'shift antar kasir';
+
                         return (
                           <tr
                             key={o.category}
-                            onClick={isShortage ? (e) => { e.stopPropagation(); handleCardClick('CASH_SHORTAGE'); } : undefined}
+                            onClick={isClickable ? (e) => { e.stopPropagation(); handleCardClick(clickType); } : undefined}
                             style={{
                               borderBottom: '1px dashed rgba(255, 255, 255, 0.06)',
-                              cursor: isShortage ? 'pointer' : 'default',
-                              background: isShortage ? 'rgba(244, 63, 94, 0.06)' : 'transparent',
+                              cursor: isClickable ? 'pointer' : 'default',
+                              background: rowBg,
                               transition: 'background 0.15s ease',
                             }}
-                            onMouseEnter={isShortage ? (e) => e.currentTarget.style.background = 'rgba(244, 63, 94, 0.14)' : undefined}
-                            onMouseLeave={isShortage ? (e) => e.currentTarget.style.background = 'rgba(244, 63, 94, 0.06)' : undefined}
-                            title={isShortage ? "Klik untuk melihat rincian beban selisih kurang kasir (closing shift)" : undefined}
+                            onMouseEnter={isClickable ? (e) => e.currentTarget.style.background = rowHoverBg : undefined}
+                            onMouseLeave={isClickable ? (e) => e.currentTarget.style.background = rowBg : undefined}
+                            title={isShortage ? "Klik untuk melihat rincian beban selisih kurang kasir (closing shift)" : (isHandoverShortage ? "Klik untuk melihat rincian beban selisih antar kasir (tekor modal awal)" : undefined)}
                           >
-                            <td style={{ padding: '6px 6px', color: isShortage ? '#f87171' : '#cbd5e1' }}>
+                            <td style={{ padding: '6px 6px', color: textCol }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                 {isShortage && (
                                   <span style={{ padding: '2px 7px', borderRadius: 4, background: 'rgba(244, 63, 94, 0.2)', color: '#fb7185', fontSize: 11, fontWeight: 700 }}>
                                     Kasir Tekor
                                   </span>
                                 )}
-                                <span>{o.label} ({o.count} {isShortage ? 'shift closing' : 'pos pengeluaran'})</span>
-                                {isShortage && (
-                                  <span style={{ fontSize: 10.5, padding: '1px 8px', borderRadius: 10, background: 'rgba(244, 63, 94, 0.25)', color: '#fecdd3', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                {isHandoverShortage && (
+                                  <span style={{ padding: '2px 7px', borderRadius: 4, background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', fontSize: 11, fontWeight: 700 }}>
+                                    Antar Kasir Tekor
+                                  </span>
+                                )}
+                                <span>{o.label} ({o.count} {countUnit})</span>
+                                {isClickable && (
+                                  <span style={{ fontSize: 10.5, padding: '1px 8px', borderRadius: 10, background: isShortage ? 'rgba(244, 63, 94, 0.25)' : 'rgba(245, 158, 11, 0.25)', color: isShortage ? '#fecdd3' : '#fde68a', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                                     Lihat rincian →
                                   </span>
                                 )}
                               </div>
                             </td>
-                            <td style={{ padding: '6px 6px', textAlign: 'right', fontWeight: 600, color: isShortage ? '#f87171' : '#fde68a' }}>
+                            <td style={{ padding: '6px 6px', textAlign: 'right', fontWeight: 600, color: isClickable ? textCol : '#fde68a' }}>
                               ({rupiah(o.total)})
                             </td>
                           </tr>
@@ -3645,10 +3953,20 @@ export default function ProfitLoss() {
                 {isComp && <td style={{ textAlign: 'right', padding: '4px 8px' }}>{delta?.revenue?.cash_over?.diff_pct >= 0 ? '+' : ''}{delta?.revenue?.cash_over?.diff_pct || 0}%</td>}
                 {!isComp && <td style={{ textAlign: 'right', padding: '4px 8px' }}>—</td>}
               </tr>
+              {Number(rev.handover_surplus || 0) > 0 && (
+                <tr>
+                  <td style={{ padding: '4px 8px 4px 20px', color: '#d97706' }}>• Selisih Lebih Antar Kasir ({rev.handover_surplus_count || 0} shift) (+)</td>
+                  <td style={{ textAlign: 'right', padding: '4px 8px', color: '#d97706' }}>+{rupiah(rev.handover_surplus || 0)}</td>
+                  {isComp && <td style={{ textAlign: 'right', padding: '4px 8px' }}>+{rupiah(prev?.revenue?.handover_surplus || 0)}</td>}
+                  {isComp && <td style={{ textAlign: 'right', padding: '4px 8px' }}>{delta?.revenue?.handover_surplus?.diff_nominal >= 0 ? '+' : ''}{rupiah(delta?.revenue?.handover_surplus?.diff_nominal || 0)}</td>}
+                  {isComp && <td style={{ textAlign: 'right', padding: '4px 8px' }}>{delta?.revenue?.handover_surplus?.diff_pct >= 0 ? '+' : ''}{delta?.revenue?.handover_surplus?.diff_pct || 0}%</td>}
+                  {!isComp && <td style={{ textAlign: 'right', padding: '4px 8px' }}>—</td>}
+                </tr>
+              )}
               <tr style={{ fontWeight: 'bold', borderBottom: '1px solid #ccc' }}>
                 <td style={{ padding: '6px 8px' }}>TOTAL PENDAPATAN OPERASIONAL BERSIH (NET REVENUE)</td>
-                <td style={{ textAlign: 'right', padding: '6px 8px' }}>{rupiah(rev.net_revenue_total || ((rev.net_sales || 0) + (rev.cash_over || 0)))}</td>
-                {isComp && <td style={{ textAlign: 'right', padding: '6px 8px' }}>{rupiah(prev?.revenue?.net_revenue_total || ((prev?.revenue?.net_sales || 0) + (prev?.revenue?.cash_over || 0)))}</td>}
+                <td style={{ textAlign: 'right', padding: '6px 8px' }}>{rupiah(rev.net_revenue_total || ((rev.net_sales || 0) + (rev.cash_over || 0) + (rev.handover_surplus || 0)))}</td>
+                {isComp && <td style={{ textAlign: 'right', padding: '6px 8px' }}>{rupiah(prev?.revenue?.net_revenue_total || ((prev?.revenue?.net_sales || 0) + (prev?.revenue?.cash_over || 0) + (prev?.revenue?.handover_surplus || 0)))}</td>}
                 {isComp && <td style={{ textAlign: 'right', padding: '6px 8px' }}>{delta?.revenue?.net_sales?.diff_nominal >= 0 ? '+' : ''}{rupiah(delta?.revenue?.net_sales?.diff_nominal)}</td>}
                 {isComp && <td style={{ textAlign: 'right', padding: '6px 8px' }}>{delta?.revenue?.net_sales?.diff_pct >= 0 ? '+' : ''}{delta?.revenue?.net_sales?.diff_pct}%</td>}
                 {!isComp && <td style={{ textAlign: 'right', padding: '6px 8px' }}>100.0%</td>}
@@ -3693,11 +4011,21 @@ export default function ProfitLoss() {
               </tr>
               {Number(opx.cash_shortage || 0) > 0 && (
                 <tr>
-                  <td style={{ padding: '4px 8px 4px 20px', color: '#b91c1c' }}>• Beban Selisih Kurang Kasir / Tekor ({opx.cash_short_count || 0} shift) (-)</td>
+                  <td style={{ padding: '4px 8px 4px 20px', color: '#b91c1c' }}>• Beban Selisih Kurang Kasir / Tekor Closing ({opx.cash_short_count || 0} shift) (-)</td>
                   <td style={{ textAlign: 'right', padding: '4px 8px', color: '#b91c1c' }}>({rupiah(opx.cash_shortage || 0)})</td>
                   {isComp && <td style={{ textAlign: 'right', padding: '4px 8px' }}>({rupiah(prev?.opex?.cash_shortage || 0)})</td>}
                   {isComp && <td style={{ textAlign: 'right', padding: '4px 8px' }}>{rupiah(delta?.opex?.cash_shortage?.diff_nominal || 0)}</td>}
                   {isComp && <td style={{ textAlign: 'right', padding: '4px 8px' }}>{delta?.opex?.cash_shortage?.diff_pct || 0}%</td>}
+                  {!isComp && <td style={{ textAlign: 'right', padding: '4px 8px' }}>—</td>}
+                </tr>
+              )}
+              {Number(opx.handover_shortage || 0) > 0 && (
+                <tr>
+                  <td style={{ padding: '4px 8px 4px 20px', color: '#b91c1c' }}>• Beban Selisih Antar Kasir ({opx.handover_short_count || 0} shift) (-)</td>
+                  <td style={{ textAlign: 'right', padding: '4px 8px', color: '#b91c1c' }}>({rupiah(opx.handover_shortage || 0)})</td>
+                  {isComp && <td style={{ textAlign: 'right', padding: '4px 8px' }}>({rupiah(prev?.opex?.handover_shortage || 0)})</td>}
+                  {isComp && <td style={{ textAlign: 'right', padding: '4px 8px' }}>{rupiah(delta?.opex?.handover_shortage?.diff_nominal || 0)}</td>}
+                  {isComp && <td style={{ textAlign: 'right', padding: '4px 8px' }}>{delta?.opex?.handover_shortage?.diff_pct || 0}%</td>}
                   {!isComp && <td style={{ textAlign: 'right', padding: '4px 8px' }}>—</td>}
                 </tr>
               )}
@@ -3743,9 +4071,16 @@ export default function ProfitLoss() {
       {detailModal.open && (
         <div className="modal-overlay" onClick={() => setDetailModal(p => ({ ...p, open: false }))}>
           <div
-            className="modal-content fade-in"
+            className={`modal-content fade-in ${(detailModal.type === 'CASH_OVER' || detailModal.type === 'CASH_SHORTAGE' || detailModal.type === 'HANDOVER_SHORTAGE' || detailModal.type === 'HANDOVER_SURPLUS') ? 'modal-xl' : ''}`}
             onClick={e => e.stopPropagation()}
-            style={{ maxWidth: 900, width: '92%', padding: 24, maxHeight: '90vh', overflowY: 'auto' }}
+            style={{
+              maxWidth: (detailModal.type === 'CASH_OVER' || detailModal.type === 'CASH_SHORTAGE') ? 1440 : ((detailModal.type === 'HANDOVER_SHORTAGE' || detailModal.type === 'HANDOVER_SURPLUS') ? 1120 : 960),
+              '--modal-max-w': (detailModal.type === 'CASH_OVER' || detailModal.type === 'CASH_SHORTAGE') ? '1440px' : ((detailModal.type === 'HANDOVER_SHORTAGE' || detailModal.type === 'HANDOVER_SURPLUS') ? '1120px' : '960px'),
+              width: (detailModal.type === 'CASH_OVER' || detailModal.type === 'CASH_SHORTAGE') ? '96vw' : '92%',
+              padding: 24,
+              maxHeight: '92vh',
+              overflowY: 'auto'
+            }}
           >
             {/* Modal Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, borderBottom: '1px solid rgba(165, 180, 252, 0.15)', paddingBottom: 14 }}>
@@ -4407,7 +4742,7 @@ export default function ProfitLoss() {
                 {/* 4.5 CASH OVER DETAIL */}
                 {detailModal.type === 'CASH_OVER' && (
                   <div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 18 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12, marginBottom: 18 }}>
                       <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: 10, padding: 14 }}>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Pendapatan Selisih Lebih Kasir</div>
                         <div style={{ fontSize: 22, fontWeight: 800, color: '#34d399' }}>+{rupiah(rev.cash_over || 0)}</div>
@@ -4417,58 +4752,155 @@ export default function ProfitLoss() {
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Jumlah Shift Surplus Fisik</div>
                         <div style={{ fontSize: 20, fontWeight: 800, color: '#ffffff' }}>{detailModal.items.length} Shift Closing</div>
                       </div>
+                      <div style={{ background: 'rgba(56, 189, 248, 0.06)', border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: 10, padding: 14 }}>
+                        <div style={{ fontSize: 11, color: '#38bdf8', fontWeight: 700 }}>💡 Rumus Rekonsiliasi Kas Laci</div>
+                        <div style={{ fontSize: 11.5, color: '#cbd5e1', marginTop: 3 }}>
+                          <strong>Target Kas Laci</strong> = Modal Awal + Tunai (Cash) - Kas Keluar.
+                        </div>
+                        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                          Non-tunai (QRIS / Transfer / EDC) langsung masuk rekening &amp; tidak berada di laci fisik kasir.
+                        </div>
+                      </div>
                     </div>
 
                     <div style={{ overflowX: 'auto', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: 10 }}>
-                      <table style={{ width: '100%', fontSize: 12.5, borderCollapse: 'collapse' }}>
+                      <table style={{ width: '100%', minWidth: 1280, fontSize: 12, borderCollapse: 'collapse' }}>
                         <thead>
-                          <tr style={{ background: 'rgba(16, 185, 129, 0.08)', textAlign: 'left', borderBottom: '1px solid rgba(16, 185, 129, 0.2)' }}>
-                            <th style={{ padding: '10px 14px' }}>Shift / Kasir</th>
-                            <th style={{ padding: '10px 14px' }}>Waktu Buka & Tutup</th>
-                            <th style={{ padding: '10px 14px', textAlign: 'right' }}>Modal Awal (Kas Kecil)</th>
-                            <th style={{ padding: '10px 14px', textAlign: 'right' }}>Kas Sistem (Diharapkan)</th>
-                            <th style={{ padding: '10px 14px', textAlign: 'right' }}>Fisik Closing (Dihitung)</th>
-                            <th style={{ padding: '10px 14px', textAlign: 'right', color: '#34d399' }}>SELISIH LEBIH (+)</th>
-                            <th style={{ padding: '10px 14px' }}>Catatan Closing Shift</th>
+                          <tr style={{ background: 'rgba(16, 185, 129, 0.12)', textAlign: 'left', borderBottom: '1px solid rgba(16, 185, 129, 0.25)' }}>
+                            <th rowSpan={2} style={{ padding: '9px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>Shift &amp; Kasir</th>
+                            <th rowSpan={2} style={{ padding: '9px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>Waktu Buka &amp; Tutup</th>
+                            <th rowSpan={2} style={{ padding: '9px 12px', textAlign: 'right', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>Modal Awal</th>
+                            <th colSpan={6} style={{ padding: '7px 12px', textAlign: 'center', background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', fontWeight: 800, borderLeft: '1px solid rgba(56, 189, 248, 0.3)', borderRight: '1px solid rgba(56, 189, 248, 0.3)', whiteSpace: 'nowrap', letterSpacing: '0.5px' }}>
+                              RINCIAN OMSET SISTEM (METODE BAYAR)
+                            </th>
+                            <th rowSpan={2} style={{ padding: '9px 12px', textAlign: 'right', verticalAlign: 'middle', whiteSpace: 'nowrap', color: '#fb7185' }}>Kas Keluar</th>
+                            <th rowSpan={2} style={{ padding: '9px 12px', textAlign: 'right', verticalAlign: 'middle', whiteSpace: 'nowrap', color: '#c084fc', background: 'rgba(192, 132, 252, 0.08)' }}>
+                              Target Kas Laci
+                              <div style={{ fontSize: 9.5, fontWeight: 'normal', color: '#cbd5e1' }}>(Modal + Tunai - Beban)</div>
+                            </th>
+                            <th rowSpan={2} style={{ padding: '9px 12px', textAlign: 'right', verticalAlign: 'middle', whiteSpace: 'nowrap', color: '#ffffff' }}>Fisik Closing</th>
+                            <th rowSpan={2} style={{ padding: '9px 12px', textAlign: 'right', verticalAlign: 'middle', whiteSpace: 'nowrap', color: '#34d399' }}>SELISIH LEBIH (+)</th>
+                            <th rowSpan={2} style={{ padding: '9px 12px', verticalAlign: 'middle', minWidth: 150 }}>Catatan Closing</th>
+                          </tr>
+                          <tr style={{ background: 'rgba(56, 189, 248, 0.08)', textAlign: 'right', borderBottom: '1px solid rgba(16, 185, 129, 0.25)', fontSize: 11 }}>
+                            <th style={{ padding: '6px 10px', color: '#34d399', whiteSpace: 'nowrap', borderLeft: '1px solid rgba(56, 189, 248, 0.3)' }}>Tunai (Cash)</th>
+                            <th style={{ padding: '6px 10px', color: '#38bdf8', whiteSpace: 'nowrap' }}>QRIS</th>
+                            <th style={{ padding: '6px 10px', color: '#818cf8', whiteSpace: 'nowrap' }}>Transfer Bank</th>
+                            <th style={{ padding: '6px 10px', color: '#fbbf24', whiteSpace: 'nowrap' }}>Debit / EDC</th>
+                            <th style={{ padding: '6px 10px', color: '#cbd5e1', whiteSpace: 'nowrap' }}>Piutang / Lain</th>
+                            <th style={{ padding: '6px 10px', color: '#ffffff', fontWeight: 800, whiteSpace: 'nowrap', borderRight: '1px solid rgba(56, 189, 248, 0.3)' }}>Total Omset</th>
                           </tr>
                         </thead>
                         <tbody>
                           {detailModal.items.length > 0 ? (
-                            detailModal.items.map((s, idx) => (
-                              <tr key={s.id || idx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
-                                <td style={{ padding: '10px 14px' }}>
-                                  <strong style={{ color: '#ffffff' }}>{s.shift_name || `Shift #${s.id}`}</strong>
-                                  <div style={{ fontSize: 11, color: '#38bdf8' }}>Kasir: {s.cashier_name || 'Kasir'}</div>
-                                </td>
-                                <td style={{ padding: '10px 14px', color: 'var(--text-muted)', fontSize: 11.5 }}>
-                                  <div>Buka: {s.opened_at ? s.opened_at.slice(0, 16).replace('T', ' ') : '-'}</div>
-                                  <div>Tutup: {s.closed_at ? s.closed_at.slice(0, 16).replace('T', ' ') : '-'}</div>
-                                </td>
-                                <td style={{ padding: '10px 14px', textAlign: 'right', color: '#cbd5e1' }}>
-                                  {rupiah(s.initial_cash)}
-                                </td>
-                                <td style={{ padding: '10px 14px', textAlign: 'right', color: '#94a3b8' }}>
-                                  {rupiah(s.system_cash)}
-                                </td>
-                                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, color: '#ffffff' }}>
-                                  {rupiah(s.closing_cash)}
-                                </td>
-                                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 800, color: '#34d399', fontSize: 13.5 }}>
-                                  +{rupiah(s.cash_difference)}
-                                </td>
-                                <td style={{ padding: '10px 14px', color: 'var(--text-muted)', fontSize: 11.5, maxWidth: 200 }}>
-                                  {s.notes ? `"${s.notes}"` : '—'}
-                                </td>
-                              </tr>
-                            ))
+                            detailModal.items.map((s, idx) => {
+                              const otherSales = (Number(s.receivable_sales) || 0) + (Number(s.online_sales) || 0) + (Number(s.other_sales) || 0);
+                              const targetCashInDrawer = s.expected_cash !== undefined && s.expected_cash !== null
+                                ? Number(s.expected_cash)
+                                : Math.max(0, (Number(s.initial_cash) || 0) + (Number(s.cash_sales) || 0) - (Number(s.cash_expenses) || 0));
+
+                              return (
+                                <tr key={s.id || idx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
+                                  <td style={{ padding: '10px 12px' }}>
+                                    <strong style={{ color: '#ffffff' }}>{s.shift_name || `Shift #${s.id}`}</strong>
+                                    <div style={{ fontSize: 11, color: '#38bdf8' }}>Kasir: {s.cashier_name || 'Kasir'}</div>
+                                    {s.outlet_name && <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{s.outlet_name}</div>}
+                                  </td>
+                                  <td style={{ padding: '10px 12px', color: 'var(--text-muted)', fontSize: 11, whiteSpace: 'nowrap' }}>
+                                    <div>Buka: {s.opened_at ? s.opened_at.slice(0, 16).replace('T', ' ') : '-'}</div>
+                                    <div>Tutup: {s.closed_at ? s.closed_at.slice(0, 16).replace('T', ' ') : '-'}</div>
+                                  </td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: '#cbd5e1', fontWeight: 600 }}>
+                                    {rupiah(s.initial_cash)}
+                                  </td>
+                                  {/* Rincian Kas Sistem */}
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: '#34d399', fontWeight: 600, background: 'rgba(56, 189, 248, 0.02)', borderLeft: '1px solid rgba(56, 189, 248, 0.15)' }}>
+                                    {rupiah(s.cash_sales)}
+                                  </td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: '#38bdf8', background: 'rgba(56, 189, 248, 0.02)' }}>
+                                    {rupiah(s.qris_sales)}
+                                  </td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: '#818cf8', background: 'rgba(56, 189, 248, 0.02)' }}>
+                                    {rupiah(s.transfer_sales)}
+                                  </td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: '#fbbf24', background: 'rgba(56, 189, 248, 0.02)' }}>
+                                    {rupiah(s.debit_sales)}
+                                  </td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: '#94a3b8', background: 'rgba(56, 189, 248, 0.02)' }}>
+                                    {rupiah(otherSales)}
+                                  </td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: '#ffffff', fontWeight: 800, background: 'rgba(56, 189, 248, 0.06)', borderRight: '1px solid rgba(56, 189, 248, 0.2)' }}>
+                                    {rupiah(s.system_cash)}
+                                  </td>
+                                  {/* Kas Keluar */}
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: (Number(s.cash_expenses) > 0 ? '#fb7185' : 'var(--text-muted)') }}>
+                                    {Number(s.cash_expenses) > 0 ? `(${rupiah(s.cash_expenses)})` : 'Rp0'}
+                                  </td>
+                                  {/* Target Kas Laci */}
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: '#c084fc', fontWeight: 800, background: 'rgba(192, 132, 252, 0.08)' }}>
+                                    {rupiah(targetCashInDrawer)}
+                                  </td>
+                                  {/* Fisik Closing */}
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: '#ffffff' }}>
+                                    {rupiah(s.closing_cash)}
+                                  </td>
+                                  {/* Selisih Lebih */}
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, color: '#34d399', fontSize: 13.5 }}>
+                                    +{rupiah(s.cash_difference)}
+                                  </td>
+                                  {/* Catatan */}
+                                  <td style={{ padding: '10px 12px', color: 'var(--text-muted)', fontSize: 11, minWidth: 150 }}>
+                                    {s.notes ? `"${s.notes}"` : '—'}
+                                  </td>
+                                </tr>
+                              );
+                            })
                           ) : (
                             <tr>
-                              <td colSpan={7} style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)' }}>
+                              <td colSpan={14} style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)' }}>
                                 Tidak ada riwayat shift dengan selisih lebih kasir pada periode ini.
                               </td>
                             </tr>
                           )}
                         </tbody>
+                        {detailModal.items.length > 0 && (() => {
+                          const sumInitial = detailModal.items.reduce((acc, s) => acc + (Number(s.initial_cash) || 0), 0);
+                          const sumCash = detailModal.items.reduce((acc, s) => acc + (Number(s.cash_sales) || 0), 0);
+                          const sumQris = detailModal.items.reduce((acc, s) => acc + (Number(s.qris_sales) || 0), 0);
+                          const sumTransfer = detailModal.items.reduce((acc, s) => acc + (Number(s.transfer_sales) || 0), 0);
+                          const sumDebit = detailModal.items.reduce((acc, s) => acc + (Number(s.debit_sales) || 0), 0);
+                          const sumOther = detailModal.items.reduce((acc, s) => acc + ((Number(s.receivable_sales) || 0) + (Number(s.online_sales) || 0) + (Number(s.other_sales) || 0)), 0);
+                          const sumSystem = detailModal.items.reduce((acc, s) => acc + (Number(s.system_cash) || 0), 0);
+                          const sumExpenses = detailModal.items.reduce((acc, s) => acc + (Number(s.cash_expenses) || 0), 0);
+                          const sumExpected = detailModal.items.reduce((acc, s) => {
+                            const exp = s.expected_cash !== undefined && s.expected_cash !== null
+                              ? Number(s.expected_cash)
+                              : Math.max(0, (Number(s.initial_cash) || 0) + (Number(s.cash_sales) || 0) - (Number(s.cash_expenses) || 0));
+                            return acc + exp;
+                          }, 0);
+                          const sumClosing = detailModal.items.reduce((acc, s) => acc + (Number(s.closing_cash) || 0), 0);
+                          const sumDiff = detailModal.items.reduce((acc, s) => acc + (Number(s.cash_difference) || 0), 0);
+
+                          return (
+                            <tfoot>
+                              <tr style={{ background: 'rgba(255, 255, 255, 0.06)', fontWeight: 800, borderTop: '2px solid rgba(16, 185, 129, 0.4)' }}>
+                                <td colSpan={2} style={{ padding: '10px 12px', color: '#ffffff' }}>TOTAL KONSOLIDASI</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: '#cbd5e1' }}>{rupiah(sumInitial)}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: '#34d399', borderLeft: '1px solid rgba(56, 189, 248, 0.2)' }}>{rupiah(sumCash)}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: '#38bdf8' }}>{rupiah(sumQris)}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: '#818cf8' }}>{rupiah(sumTransfer)}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: '#fbbf24' }}>{rupiah(sumDebit)}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: '#94a3b8' }}>{rupiah(sumOther)}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: '#ffffff', borderRight: '1px solid rgba(56, 189, 248, 0.2)' }}>{rupiah(sumSystem)}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: '#fb7185' }}>{sumExpenses > 0 ? `(${rupiah(sumExpenses)})` : 'Rp0'}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: '#c084fc', background: 'rgba(192, 132, 252, 0.1)' }}>{rupiah(sumExpected)}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: '#ffffff' }}>{rupiah(sumClosing)}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: '#34d399', fontSize: 13.5 }}>+{rupiah(sumDiff)}</td>
+                                <td></td>
+                              </tr>
+                            </tfoot>
+                          );
+                        })()}
                       </table>
                     </div>
                   </div>
@@ -4477,9 +4909,9 @@ export default function ProfitLoss() {
                 {/* 4.6 CASH SHORTAGE DETAIL */}
                 {detailModal.type === 'CASH_SHORTAGE' && (
                   <div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 18 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12, marginBottom: 18 }}>
                       <div style={{ background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.3)', borderRadius: 10, padding: 14 }}>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Beban Selisih Kurang Kasir (Tekor)</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Beban Selisih Kurang Kasir (Tekor Closing)</div>
                         <div style={{ fontSize: 22, fontWeight: 800, color: '#f87171' }}>({rupiah(opx.cash_shortage || 0)})</div>
                         <div style={{ fontSize: 11, color: '#f87171', fontWeight: 600 }}>Kekurangan Fisik Kasir saat Closing Shift</div>
                       </div>
@@ -4487,19 +4919,186 @@ export default function ProfitLoss() {
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Jumlah Shift Kasir Tekor</div>
                         <div style={{ fontSize: 20, fontWeight: 800, color: '#ffffff' }}>{detailModal.items.length} Shift Closing</div>
                       </div>
+                      <div style={{ background: 'rgba(244, 63, 94, 0.06)', border: '1px solid rgba(244, 63, 94, 0.25)', borderRadius: 10, padding: 14 }}>
+                        <div style={{ fontSize: 11, color: '#f87171', fontWeight: 700 }}>💡 Rumus Rekonsiliasi Kas Laci</div>
+                        <div style={{ fontSize: 11.5, color: '#cbd5e1', marginTop: 3 }}>
+                          <strong>Target Kas Laci</strong> = Modal Awal + Tunai (Cash) - Kas Keluar.
+                        </div>
+                        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                          Non-tunai (QRIS / Transfer / EDC) langsung masuk rekening &amp; tidak berada di laci fisik kasir.
+                        </div>
+                      </div>
                     </div>
 
                     <div style={{ overflowX: 'auto', border: '1px solid rgba(244, 63, 94, 0.25)', borderRadius: 10 }}>
+                      <table style={{ width: '100%', minWidth: 1280, fontSize: 12, borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ background: 'rgba(244, 63, 94, 0.12)', textAlign: 'left', borderBottom: '1px solid rgba(244, 63, 94, 0.25)' }}>
+                            <th rowSpan={2} style={{ padding: '9px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>Shift &amp; Kasir</th>
+                            <th rowSpan={2} style={{ padding: '9px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>Waktu Buka &amp; Tutup</th>
+                            <th rowSpan={2} style={{ padding: '9px 12px', textAlign: 'right', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>Modal Awal</th>
+                            <th colSpan={6} style={{ padding: '7px 12px', textAlign: 'center', background: 'rgba(244, 63, 94, 0.15)', color: '#fda4af', fontWeight: 800, borderLeft: '1px solid rgba(244, 63, 94, 0.3)', borderRight: '1px solid rgba(244, 63, 94, 0.3)', whiteSpace: 'nowrap', letterSpacing: '0.5px' }}>
+                              RINCIAN OMSET SISTEM (METODE BAYAR)
+                            </th>
+                            <th rowSpan={2} style={{ padding: '9px 12px', textAlign: 'right', verticalAlign: 'middle', whiteSpace: 'nowrap', color: '#fb7185' }}>Kas Keluar</th>
+                            <th rowSpan={2} style={{ padding: '9px 12px', textAlign: 'right', verticalAlign: 'middle', whiteSpace: 'nowrap', color: '#c084fc', background: 'rgba(192, 132, 252, 0.08)' }}>
+                              Target Kas Laci
+                              <div style={{ fontSize: 9.5, fontWeight: 'normal', color: '#cbd5e1' }}>(Modal + Tunai - Beban)</div>
+                            </th>
+                            <th rowSpan={2} style={{ padding: '9px 12px', textAlign: 'right', verticalAlign: 'middle', whiteSpace: 'nowrap', color: '#ffffff' }}>Fisik Closing</th>
+                            <th rowSpan={2} style={{ padding: '9px 12px', textAlign: 'right', verticalAlign: 'middle', whiteSpace: 'nowrap', color: '#f87171' }}>SELISIH KURANG (-)</th>
+                            <th rowSpan={2} style={{ padding: '9px 12px', verticalAlign: 'middle', minWidth: 150 }}>Catatan Closing</th>
+                          </tr>
+                          <tr style={{ background: 'rgba(244, 63, 94, 0.08)', textAlign: 'right', borderBottom: '1px solid rgba(244, 63, 94, 0.25)', fontSize: 11 }}>
+                            <th style={{ padding: '6px 10px', color: '#34d399', whiteSpace: 'nowrap', borderLeft: '1px solid rgba(244, 63, 94, 0.3)' }}>Tunai (Cash)</th>
+                            <th style={{ padding: '6px 10px', color: '#38bdf8', whiteSpace: 'nowrap' }}>QRIS</th>
+                            <th style={{ padding: '6px 10px', color: '#818cf8', whiteSpace: 'nowrap' }}>Transfer Bank</th>
+                            <th style={{ padding: '6px 10px', color: '#fbbf24', whiteSpace: 'nowrap' }}>Debit / EDC</th>
+                            <th style={{ padding: '6px 10px', color: '#cbd5e1', whiteSpace: 'nowrap' }}>Piutang / Lain</th>
+                            <th style={{ padding: '6px 10px', color: '#ffffff', fontWeight: 800, whiteSpace: 'nowrap', borderRight: '1px solid rgba(244, 63, 94, 0.3)' }}>Total Omset</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {detailModal.items.length > 0 ? (
+                            detailModal.items.map((s, idx) => {
+                              const otherSales = (Number(s.receivable_sales) || 0) + (Number(s.online_sales) || 0) + (Number(s.other_sales) || 0);
+                              const targetCashInDrawer = s.expected_cash !== undefined && s.expected_cash !== null
+                                ? Number(s.expected_cash)
+                                : Math.max(0, (Number(s.initial_cash) || 0) + (Number(s.cash_sales) || 0) - (Number(s.cash_expenses) || 0));
+
+                              return (
+                                <tr key={s.id || idx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
+                                  <td style={{ padding: '10px 12px' }}>
+                                    <strong style={{ color: '#ffffff' }}>{s.shift_name || `Shift #${s.id}`}</strong>
+                                    <div style={{ fontSize: 11, color: '#fbbf24' }}>Kasir: {s.cashier_name || 'Kasir'}</div>
+                                    {s.outlet_name && <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{s.outlet_name}</div>}
+                                  </td>
+                                  <td style={{ padding: '10px 12px', color: 'var(--text-muted)', fontSize: 11, whiteSpace: 'nowrap' }}>
+                                    <div>Buka: {s.opened_at ? s.opened_at.slice(0, 16).replace('T', ' ') : '-'}</div>
+                                    <div>Tutup: {s.closed_at ? s.closed_at.slice(0, 16).replace('T', ' ') : '-'}</div>
+                                  </td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: '#cbd5e1', fontWeight: 600 }}>
+                                    {rupiah(s.initial_cash)}
+                                  </td>
+                                  {/* Rincian Kas Sistem */}
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: '#34d399', fontWeight: 600, background: 'rgba(244, 63, 94, 0.02)', borderLeft: '1px solid rgba(244, 63, 94, 0.15)' }}>
+                                    {rupiah(s.cash_sales)}
+                                  </td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: '#38bdf8', background: 'rgba(244, 63, 94, 0.02)' }}>
+                                    {rupiah(s.qris_sales)}
+                                  </td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: '#818cf8', background: 'rgba(244, 63, 94, 0.02)' }}>
+                                    {rupiah(s.transfer_sales)}
+                                  </td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: '#fbbf24', background: 'rgba(244, 63, 94, 0.02)' }}>
+                                    {rupiah(s.debit_sales)}
+                                  </td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: '#94a3b8', background: 'rgba(244, 63, 94, 0.02)' }}>
+                                    {rupiah(otherSales)}
+                                  </td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: '#ffffff', fontWeight: 800, background: 'rgba(244, 63, 94, 0.06)', borderRight: '1px solid rgba(244, 63, 94, 0.2)' }}>
+                                    {rupiah(s.system_cash)}
+                                  </td>
+                                  {/* Kas Keluar */}
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: (Number(s.cash_expenses) > 0 ? '#fb7185' : 'var(--text-muted)') }}>
+                                    {Number(s.cash_expenses) > 0 ? `(${rupiah(s.cash_expenses)})` : 'Rp0'}
+                                  </td>
+                                  {/* Target Kas Laci */}
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: '#c084fc', fontWeight: 800, background: 'rgba(192, 132, 252, 0.08)' }}>
+                                    {rupiah(targetCashInDrawer)}
+                                  </td>
+                                  {/* Fisik Closing */}
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: '#ffffff' }}>
+                                    {rupiah(s.closing_cash)}
+                                  </td>
+                                  {/* Selisih Kurang */}
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, color: '#f87171', fontSize: 13.5 }}>
+                                    -({rupiah(Math.abs(s.cash_difference || s.shortage_amount || 0))})
+                                  </td>
+                                  {/* Catatan */}
+                                  <td style={{ padding: '10px 12px', color: 'var(--text-muted)', fontSize: 11, minWidth: 150 }}>
+                                    {s.notes ? `"${s.notes}"` : '—'}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          ) : (
+                            <tr>
+                              <td colSpan={14} style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)' }}>
+                                Tidak ada riwayat shift dengan selisih kurang (tekor closing) pada periode ini.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                        {detailModal.items.length > 0 && (() => {
+                          const sumInitial = detailModal.items.reduce((acc, s) => acc + (Number(s.initial_cash) || 0), 0);
+                          const sumCash = detailModal.items.reduce((acc, s) => acc + (Number(s.cash_sales) || 0), 0);
+                          const sumQris = detailModal.items.reduce((acc, s) => acc + (Number(s.qris_sales) || 0), 0);
+                          const sumTransfer = detailModal.items.reduce((acc, s) => acc + (Number(s.transfer_sales) || 0), 0);
+                          const sumDebit = detailModal.items.reduce((acc, s) => acc + (Number(s.debit_sales) || 0), 0);
+                          const sumOther = detailModal.items.reduce((acc, s) => acc + ((Number(s.receivable_sales) || 0) + (Number(s.online_sales) || 0) + (Number(s.other_sales) || 0)), 0);
+                          const sumSystem = detailModal.items.reduce((acc, s) => acc + (Number(s.system_cash) || 0), 0);
+                          const sumExpenses = detailModal.items.reduce((acc, s) => acc + (Number(s.cash_expenses) || 0), 0);
+                          const sumExpected = detailModal.items.reduce((acc, s) => {
+                            const exp = s.expected_cash !== undefined && s.expected_cash !== null
+                              ? Number(s.expected_cash)
+                              : Math.max(0, (Number(s.initial_cash) || 0) + (Number(s.cash_sales) || 0) - (Number(s.cash_expenses) || 0));
+                            return acc + exp;
+                          }, 0);
+                          const sumClosing = detailModal.items.reduce((acc, s) => acc + (Number(s.closing_cash) || 0), 0);
+                          const sumDiff = detailModal.items.reduce((acc, s) => acc + Math.abs(Number(s.cash_difference || s.shortage_amount || 0)), 0);
+
+                          return (
+                            <tfoot>
+                              <tr style={{ background: 'rgba(255, 255, 255, 0.06)', fontWeight: 800, borderTop: '2px solid rgba(244, 63, 94, 0.4)' }}>
+                                <td colSpan={2} style={{ padding: '10px 12px', color: '#ffffff' }}>TOTAL KONSOLIDASI</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: '#cbd5e1' }}>{rupiah(sumInitial)}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: '#34d399', borderLeft: '1px solid rgba(244, 63, 94, 0.2)' }}>{rupiah(sumCash)}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: '#38bdf8' }}>{rupiah(sumQris)}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: '#818cf8' }}>{rupiah(sumTransfer)}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: '#fbbf24' }}>{rupiah(sumDebit)}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: '#94a3b8' }}>{rupiah(sumOther)}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: '#ffffff', borderRight: '1px solid rgba(244, 63, 94, 0.2)' }}>{rupiah(sumSystem)}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: '#fb7185' }}>{sumExpenses > 0 ? `(${rupiah(sumExpenses)})` : 'Rp0'}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: '#c084fc', background: 'rgba(192, 132, 252, 0.1)' }}>{rupiah(sumExpected)}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: '#ffffff' }}>{rupiah(sumClosing)}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: '#f87171', fontSize: 13.5 }}>-({rupiah(sumDiff)})</td>
+                                <td></td>
+                              </tr>
+                            </tfoot>
+                          );
+                        })()}
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* 4.7 HANDOVER SHORTAGE DETAIL (Tekor Antar Kasir) */}
+                {detailModal.type === 'HANDOVER_SHORTAGE' && (
+                  <div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 18 }}>
+                      <div style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: 10, padding: 14 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Beban Selisih Antar Kasir</div>
+                        <div style={{ fontSize: 22, fontWeight: 800, color: '#fbbf24' }}>({rupiah(opx.handover_shortage || 0)})</div>
+                        <div style={{ fontSize: 11, color: '#fbbf24', fontWeight: 600 }}>Tekor Antar Kasir (Modal Awal Shift &lt; Kas Tutup Shift Lalu)</div>
+                      </div>
+                      <div style={{ background: 'rgba(255, 255, 255, 0.04)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 10, padding: 14 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Jumlah Shift Tekor Antar Kasir</div>
+                        <div style={{ fontSize: 20, fontWeight: 800, color: '#ffffff' }}>{detailModal.items.length} Shift</div>
+                      </div>
+                    </div>
+
+                    <div style={{ overflowX: 'auto', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: 10 }}>
                       <table style={{ width: '100%', fontSize: 12.5, borderCollapse: 'collapse' }}>
                         <thead>
-                          <tr style={{ background: 'rgba(244, 63, 94, 0.08)', textAlign: 'left', borderBottom: '1px solid rgba(244, 63, 94, 0.2)' }}>
-                            <th style={{ padding: '10px 14px' }}>Shift / Kasir</th>
-                            <th style={{ padding: '10px 14px' }}>Waktu Buka & Tutup</th>
-                            <th style={{ padding: '10px 14px', textAlign: 'right' }}>Modal Awal (Kas Kecil)</th>
-                            <th style={{ padding: '10px 14px', textAlign: 'right' }}>Kas Sistem (Diharapkan)</th>
-                            <th style={{ padding: '10px 14px', textAlign: 'right' }}>Fisik Closing (Dihitung)</th>
-                            <th style={{ padding: '10px 14px', textAlign: 'right', color: '#f87171' }}>SELISIH KURANG (-)</th>
-                            <th style={{ padding: '10px 14px' }}>Catatan Closing Shift</th>
+                          <tr style={{ background: 'rgba(245, 158, 11, 0.08)', textAlign: 'left', borderBottom: '1px solid rgba(245, 158, 11, 0.2)' }}>
+                            <th style={{ padding: '10px 14px' }}>Shift / Kasir Penerima</th>
+                            <th style={{ padding: '10px 14px' }}>Waktu Buka Shift</th>
+                            <th style={{ padding: '10px 14px' }}>Shift Sebelumnya</th>
+                            <th style={{ padding: '10px 14px', textAlign: 'right' }}>Kas Tutup Shift Lalu</th>
+                            <th style={{ padding: '10px 14px', textAlign: 'right' }}>Modal Awal Kasir (Shift Ini)</th>
+                            <th style={{ padding: '10px 14px', textAlign: 'right', color: '#f87171' }}>SELISIH TEKOR (-)</th>
+                            <th style={{ padding: '10px 14px' }}>Catatan</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -4511,20 +5110,19 @@ export default function ProfitLoss() {
                                   <div style={{ fontSize: 11, color: '#fbbf24' }}>Kasir: {s.cashier_name || 'Kasir'}</div>
                                 </td>
                                 <td style={{ padding: '10px 14px', color: 'var(--text-muted)', fontSize: 11.5 }}>
-                                  <div>Buka: {s.opened_at ? s.opened_at.slice(0, 16).replace('T', ' ') : '-'}</div>
-                                  <div>Tutup: {s.closed_at ? s.closed_at.slice(0, 16).replace('T', ' ') : '-'}</div>
+                                  <div>{s.opened_at ? s.opened_at.slice(0, 16).replace('T', ' ') : '-'}</div>
+                                </td>
+                                <td style={{ padding: '10px 14px', color: '#94a3b8' }}>
+                                  {s.prev_shift_name || 'Shift Sebelumnya'}
                                 </td>
                                 <td style={{ padding: '10px 14px', textAlign: 'right', color: '#cbd5e1' }}>
+                                  {rupiah(s.prev_closing_cash)}
+                                </td>
+                                <td style={{ padding: '10px 14px', textAlign: 'right', color: '#ffffff', fontWeight: 600 }}>
                                   {rupiah(s.initial_cash)}
                                 </td>
-                                <td style={{ padding: '10px 14px', textAlign: 'right', color: '#94a3b8' }}>
-                                  {rupiah(s.system_cash)}
-                                </td>
-                                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, color: '#ffffff' }}>
-                                  {rupiah(s.closing_cash)}
-                                </td>
                                 <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 800, color: '#f87171', fontSize: 13.5 }}>
-                                  -({rupiah(Math.abs(s.cash_difference || s.shortage_amount || 0))})
+                                  -({rupiah(Math.abs(s.inter_shift_diff || s.shortage_amount || 0))})
                                 </td>
                                 <td style={{ padding: '10px 14px', color: 'var(--text-muted)', fontSize: 11.5, maxWidth: 200 }}>
                                   {s.notes ? `"${s.notes}"` : '—'}
@@ -4534,7 +5132,76 @@ export default function ProfitLoss() {
                           ) : (
                             <tr>
                               <td colSpan={7} style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)' }}>
-                                Tidak ada riwayat shift dengan selisih kurang (tekor) pada periode ini.
+                                Tidak ada riwayat shift dengan tekor selisih antar kasir pada periode ini.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* 4.8 HANDOVER SURPLUS DETAIL (Surplus Antar Kasir) */}
+                {detailModal.type === 'HANDOVER_SURPLUS' && (
+                  <div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 18 }}>
+                      <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: 10, padding: 14 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Surplus Antar Kasir</div>
+                        <div style={{ fontSize: 22, fontWeight: 800, color: '#34d399' }}>+{rupiah(rev.handover_surplus || 0)}</div>
+                        <div style={{ fontSize: 11, color: '#34d399', fontWeight: 600 }}>Lebih Antar Kasir (Modal Awal Shift &gt; Kas Tutup Shift Lalu)</div>
+                      </div>
+                      <div style={{ background: 'rgba(255, 255, 255, 0.04)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 10, padding: 14 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Jumlah Shift Lebih Antar Kasir</div>
+                        <div style={{ fontSize: 20, fontWeight: 800, color: '#ffffff' }}>{detailModal.items.length} Shift</div>
+                      </div>
+                    </div>
+
+                    <div style={{ overflowX: 'auto', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: 10 }}>
+                      <table style={{ width: '100%', fontSize: 12.5, borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ background: 'rgba(16, 185, 129, 0.08)', textAlign: 'left', borderBottom: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                            <th style={{ padding: '10px 14px' }}>Shift / Kasir Penerima</th>
+                            <th style={{ padding: '10px 14px' }}>Waktu Buka Shift</th>
+                            <th style={{ padding: '10px 14px' }}>Shift Sebelumnya</th>
+                            <th style={{ padding: '10px 14px', textAlign: 'right' }}>Kas Tutup Shift Lalu</th>
+                            <th style={{ padding: '10px 14px', textAlign: 'right' }}>Modal Awal Kasir (Shift Ini)</th>
+                            <th style={{ padding: '10px 14px', textAlign: 'right', color: '#34d399' }}>SELISIH LEBIH (+)</th>
+                            <th style={{ padding: '10px 14px' }}>Catatan</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {detailModal.items.length > 0 ? (
+                            detailModal.items.map((s, idx) => (
+                              <tr key={s.id || idx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
+                                <td style={{ padding: '10px 14px' }}>
+                                  <strong style={{ color: '#ffffff' }}>{s.shift_name || `Shift #${s.id}`}</strong>
+                                  <div style={{ fontSize: 11, color: '#38bdf8' }}>Kasir: {s.cashier_name || 'Kasir'}</div>
+                                </td>
+                                <td style={{ padding: '10px 14px', color: 'var(--text-muted)', fontSize: 11.5 }}>
+                                  <div>{s.opened_at ? s.opened_at.slice(0, 16).replace('T', ' ') : '-'}</div>
+                                </td>
+                                <td style={{ padding: '10px 14px', color: '#94a3b8' }}>
+                                  {s.prev_shift_name || 'Shift Sebelumnya'}
+                                </td>
+                                <td style={{ padding: '10px 14px', textAlign: 'right', color: '#cbd5e1' }}>
+                                  {rupiah(s.prev_closing_cash)}
+                                </td>
+                                <td style={{ padding: '10px 14px', textAlign: 'right', color: '#ffffff', fontWeight: 600 }}>
+                                  {rupiah(s.initial_cash)}
+                                </td>
+                                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 800, color: '#34d399', fontSize: 13.5 }}>
+                                  +{rupiah(s.inter_shift_diff || 0)}
+                                </td>
+                                <td style={{ padding: '10px 14px', color: 'var(--text-muted)', fontSize: 11.5, maxWidth: 200 }}>
+                                  {s.notes ? `"${s.notes}"` : '—'}
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={7} style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)' }}>
+                                Tidak ada riwayat shift dengan surplus selisih antar kasir pada periode ini.
                               </td>
                             </tr>
                           )}
@@ -4565,6 +5232,13 @@ export default function ProfitLoss() {
                           </div>
                         )}
 
+                        {Number(rev.handover_surplus || 0) > 0 && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(245, 158, 11, 0.15)', borderRadius: 8, borderLeft: '4px solid #f59e0b' }}>
+                            <span>(+) Pendapatan Selisih Lebih Antar Kasir (Surplus Kas Awal)</span>
+                            <strong style={{ color: '#fbbf24' }}>+{rupiah(rev.handover_surplus)}</strong>
+                          </div>
+                        )}
+
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(99, 102, 241, 0.1)', borderRadius: 8, borderLeft: '4px solid #6366f1' }}>
                           <span>(-) Harga Pokok Penjualan (HPP Riil Resep + Opname)</span>
                           <strong style={{ color: '#818cf8' }}>({rupiah(cogs.total_cogs)})</strong>
@@ -4588,7 +5262,11 @@ export default function ProfitLoss() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(245, 158, 11, 0.1)', borderRadius: 8, borderLeft: '4px solid #f59e0b' }}>
                           <span>
                             (-) Beban Operasional Toko (OPEX)
-                            {Number(opx.cash_shortage || 0) > 0 && <span style={{ fontSize: 11, color: '#fca5a5' }}> (termasuk Tekor Kasir {rupiah(opx.cash_shortage)})</span>}
+                            {(Number(opx.cash_shortage || 0) > 0 || Number(opx.handover_shortage || 0) > 0) && (
+                              <span style={{ fontSize: 11, color: '#fca5a5' }}>
+                                {' '}(termasuk {Number(opx.cash_shortage || 0) > 0 ? `Tekor Kasir ${rupiah(opx.cash_shortage)}` : ''}{Number(opx.cash_shortage || 0) > 0 && Number(opx.handover_shortage || 0) > 0 ? ', ' : ''}{Number(opx.handover_shortage || 0) > 0 ? `Tekor Antar Kasir ${rupiah(opx.handover_shortage)}` : ''})
+                              </span>
+                            )}
                           </span>
                           <strong style={{ color: '#fbbf24' }}>({rupiah(opx.total_opex)})</strong>
                         </div>
@@ -4701,6 +5379,21 @@ export default function ProfitLoss() {
           </div>
         </div>
       </div>
+
+      {/* Interactive Report Preview Modal */}
+      <ReportPreviewModal
+        isOpen={previewModalOpen}
+        onClose={() => setPreviewModalOpen(false)}
+        title="Pratinjau Laporan Laba Rugi"
+        reportTitle="LAPORAN LABA RUGI KOMPREHENSIF (PROFIT & LOSS)"
+        businessName={businessTitle}
+        outletName={outletTitle}
+        periodText={`Per ${dateFrom} s/d ${dateTo}`}
+        kpis={previewKpis}
+        sheets={previewSheets}
+        onExportExcel={handleExportExcel}
+        onPrint={handlePrintReport}
+      />
     </div>
   );
 }

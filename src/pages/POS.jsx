@@ -11,9 +11,9 @@ import {
   ShoppingBag, Briefcase, Barcode, Utensils, Coins,
   Zap, AlertOctagon, Calculator,
   ChevronDown, Filter, Layers, UserCheck, UserPlus, Star, Award, Wallet, Phone,
-  ShieldCheck, KeyRound, Check, HelpCircle, Lock, Play
+  ShieldCheck, KeyRound, Check, HelpCircle, Lock, Play, Landmark
 } from 'lucide-react';
-import api from '../api/client';
+import api, { getMediaUrl } from '../api/client';
 import { rupiah, num, LoadingState, PageHeader } from '../components/ui';
 import { printElement } from '../utils/print';
 import { getTodayStr, getMonthStartStr, formatLocalDisplay } from '../utils/date';
@@ -21,7 +21,36 @@ import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 import { confirmDialog } from '../utils/swal';
 
+export const WASTE_REASON_OPTIONS = [
+  { value: 'CUSTOMER_COMPLAINT', label: 'Komplain Tamu / Retur' },
+  { value: 'EXPIRED', label: 'Basi / Kedaluwarsa' },
+  { value: 'COOKING_ERROR', label: 'Gosong / Salah Masak' },
+  { value: 'DELIVERY_DAMAGE', label: 'Rusak saat Pengiriman' },
+  { value: 'DROPPED_SPILL', label: 'Tumpah / Jatuh' },
+  { value: 'STORAGE_DAMAGE', label: 'Rusak Penyimpanan / Chiller Mati' },
+  { value: 'OTHER', label: 'Lainnya' },
+];
+
 export default function POS() {
+  const {
+    activeOutletId,
+    activeOutlet,
+    isOwnerWebsite,
+    isPlatformAdmin,
+    isOwnerBisnis,
+    isOwnerOutlet,
+    isPegawai,
+    changeOutlet,
+    outlets,
+    coinBalance,
+    coinsPerTransaction,
+    remainingTransactions,
+    isCoinLow,
+    isCoinOut,
+    refreshCoins,
+    dateRange,
+  } = useOutlet();
+
   const [menus, setMenus] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [ingredients, setIngredients] = useState([]);
@@ -44,6 +73,17 @@ export default function POS() {
     return [
       'owner_bisnis', 'owner_outlet', 'manager_outlet', 'manager',
       'owner', 'admin', 'superadmin_platform', 'owner_website', 'superadmin'
+    ].includes(role) ||
+      Boolean(currentUser?.is_owner_bisnis) ||
+      Boolean(currentUser?.is_owner_outlet) ||
+      Boolean(currentUser?.is_superadmin_platform) ||
+      Boolean(currentUser?.is_owner_website);
+  }, [currentUser]);
+
+  const isOwner = useMemo(() => {
+    const role = (currentUser?.role || '').toLowerCase();
+    return [
+      'owner_bisnis', 'owner_outlet', 'owner', 'admin', 'superadmin_platform', 'owner_website', 'superadmin'
     ].includes(role) ||
       Boolean(currentUser?.is_owner_bisnis) ||
       Boolean(currentUser?.is_owner_outlet) ||
@@ -80,6 +120,35 @@ export default function POS() {
   const [dpReferenceNo, setDpReferenceNo] = useState('');
   const [orderNotes, setOrderNotes] = useState('');
 
+  // Store Static QRIS Image State
+  const [storeQrisInfo, setStoreQrisInfo] = useState({
+    qr_image_url: null,
+    bank_name: null,
+    account_number: null,
+    account_holder: null,
+    loaded: false,
+  });
+
+  useEffect(() => {
+    async function loadStoreQris() {
+      try {
+        const res = await api.get('/bank-accounts');
+        const list = res.data?.data || [];
+        const primary = list.find(b => b.is_primary && b.qr_image_url) || list.find(b => b.qr_image_url) || list[0];
+        if (primary) {
+          setStoreQrisInfo({
+            qr_image_url: primary.qr_image_url,
+            bank_name: primary.bank_name,
+            account_number: primary.account_number,
+            account_holder: primary.account_holder,
+            loaded: true,
+          });
+        }
+      } catch (e) {}
+    }
+    loadStoreQris();
+  }, [activeOutletId]);
+
   // Midtrans Live Dynamic QRIS State
   const [midtransQris, setMidtransQris] = useState({
     active: false,
@@ -94,6 +163,7 @@ export default function POS() {
     error: null,
   });
   const [showStaticQrisFallback, setShowStaticQrisFallback] = useState(false);
+  const [qrZoomModalOpen, setQrZoomModalOpen] = useState(false);
 
   // Quick Open Shift Modal State
   const [quickOpenShiftModal, setQuickOpenShiftModal] = useState(false);
@@ -101,18 +171,50 @@ export default function POS() {
   const [shiftSchedules, setShiftSchedules] = useState([]);
   const [lastClosedShift, setLastClosedShift] = useState(null);
   const [loadingLastClosed, setLoadingLastClosed] = useState(false);
+  const [supervisors, setSupervisors] = useState([]);
   const [openShiftForm, setOpenShiftForm] = useState({
     shift_name: 'Shift 1 (Pagi)',
     shift_schedule_id: '',
-    initial_cash: 100000,
+    initial_cash: 0,
+    initial_cash_source: 'DRAWER',
+    kas_besar_amount: 100000,
+    supervisor_id: '',
+    supervisor_password: '',
     notes: '',
   });
+
+  async function fetchSupervisors() {
+    if (supervisors.length > 0) return;
+    try {
+      const res = await api.get('/shifts/supervisors');
+      const list = res.data || [];
+      setSupervisors(list);
+      if (list.length > 0) {
+        setOpenShiftForm(prev => ({ ...prev, supervisor_id: prev.supervisor_id || list[0].id }));
+      }
+    } catch {
+      try {
+        const res2 = await api.get('/transactions/supervisors');
+        const list2 = res2.data || [];
+        setSupervisors(list2);
+        if (list2.length > 0) {
+          setOpenShiftForm(prev => ({ ...prev, supervisor_id: prev.supervisor_id || list2[0].id }));
+        }
+      } catch (err) {
+        console.error('Failed fetching supervisors', err);
+      }
+    }
+  }
 
   async function handleOpenQuickShiftModal() {
     setOpenShiftForm({
       shift_name: 'Shift 1 (Pagi)',
       shift_schedule_id: '',
-      initial_cash: 100000,
+      initial_cash: 0,
+      initial_cash_source: 'DRAWER',
+      kas_besar_amount: 100000,
+      supervisor_id: '',
+      supervisor_password: '',
       notes: '',
     });
     setQuickOpenShiftModal(true);
@@ -129,12 +231,20 @@ export default function POS() {
       const lastShift = resLastClosed.data || null;
       setLastClosedShift(lastShift);
 
+      const remainingInDrawer = lastShift && lastShift.remaining_cash_in_drawer != null
+        ? Number(lastClosedShift.remaining_cash_in_drawer)
+        : (lastShift && lastShift.closing_cash != null ? Number(lastShift.closing_cash) : 0);
+
       setOpenShiftForm(prev => ({
         ...prev,
         shift_schedule_id: scheds.length > 0 ? String(scheds[0].id) : '',
         shift_name: scheds.length > 0 ? (scheds[0].name || prev.shift_name) : prev.shift_name,
-        initial_cash: lastShift && lastShift.closing_cash != null ? lastShift.closing_cash : 100000,
+        initial_cash: remainingInDrawer,
+        initial_cash_source: 'DRAWER',
+        kas_besar_amount: 100000,
       }));
+
+      fetchSupervisors();
     } catch {
       // ignore
     } finally {
@@ -145,21 +255,40 @@ export default function POS() {
   async function handleQuickOpenShiftSubmit(e) {
     if (e) e.preventDefault();
 
-    const inputAmt = Number(openShiftForm.initial_cash || 0);
-    const prevRealAmt = lastClosedShift ? Number(lastClosedShift.closing_cash || 0) : null;
-    const hasDiscrepancy = prevRealAmt !== null && inputAmt !== prevRealAmt;
+    const source = openShiftForm.initial_cash_source || 'DRAWER';
+    const remainingInDrawer = lastClosedShift && lastClosedShift.remaining_cash_in_drawer != null
+      ? Number(lastClosedShift.remaining_cash_in_drawer)
+      : (lastClosedShift ? Number(lastClosedShift.closing_cash || 0) : null);
+
+    const inputAmt = source === 'KAS_BESAR'
+      ? Number(openShiftForm.kas_besar_amount || 0)
+      : Number(openShiftForm.initial_cash || 0);
+
+    // Jika memilih Kas Besar dan user bukan Owner/Manager, wajib otorisasi supervisor
+    if (source === 'KAS_BESAR' && !isOwnerOrManager) {
+      if (!openShiftForm.supervisor_id) {
+        toast.error('Silakan pilih akun Manajer atau Owner untuk otorisasi pengambilan Kas Besar!');
+        return;
+      }
+      if (!openShiftForm.supervisor_password) {
+        toast.error('Silakan masukkan Password atau PIN Manajer/Owner untuk menyetujui pengambilan dari Kas Besar!');
+        return;
+      }
+    }
+
+    const hasDiscrepancy = source === 'DRAWER' && remainingInDrawer !== null && inputAmt !== remainingInDrawer;
 
     if (hasDiscrepancy) {
-      const diff = inputAmt - prevRealAmt;
+      const diff = inputAmt - remainingInDrawer;
       const diffFormatted = diff > 0 ? `+${rupiah(diff)} (Lebih)` : `-${rupiah(Math.abs(diff))} (Kurang)`;
       const confirmed = await confirmDialog({
-        title: '⚠️ Peringatan Selisih Modal Awal Kas',
+        title: '⚠️ Peringatan Selisih Kas Laci',
         html: `<div style="text-align: left; font-size: 13px; line-height: 1.6;">
-          <p style="margin-bottom: 8px;">Modal awal kas yang Anda masukkan <strong>tidak sesuai</strong> dengan kas fisik riil closing shift sebelumnya:</p>
+          <p style="margin-bottom: 8px;">Modal awal kas yang Anda masukkan <strong>tidak sesuai</strong> dengan sisa kas fisik di laci setelah closing shift sebelumnya:</p>
           <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px; margin-bottom: 12px;">
             <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-              <span style="color: var(--text-muted);">Kas Riil Shift Sebelumnya:</span>
-              <strong style="color: #38bdf8;">${rupiah(prevRealAmt)}</strong>
+              <span style="color: var(--text-muted);">Sisa Kas Fisik di Laci:</span>
+              <strong style="color: #38bdf8;">${rupiah(remainingInDrawer)}</strong>
             </div>
             <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
               <span style="color: var(--text-muted);">Modal Awal Diinput:</span>
@@ -170,7 +299,7 @@ export default function POS() {
               <strong style="color: ${diff > 0 ? '#34d399' : '#f87171'}; font-size: 14px;">${diffFormatted}</strong>
             </div>
           </div>
-          <p style="margin: 0; color: #fca5a5; font-size: 12px;">Pastikan perbedaan ini sudah disertai keterangan pada kolom Catatan (misal: ada setoran ke bank / kas kecil). Apakah Anda yakin ingin tetap membuka shift?</p>
+          <p style="margin: 0; color: #fca5a5; font-size: 12px;">Pastikan perbedaan ini sudah disertai keterangan pada kolom Catatan. Apakah Anda yakin ingin tetap membuka shift?</p>
         </div>`,
         confirmText: 'Ya, Tetap Buka Shift',
         cancelText: 'Periksa Kembali',
@@ -184,7 +313,11 @@ export default function POS() {
       const payload = {
         shift_name: openShiftForm.shift_name || 'Shift 1 (Pagi)',
         shift_schedule_id: openShiftForm.shift_schedule_id ? Number(openShiftForm.shift_schedule_id) : undefined,
-        initial_cash: Number(openShiftForm.initial_cash || 0),
+        initial_cash: inputAmt,
+        initial_cash_source: source,
+        kas_besar_amount: source === 'KAS_BESAR' ? inputAmt : 0,
+        supervisor_id: source === 'KAS_BESAR' && !isOwnerOrManager ? Number(openShiftForm.supervisor_id) : undefined,
+        supervisor_password: source === 'KAS_BESAR' && !isOwnerOrManager ? openShiftForm.supervisor_password : undefined,
         notes: openShiftForm.notes || '',
         outlet_id: currentTargetOutlet,
       };
@@ -197,6 +330,9 @@ export default function POS() {
         api.get('/transactions/open-bills', { params: { outlet_id: currentTargetOutlet } }),
       ]);
       setActiveShift(shiftRes.data);
+      if (shiftRes.data?.shift?.opened_at) {
+        setOrderDate(String(shiftRes.data.shift.opened_at).substring(0, 10));
+      }
       setOpenBills(billRes.data || []);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Gagal membuka shift kasir.');
@@ -225,9 +361,9 @@ export default function POS() {
     order: null,
     reason: '',
     voidType: 'WRONG_INPUT', // 'WRONG_INPUT' | 'WASTED'
+    wasteCategory: 'CUSTOMER_COMPLAINT',
     submitting: false,
   });
-  const [supervisors, setSupervisors] = useState([]);
   const [voidAuthMode, setVoidAuthMode] = useState('INSTANT'); // 'INSTANT' (Otorisasi Supervisor di Kasir) | 'ASYNC' (Ajukan Permohonan ke Manajer)
   const [selectedSupervisorId, setSelectedSupervisorId] = useState('');
   const [supervisorPassword, setSupervisorPassword] = useState('');
@@ -295,7 +431,25 @@ export default function POS() {
   const [cancelBillModal, setCancelBillModal] = useState({
     open: false,
     bill: null,
+    voidType: 'WRONG_INPUT', // 'WRONG_INPUT' | 'WASTED'
+    wasteCategory: 'CUSTOMER_COMPLAINT',
     reason: '',
+    supervisorId: '',
+    supervisorPassword: '',
+    supervisorPin: '',
+    submitting: false,
+  });
+  const [voidOpenBillItemModal, setVoidOpenBillItemModal] = useState({
+    open: false,
+    bill: null,
+    item: null,
+    qty: 1,
+    voidType: 'WRONG_INPUT', // 'WRONG_INPUT' | 'WASTED'
+    wasteCategory: 'CUSTOMER_COMPLAINT',
+    reason: '',
+    supervisorId: '',
+    supervisorPassword: '',
+    supervisorPin: '',
     submitting: false,
   });
 
@@ -329,24 +483,7 @@ export default function POS() {
 
 
 
-  const {
-    activeOutletId,
-    activeOutlet,
-    isOwnerWebsite,
-    isPlatformAdmin,
-    isOwnerBisnis,
-    isOwnerOutlet,
-    isPegawai,
-    changeOutlet,
-    outlets,
-    coinBalance,
-    coinsPerTransaction,
-    remainingTransactions,
-    isCoinLow,
-    isCoinOut,
-    refreshCoins,
-    dateRange,
-  } = useOutlet();
+
 
   const historyPeriod = useMemo(() => ({
     from: dateRange?.from || getTodayStr(),
@@ -390,6 +527,11 @@ export default function POS() {
       setTransactions(t.data.slice(0, 30));
       setIngredients(i.data);
       setActiveShift(s.data);
+      if (s.data?.shift?.opened_at) {
+        setOrderDate(String(s.data.shift.opened_at).substring(0, 10));
+      } else {
+        setOrderDate(getTodayStr());
+      }
       setOpenBills(ob.data || []);
       setAvailableDiscounts(disc.data || []);
       setUrgentCount(urg.data?.pending_count || 0);
@@ -2139,6 +2281,29 @@ export default function POS() {
     });
   }
 
+  // Handle Pre-bill printing with immediate coin deduction
+  async function handlePrintPrebill() {
+    if (!prebillModal.bill) return;
+    const orderNumber = prebillModal.bill.order_number;
+    try {
+      // Trigger backend API to deduct coin and validate balance
+      const res = await api.post(`/transactions/open-bills/${orderNumber}/print-prebill`);
+      if (res.data?.deducted) {
+        toast.success('Koin transaksi terpotong & lembar Pre-Bill dicetak!');
+      } else {
+        toast.success('Lembar Pre-Bill dicetak!');
+      }
+    } catch (err) {
+      if (err.response?.data?.coin_error) {
+        toast.error(err.response?.data?.message || 'Saldo koin perusahaan tidak mencukupi untuk mencetak lembar tagihan.', { duration: 5000 });
+        return;
+      }
+      console.warn('Pre-bill coin deduction notice:', err);
+    }
+    // Proceed to trigger thermal printer
+    printElement('printable-prebill', `Pre-Bill - ${orderNumber || ''}`, { isThermal: true, paperWidth: '80mm' });
+  }
+
   // Open Kitchen Chit Modal
   function handleOpenKitchenChit(bill) {
     setKitchenChitModal({
@@ -2155,20 +2320,122 @@ export default function POS() {
     });
   }
 
-  // Confirm cancel open bill
+  // Open cancel/void entire open bill modal
+  function handleOpenCancelBill(bill) {
+    if (!isOwnerOrManager && supervisors.length === 0) {
+      api.get('/transactions/supervisors')
+        .then(res => setSupervisors(res.data || []))
+        .catch(err => console.error('Failed fetching supervisors', err));
+    }
+    setCancelBillModal({
+      open: true,
+      bill,
+      voidType: 'WRONG_INPUT',
+      wasteCategory: 'CUSTOMER_COMPLAINT',
+      reason: '',
+      supervisorId: supervisors[0]?.id ? String(supervisors[0].id) : '',
+      supervisorPassword: '',
+      supervisorPin: '',
+      submitting: false,
+    });
+  }
+
+  // Confirm cancel/void entire open bill
   async function handleConfirmCancelBill() {
-    if (!cancelBillModal.bill) return;
+    const { bill, voidType, wasteCategory, reason, supervisorId, supervisorPassword, supervisorPin } = cancelBillModal;
+    if (!bill) return;
+    if (!reason.trim()) {
+      toast.error('Alasan pembatalan (void) tagihan wajib diisi!');
+      return;
+    }
     setCancelBillModal(p => ({ ...p, submitting: true }));
     try {
-      await api.post(`/transactions/${cancelBillModal.bill.order_number}/cancel`, {
-        reason: cancelBillModal.reason || undefined,
-      });
-      toast.success(`Tagihan ${cancelBillModal.bill.order_number} berhasil dibatalkan.`);
-      setCancelBillModal({ open: false, bill: null, reason: '', submitting: false });
+      const payload = {
+        void_type: voidType,
+        waste_category: voidType === 'WASTED' ? (wasteCategory || 'CUSTOMER_COMPLAINT') : undefined,
+        reason: reason.trim(),
+        supervisor_id: supervisorId ? Number(supervisorId) : undefined,
+        supervisor_password: supervisorPassword || undefined,
+        supervisor_pin: supervisorPin || undefined,
+      };
+      const res = await api.post(`/transactions/open-bills/${bill.order_number}/cancel`, payload);
+      toast.success(res.data?.message || `Tagihan ${bill.order_number} berhasil dibatalkan.`);
+      setCancelBillModal({ open: false, bill: null, voidType: 'WRONG_INPUT', wasteCategory: 'CUSTOMER_COMPLAINT', reason: '', supervisorId: '', supervisorPassword: '', supervisorPin: '', submitting: false });
       fetchOpenBills();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Gagal membatalkan tagihan.');
+      toast.error(err.response?.data?.message || 'Gagal membatalkan tagihan terbuka.');
       setCancelBillModal(p => ({ ...p, submitting: false }));
+    }
+  }
+
+  // Open Void Item per menu modal for Open Bill
+  function handleOpenVoidItemModal(bill, item) {
+    if (!isOwnerOrManager && supervisors.length === 0) {
+      api.get('/transactions/supervisors')
+        .then(res => setSupervisors(res.data || []))
+        .catch(err => console.error('Failed fetching supervisors', err));
+    }
+
+    setVoidOpenBillItemModal({
+      open: true,
+      bill,
+      item,
+      qty: item.qty || 1,
+      voidType: 'WRONG_INPUT',
+      wasteCategory: 'CUSTOMER_COMPLAINT',
+      reason: '',
+      supervisorId: supervisors[0]?.id ? String(supervisors[0].id) : '',
+      supervisorPassword: '',
+      supervisorPin: '',
+      submitting: false,
+    });
+  }
+
+  // Confirm voiding a single menu item in Open Bill (Salah Input vs Wasted)
+  async function handleConfirmVoidOpenBillItem() {
+    const { bill, item, qty, voidType, wasteCategory, reason, supervisorId, supervisorPassword, supervisorPin } = voidOpenBillItemModal;
+    if (!bill || !item) return;
+    if (!reason.trim()) {
+      toast.error('Alasan pembatalan (void) item wajib diisi!');
+      return;
+    }
+
+    setVoidOpenBillItemModal(p => ({ ...p, submitting: true }));
+    try {
+      const payload = {
+        item_id: item.id,
+        qty: Number(qty) || 1,
+        void_type: voidType || 'WRONG_INPUT',
+        waste_category: voidType === 'WASTED' ? (wasteCategory || 'CUSTOMER_COMPLAINT') : undefined,
+        reason: reason.trim(),
+      };
+
+      if (!isOwnerOrManager && supervisorId) {
+        payload.supervisor_id = Number(supervisorId);
+        if (supervisorPassword) payload.supervisor_password = supervisorPassword;
+        if (supervisorPin) payload.supervisor_pin = supervisorPin;
+      }
+
+      const res = await api.post(`/transactions/open-bills/${bill.order_number}/void-item`, payload);
+      toast.success(res.data?.message || `Item ${item.menu_name} berhasil di-void!`);
+      setVoidOpenBillItemModal({
+        open: false,
+        bill: null,
+        item: null,
+        qty: 1,
+        voidType: 'WRONG_INPUT',
+        wasteCategory: 'CUSTOMER_COMPLAINT',
+        reason: '',
+        supervisorId: '',
+        supervisorPassword: '',
+        supervisorPin: '',
+        submitting: false,
+      });
+      fetchOpenBills();
+      fetchAll();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal membatalkan item tagihan.');
+      setVoidOpenBillItemModal(p => ({ ...p, submitting: false }));
     }
   }
 
@@ -2273,6 +2540,12 @@ export default function POS() {
 
   // Submit payment (Handles both regular cart and open bill payment)
   async function handleProcessOrder() {
+    if (!activeShift?.shift) {
+      toast.error('Shift kasir belum dibuka! Silakan buka shift kasir terlebih dahulu sebelum memproses transaksi.');
+      handleOpenQuickShiftModal();
+      return;
+    }
+
     if (!isCashSufficient) {
       toast.error('Nominal uang tunai yang diterima kurang!');
       return;
@@ -2497,13 +2770,19 @@ export default function POS() {
       const payload = {
         reason: voidPaidModal.reason,
         void_type: voidPaidModal.voidType || 'WRONG_INPUT',
+        waste_category: voidPaidModal.voidType === 'WASTED' ? (voidPaidModal.wasteCategory || 'CUSTOMER_COMPLAINT') : undefined,
       };
+
+      if (!isOwnerOrManager && voidAuthMode === 'INSTANT' && selectedSupervisorId) {
+        payload.supervisor_id = Number(selectedSupervisorId);
+        if (supervisorPassword) payload.supervisor_password = supervisorPassword;
+      }
 
       const { data } = await api.post(`/transactions/${orderNum}/void`, payload);
 
       if (data.status === 'VOID_PENDING' || data.is_pending_approval) {
         toast.success(data.message || 'Permohonan void nota berhasil diajukan ke Manajer/Owner!');
-        setVoidPaidModal({ open: false, order: null, reason: '', voidType: 'WRONG_INPUT', submitting: false });
+        setVoidPaidModal({ open: false, order: null, reason: '', voidType: 'WRONG_INPUT', wasteCategory: 'CUSTOMER_COMPLAINT', submitting: false });
         if (showHistory) fetchHistory();
         fetchAll();
         return;
@@ -2520,7 +2799,7 @@ export default function POS() {
         cancelled_by_name: data.void_approved_by || data.cancelled_by_name || currentUser.name || 'Kasir',
       };
 
-      setVoidPaidModal({ open: false, order: null, reason: '', voidType: 'WRONG_INPUT', submitting: false });
+      setVoidPaidModal({ open: false, order: null, reason: '', voidType: 'WRONG_INPUT', wasteCategory: 'CUSTOMER_COMPLAINT', submitting: false });
       if (showHistory) {
         fetchHistory();
       }
@@ -3143,6 +3422,10 @@ export default function POS() {
                   <option value="CASH">Tunai (CASH)</option>
                   <option value="QRIS">QRIS</option>
                   <option value="TRANSFER">Transfer Bank</option>
+                  <option value="GRAB">GrabFood</option>
+                  <option value="GOFOOD">GoFood</option>
+                  <option value="SHOPEEFOOD">ShopeeFood</option>
+                  <option value="KASBON">Kasbon</option>
                   <option value="DEBIT">Kartu Debit</option>
                   <option value="CREDIT">Kartu Kredit</option>
                 </select>
@@ -3433,11 +3716,11 @@ export default function POS() {
                                         <span>{order.cashier_name || 'Kasir'}</span>
                                       </span>
                                       <span
-                                        className={`badge ${order.payment_method === 'GRAB' ? 'badge-success' : 'badge-neutral'}`}
+                                        className={`badge ${['GRAB', 'GOFOOD', 'SHOPEEFOOD'].includes(order.payment_method) ? 'badge-success' : 'badge-neutral'}`}
                                         style={{
                                           fontSize: 11,
                                           fontWeight: 700,
-                                          ...(order.payment_method === 'GRAB' ? { background: '#00B14F', color: '#ffffff', borderColor: '#00B14F' } : {})
+                                          ...(order.payment_method === 'GRAB' ? { background: '#00B14F', color: '#ffffff', borderColor: '#00B14F' } : order.payment_method === 'GOFOOD' ? { background: '#EE2737', color: '#ffffff', borderColor: '#EE2737' } : order.payment_method === 'SHOPEEFOOD' ? { background: '#EE4D2D', color: '#ffffff', borderColor: '#EE4D2D' } : {})
                                         }}
                                       >
                                         {order.payment_method || 'CASH'}
@@ -3815,11 +4098,11 @@ export default function POS() {
                               <span>{order.cashier_name || 'Kasir'}</span>
                             </span>
                             <span
-                              className={`badge ${order.payment_method === 'GRAB' ? 'badge-success' : 'badge-neutral'}`}
+                              className={`badge ${['GRAB', 'GOFOOD', 'SHOPEEFOOD'].includes(order.payment_method) ? 'badge-success' : 'badge-neutral'}`}
                               style={{
                                 fontSize: 11,
                                 fontWeight: 700,
-                                ...(order.payment_method === 'GRAB' ? { background: '#00B14F', color: '#ffffff', borderColor: '#00B14F' } : {})
+                                ...(order.payment_method === 'GRAB' ? { background: '#00B14F', color: '#ffffff', borderColor: '#00B14F' } : order.payment_method === 'GOFOOD' ? { background: '#EE2737', color: '#ffffff', borderColor: '#EE2737' } : order.payment_method === 'SHOPEEFOOD' ? { background: '#EE4D2D', color: '#ffffff', borderColor: '#EE4D2D' } : {})
                               }}
                             >
                               {order.payment_method || 'CASH'}
@@ -4184,10 +4467,10 @@ export default function POS() {
                         </td>
                         <td>
                           <span
-                            className={`badge ${t.payment_method === 'GRAB' ? 'badge-success' : 'badge-neutral'}`}
+                            className={`badge ${['GRAB', 'GOFOOD', 'SHOPEEFOOD'].includes(t.payment_method) ? 'badge-success' : 'badge-neutral'}`}
                             style={{
                               fontSize: 11,
-                              ...(t.payment_method === 'GRAB' ? { background: '#00B14F', color: '#ffffff', borderColor: '#00B14F' } : {})
+                              ...(t.payment_method === 'GRAB' ? { background: '#00B14F', color: '#ffffff', borderColor: '#00B14F' } : t.payment_method === 'GOFOOD' ? { background: '#EE2737', color: '#ffffff', borderColor: '#EE2737' } : t.payment_method === 'SHOPEEFOOD' ? { background: '#EE4D2D', color: '#ffffff', borderColor: '#EE4D2D' } : {})
                             }}
                           >
                             {t.payment_method || 'CASH'}
@@ -4241,7 +4524,7 @@ export default function POS() {
             </div>
           )}
         </div>
-      ) : !activeShift?.shift ? (
+      ) : (!isOwner && !activeShift?.shift) ? (
         /* ========================================================
           LOCKED POS CASHIER VIEW (SHIFT NOT OPEN)
          ======================================================== */
@@ -6024,9 +6307,22 @@ export default function POS() {
           MODAL 1: PEMBAYARAN CERDAS (PAYMENT MODAL)
          ======================================================== */}
       {paymentModalOpen && (
-        <div className="modal-overlay" onClick={() => setPaymentModalOpen(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 460, maxHeight: '90vh', overflowY: 'auto', padding: 20 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div
+          className="modal-overlay"
+          onClick={() => setPaymentModalOpen(false)}
+        >
+          <div
+            className="modal-content"
+            onClick={e => e.stopPropagation()}
+            style={{
+              maxWidth: 540,
+              width: '100%',
+              maxHeight: 'calc(100vh - 32px)',
+              maxHeight: 'calc(100dvh - 32px)',
+            }}
+          >
+            {/* Fixed Modal Header */}
+            <div className="modal-header">
               <h3 style={{ fontSize: 17, fontWeight: 800, color: '#ffffff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Banknote size={20} style={{ color: activeOpenBillPayment ? '#fbbf24' : 'var(--accent)' }} />
                 {activeOpenBillPayment ? 'Pelunasan Tagihan Terbuka (Open Bill)' : 'Pembayaran Transaksi'}
@@ -6039,655 +6335,650 @@ export default function POS() {
               </button>
             </div>
 
-            {/* SaaS Coin Status Indicator */}
-            <div style={{
-              background: isCoinOut
-                ? 'rgba(239, 68, 68, 0.15)'
-                : isCoinLow
-                  ? 'rgba(245, 158, 11, 0.12)'
-                  : 'rgba(139, 92, 246, 0.12)',
-              border: `1px solid ${isCoinOut ? 'rgba(239, 68, 68, 0.4)' : isCoinLow ? 'rgba(245, 158, 11, 0.35)' : 'rgba(139, 92, 246, 0.25)'}`,
-              borderRadius: 12,
-              padding: '8px 12px',
-              marginBottom: 10,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 10
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <Coins size={18} style={{ color: isCoinOut ? '#ef4444' : isCoinLow ? '#f59e0b' : 'var(--accent-bright)', flexShrink: 0 }} />
-                <div style={{ lineHeight: 1.2 }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 700, color: isCoinOut ? '#f87171' : isCoinLow ? '#fbbf24' : '#ffffff' }}>
-                    {isCoinOut ? 'Saldo Koin Perusahaan Habis!' : `Sisa Koin Perusahaan: ${coinBalance} koin`}
-                  </div>
-                  <div style={{ fontSize: 11, color: isCoinOut ? '#fca5a5' : 'var(--text-secondary)' }}>
-                    {isCoinOut
-                      ? 'Transaksi kasir terkunci hingga koin diisi oleh Pemilik Website.'
-                      : `Nota ini memotong ${coinsPerTransaction} koin (${remainingTransactions} nota lagi)`
-                    }
-                  </div>
-                </div>
-              </div>
-              {isCoinLow && !isCoinOut && (
-                <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 6, background: '#f59e0b', color: '#11162d', whiteSpace: 'nowrap' }}>
-                  &le; 20 NOTA
-                </span>
-              )}
-            </div>
-
-            {/* Urgent Note Deficit Alert in Payment Modal */}
-            {cartDeficitItems.length > 0 && !activeOpenBillPayment && (
+            {/* Scrollable Modal Body */}
+            <div className="modal-body">
+              {/* SaaS Coin Status Indicator */}
               <div style={{
-                background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.18) 0%, rgba(234, 88, 12, 0.12) 100%)',
-                border: '1px solid rgba(245, 158, 11, 0.5)',
+                background: isCoinOut
+                  ? 'rgba(239, 68, 68, 0.15)'
+                  : isCoinLow
+                    ? 'rgba(245, 158, 11, 0.12)'
+                    : 'rgba(139, 92, 246, 0.12)',
+                border: `1px solid ${isCoinOut ? 'rgba(239, 68, 68, 0.4)' : isCoinLow ? 'rgba(245, 158, 11, 0.35)' : 'rgba(139, 92, 246, 0.25)'}`,
                 borderRadius: 12,
-                padding: '10px 14px',
-                marginBottom: 12,
+                padding: '8px 12px',
+                marginBottom: 10,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 10
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, fontSize: 12.5, color: '#fbbf24', marginBottom: 4 }}>
-                  <AlertTriangle size={15} style={{ color: '#f59e0b', flexShrink: 0 }} />
-                  <span>Transaksi Ini Akan Menghasilkan Nota Urgent</span>
-                </div>
-                <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
-                  Kuantitas pesanan melebihi sisa stok fisik di cabang saat ini:
-                  <ul style={{ margin: '4px 0 0', paddingLeft: 16 }}>
-                    {cartDeficitItems.map((d, idx) => (
-                      <li key={idx} style={{ color: '#ffffff' }}>
-                        <strong>{d.menu.name}</strong>: Dipesan {d.qty} porsi (Stok fisik: {d.available}, <strong style={{ color: '#fbbf24' }}>kekurangan {d.deficitQty} porsi</strong>).
-                      </li>
-                    ))}
-                  </ul>
-                  <div style={{ marginTop: 6, fontSize: 11, color: '#fcd34d', fontStyle: 'italic' }}>
-                    ⚡ Sisa bahan yang belum terpotong otomatis dicatat sebagai Nota Urgent & memerlukan persetujuan Manager/Owner saat pelunasan nanti.
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Coins size={18} style={{ color: isCoinOut ? '#ef4444' : isCoinLow ? '#f59e0b' : 'var(--accent-bright)', flexShrink: 0 }} />
+                  <div style={{ lineHeight: 1.2 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: isCoinOut ? '#f87171' : isCoinLow ? '#fbbf24' : '#ffffff' }}>
+                      {isCoinOut ? 'Saldo Koin Perusahaan Habis!' : `Sisa Koin Perusahaan: ${coinBalance} koin`}
+                    </div>
+                    <div style={{ fontSize: 11, color: isCoinOut ? '#fca5a5' : 'var(--text-secondary)' }}>
+                      {isCoinOut
+                        ? 'Transaksi kasir terkunci hingga koin diisi oleh Pemilik Website.'
+                        : `Nota ini memotong ${coinsPerTransaction} koin (${remainingTransactions} nota lagi)`
+                      }
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
-
-            {/* Total Display */}
-            <div style={{
-              background: activeOpenBillPayment
-                ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.18) 0%, rgba(217, 119, 6, 0.28) 100%)'
-                : 'linear-gradient(135deg, rgba(124, 58, 237, 0.15) 0%, rgba(79, 70, 229, 0.25) 100%)',
-              border: activeOpenBillPayment ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid rgba(139, 92, 246, 0.3)',
-              borderRadius: 14,
-              padding: '12px 16px',
-              textAlign: 'center',
-              marginBottom: 12
-            }}>
-              <span style={{ fontSize: 11.5, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
-                {activeOpenBillPayment ? 'Total Tagihan Terbuka' : 'Total Tagihan Pembayaran'}
-              </span>
-              <div className="mono" style={{ fontSize: 26, fontWeight: 900, color: '#ffffff', marginTop: 4 }}>
-                {rupiah(payableTotal)}
-              </div>
-              <div style={{ fontSize: 12, color: activeOpenBillPayment ? '#fcd34d' : 'var(--accent-bright)', marginTop: 4 }}>
-                {activeOpenBillPayment ? (
-                  `No: ${activeOpenBillPayment.order_number}${activeOpenBillPayment.customer_name ? ` · ${activeOpenBillPayment.customer_name}` : ''} (${activeOpenBillPayment.total_items || activeOpenBillPayment.items?.length || 0} item)`
-                ) : (
-                  `${customerName ? `${customerName} · ` : ''}${cartItemCount} item`
+                {isCoinLow && !isCoinOut && (
+                  <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 6, background: '#f59e0b', color: '#11162d', whiteSpace: 'nowrap' }}>
+                    &le; 20 NOTA
+                  </span>
                 )}
               </div>
 
-              {/* If discount applied on regular cart */}
-              {!activeOpenBillPayment && cartDiscountAmount > 0 && (
+              {/* Urgent Note Deficit Alert in Payment Modal */}
+              {cartDeficitItems.length > 0 && !activeOpenBillPayment && (
                 <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  marginTop: 8,
-                  paddingTop: 8,
-                  borderTop: '1px dashed rgba(255,255,255,0.18)',
-                  fontSize: 12
-                }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Subtotal: {rupiah(cartGrossSubtotal)}</span>
-                  <span style={{ color: '#34d399', fontWeight: 700 }}>Diskon: -{rupiah(cartDiscountAmount)}</span>
-                </div>
-              )}
-
-              {/* If discount applied on open bill */}
-              {activeOpenBillPayment && Number(activeOpenBillPayment.discount_amount) > 0 && (
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  marginTop: 8,
-                  paddingTop: 8,
-                  borderTop: '1px dashed rgba(255,255,255,0.18)',
-                  fontSize: 12
-                }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Subtotal: {rupiah(Number(activeOpenBillPayment.subtotal) || (Number(activeOpenBillPayment.total_price) + Number(activeOpenBillPayment.discount_amount)))}</span>
-                  <span style={{ color: '#34d399', fontWeight: 700 }}>Diskon ({activeOpenBillPayment.discount_name}): -{rupiah(activeOpenBillPayment.discount_amount)}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Payment Method Pills */}
-            <div className="form-group mb-3">
-              <label className="form-label">Metode Pembayaran</label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
-                {[
-                  { key: 'CASH', label: 'Tunai', icon: Banknote },
-                  { key: 'QRIS', label: 'QRIS', icon: QrCode },
-                  { key: 'TRANSFER', label: 'Transfer', icon: CreditCard },
-                  { key: 'GRAB', label: 'GrabFood', icon: ShoppingBag },
-                  { key: 'KASBON', label: 'Kasbon', icon: Wallet },
-                ].map(m => {
-                  const Icon = m.icon;
-                  const active = paymentMethod === m.key;
-                  return (
-                    <button
-                      key={m.key}
-                      type="button"
-                      onClick={() => {
-                        setPaymentMethod(m.key);
-                        if (m.key === 'KASBON') {
-                          setCashReceived('0');
-                        } else if (m.key !== 'CASH') {
-                          setCashReceived(payableTotal.toString());
-                        }
-                      }}
-                      style={{
-                        padding: '10px 8px',
-                        borderRadius: 10,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: 6,
-                        border: '1px solid',
-                        borderColor: active ? (m.key === 'GRAB' ? '#00B14F' : 'var(--accent-bright)') : 'var(--border)',
-                        background: active ? (m.key === 'GRAB' ? 'linear-gradient(135deg, #00B14F 0%, #00873c 100%)' : 'var(--accent-gradient)') : 'rgba(255,255,255,0.04)',
-                        color: '#ffffff',
-                        fontWeight: active ? 700 : 500,
-                        fontSize: 12,
-                        transition: 'all 0.15s ease'
-                      }}
-                    >
-                      <Icon size={18} />
-                      {m.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* CASH Payment Fields */}
-            {paymentMethod === 'CASH' && (
-              <div className="form-group mb-3">
-                <label className="form-label">Uang Diterima (Rp)</label>
-                <input
-                  type="number"
-                  className="form-control"
-                  value={cashReceived}
-                  onChange={e => setCashReceived(e.target.value)}
-                  placeholder="0"
-                  style={{ fontSize: 16, fontWeight: 700, padding: '10px 14px' }}
-                />
-
-                {/* Quick Cash Buttons */}
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-                  <button
-                    type="button"
-                    className="pos-quick-cash-btn"
-                    onClick={() => setCashReceived(payableTotal.toString())}
-                  >
-                    Uang Pas
-                  </button>
-                  {[20000, 50000, 100000, 200000].map(amt => (
-                    amt >= payableTotal && (
-                      <button
-                        key={amt}
-                        type="button"
-                        className="pos-quick-cash-btn"
-                        onClick={() => setCashReceived(amt.toString())}
-                      >
-                        {rupiah(amt)}
-                      </button>
-                    )
-                  ))}
-                </div>
-
-                {/* Change Calculation */}
-                <div style={{
-                  marginTop: 12,
+                  background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.18) 0%, rgba(234, 88, 12, 0.12) 100%)',
+                  border: '1px solid rgba(245, 158, 11, 0.5)',
+                  borderRadius: 12,
                   padding: '10px 14px',
-                  borderRadius: 10,
-                  background: isCashSufficient ? 'rgba(16, 185, 129, 0.12)' : 'rgba(244, 63, 94, 0.12)',
-                  border: `1px solid ${isCashSufficient ? 'var(--ok-border)' : 'rgba(244, 63, 94, 0.3)'}`,
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
+                  marginBottom: 12,
                 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: isCashSufficient ? 'var(--ok)' : 'var(--danger)' }}>
-                    {isCashSufficient ? 'Kembalian:' : 'Uang Kurang:'}
-                  </span>
-                  <span className="mono" style={{ fontSize: 16, fontWeight: 800, color: isCashSufficient ? 'var(--ok)' : 'var(--danger)' }}>
-                    {isCashSufficient ? rupiah(changeAmount) : rupiah(payableTotal - parsedCash)}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, fontSize: 12.5, color: '#fbbf24', marginBottom: 4 }}>
+                    <AlertTriangle size={15} style={{ color: '#f59e0b', flexShrink: 0 }} />
+                    <span>Transaksi Ini Akan Menghasilkan Nota Urgent</span>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                    Kuantitas pesanan melebihi sisa stok fisik di cabang saat ini:
+                    <ul style={{ margin: '4px 0 0', paddingLeft: 16 }}>
+                      {cartDeficitItems.map((d, idx) => (
+                        <li key={idx} style={{ color: '#ffffff' }}>
+                          <strong>{d.menu.name}</strong>: Dipesan {d.qty} porsi (Stok fisik: {d.available}, <strong style={{ color: '#fbbf24' }}>kekurangan {d.deficitQty} porsi</strong>).
+                        </li>
+                      ))}
+                    </ul>
+                    <div style={{ marginTop: 6, fontSize: 11, color: '#fcd34d', fontStyle: 'italic' }}>
+                      ⚡ Sisa bahan yang belum terpotong otomatis dicatat sebagai Nota Urgent & memerlukan persetujuan Manager/Owner saat pelunasan nanti.
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Total Display */}
+              <div style={{
+                background: activeOpenBillPayment
+                  ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.18) 0%, rgba(217, 119, 6, 0.28) 100%)'
+                  : 'linear-gradient(135deg, rgba(124, 58, 237, 0.15) 0%, rgba(79, 70, 229, 0.25) 100%)',
+                border: activeOpenBillPayment ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid rgba(139, 92, 246, 0.3)',
+                borderRadius: 14,
+                padding: '12px 16px',
+                textAlign: 'center',
+                marginBottom: 12
+              }}>
+                <span style={{ fontSize: 11.5, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+                  {activeOpenBillPayment ? 'Total Tagihan Terbuka' : 'Total Tagihan Pembayaran'}
+                </span>
+                <div className="mono" style={{ fontSize: 26, fontWeight: 900, color: '#ffffff', marginTop: 4 }}>
+                  {rupiah(payableTotal)}
+                </div>
+                <div style={{ fontSize: 12, color: activeOpenBillPayment ? '#fcd34d' : 'var(--accent-bright)', marginTop: 4 }}>
+                  {activeOpenBillPayment ? (
+                    `No: ${activeOpenBillPayment.order_number}${activeOpenBillPayment.customer_name ? ` · ${activeOpenBillPayment.customer_name}` : ''} (${activeOpenBillPayment.total_items || activeOpenBillPayment.items?.length || 0} item)`
+                  ) : (
+                    `${customerName ? `${customerName} · ` : ''}${cartItemCount} item`
+                  )}
+                </div>
+
+                {/* If discount applied on regular cart */}
+                {!activeOpenBillPayment && cartDiscountAmount > 0 && (
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    marginTop: 8,
+                    paddingTop: 8,
+                    borderTop: '1px dashed rgba(255,255,255,0.18)',
+                    fontSize: 12
+                  }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Subtotal: {rupiah(cartGrossSubtotal)}</span>
+                    <span style={{ color: '#34d399', fontWeight: 700 }}>Diskon: -{rupiah(cartDiscountAmount)}</span>
+                  </div>
+                )}
+
+                {/* If discount applied on open bill */}
+                {activeOpenBillPayment && Number(activeOpenBillPayment.discount_amount) > 0 && (
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    marginTop: 8,
+                    paddingTop: 8,
+                    borderTop: '1px dashed rgba(255,255,255,0.18)',
+                    fontSize: 12
+                  }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Subtotal: {rupiah(Number(activeOpenBillPayment.subtotal) || (Number(activeOpenBillPayment.total_price) + Number(activeOpenBillPayment.discount_amount)))}</span>
+                    <span style={{ color: '#34d399', fontWeight: 700 }}>Diskon ({activeOpenBillPayment.discount_name}): -{rupiah(activeOpenBillPayment.discount_amount)}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Payment Method Pills */}
+              <div className="form-group mb-3">
+                <label className="form-label">Metode Pembayaran</label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(105px, 1fr))', gap: 6 }}>
+                  {[
+                    { key: 'CASH', label: 'Tunai', icon: Banknote },
+                    { key: 'QRIS', label: 'QRIS', icon: QrCode },
+                    { key: 'TRANSFER', label: 'Transfer', icon: CreditCard },
+                    { key: 'GRAB', label: 'GrabFood', icon: ShoppingBag, color: '#00B14F' },
+                    { key: 'GOFOOD', label: 'GoFood', icon: ShoppingBag, color: '#EE2737' },
+                    { key: 'SHOPEEFOOD', label: 'ShopeeFood', icon: ShoppingBag, color: '#EE4D2D' },
+                    { key: 'KASBON', label: 'Kasbon', icon: Wallet, color: '#f59e0b' },
+                  ].map(m => {
+                    const Icon = m.icon;
+                    const active = paymentMethod === m.key;
+                    const activeColor = m.color || 'var(--accent-bright)';
+                    const activeBg = m.color 
+                      ? `linear-gradient(135deg, ${m.color} 0%, ${m.color}cc 100%)` 
+                      : 'var(--accent-gradient)';
+                    return (
+                      <button
+                        key={m.key}
+                        type="button"
+                        onClick={() => {
+                          setPaymentMethod(m.key);
+                          if (m.key === 'KASBON') {
+                            setCashReceived('0');
+                          } else if (m.key !== 'CASH') {
+                            setCashReceived(payableTotal.toString());
+                          }
+                        }}
+                        style={{
+                          padding: '10px 8px',
+                          borderRadius: 10,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: 6,
+                          border: '1px solid',
+                          borderColor: active ? activeColor : 'var(--border)',
+                          background: active ? activeBg : 'rgba(255,255,255,0.04)',
+                          color: '#ffffff',
+                          fontWeight: active ? 700 : 500,
+                          fontSize: 12,
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <Icon size={18} />
+                        {m.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
-            )}
 
-            {/* QRIS Midtrans Dynamic & Static Section */}
-            {paymentMethod === 'QRIS' && (
-              <div style={{
-                background: 'rgba(255,255,255,0.03)',
-                border: '1px solid var(--border)',
-                borderRadius: 14,
-                padding: 18,
-                marginBottom: 16,
-              }}>
-                {/* 1. Active Midtrans Dynamic QRIS Screen */}
-                {midtransQris.active && midtransQris.qrImageUrl && !showStaticQrisFallback ? (
-                  <div style={{ textAlign: 'center' }}>
+              {/* CASH Payment Fields */}
+              {paymentMethod === 'CASH' && (
+                <div className="form-group mb-3">
+                  <label className="form-label">Uang Diterima (Rp)</label>
+                  <input
+                    type="number"
+                    className="form-control"
+                    value={cashReceived}
+                    onChange={e => setCashReceived(e.target.value)}
+                    placeholder="0"
+                    style={{ fontSize: 16, fontWeight: 700, padding: '10px 14px' }}
+                  />
+
+                  {/* Quick Cash Buttons */}
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                    <button
+                      type="button"
+                      className="pos-quick-cash-btn"
+                      onClick={() => setCashReceived(payableTotal.toString())}
+                    >
+                      Uang Pas
+                    </button>
+                    {[20000, 50000, 100000, 200000].map(amt => (
+                      amt >= payableTotal && (
+                        <button
+                          key={amt}
+                          type="button"
+                          className="pos-quick-cash-btn"
+                          onClick={() => setCashReceived(amt.toString())}
+                        >
+                          {rupiah(amt)}
+                        </button>
+                      )
+                    ))}
+                  </div>
+
+                  {/* Change Calculation */}
+                  <div style={{
+                    marginTop: 12,
+                    padding: '10px 14px',
+                    borderRadius: 10,
+                    background: isCashSufficient ? 'rgba(16, 185, 129, 0.12)' : 'rgba(244, 63, 94, 0.12)',
+                    border: `1px solid ${isCashSufficient ? 'var(--ok-border)' : 'rgba(244, 63, 94, 0.3)'}`,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: isCashSufficient ? 'var(--ok)' : 'var(--danger)' }}>
+                      {isCashSufficient ? 'Kembalian:' : 'Uang Kurang:'}
+                    </span>
+                    <span className="mono" style={{ fontSize: 16, fontWeight: 800, color: isCashSufficient ? 'var(--ok)' : 'var(--danger)' }}>
+                      {isCashSufficient ? rupiah(changeAmount) : rupiah(payableTotal - parsedCash)}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* QRIS Toko (Kas Aplikasi) Section */}
+              {paymentMethod === 'QRIS' && (
+                <div style={{
+                  background: 'rgba(56, 189, 248, 0.06)',
+                  border: '1px solid rgba(56, 189, 248, 0.3)',
+                  borderRadius: 14,
+                  padding: 16,
+                  marginBottom: 16,
+                  textAlign: 'center'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 6 }}>
                     <div style={{
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: 6,
                       padding: '4px 10px',
                       borderRadius: 20,
-                      background: midtransQris.isPaid ? 'rgba(16, 185, 129, 0.2)' : 'rgba(56, 189, 248, 0.15)',
-                      color: midtransQris.isPaid ? '#34d399' : '#38bdf8',
+                      background: 'rgba(56, 189, 248, 0.15)',
+                      color: '#38bdf8',
+                      fontSize: 11.5,
+                      fontWeight: 800,
+                    }}>
+                      <QrCode size={14} />
+                      QRIS TOKO RESMI
+                    </div>
+                    <span style={{
                       fontSize: 11,
                       fontWeight: 700,
-                      marginBottom: 12
+                      padding: '3px 8px',
+                      borderRadius: 6,
+                      background: 'rgba(16, 185, 129, 0.15)',
+                      color: '#34d399'
                     }}>
-                      <Zap size={13} />
-                      {midtransQris.isPaid ? 'PEMBAYARAN DITERIMA & LUNAS' : `MIDTRANS QRIS DINAMIS (${midtransQris.environment.toUpperCase()})`}
-                    </div>
-
-                    {/* QR Code Container */}
-                    <div style={{
-                      width: 200, height: 200,
-                      background: '#ffffff',
-                      borderRadius: 12,
-                      margin: '0 auto 12px',
-                      padding: 10,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-                      border: midtransQris.isPaid ? '3px solid #10b981' : '1px solid #e2e8f0',
-                      position: 'relative'
-                    }}>
-                      <img
-                        src={midtransQris.qrImageUrl}
-                        alt="Midtrans QRIS Code"
-                        style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                      />
-                      {midtransQris.isPaid && (
-                        <div style={{
-                          position: 'absolute',
-                          inset: 0,
-                          background: 'rgba(16, 185, 129, 0.9)',
-                          borderRadius: 10,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: '#ffffff'
-                        }}>
-                          <CheckCircle2 size={48} />
-                          <span style={{ fontSize: 13, fontWeight: 800, marginTop: 6 }}>LUNAS</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Order & Nominal Info */}
-                    <div style={{ fontSize: 16, fontWeight: 800, color: '#ffffff', marginBottom: 2 }}>
-                      {rupiah(midtransQris.grossAmount)}
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 12 }}>
-                      Ref Order: <span className="mono" style={{ color: 'var(--text-secondary)' }}>{midtransQris.orderId}</span>
-                    </div>
-
-                    {/* Live Status Indicator */}
-                    <div style={{
-                      padding: '10px 14px',
-                      borderRadius: 10,
-                      background: midtransQris.isPaid ? 'rgba(16, 185, 129, 0.15)' : 'rgba(56, 189, 248, 0.08)',
-                      border: `1px solid ${midtransQris.isPaid ? 'rgba(16, 185, 129, 0.3)' : 'rgba(56, 189, 248, 0.25)'}`,
-                      marginBottom: 12,
-                      fontSize: 12,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 8,
-                      color: midtransQris.isPaid ? '#34d399' : '#e0f2fe'
-                    }}>
-                      {midtransQris.isPaid ? (
-                        <>
-                          <CheckCircle2 size={16} />
-                          <strong>Pembayaran sukses! Menyelesaikan nota kasir...</strong>
-                        </>
-                      ) : (
-                        <>
-                          <RefreshCw size={14} className={midtransQris.checking ? "spin" : ""} style={{ animation: 'spin 2s linear infinite' }} />
-                          <span>Menunggu customer scan & bayar... (Cek otomatis aktif)</span>
-                        </>
-                      )}
-                    </div>
-
-                    {/* Action buttons */}
-                    {!midtransQris.isPaid && (
-                      <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-                        <button
-                          type="button"
-                          className="btn btn-outline"
-                          onClick={() => checkMidtransPaymentStatus(midtransQris.orderId)}
-                          disabled={midtransQris.checking}
-                          style={{ fontSize: 12, padding: '6px 12px' }}
-                        >
-                          <RefreshCw size={13} className={midtransQris.checking ? "spin" : ""} />
-                          {midtransQris.checking ? 'Mengecek...' : 'Cek Status Sekarang'}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-ghost"
-                          onClick={() => generateMidtransQris()}
-                          style={{ fontSize: 12, padding: '6px 12px', color: 'var(--text-muted)' }}
-                        >
-                          Generate Ulang
-                        </button>
-                      </div>
-                    )}
+                      KAS APLIKASI (1-11004)
+                    </span>
                   </div>
-                ) : !showStaticQrisFallback ? (
-                  /* 2. Prompt to Generate Midtrans Dynamic QRIS */
-                  <div style={{ textAlign: 'center', padding: '6px 4px' }}>
-                    <div style={{
-                      width: 50, height: 50,
-                      borderRadius: '50%',
-                      background: 'rgba(56, 189, 248, 0.12)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
+
+                  {/* QR Code Container */}
+                  <div
+                    style={{
+                      width: '100%',
+                      maxWidth: 290,
+                      minHeight: 220,
+                      background: '#ffffff',
+                      borderRadius: 16,
                       margin: '0 auto 10px',
-                      color: '#38bdf8'
-                    }}>
-                      <QrCode size={26} />
-                    </div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: '#ffffff', marginBottom: 4 }}>
-                      Pembayaran QRIS Dinamis Midtrans
-                    </div>
-                    <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 auto 16px', maxWidth: 360 }}>
-                      Sistem akan membuat kode QR resmi dengan nominal terkunci sebesar <strong>{rupiah(payableTotal)}</strong>. Saat customer scan & bayar, kasir otomatis lunas tanpa perlu klik manual.
-                    </p>
-
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      onClick={() => generateMidtransQris()}
-                      disabled={midtransQris.loading}
-                      style={{
-                        width: '100%',
-                        padding: '12px 18px',
-                        fontSize: 13,
-                        fontWeight: 700,
-                        background: 'linear-gradient(135deg, #0284c7, #8b5cf6)',
-                        border: 'none',
-                        borderRadius: 10,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 8,
-                        boxShadow: '0 4px 16px rgba(2, 132, 199, 0.3)'
-                      }}
-                    >
-                      {midtransQris.loading ? (
-                        <>
-                          <RefreshCw size={16} className="spin" />
-                          <span>Menghubungi Midtrans...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Zap size={16} />
-                          <span>Buat QRIS Midtrans ({rupiah(payableTotal)})</span>
-                        </>
-                      )}
-                    </button>
-
-                    <div style={{ marginTop: 14 }}>
-                      <button
-                        type="button"
-                        onClick={() => setShowStaticQrisFallback(true)}
-                        style={{
-                          background: 'transparent',
-                          border: 'none',
-                          color: 'var(--text-muted)',
-                          fontSize: 11.5,
-                          cursor: 'pointer',
-                          textDecoration: 'underline'
-                        }}
-                      >
-                        Atau gunakan QRIS Statis Toko (Konfirmasi Kasir Manual)
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  /* 3. Static QRIS Fallback (Manual Confirmation) */
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      marginBottom: 12
-                    }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b' }}>
-                        QRIS STATIS TOKO (MANUAL)
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setShowStaticQrisFallback(false)}
-                        style={{
-                          background: 'transparent',
-                          border: 'none',
-                          color: '#38bdf8',
-                          fontSize: 11,
-                          fontWeight: 700,
-                          cursor: 'pointer'
-                        }}
-                      >
-                        ⚡ Pakai Midtrans Dinamis
-                      </button>
-                    </div>
-
-                    <div style={{
-                      width: 140, height: 140,
-                      background: '#ffffff',
-                      borderRadius: 10,
-                      margin: '0 auto 12px',
-                      padding: 8,
+                      padding: 10,
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
-                      justifyContent: 'center'
-                    }}>
-                      <QrCode size={110} color="#000000" />
-                      <span style={{ fontSize: 9, color: '#000', fontWeight: 800 }}>MOVA QRIS</span>
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                      Arahkan kamera / e-wallet pelanggan ke kode QR di atas.
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--accent-bright)', marginTop: 4 }}>
-                      BCA · Mandiri · GoPay · OVO · DANA · ShopeePay
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* KASBON Info & Customer prompt */}
-            {paymentMethod === 'KASBON' && (
-              <div style={{
-                background: 'rgba(245, 158, 11, 0.08)',
-                border: '1px solid rgba(245, 158, 11, 0.3)',
-                borderRadius: 12,
-                padding: 14,
-                marginBottom: 16
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: '#fbbf24', marginBottom: 4 }}>
-                  <Wallet size={16} /> Kasbon Customer (Hutang Pelanggan)
-                </div>
-                <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginBottom: 10 }}>
-                  Transaksi akan terhubung ke Buku Kasbon Customer. Sisa tagihan dapat dicicil atau dilunasi kemudian.
-                </div>
-                <div className="form-group mb-3">
-                  <label className="form-label" style={{ fontSize: 11, fontWeight: 600 }}>Nama Pelanggan / Debitur <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    value={customerName}
-                    onChange={e => setCustomerName(e.target.value)}
-                    placeholder="Masukkan Nama Pelanggan..."
-                    style={{ fontSize: 13, background: 'rgba(0,0,0,0.3)' }}
-                    required
-                  />
-                </div>
-                <div className="form-group mb-3">
-                  <label className="form-label" style={{ fontSize: 11, fontWeight: 600 }}>DP / Uang Muka Dibayar Sekarang (Opsional)</label>
-                  <input
-                    type="number"
-                    className="form-control mono"
-                    value={cashReceived}
-                    onChange={e => setCashReceived(e.target.value)}
-                    placeholder="0 (Kosongkan / Isi 0 jika Full Kasbon)"
-                    style={{ fontSize: 13, background: 'rgba(0,0,0,0.3)' }}
-                  />
-                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>
-                    Sisa kasbon yang dicatat: <strong style={{ color: '#fbbf24' }}>{rupiah(Math.max(0, payableTotal - (Number(cashReceived) || 0)))}</strong>
-                  </div>
-                </div>
-
-                {/* DP Payment Method Selection (Shown only when DP > 0) */}
-                {Number(cashReceived) > 0 && (
-                  <div style={{
-                    marginTop: 10,
-                    padding: '12px',
-                    borderRadius: 10,
-                    background: 'rgba(0,0,0,0.25)',
-                    border: '1px solid rgba(245, 158, 11, 0.25)'
-                  }}>
-                    <div style={{ fontSize: 11.5, fontWeight: 700, color: '#fef08a', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <CreditCard size={14} /> Metode Pembayaran DP ({rupiah(Number(cashReceived))}):
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 8 }}>
-                      {[
-                        { key: 'CASH', label: 'Tunai', icon: Banknote },
-                        { key: 'TRANSFER', label: 'Transfer', icon: CreditCard },
-                        { key: 'QRIS', label: 'QRIS', icon: QrCode },
-                        { key: 'DEBIT', label: 'Debit/EDC', icon: CreditCard },
-                      ].map(m => {
-                        const Icon = m.icon;
-                        const active = dpPaymentMethod === m.key;
-                        return (
-                          <button
-                            key={m.key}
-                            type="button"
-                            onClick={() => setDpPaymentMethod(m.key)}
-                            style={{
-                              padding: '8px 4px',
-                              borderRadius: 8,
-                              cursor: 'pointer',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              alignItems: 'center',
-                              gap: 4,
-                              border: '1px solid',
-                              borderColor: active ? '#f59e0b' : 'rgba(255,255,255,0.1)',
-                              background: active ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' : 'rgba(255,255,255,0.04)',
-                              color: active ? '#000000' : '#ffffff',
-                              fontWeight: active ? 800 : 500,
-                              fontSize: 11,
-                              transition: 'all 0.15s ease'
-                            }}
-                          >
-                            <Icon size={15} />
-                            {m.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {dpPaymentMethod !== 'CASH' && (
-                      <div className="form-group mb-0">
-                        <label className="form-label" style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
-                          No. Referensi / Bank / Catatan DP (Opsional)
-                        </label>
-                        <input
-                          type="text"
-                          className="form-control form-control-sm"
-                          value={dpReferenceNo}
-                          onChange={e => setDpReferenceNo(e.target.value)}
-                          placeholder="Contoh: Trf BCA / EDC Mandiri / QRIS Gopay"
-                          style={{ fontSize: 12, background: 'rgba(0,0,0,0.3)' }}
-                        />
+                      justifyContent: 'center',
+                      boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
+                      border: '2px solid rgba(56, 189, 248, 0.5)',
+                      position: 'relative',
+                      cursor: storeQrisInfo.qr_image_url ? 'pointer' : 'default',
+                    }}
+                    onClick={() => storeQrisInfo.qr_image_url && setQrZoomModalOpen(true)}
+                    title={storeQrisInfo.qr_image_url ? 'Klik untuk memperbesar QR ke layar penuh' : ''}
+                  >
+                    {storeQrisInfo.qr_image_url ? (
+                      <img
+                        src={getMediaUrl(storeQrisInfo.qr_image_url)}
+                        alt="QRIS Toko"
+                        style={{
+                          width: '100%',
+                          height: 'auto',
+                          maxHeight: 260,
+                          objectFit: 'contain',
+                          display: 'block',
+                        }}
+                        onError={(e) => {
+                          if (!e.target.dataset.triedFallback && storeQrisInfo.qr_image_url.startsWith('/storage/')) {
+                            e.target.dataset.triedFallback = 'true';
+                            e.target.src = getMediaUrl('/api' + storeQrisInfo.qr_image_url);
+                          } else {
+                            e.target.style.display = 'none';
+                          }
+                        }}
+                      />
+                    ) : (
+                      <div style={{ textAlign: 'center', padding: 14 }}>
+                        <QrCode size={90} color="#0284c7" style={{ margin: '0 auto 8px' }} />
+                        <div style={{ fontSize: 13, color: '#0f172a', fontWeight: 800 }}>
+                          QRIS TOKO
+                        </div>
+                        <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>
+                          Upload foto stiker QRIS di menu Rekening
+                        </div>
                       </div>
                     )}
                   </div>
-                )}
-              </div>
-            )}
 
-            {/* Transfer / Debit */}
-            {paymentMethod === 'TRANSFER' && (
-              <div className="form-group mb-3">
-                <label className="form-label">No. Referensi / Bank / EDC</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  placeholder="Contoh: EDC Mandiri / Trf BCA Ref #12345"
-                  value={orderNotes}
-                  onChange={e => setOrderNotes(e.target.value)}
-                />
-              </div>
-            )}
+                  {storeQrisInfo.qr_image_url && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setQrZoomModalOpen(true)}
+                      style={{
+                        margin: '0 auto 10px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: '#38bdf8',
+                        borderColor: 'rgba(56, 189, 248, 0.4)',
+                        background: 'rgba(56, 189, 248, 0.1)',
+                        padding: '5px 14px',
+                      }}
+                    >
+                      <Eye size={14} /> Perbesar QRIS (Layar Penuh)
+                    </button>
+                  )}
 
-            {/* Grab / GrabFood */}
-            {paymentMethod === 'GRAB' && (
-              <div className="form-group mb-3">
-                <div style={{
-                  padding: '10px 12px',
-                  borderRadius: 10,
-                  background: 'rgba(0, 177, 79, 0.1)',
-                  border: '1px solid rgba(0, 177, 79, 0.3)',
-                  marginBottom: 10,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10
-                }}>
+                  {/* Nominal Order */}
+                  <div style={{ fontSize: 20, fontWeight: 900, color: '#ffffff', marginBottom: 2 }}>
+                    {rupiah(payableTotal)}
+                  </div>
+
+                  {/* Bank / Account Info */}
+                  {storeQrisInfo.bank_name && (
+                    <div style={{ fontSize: 12.5, color: '#38bdf8', fontWeight: 700, marginBottom: 8 }}>
+                      {storeQrisInfo.bank_name} • a.n. {storeQrisInfo.account_holder}
+                    </div>
+                  )}
+
+                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginBottom: 10 }}>
+                    Arahkan customer untuk scan kode QRIS di atas dengan GoPay, OVO, DANA, BCA, ShopeePay, atau Mobile Banking apa saja.
+                  </div>
+
+                  {/* Accounting Impact notice */}
                   <div style={{
-                    width: 32,
-                    height: 32,
+                    padding: '8px 12px',
                     borderRadius: 8,
-                    background: '#00B14F',
+                    background: 'rgba(16, 185, 129, 0.1)',
+                    border: '1px solid rgba(16, 185, 129, 0.25)',
+                    fontSize: 11,
+                    color: '#a7f3d0',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    color: '#fff',
-                    fontWeight: 900,
-                    fontSize: 16
+                    gap: 6
                   }}>
-                    G
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#10d97a' }}>Metode Grab / GrabFood</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Pembayaran non-tunai langsung tercatat via pesanan Grab.</div>
+                    <CheckCircle2 size={13} color="#34d399" />
+                    <span>Dana QRIS otomatis masuk ke <strong>Kas Aplikasi</strong> dan dapat disetor ke Bank di menu Kas Aplikasi.</span>
                   </div>
                 </div>
-                <label className="form-label">No. Pesanan Grab / PIN Driver (Opsional)</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  placeholder="Contoh: GF-8291 / GF-A12B"
-                  value={orderNotes}
-                  onChange={e => setOrderNotes(e.target.value)}
-                />
-              </div>
-            )}
+              )}
 
-            {/* Submit Action */}
-            <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+              {/* KASBON Info & Customer prompt */}
+              {paymentMethod === 'KASBON' && (
+                <div style={{
+                  background: 'rgba(245, 158, 11, 0.08)',
+                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                  borderRadius: 12,
+                  padding: 14,
+                  marginBottom: 16
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: '#fbbf24', marginBottom: 4 }}>
+                    <Wallet size={16} /> Kasbon Customer (Hutang Pelanggan)
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginBottom: 10 }}>
+                    Transaksi akan terhubung ke Buku Kasbon Customer. Sisa tagihan dapat dicicil atau dilunasi kemudian.
+                  </div>
+                  <div className="form-group mb-3">
+                    <label className="form-label" style={{ fontSize: 11, fontWeight: 600 }}>Nama Pelanggan / Debitur <span style={{ color: 'var(--danger)' }}>*</span></label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={customerName}
+                      onChange={e => setCustomerName(e.target.value)}
+                      placeholder="Masukkan Nama Pelanggan..."
+                      style={{ fontSize: 13, background: 'rgba(0,0,0,0.3)' }}
+                      required
+                    />
+                  </div>
+                  <div className="form-group mb-3">
+                    <label className="form-label" style={{ fontSize: 11, fontWeight: 600 }}>DP / Uang Muka Dibayar Sekarang (Opsional)</label>
+                    <input
+                      type="number"
+                      className="form-control mono"
+                      value={cashReceived}
+                      onChange={e => setCashReceived(e.target.value)}
+                      placeholder="0 (Kosongkan / Isi 0 jika Full Kasbon)"
+                      style={{ fontSize: 13, background: 'rgba(0,0,0,0.3)' }}
+                    />
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>
+                      Sisa kasbon yang dicatat: <strong style={{ color: '#fbbf24' }}>{rupiah(Math.max(0, payableTotal - (Number(cashReceived) || 0)))}</strong>
+                    </div>
+                  </div>
+
+                  {/* DP Payment Method Selection (Shown only when DP > 0) */}
+                  {Number(cashReceived) > 0 && (
+                    <div style={{
+                      marginTop: 10,
+                      padding: '12px',
+                      borderRadius: 10,
+                      background: 'rgba(0,0,0,0.25)',
+                      border: '1px solid rgba(245, 158, 11, 0.25)'
+                    }}>
+                      <div style={{ fontSize: 11.5, fontWeight: 700, color: '#fef08a', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <CreditCard size={14} /> Metode Pembayaran DP ({rupiah(Number(cashReceived))}):
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 8 }}>
+                        {[
+                          { key: 'CASH', label: 'Tunai', icon: Banknote },
+                          { key: 'TRANSFER', label: 'Transfer', icon: CreditCard },
+                          { key: 'QRIS', label: 'QRIS', icon: QrCode },
+                          { key: 'DEBIT', label: 'Debit/EDC', icon: CreditCard },
+                        ].map(m => {
+                          const Icon = m.icon;
+                          const active = dpPaymentMethod === m.key;
+                          return (
+                            <button
+                              key={m.key}
+                              type="button"
+                              onClick={() => setDpPaymentMethod(m.key)}
+                              style={{
+                                padding: '8px 4px',
+                                borderRadius: 8,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                gap: 4,
+                                border: '1px solid',
+                                borderColor: active ? '#f59e0b' : 'rgba(255,255,255,0.1)',
+                                background: active ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' : 'rgba(255,255,255,0.04)',
+                                color: active ? '#000000' : '#ffffff',
+                                fontWeight: active ? 800 : 500,
+                                fontSize: 11,
+                                transition: 'all 0.15s ease'
+                              }}
+                            >
+                              <Icon size={15} />
+                              {m.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {dpPaymentMethod !== 'CASH' && (
+                        <div className="form-group mb-0">
+                          <label className="form-label" style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
+                            No. Referensi / Bank / Catatan DP (Opsional)
+                          </label>
+                          <input
+                            type="text"
+                            className="form-control form-control-sm"
+                            value={dpReferenceNo}
+                            onChange={e => setDpReferenceNo(e.target.value)}
+                            placeholder="Contoh: Trf BCA / EDC Mandiri / QRIS Gopay"
+                            style={{ fontSize: 12, background: 'rgba(0,0,0,0.3)' }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Transfer / Debit */}
+              {paymentMethod === 'TRANSFER' && (
+                <div className="form-group mb-3">
+                  <label className="form-label">No. Referensi / Bank / EDC</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Contoh: EDC Mandiri / Trf BCA Ref #12345"
+                    value={orderNotes}
+                    onChange={e => setOrderNotes(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {/* Grab / GrabFood */}
+              {paymentMethod === 'GRAB' && (
+                <div className="form-group mb-3">
+                  <div style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    background: 'rgba(0, 177, 79, 0.1)',
+                    border: '1px solid rgba(0, 177, 79, 0.3)',
+                    marginBottom: 10,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10
+                  }}>
+                    <div style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 8,
+                      background: '#00B14F',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#fff',
+                      fontWeight: 900,
+                      fontSize: 16
+                    }}>
+                      G
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#10d97a' }}>Metode Grab / GrabFood</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Pembayaran non-tunai langsung tercatat via pesanan Grab.</div>
+                    </div>
+                  </div>
+                  <label className="form-label">No. Pesanan Grab / PIN Driver (Opsional)</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Contoh: GF-8291 / GF-A12B"
+                    value={orderNotes}
+                    onChange={e => setOrderNotes(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {/* GoFood */}
+              {paymentMethod === 'GOFOOD' && (
+                <div className="form-group mb-3">
+                  <div style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    background: 'rgba(238, 39, 55, 0.1)',
+                    border: '1px solid rgba(238, 39, 55, 0.3)',
+                    marginBottom: 10,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10
+                  }}>
+                    <div style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 8,
+                      background: '#EE2737',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#fff',
+                      fontWeight: 900,
+                      fontSize: 16
+                    }}>
+                      G
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#f87171' }}>Metode GoFood / Gojek</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Pembayaran non-tunai langsung tercatat via pesanan GoFood.</div>
+                    </div>
+                  </div>
+                  <label className="form-label">No. Pesanan GoFood / PIN Driver (Opsional)</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Contoh: GO-8291 / GF-A12B"
+                    value={orderNotes}
+                    onChange={e => setOrderNotes(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {/* ShopeeFood */}
+              {paymentMethod === 'SHOPEEFOOD' && (
+                <div className="form-group mb-3">
+                  <div style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    background: 'rgba(238, 77, 45, 0.1)',
+                    border: '1px solid rgba(238, 77, 45, 0.3)',
+                    marginBottom: 10,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10
+                  }}>
+                    <div style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 8,
+                      background: '#EE4D2D',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#fff',
+                      fontWeight: 900,
+                      fontSize: 16
+                    }}>
+                      S
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#fb923c' }}>Metode ShopeeFood</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Pembayaran non-tunai langsung tercatat via pesanan ShopeeFood.</div>
+                    </div>
+                  </div>
+                  <label className="form-label">No. Pesanan ShopeeFood / PIN Driver (Opsional)</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Contoh: SPF-8291 / SP-A12B"
+                    value={orderNotes}
+                    onChange={e => setOrderNotes(e.target.value)}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Fixed Modal Footer (Sticky Action Buttons) */}
+            <div className="modal-footer" style={{ background: '#0f1428' }}>
               <button
                 type="button"
                 className="btn btn-secondary"
@@ -6710,6 +7001,108 @@ export default function POS() {
                     : 'Selesaikan & Cetak Struk'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL ZOOM QRIS (FULL DISPLAY UNTUK CUSTOMER)
+         ======================================================== */}
+      {qrZoomModalOpen && storeQrisInfo.qr_image_url && (
+        <div
+          className="modal-overlay"
+          onClick={() => setQrZoomModalOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1100,
+            background: 'rgba(0, 0, 0, 0.85)',
+            backdropFilter: 'blur(10px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
+            overflowY: 'auto',
+          }}
+        >
+          <div
+            className="modal-content"
+            onClick={e => e.stopPropagation()}
+            style={{
+              maxWidth: 440,
+              width: '100%',
+              background: '#ffffff',
+              borderRadius: 20,
+              padding: 24,
+              textAlign: 'center',
+              boxShadow: '0 25px 60px rgba(0, 0, 0, 0.6)',
+              margin: 'auto',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 900, color: '#0f172a', textAlign: 'left' }}>
+                  QRIS Pembayaran Kasir
+                </div>
+                <div style={{ fontSize: 12, color: '#64748b', textAlign: 'left' }}>
+                  {storeQrisInfo.bank_name || 'QRIS Toko'} • a.n. {storeQrisInfo.account_holder}
+                </div>
+              </div>
+              <button
+                className="btn btn-ghost btn-icon"
+                onClick={() => setQrZoomModalOpen(false)}
+                style={{ color: '#0f172a' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div
+              style={{
+                background: '#ffffff',
+                padding: 10,
+                borderRadius: 14,
+                display: 'inline-block',
+                margin: '8px auto 14px',
+                border: '1.5px solid #e2e8f0',
+                width: '100%',
+                maxWidth: 380,
+              }}
+            >
+              <img
+                src={getMediaUrl(storeQrisInfo.qr_image_url)}
+                alt="QRIS Fullscreen"
+                style={{
+                  width: '100%',
+                  maxHeight: '55vh',
+                  objectFit: 'contain',
+                  display: 'block',
+                  margin: '0 auto',
+                }}
+                onError={(e) => {
+                  if (!e.target.dataset.triedFallback && storeQrisInfo.qr_image_url?.startsWith('/storage/')) {
+                    e.target.dataset.triedFallback = 'true';
+                    e.target.src = getMediaUrl('/api' + storeQrisInfo.qr_image_url);
+                  }
+                }}
+              />
+            </div>
+
+            <div style={{ fontSize: 22, fontWeight: 900, color: '#0f172a', marginBottom: 4 }}>
+              {rupiah(payableTotal)}
+            </div>
+            <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 16px' }}>
+              Arahkan kamera HP / aplikasi pembayaran ke barcode di atas.
+            </p>
+
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setQrZoomModalOpen(false)}
+              style={{ width: '100%', justifyContent: 'center', fontWeight: 800, padding: 12 }}
+            >
+              Tutup &amp; Lanjutkan Pembayaran
+            </button>
           </div>
         </div>
       )}
@@ -6872,8 +7265,11 @@ export default function POS() {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5 }}>
                   <span>Metode:</span>
-                  <span style={{ fontWeight: 700, color: completedOrder.payment_method === 'GRAB' ? '#00B14F' : 'inherit' }}>
-                    {completedOrder.payment_method === 'GRAB' ? 'GRAB / GrabFood' : completedOrder.payment_method}
+                  <span style={{
+                    fontWeight: 700,
+                    color: completedOrder.payment_method === 'GRAB' ? '#00B14F' : (completedOrder.payment_method === 'GOFOOD' ? '#EE2737' : (completedOrder.payment_method === 'SHOPEEFOOD' ? '#EE4D2D' : 'inherit'))
+                  }}>
+                    {completedOrder.payment_method === 'GRAB' ? 'GRAB / GrabFood' : (completedOrder.payment_method === 'GOFOOD' ? 'GOFOOD / Gojek' : (completedOrder.payment_method === 'SHOPEEFOOD' ? 'SHOPEEFOOD' : completedOrder.payment_method))}
                   </span>
                 </div>
                 {completedOrder.payment_method === 'CASH' && (
@@ -7083,13 +7479,13 @@ export default function POS() {
                           border: '1px solid rgba(255,255,255,0.06)',
                           borderRadius: 8,
                           padding: '8px 10px',
-                          maxHeight: 120,
+                          maxHeight: 140,
                           overflowY: 'auto',
                           marginBottom: 10
                         }}>
                           {bill.items?.map((it, idx) => (
-                            <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, padding: '3px 0', borderBottom: idx < bill.items.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
-                              <div>
+                            <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5, padding: '4px 0', borderBottom: idx < bill.items.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                              <div style={{ flex: 1, paddingRight: 8 }}>
                                 <strong style={{ color: '#ffffff' }}>{it.qty}x</strong> <span style={{ color: 'var(--text-secondary)' }}>{it.menu_name}</span>
                                 {it.modifiers && it.modifiers.length > 0 && (
                                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginTop: 2 }}>
@@ -7102,7 +7498,32 @@ export default function POS() {
                                 )}
                                 {it.notes && <div style={{ fontSize: 10, color: 'var(--accent-bright)' }}>*{it.notes}</div>}
                               </div>
-                              <span className="mono" style={{ color: '#ffffff' }}>{rupiah(it.total_price)}</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span className="mono" style={{ color: '#ffffff' }}>{rupiah(it.total_price)}</span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenVoidItemModal(bill, it);
+                                  }}
+                                  style={{
+                                    padding: '2px 6px',
+                                    borderRadius: 4,
+                                    background: 'rgba(244, 63, 94, 0.12)',
+                                    border: '1px solid rgba(244, 63, 94, 0.3)',
+                                    color: '#fb7185',
+                                    fontSize: 10,
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 2,
+                                  }}
+                                  title={`Void / Batalkan item ${it.menu_name} (Salah input atau Wasted)`}
+                                >
+                                  <RotateCcw size={10} /> Void
+                                </button>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -7203,9 +7624,9 @@ export default function POS() {
                         <button
                           type="button"
                           className="btn btn-sm btn-ghost"
-                          onClick={() => setCancelBillModal({ open: true, bill, reason: '', submitting: false })}
+                          onClick={() => handleOpenCancelBill(bill)}
                           style={{ padding: '5px 8px', color: 'var(--danger)', fontSize: 11 }}
-                          title="Batalkan / Void tagihan ini"
+                          title="Batalkan / Void seluruh tagihan ini"
                         >
                           <Trash2 size={12} />
                         </button>
@@ -7458,7 +7879,7 @@ export default function POS() {
               <button
                 type="button"
                 className="btn btn-primary"
-                onClick={() => printElement('printable-prebill', `Pre-Bill - ${prebillModal.bill.order_number || ''}`, { isThermal: true, paperWidth: '80mm' })}
+                onClick={handlePrintPrebill}
                 style={{ flex: 1.5, justifyContent: 'center', fontWeight: 800 }}
               >
                 <Printer size={15} style={{ marginRight: 6 }} /> Cetak Lembar Tagihan
@@ -7469,51 +7890,248 @@ export default function POS() {
       )}
 
       {/* ========================================================
-          MODAL 6: BATALKAN / VOID TAGIHAN TERBUKA
+          MODAL: BATALKAN / VOID TAGIHAN TERBUKA SELURUHNYA
          ======================================================== */}
       {cancelBillModal.open && cancelBillModal.bill && (
-        <div className="modal-overlay" onClick={() => setCancelBillModal({ open: false, bill: null, reason: '', submitting: false })}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-              <div style={{
-                width: 40, height: 40, borderRadius: 10,
-                background: 'rgba(244, 63, 94, 0.15)',
-                border: '1px solid rgba(244, 63, 94, 0.3)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: '#fb7185'
-              }}>
-                <Trash2 size={20} />
+        <div className="modal-overlay" onClick={() => setCancelBillModal(p => ({ ...p, open: false }))}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 520, padding: 20 }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, borderBottom: '1px solid var(--border)', paddingBottom: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  width: 40, height: 40, borderRadius: 10,
+                  background: 'rgba(244, 63, 94, 0.15)',
+                  border: '1px solid rgba(244, 63, 94, 0.35)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#fb7185', flexShrink: 0
+                }}>
+                  <Trash2 size={20} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: 16, fontWeight: 800, color: '#ffffff', margin: 0 }}>
+                    Void / Batalkan Tagihan Open Bill
+                  </h3>
+                  <span className="mono" style={{ fontSize: 11.5, color: '#fbbf24' }}>
+                    Nota: {cancelBillModal.bill.order_number} {cancelBillModal.bill.customer_name ? `• ${cancelBillModal.bill.customer_name}` : ''}
+                  </span>
+                </div>
               </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-icon"
+                onClick={() => setCancelBillModal(p => ({ ...p, open: false }))}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Bill Summary Card */}
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: 10,
+              padding: '12px 14px',
+              marginBottom: 14,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}>
               <div>
-                <h3 style={{ fontSize: 16, fontWeight: 800, color: '#ffffff', margin: 0 }}>
-                  Batalkan Tagihan Terbuka?
-                </h3>
-                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                  {cancelBillModal.bill.order_number}{cancelBillModal.bill.customer_name ? ` (${cancelBillModal.bill.customer_name})` : ''}
-                </span>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#ffffff' }}>
+                  Total Tagihan Open Bill
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+                  {cancelBillModal.bill.items?.length || 0} menu item · Meja/Catatan: {cancelBillModal.bill.table_number || cancelBillModal.bill.notes || '-'}
+                </div>
+              </div>
+              <div className="mono" style={{ fontSize: 18, fontWeight: 900, color: '#f43f5e' }}>
+                {rupiah(cancelBillModal.bill.total_price || 0)}
               </div>
             </div>
 
-            <p style={{ fontSize: 12.5, color: 'var(--text-primary)', lineHeight: 1.5, marginBottom: 14 }}>
-              Apakah Anda yakin ingin membatalkan tagihan sebesar <strong>{rupiah(cancelBillModal.bill.total_price)}</strong>? Tagihan ini akan diberi status <strong>CANCELLED</strong>.
-            </p>
-
+            {/* 2 Pilihan Jenis Void: Salah Input vs Wasted */}
             <div className="form-group mb-3">
-              <label className="form-label">Alasan Pembatalan (opsional)</label>
+              <label className="form-label" style={{ fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                Pilih Kategori Pembatalan (Void Tagihan) <span style={{ color: 'var(--danger)' }}>*</span>
+              </label>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                {/* Opsi 1: Salah Input */}
+                <div
+                  onClick={() => setCancelBillModal(p => ({ ...p, voidType: 'WRONG_INPUT' }))}
+                  style={{
+                    border: `1.5px solid ${cancelBillModal.voidType === 'WRONG_INPUT' ? '#38bdf8' : 'var(--border)'}`,
+                    background: cancelBillModal.voidType === 'WRONG_INPUT' ? 'rgba(56, 189, 248, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                    borderRadius: 10,
+                    padding: '12px 10px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, fontSize: 12.5, color: cancelBillModal.voidType === 'WRONG_INPUT' ? '#38bdf8' : '#ffffff' }}>
+                      <RotateCcw size={15} /> Salah Input
+                    </div>
+                    <div style={{
+                      width: 16, height: 16, borderRadius: '50%',
+                      border: `2px solid ${cancelBillModal.voidType === 'WRONG_INPUT' ? '#38bdf8' : 'var(--border)'}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    }}>
+                      {cancelBillModal.voidType === 'WRONG_INPUT' && (
+                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#38bdf8' }} />
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.35, marginTop: 2 }}>
+                    Salah buat nota kasir / tamu batal sebelum pesanan diproses.
+                  </div>
+                  <div style={{
+                    marginTop: 4,
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: '#38bdf8',
+                    background: 'rgba(56, 189, 248, 0.15)',
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    display: 'inline-block'
+                  }}>
+                    ⚡ Tidak Memotong Stok (Stok Utuh)
+                  </div>
+                </div>
+
+                {/* Opsi 2: Wasted */}
+                <div
+                  onClick={() => setCancelBillModal(p => ({ ...p, voidType: 'WASTED' }))}
+                  style={{
+                    border: `1.5px solid ${cancelBillModal.voidType === 'WASTED' ? '#f43f5e' : 'var(--border)'}`,
+                    background: cancelBillModal.voidType === 'WASTED' ? 'rgba(244, 63, 94, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                    borderRadius: 10,
+                    padding: '12px 10px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, fontSize: 12.5, color: cancelBillModal.voidType === 'WASTED' ? '#fb7185' : '#ffffff' }}>
+                      <Trash2 size={15} /> Wasted (Terbuang)
+                    </div>
+                    <div style={{
+                      width: 16, height: 16, borderRadius: '50%',
+                      border: `2px solid ${cancelBillModal.voidType === 'WASTED' ? '#fb7185' : 'var(--border)'}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    }}>
+                      {cancelBillModal.voidType === 'WASTED' && (
+                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#fb7185' }} />
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.35, marginTop: 2 }}>
+                    Seluruh pesanan sudah dibuat di dapur/bar lalu dibatalkan/rusak.
+                  </div>
+                  <div style={{
+                    marginTop: 4,
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: '#fb7185',
+                    background: 'rgba(244, 63, 94, 0.15)',
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    display: 'inline-block'
+                  }}>
+                    🗑️ Dicatat ke Waste & Bahan Baku Terpotong
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Dropdown Klasifikasi Alasan Waste jika tipe WASTED */}
+            {cancelBillModal.voidType === 'WASTED' && (
+              <div className="form-group mb-3" style={{ background: 'rgba(244, 63, 94, 0.08)', border: '1px solid rgba(244, 63, 94, 0.25)', borderRadius: 10, padding: '10px 12px' }}>
+                <label className="form-label" style={{ fontWeight: 800, fontSize: 12, color: '#fb7185', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                  <Trash2 size={14} /> Klasifikasi Alasan Waste <span style={{ color: 'var(--danger)' }}>*</span>
+                </label>
+                <select
+                  className="form-control"
+                  value={cancelBillModal.wasteCategory || 'CUSTOMER_COMPLAINT'}
+                  onChange={e => setCancelBillModal(p => ({ ...p, wasteCategory: e.target.value }))}
+                  style={{ fontSize: 12.5, fontWeight: 700, background: 'rgba(15, 23, 42, 0.85)', borderColor: 'rgba(244, 63, 94, 0.4)', color: '#ffffff' }}
+                >
+                  {WASTE_REASON_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+                <span style={{ fontSize: 11, color: '#fca5a5', marginTop: 4, display: 'block' }}>
+                  📊 Nilai HPP bahan baku pesanan ini akan otomatis masuk ke kategori alasan ini di Laporan Waste.
+                </span>
+              </div>
+            )}
+
+            {/* Alasan Pembatalan */}
+            <div className="form-group mb-3">
+              <label className="form-label" style={{ fontWeight: 700, fontSize: 12 }}>
+                Alasan Pembatalan Tagihan <span style={{ color: 'var(--danger)' }}>*</span>
+              </label>
               <input
                 type="text"
                 className="form-control"
-                placeholder="Misal: Pelanggan batal / Salah input"
+                placeholder={cancelBillModal.voidType === 'WRONG_INPUT' ? "Contoh: Salah input nomor meja / Tamu batal pesan" : "Contoh: Tamu pergi setelah makanan selesai disajikan"}
                 value={cancelBillModal.reason}
                 onChange={e => setCancelBillModal(p => ({ ...p, reason: e.target.value }))}
+                required
               />
             </div>
 
-            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+            {/* Otorisasi Supervisor jika bukan Manager/Owner */}
+            {!isOwnerOrManager && (
+              <div style={{
+                background: 'rgba(15, 23, 42, 0.6)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: 10,
+                padding: '12px 14px',
+                marginBottom: 14
+              }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#fbbf24', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <ShieldCheck size={14} /> Otorisasi Supervisor / Manajer
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <label className="form-label" style={{ fontSize: 11 }}>Pilih Supervisor</label>
+                    <select
+                      className="form-control form-control-sm"
+                      value={cancelBillModal.supervisorId}
+                      onChange={e => setCancelBillModal(p => ({ ...p, supervisorId: e.target.value }))}
+                    >
+                      {supervisors.map(s => (
+                        <option key={s.id} value={s.id}>{s.name} ({s.role})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="form-label" style={{ fontSize: 11 }}>Password / PIN</label>
+                    <input
+                      type="password"
+                      className="form-control form-control-sm"
+                      placeholder="PIN / Password"
+                      value={cancelBillModal.supervisorPassword}
+                      onChange={e => setCancelBillModal(p => ({ ...p, supervisorPassword: e.target.value }))}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Modal Actions */}
+            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
               <button
                 type="button"
                 className="btn btn-secondary"
-                onClick={() => setCancelBillModal({ open: false, bill: null, reason: '', submitting: false })}
+                onClick={() => setCancelBillModal(p => ({ ...p, open: false }))}
                 style={{ flex: 1, justifyContent: 'center' }}
               >
                 Batal
@@ -7522,10 +8140,320 @@ export default function POS() {
                 type="button"
                 className="btn btn-danger text-white"
                 onClick={handleConfirmCancelBill}
-                disabled={cancelBillModal.submitting}
-                style={{ flex: 1.5, justifyContent: 'center', fontWeight: 800, background: '#ef4444', borderColor: '#dc2626', color: '#ffffff' }}
+                disabled={cancelBillModal.submitting || !cancelBillModal.reason.trim()}
+                style={{
+                  flex: 1.5,
+                  justifyContent: 'center',
+                  fontWeight: 800,
+                  background: cancelBillModal.voidType === 'WASTED' ? '#ef4444' : '#0284c7',
+                  borderColor: cancelBillModal.voidType === 'WASTED' ? '#dc2626' : '#0369a1',
+                  color: '#ffffff'
+                }}
               >
-                {cancelBillModal.submitting ? 'Membatalkan...' : 'Ya, Batalkan Tagihan'}
+                {cancelBillModal.submitting ? 'Memproses Void...' : (cancelBillModal.voidType === 'WASTED' ? 'Konfirmasi Void Wasted' : 'Konfirmasi Void Nota')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL: VOID ITEM PER MENU PADA OPEN BILL
+         ======================================================== */}
+      {voidOpenBillItemModal.open && voidOpenBillItemModal.bill && voidOpenBillItemModal.item && (
+        <div className="modal-overlay" onClick={() => setVoidOpenBillItemModal(p => ({ ...p, open: false }))}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 520, padding: 20 }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, borderBottom: '1px solid var(--border)', paddingBottom: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  width: 40, height: 40, borderRadius: 10,
+                  background: 'rgba(244, 63, 94, 0.15)',
+                  border: '1px solid rgba(244, 63, 94, 0.35)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#fb7185', flexShrink: 0
+                }}>
+                  <RotateCcw size={20} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: 16, fontWeight: 800, color: '#ffffff', margin: 0 }}>
+                    Void Item Menu (Open Bill)
+                  </h3>
+                  <span className="mono" style={{ fontSize: 11.5, color: '#fbbf24' }}>
+                    Nota: {voidOpenBillItemModal.bill.order_number} {voidOpenBillItemModal.bill.customer_name ? `• ${voidOpenBillItemModal.bill.customer_name}` : ''}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-icon"
+                onClick={() => setVoidOpenBillItemModal(p => ({ ...p, open: false }))}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Item Card Info */}
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: 10,
+              padding: '12px 14px',
+              marginBottom: 14,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: '#ffffff' }}>
+                  {voidOpenBillItemModal.item.menu_name}
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+                  Harga Satuan: <span className="mono">{rupiah(voidOpenBillItemModal.item.price || (voidOpenBillItemModal.item.total_price / (voidOpenBillItemModal.item.qty || 1)))}</span> · Pesanan: <strong style={{ color: '#fbbf24' }}>{voidOpenBillItemModal.item.qty} porsi</strong>
+                </div>
+              </div>
+              <div className="mono" style={{ fontSize: 16, fontWeight: 900, color: '#fbbf24' }}>
+                {rupiah(voidOpenBillItemModal.item.total_price)}
+              </div>
+            </div>
+
+            {/* Qty Selector if qty > 1 */}
+            {voidOpenBillItemModal.item.qty > 1 && (
+              <div className="form-group mb-3">
+                <label className="form-label" style={{ fontWeight: 700, fontSize: 12 }}>
+                  Jumlah Porsi yang di-Void:
+                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(0,0,0,0.3)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                    <button
+                      type="button"
+                      onClick={() => setVoidOpenBillItemModal(p => ({ ...p, qty: Math.max(1, p.qty - 1) }))}
+                      disabled={voidOpenBillItemModal.qty <= 1}
+                      style={{ width: 34, height: 34, border: 'none', background: 'transparent', color: '#fff', cursor: 'pointer' }}
+                    >
+                      <Minus size={14} />
+                    </button>
+                    <span style={{ width: 40, textAlign: 'center', fontSize: 14, fontWeight: 800, color: '#38bdf8' }}>
+                      {voidOpenBillItemModal.qty}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setVoidOpenBillItemModal(p => ({ ...p, qty: Math.min(voidOpenBillItemModal.item.qty, p.qty + 1) }))}
+                      disabled={voidOpenBillItemModal.qty >= voidOpenBillItemModal.item.qty}
+                      style={{ width: 34, height: 34, border: 'none', background: 'transparent', color: '#fff', cursor: 'pointer' }}
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </div>
+                  <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                    dari total {voidOpenBillItemModal.item.qty} porsi
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* 2 Pilihan Jenis Void: Salah Input vs Wasted */}
+            <div className="form-group mb-3">
+              <label className="form-label" style={{ fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                Pilih Jenis Pembatalan (Void) <span style={{ color: 'var(--danger)' }}>*</span>
+              </label>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                {/* Opsi 1: Salah Input */}
+                <div
+                  onClick={() => setVoidOpenBillItemModal(p => ({ ...p, voidType: 'WRONG_INPUT' }))}
+                  style={{
+                    border: `1.5px solid ${voidOpenBillItemModal.voidType === 'WRONG_INPUT' ? '#38bdf8' : 'var(--border)'}`,
+                    background: voidOpenBillItemModal.voidType === 'WRONG_INPUT' ? 'rgba(56, 189, 248, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                    borderRadius: 10,
+                    padding: '12px 10px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, fontSize: 12.5, color: voidOpenBillItemModal.voidType === 'WRONG_INPUT' ? '#38bdf8' : '#ffffff' }}>
+                      <RotateCcw size={15} /> Salah Input
+                    </div>
+                    <div style={{
+                      width: 16, height: 16, borderRadius: '50%',
+                      border: `2px solid ${voidOpenBillItemModal.voidType === 'WRONG_INPUT' ? '#38bdf8' : 'var(--border)'}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    }}>
+                      {voidOpenBillItemModal.voidType === 'WRONG_INPUT' && (
+                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#38bdf8' }} />
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.35, marginTop: 2 }}>
+                    Salah klik kasir / pesanan batal sebelum dimasak.
+                  </div>
+                  <div style={{
+                    marginTop: 4,
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: '#38bdf8',
+                    background: 'rgba(56, 189, 248, 0.15)',
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    display: 'inline-block'
+                  }}>
+                    ⚡ Tidak Memotong Stok (Stok Aman)
+                  </div>
+                </div>
+
+                {/* Opsi 2: Wasted */}
+                <div
+                  onClick={() => setVoidOpenBillItemModal(p => ({ ...p, voidType: 'WASTED' }))}
+                  style={{
+                    border: `1.5px solid ${voidOpenBillItemModal.voidType === 'WASTED' ? '#f43f5e' : 'var(--border)'}`,
+                    background: voidOpenBillItemModal.voidType === 'WASTED' ? 'rgba(244, 63, 94, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                    borderRadius: 10,
+                    padding: '12px 10px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, fontSize: 12.5, color: voidOpenBillItemModal.voidType === 'WASTED' ? '#fb7185' : '#ffffff' }}>
+                      <Trash2 size={15} /> Wasted (Terbuang)
+                    </div>
+                    <div style={{
+                      width: 16, height: 16, borderRadius: '50%',
+                      border: `2px solid ${voidOpenBillItemModal.voidType === 'WASTED' ? '#fb7185' : 'var(--border)'}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    }}>
+                      {voidOpenBillItemModal.voidType === 'WASTED' && (
+                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#fb7185' }} />
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.35, marginTop: 2 }}>
+                    Sudah terlanjur dimasak / rusak / salah saji.
+                  </div>
+                  <div style={{
+                    marginTop: 4,
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: '#fb7185',
+                    background: 'rgba(244, 63, 94, 0.15)',
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    display: 'inline-block'
+                  }}>
+                    🗑️ Dicatat ke Buku Waste & Stok Terpotong
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Dropdown Klasifikasi Alasan Waste jika tipe WASTED */}
+            {voidOpenBillItemModal.voidType === 'WASTED' && (
+              <div className="form-group mb-3" style={{ background: 'rgba(244, 63, 94, 0.08)', border: '1px solid rgba(244, 63, 94, 0.25)', borderRadius: 10, padding: '10px 12px' }}>
+                <label className="form-label" style={{ fontWeight: 800, fontSize: 12, color: '#fb7185', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                  <Trash2 size={14} /> Klasifikasi Alasan Waste <span style={{ color: 'var(--danger)' }}>*</span>
+                </label>
+                <select
+                  className="form-control"
+                  value={voidOpenBillItemModal.wasteCategory || 'CUSTOMER_COMPLAINT'}
+                  onChange={e => setVoidOpenBillItemModal(p => ({ ...p, wasteCategory: e.target.value }))}
+                  style={{ fontSize: 12.5, fontWeight: 700, background: 'rgba(15, 23, 42, 0.85)', borderColor: 'rgba(244, 63, 94, 0.4)', color: '#ffffff' }}
+                >
+                  {WASTE_REASON_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+                <span style={{ fontSize: 11, color: '#fca5a5', marginTop: 4, display: 'block' }}>
+                  📊 Nilai HPP bahan item ini akan otomatis masuk ke kategori alasan ini di Laporan Waste.
+                </span>
+              </div>
+            )}
+
+            {/* Alasan Pembatalan */}
+            <div className="form-group mb-3">
+              <label className="form-label" style={{ fontWeight: 700, fontSize: 12 }}>
+                Alasan Pembatalan <span style={{ color: 'var(--danger)' }}>*</span>
+              </label>
+              <input
+                type="text"
+                className="form-control"
+                placeholder={voidOpenBillItemModal.voidType === 'WRONG_INPUT' ? "Contoh: Kasir salah klik menu / Tamu ganti pesanan" : "Contoh: Makanan gosong / Minuman tumpah saat disajikan"}
+                value={voidOpenBillItemModal.reason}
+                onChange={e => setVoidOpenBillItemModal(p => ({ ...p, reason: e.target.value }))}
+                required
+              />
+            </div>
+
+            {/* Otorisasi Supervisor jika bukan Manager/Owner */}
+            {!isOwnerOrManager && (
+              <div style={{
+                background: 'rgba(15, 23, 42, 0.6)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: 10,
+                padding: '12px 14px',
+                marginBottom: 14
+              }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#fbbf24', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <ShieldCheck size={14} /> Otorisasi Supervisor / Manajer
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <label className="form-label" style={{ fontSize: 11 }}>Pilih Supervisor</label>
+                    <select
+                      className="form-control form-control-sm"
+                      value={voidOpenBillItemModal.supervisorId}
+                      onChange={e => setVoidOpenBillItemModal(p => ({ ...p, supervisorId: e.target.value }))}
+                    >
+                      {supervisors.map(s => (
+                        <option key={s.id} value={s.id}>{s.name} ({s.role})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="form-label" style={{ fontSize: 11 }}>Password / PIN</label>
+                    <input
+                      type="password"
+                      className="form-control form-control-sm"
+                      placeholder="PIN / Password"
+                      value={voidOpenBillItemModal.supervisorPassword}
+                      onChange={e => setVoidOpenBillItemModal(p => ({ ...p, supervisorPassword: e.target.value }))}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Modal Actions */}
+            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setVoidOpenBillItemModal(p => ({ ...p, open: false }))}
+                style={{ flex: 1, justifyContent: 'center' }}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger text-white"
+                onClick={handleConfirmVoidOpenBillItem}
+                disabled={voidOpenBillItemModal.submitting || !voidOpenBillItemModal.reason.trim()}
+                style={{
+                  flex: 1.5,
+                  justifyContent: 'center',
+                  fontWeight: 800,
+                  background: voidOpenBillItemModal.voidType === 'WASTED' ? '#ef4444' : '#0284c7',
+                  borderColor: voidOpenBillItemModal.voidType === 'WASTED' ? '#dc2626' : '#0369a1',
+                  color: '#ffffff'
+                }}
+              >
+                {voidOpenBillItemModal.submitting ? 'Memproses...' : `Konfirmasi Void ${voidOpenBillItemModal.voidType === 'WASTED' ? '(Wasted)' : '(Salah Input)'}`}
               </button>
             </div>
           </div>
@@ -7697,6 +8625,28 @@ export default function POS() {
                     ? ' Bahan tetap tercatat keluar setelah disetujui.'
                     : ' Riwayat di Kartu Stok & HPP akan dibersihkan setelah disetujui.'}
                 </div>
+              </div>
+            )}
+
+            {/* Dropdown Klasifikasi Alasan Waste jika tipe WASTED */}
+            {voidPaidModal.voidType === 'WASTED' && (
+              <div className="form-group mb-3" style={{ background: 'rgba(244, 63, 94, 0.08)', border: '1px solid rgba(244, 63, 94, 0.25)', borderRadius: 10, padding: '10px 12px' }}>
+                <label className="form-label" style={{ fontWeight: 800, fontSize: 12, color: '#fb7185', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                  <Trash2 size={14} /> Klasifikasi Alasan Waste <span style={{ color: 'var(--danger)' }}>*</span>
+                </label>
+                <select
+                  className="form-control"
+                  value={voidPaidModal.wasteCategory || 'CUSTOMER_COMPLAINT'}
+                  onChange={e => setVoidPaidModal(p => ({ ...p, wasteCategory: e.target.value }))}
+                  style={{ fontSize: 12.5, fontWeight: 700, background: 'rgba(15, 23, 42, 0.85)', borderColor: 'rgba(244, 63, 94, 0.4)', color: '#ffffff' }}
+                >
+                  {WASTE_REASON_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+                <span style={{ fontSize: 11, color: '#fca5a5', marginTop: 4, display: 'block' }}>
+                  📊 Nilai HPP bahan baku nota transaksi ini akan otomatis masuk ke kategori alasan ini di Laporan Waste.
+                </span>
               </div>
             )}
 
@@ -8974,6 +9924,8 @@ export default function POS() {
                         { id: 'TRANSFER', label: 'Transfer', icon: ArrowRight },
                         { id: 'DEBIT', label: 'Debit/EDC', icon: CreditCard },
                         { id: 'GRAB', label: 'Grab', icon: ShoppingBag },
+                        { id: 'GOFOOD', label: 'GoFood', icon: ShoppingBag },
+                        { id: 'SHOPEEFOOD', label: 'Shopee', icon: ShoppingBag },
                       ].map(m => {
                         const Icon = m.icon;
                         const isCur = splitBillModal.paymentMethod === m.id;
@@ -9376,147 +10328,404 @@ export default function POS() {
                   </div>
                 </div>
 
-                {/* Kas Awal / Modal Kasir */}
+                {/* Status Kas Fisik Laci Shift Sebelumnya & Pilihan Sumber Modal */}
                 <div className="form-group mb-0">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                    <label className="form-label" style={{ fontSize: 12, fontWeight: 700, color: '#34d399', margin: 0 }}>
-                      💵 Modal Kas Awal di Laci Kasir (Rp) <span style={{ color: '#f87171' }}>*</span>
-                    </label>
-                    {lastClosedShift && (
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        style={{
-                          fontSize: 11,
-                          padding: '2px 8px',
-                          color: '#38bdf8',
-                          background: 'rgba(56, 189, 248, 0.1)',
-                          border: '1px solid rgba(56, 189, 248, 0.25)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 4,
-                        }}
-                        onClick={() => setOpenShiftForm(prev => ({ ...prev, initial_cash: lastClosedShift.closing_cash }))}
-                        title="Klik untuk menyamakan modal awal dengan kas fisik closing shift sebelumnya"
-                      >
-                        <RotateCcw size={11} /> Samakan ({rupiah(lastClosedShift.closing_cash)})
-                      </button>
-                    )}
-                  </div>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1000"
-                    className="form-control mono"
-                    placeholder="0"
-                    value={openShiftForm.initial_cash}
-                    onChange={e => setOpenShiftForm(prev => ({ ...prev, initial_cash: e.target.value }))}
-                    required
-                    style={{ fontSize: 16, fontWeight: 800, color: '#34d399' }}
-                  />
-
-                  {/* Quick Presets for Cash */}
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-                    {[0, 50000, 100000, 200000, 500000].map(amt => (
-                      <button
-                        key={amt}
-                        type="button"
-                        onClick={() => setOpenShiftForm(prev => ({ ...prev, initial_cash: amt }))}
-                        className="btn btn-sm btn-outline"
-                        style={{
-                          fontSize: 11,
-                          padding: '3px 8px',
-                          background: Number(openShiftForm.initial_cash) === amt ? 'rgba(16, 185, 129, 0.15)' : 'transparent',
-                          borderColor: Number(openShiftForm.initial_cash) === amt ? '#10b981' : 'var(--border)',
-                          color: Number(openShiftForm.initial_cash) === amt ? '#34d399' : 'var(--text-secondary)'
-                        }}
-                      >
-                        {amt === 0 ? 'Tanpa Modal (Rp 0)' : rupiah(amt)}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Live Comparison Box & Alert */}
                   {loadingLastClosed ? (
-                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 8, fontStyle: 'italic' }}>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 8, fontStyle: 'italic' }}>
                       Memeriksa kas riil shift sebelumnya...
                     </div>
                   ) : lastClosedShift ? (() => {
-                    const inputAmt = Number(openShiftForm.initial_cash || 0);
-                    const prevRealAmt = Number(lastClosedShift.closing_cash || 0);
-                    const isMatch = inputAmt === prevRealAmt;
-                    const diff = inputAmt - prevRealAmt;
-                    const diffFormatted = diff > 0 ? `+${rupiah(diff)} (Lebih)` : `-${rupiah(Math.abs(diff))} (Kurang)`;
+                    const prevClosing = Number(lastClosedShift.closing_cash || 0);
+                    const depositAmt = Number(lastClosedShift.deposit_amount || 0);
+                    const isDeposited = lastClosedShift.is_deposited || depositAmt > 0;
+                    const remainingInDrawer = lastClosedShift.remaining_cash_in_drawer != null
+                      ? Number(lastClosedShift.remaining_cash_in_drawer)
+                      : Math.max(0, prevClosing - (isDeposited ? depositAmt : 0));
+                    const kasBesarBal = Number(lastClosedShift.kas_besar_balance || 0);
+                    const source = openShiftForm.initial_cash_source || 'DRAWER';
 
                     return (
-                      <div style={{ marginTop: 8 }}>
-                        {isMatch ? (
-                          <div
-                            style={{
-                              padding: '8px 12px',
-                              borderRadius: 8,
-                              background: 'rgba(16, 185, 129, 0.1)',
-                              border: '1px solid rgba(16, 185, 129, 0.3)',
-                              fontSize: 12,
-                              color: '#a7f3d0',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 8,
-                            }}
-                          >
-                            <CheckCircle size={16} color="#34d399" style={{ flexShrink: 0 }} />
-                            <div>
-                              <strong>Sesuai Kas Riil:</strong> Modal awal sama dengan kas fisik closing shift sebelumnya (#{lastClosedShift.id} <strong>{lastClosedShift.shift_name}</strong>: <strong>{rupiah(prevRealAmt)}</strong>).
+                      <div style={{ marginBottom: 6 }}>
+                        {/* Summary Kas Fisik Laci Shift Sebelumnya */}
+                        <div style={{
+                          background: 'rgba(255, 255, 255, 0.03)',
+                          border: '1px solid rgba(255, 255, 255, 0.1)',
+                          borderRadius: 10,
+                          padding: '10px 12px',
+                          marginBottom: 12
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                              Shift Sebelumnya #{lastClosedShift.id} ({lastClosedShift.shift_name})
+                            </span>
+                            <span style={{ fontSize: 11, color: '#38bdf8' }}>
+                              Oleh: {lastClosedShift.closed_by_name || lastClosedShift.cashier_name}
+                            </span>
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, textAlign: 'center' }}>
+                            <div style={{ background: 'rgba(255,255,255,0.02)', padding: '6px 4px', borderRadius: 6 }}>
+                              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Closing Fisik</div>
+                              <div style={{ fontSize: 12, fontWeight: 700, color: '#ffffff' }}>{rupiah(prevClosing)}</div>
+                            </div>
+                            <div style={{ background: 'rgba(255,255,255,0.02)', padding: '6px 4px', borderRadius: 6 }}>
+                              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Setoran</div>
+                              <div style={{ fontSize: 12, fontWeight: 700, color: depositAmt > 0 ? '#38bdf8' : 'var(--text-muted)' }}>
+                                {depositAmt > 0 ? rupiah(depositAmt) : 'Rp 0'}
+                              </div>
+                            </div>
+                            <div style={{
+                              background: remainingInDrawer === 0 ? 'rgba(245, 158, 11, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+                              padding: '6px 4px',
+                              borderRadius: 6,
+                              border: remainingInDrawer === 0 ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)'
+                            }}>
+                              <div style={{ fontSize: 10, color: remainingInDrawer === 0 ? '#fbbf24' : '#34d399' }}>Sisa di Laci</div>
+                              <div style={{ fontSize: 12.5, fontWeight: 800, color: remainingInDrawer === 0 ? '#fbbf24' : '#34d399' }}>{rupiah(remainingInDrawer)}</div>
                             </div>
                           </div>
-                        ) : (
+                        </div>
+
+                        {/* Pilihan Sumber Modal Kasir: Lanjutkan vs Ambil dari Kas Besar */}
+                        <label className="form-label" style={{ fontSize: 12, fontWeight: 700, color: '#f8fafc', marginBottom: 8, display: 'block' }}>
+                          Pilih Sumber Modal Awal Shift *
+                        </label>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+                          {/* Option 1: Lanjutkan Kas Laci */}
                           <div
+                            onClick={() => {
+                              setOpenShiftForm(prev => ({
+                                ...prev,
+                                initial_cash_source: 'DRAWER',
+                                initial_cash: remainingInDrawer,
+                              }));
+                            }}
                             style={{
-                              padding: '10px 14px',
+                              padding: '10px 12px',
                               borderRadius: 10,
-                              background: 'rgba(245, 158, 11, 0.12)',
-                              border: '1px solid rgba(245, 158, 11, 0.4)',
-                              fontSize: 12,
-                              color: '#fde68a',
+                              border: source === 'DRAWER' ? '2px solid #38bdf8' : '1px solid rgba(255,255,255,0.1)',
+                              background: source === 'DRAWER' ? 'rgba(56, 189, 248, 0.12)' : 'rgba(255,255,255,0.02)',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s',
                             }}
                           >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                              <AlertTriangle size={16} color="#f59e0b" style={{ flexShrink: 0 }} />
-                              <strong style={{ color: '#f59e0b', fontSize: 12.5 }}>
-                                Peringatan: Modal Awal Berbeda dari Kas Riil Shift Sebelumnya!
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                              <Wallet size={15} color={source === 'DRAWER' ? '#38bdf8' : 'var(--text-muted)'} />
+                              <strong style={{ fontSize: 12, color: source === 'DRAWER' ? '#ffffff' : 'var(--text-primary)' }}>
+                                Lanjutkan Kas Laci
                               </strong>
                             </div>
-                            <div style={{ fontSize: 11.5, color: '#cbd5e1', lineHeight: 1.5, marginBottom: 8 }}>
-                              Kas fisik riil shift sebelumnya (#{lastClosedShift.id} <strong>{lastClosedShift.shift_name}</strong> oleh <strong>{lastClosedShift.closed_by_name || lastClosedShift.cashier_name}</strong>) adalah <strong style={{ color: '#38bdf8' }}>{rupiah(prevRealAmt)}</strong>.
-                              <br />
-                              Terdapat selisih kas sebesar <strong style={{ color: diff > 0 ? '#34d399' : '#f87171' }}>{diffFormatted}</strong>.
+                            <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.3 }}>
+                              {remainingInDrawer === 0
+                                ? 'Kas fisik sisa Rp 0 (saldo awal ikut Rp 0). Kas Besar tidak berubah.'
+                                : `Lanjutkan sisa laci ${rupiah(remainingInDrawer)}. Tidak memotong Kas Besar.`
+                              }
                             </div>
-                            <button
-                              type="button"
-                              className="btn btn-sm"
-                              style={{
-                                fontSize: 11,
-                                padding: '4px 10px',
-                                borderRadius: 6,
-                                background: 'rgba(245, 158, 11, 0.2)',
-                                color: '#fbbf24',
-                                border: '1px solid rgba(245, 158, 11, 0.4)',
+                            <div style={{ marginTop: 6, fontSize: 11.5, fontWeight: 700, color: source === 'DRAWER' ? '#38bdf8' : 'var(--text-muted)' }}>
+                              Modal: {rupiah(remainingInDrawer)}
+                            </div>
+                          </div>
+
+                          {/* Option 2: Ambil Uang dari Kas Besar */}
+                          <div
+                            onClick={() => {
+                              setOpenShiftForm(prev => ({
+                                ...prev,
+                                initial_cash_source: 'KAS_BESAR',
+                                kas_besar_amount: prev.kas_besar_amount || 100000,
+                              }));
+                              if (!isOwnerOrManager) fetchSupervisors();
+                            }}
+                            style={{
+                              padding: '10px 12px',
+                              borderRadius: 10,
+                              border: source === 'KAS_BESAR' ? '2px solid #10b981' : '1px solid rgba(255,255,255,0.1)',
+                              background: source === 'KAS_BESAR' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255,255,255,0.02)',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                              <Landmark size={15} color={source === 'KAS_BESAR' ? '#34d399' : 'var(--text-muted)'} />
+                              <strong style={{ fontSize: 12, color: source === 'KAS_BESAR' ? '#ffffff' : 'var(--text-primary)' }}>
+                                Ambil dari Kas Besar
+                              </strong>
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.3 }}>
+                              Tarik uang dari Brankas/Kas Besar untuk modal kasir. Saldo Kas Besar berkurang otomatis.
+                            </div>
+                            <div style={{ marginTop: 6, fontSize: 11, color: '#34d399', fontWeight: 600 }}>
+                              Tersedia: {rupiah(kasBesarBal)}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Dynamic Field Based on Selection */}
+                        {source === 'KAS_BESAR' ? (
+                          <div style={{
+                            background: 'rgba(16, 185, 129, 0.08)',
+                            border: '1px solid rgba(16, 185, 129, 0.3)',
+                            borderRadius: 10,
+                            padding: '12px 14px',
+                          }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                              <label className="form-label" style={{ fontSize: 12, fontWeight: 700, color: '#34d399', margin: 0 }}>
+                                💵 Nominal Diambil dari Kas Besar (Rp) *
+                              </label>
+                              <span style={{ fontSize: 11, color: '#a7f3d0' }}>
+                                Kas Besar: <strong>{rupiah(kasBesarBal)}</strong>
+                              </span>
+                            </div>
+                            <input
+                              type="number"
+                              min={0}
+                              step={1000}
+                              className="form-control mono"
+                              style={{ fontSize: 16, fontWeight: 800, color: '#34d399' }}
+                              required
+                              value={openShiftForm.kas_besar_amount}
+                              onChange={e => setOpenShiftForm(prev => ({ ...prev, kas_besar_amount: e.target.value }))}
+                              placeholder="100000"
+                            />
+
+                            {/* Quick Presets for Kas Besar Withdrawal */}
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                              {[50000, 100000, 200000, 300000, 500000].map(amt => (
+                                <button
+                                  key={amt}
+                                  type="button"
+                                  onClick={() => setOpenShiftForm(prev => ({ ...prev, kas_besar_amount: amt }))}
+                                  className="btn btn-sm btn-outline"
+                                  style={{
+                                    fontSize: 11,
+                                    padding: '3px 8px',
+                                    background: Number(openShiftForm.kas_besar_amount) === amt ? 'rgba(16, 185, 129, 0.25)' : 'transparent',
+                                    borderColor: Number(openShiftForm.kas_besar_amount) === amt ? '#10b981' : 'rgba(255,255,255,0.15)',
+                                    color: Number(openShiftForm.kas_besar_amount) === amt ? '#34d399' : 'var(--text-secondary)'
+                                  }}
+                                >
+                                  {rupiah(amt)}
+                                </button>
+                              ))}
+                            </div>
+
+                            <div style={{ fontSize: 11.5, color: '#a7f3d0', marginTop: 8, lineHeight: 1.4 }}>
+                              ⚡ <strong>Efek Pembukuan:</strong> Akun <strong>1-11001 (Kas Besar)</strong> otomatis berkurang <strong>{rupiah(Number(openShiftForm.kas_besar_amount || 0))}</strong> dan masuk ke <strong>1-11002 (Kas Kecil Kasir)</strong>.
+                            </div>
+
+                            {/* Persetujuan Manajer atau Owner */}
+                            {isOwnerOrManager ? (
+                              <div style={{
+                                marginTop: 10,
+                                padding: '8px 12px',
+                                borderRadius: 8,
+                                background: 'rgba(56, 189, 248, 0.12)',
+                                border: '1px solid rgba(56, 189, 248, 0.3)',
+                                fontSize: 11.5,
+                                color: '#bae6fd',
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: 6,
-                                fontWeight: 700,
-                              }}
-                              onClick={() => setOpenShiftForm(prev => ({ ...prev, initial_cash: prevRealAmt }))}
-                            >
-                              👉 Gunakan Kas Riil Shift Sebelumnya ({rupiah(prevRealAmt)})
-                            </button>
+                                gap: 8,
+                              }}>
+                                <ShieldCheck size={16} color="#38bdf8" style={{ flexShrink: 0 }} />
+                                <div>
+                                  <strong>Otorisasi Langsung:</strong> Anda login sebagai <strong>{currentUser?.name}</strong> ({currentUser?.role_label || currentUser?.role || 'Owner/Manajer'}). Pengambilan Kas Besar disetujui langsung atas nama Anda.
+                                </div>
+                              </div>
+                            ) : (
+                              <div style={{
+                                marginTop: 12,
+                                padding: '12px',
+                                borderRadius: 8,
+                                background: 'rgba(239, 68, 68, 0.1)',
+                                border: '1px solid rgba(239, 68, 68, 0.3)',
+                              }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                                  <Lock size={15} color="#ef4444" />
+                                  <strong style={{ fontSize: 12, color: '#fca5a5' }}>
+                                    Persetujuan Manajer / Owner Wajib
+                                  </strong>
+                                </div>
+                                <div style={{ fontSize: 11, color: '#e2e8f0', marginBottom: 10, lineHeight: 1.4 }}>
+                                  Pengambilan uang dari Kas Besar harus disetujui oleh Manajer atau Owner. Minta Manajer/Owner memilih akun dan memasukkan Password / PIN otorisasi.
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                  <div>
+                                    <label style={{ fontSize: 11, fontWeight: 700, color: '#ffffff', display: 'block', marginBottom: 4 }}>
+                                      Pilih Manajer / Owner *
+                                    </label>
+                                    <select
+                                      className="form-control"
+                                      style={{ fontSize: 12, padding: '6px 8px' }}
+                                      value={openShiftForm.supervisor_id}
+                                      onChange={e => setOpenShiftForm(prev => ({ ...prev, supervisor_id: e.target.value }))}
+                                      required
+                                    >
+                                      <option value="">-- Pilih Akun Approver --</option>
+                                      {supervisors.map(s => (
+                                        <option key={s.id} value={s.id} style={{ background: '#11162d', color: '#fff' }}>
+                                          {s.name} ({s.role_label || s.role})
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label style={{ fontSize: 11, fontWeight: 700, color: '#ffffff', display: 'block', marginBottom: 4 }}>
+                                      Password / PIN Otorisasi *
+                                    </label>
+                                    <input
+                                      type="password"
+                                      className="form-control"
+                                      style={{ fontSize: 12, padding: '6px 8px' }}
+                                      placeholder="Password / PIN"
+                                      value={openShiftForm.supervisor_password}
+                                      onChange={e => setOpenShiftForm(prev => ({ ...prev, supervisor_password: e.target.value }))}
+                                      required
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div style={{
+                            background: 'rgba(255, 255, 255, 0.02)',
+                            border: '1px solid rgba(255, 255, 255, 0.08)',
+                            borderRadius: 10,
+                            padding: '12px 14px',
+                          }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                              <label className="form-label" style={{ fontSize: 12, fontWeight: 700, color: '#f8fafc', margin: 0 }}>
+                                💵 Modal Kas Awal di Laci Kasir (Rp) *
+                              </label>
+                              {remainingInDrawer > 0 && (
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  style={{
+                                    fontSize: 11,
+                                    padding: '2px 8px',
+                                    color: '#38bdf8',
+                                    background: 'rgba(56, 189, 248, 0.1)',
+                                    border: '1px solid rgba(56, 189, 248, 0.25)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                  }}
+                                  onClick={() => setOpenShiftForm(prev => ({ ...prev, initial_cash: remainingInDrawer }))}
+                                >
+                                  <RotateCcw size={11} /> Samakan ({rupiah(remainingInDrawer)})
+                                </button>
+                              )}
+                            </div>
+                            <input
+                              type="number"
+                              min={0}
+                              step={1000}
+                              className="form-control mono"
+                              style={{ fontSize: 15, fontWeight: 700 }}
+                              required
+                              value={openShiftForm.initial_cash}
+                              onChange={e => setOpenShiftForm(prev => ({ ...prev, initial_cash: e.target.value }))}
+                              placeholder="0"
+                            />
+
+                            {/* Comparison Notice */}
+                            {(() => {
+                              const inputAmt = Number(openShiftForm.initial_cash || 0);
+                              const isMatch = inputAmt === remainingInDrawer;
+                              const diff = inputAmt - remainingInDrawer;
+                              const diffFormatted = diff > 0 ? `+${rupiah(diff)} (Lebih)` : `-${rupiah(Math.abs(diff))} (Kurang)`;
+
+                              if (isMatch) {
+                                return (
+                                  <div style={{
+                                    marginTop: 8,
+                                    padding: '8px 12px',
+                                    borderRadius: 8,
+                                    background: 'rgba(16, 185, 129, 0.1)',
+                                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                                    fontSize: 12,
+                                    color: '#a7f3d0',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 8,
+                                  }}>
+                                    <CheckCircle size={16} color="#34d399" style={{ flexShrink: 0 }} />
+                                    <div>
+                                      {remainingInDrawer === 0
+                                        ? <><strong>Sesuai Sisa Kas Laci (Rp 0):</strong> Seluruh kas shift sebelumnya telah disetor. Modal awal shift tercatat Rp 0.</>
+                                        : <><strong>Sesuai Sisa Kas Laci:</strong> Modal awal sama persis dengan sisa fisik laci (<strong>{rupiah(remainingInDrawer)}</strong>).</>
+                                      }
+                                    </div>
+                                  </div>
+                                );
+                              }
+
+                              return (
+                                <div style={{
+                                  marginTop: 8,
+                                  padding: '10px 14px',
+                                  borderRadius: 10,
+                                  background: 'rgba(245, 158, 11, 0.12)',
+                                  border: '1px solid rgba(245, 158, 11, 0.4)',
+                                  fontSize: 12,
+                                  color: '#fde68a',
+                                }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                                    <AlertTriangle size={16} color="#f59e0b" style={{ flexShrink: 0 }} />
+                                    <strong style={{ color: '#f59e0b' }}>
+                                      Peringatan: Berbeda dengan Sisa Kas Laci ({rupiah(remainingInDrawer)})!
+                                    </strong>
+                                  </div>
+                                  <div style={{ fontSize: 11.5, color: '#cbd5e1', marginBottom: 6 }}>
+                                    Sisa kas fisik di laci setelah setoran shift sebelumnya adalah <strong style={{ color: '#38bdf8' }}>{rupiah(remainingInDrawer)}</strong>.
+                                    Terdapat selisih <strong style={{ color: diff > 0 ? '#34d399' : '#f87171' }}>{diffFormatted}</strong>.
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="btn btn-sm"
+                                    style={{
+                                      fontSize: 11,
+                                      padding: '3px 8px',
+                                      borderRadius: 6,
+                                      background: 'rgba(245, 158, 11, 0.2)',
+                                      color: '#fbbf24',
+                                      border: '1px solid rgba(245, 158, 11, 0.4)',
+                                      fontWeight: 700,
+                                    }}
+                                    onClick={() => setOpenShiftForm(prev => ({ ...prev, initial_cash: remainingInDrawer }))}
+                                  >
+                                    👉 Samakan dengan Sisa Laci ({rupiah(remainingInDrawer)})
+                                  </button>
+                                </div>
+                              );
+                            })()}
                           </div>
                         )}
                       </div>
                     );
                   })() : (
-                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 8 }}>
-                      ℹ️ Belum ada riwayat closing shift sebelumnya di cabang ini.
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <label className="form-label" style={{ fontSize: 12, fontWeight: 700, color: '#34d399', margin: 0 }}>
+                          💵 Modal Kas Awal di Laci Kasir (Rp) <span style={{ color: '#f87171' }}>*</span>
+                        </label>
+                      </div>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1000"
+                        className="form-control mono"
+                        placeholder="0"
+                        value={openShiftForm.initial_cash}
+                        onChange={e => setOpenShiftForm(prev => ({ ...prev, initial_cash: e.target.value }))}
+                        required
+                        style={{ fontSize: 16, fontWeight: 800, color: '#34d399' }}
+                      />
+                      <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 8 }}>
+                        ℹ️ Belum ada riwayat closing shift sebelumnya di cabang ini.
+                      </div>
                     </div>
                   )}
                 </div>

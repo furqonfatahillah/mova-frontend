@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Plus, Trash2, Filter, Store, TrendingUp, TrendingDown, Sparkles, Calculator, X, ShoppingBag, CheckCircle2, Clock, CreditCard } from 'lucide-react';
+import { Plus, Trash2, Filter, Store, TrendingUp, TrendingDown, Sparkles, Calculator, X, ShoppingBag, CheckCircle2, Clock, CreditCard, AlertCircle, AlertTriangle, PackagePlus, History } from 'lucide-react';
 import api from '../api/client';
 import { num, rupiah, fmtQtyVal, LoadingState, PageHeader, AuditInfo, PeriodPicker, SearchableSelect } from '../components/ui';
 import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
@@ -77,6 +77,7 @@ export default function StockMovement({ defaultFilterType }) {
     ingredient_id: '',
     outlet_id: activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all' ? activeOutletId : '1',
     type: 'PURCHASE',
+    negative_handling: 'RESET_TO_ZERO',
     payment_type: 'CASH',
     supplier_name: '',
     purchase_no: '',
@@ -366,14 +367,6 @@ export default function StockMovement({ defaultFilterType }) {
     e.preventDefault();
     if (!form.qty) { toast.error('Qty tidak boleh kosong'); return; }
 
-    if (form.type === 'PURCHASE') {
-      const currentStock = Number(selectedIng?.current_stock ?? selectedIng?.stok_awal ?? 0);
-      if (currentStock < -0.0001) {
-        toast.error(`Stok bahan "${selectedIng?.name || 'Bahan'}" saat ini MINUS (${fmtQtyVal(currentStock)} ${selectedIng?.unit_pakai || ''})! Harap lakukan Penyesuaian Stok (Adjust Stock / Opname) terlebih dahulu sebelum melakukan pembelian.`);
-        return;
-      }
-    }
-
     if (form.type === 'PURCHASE' && form.payment_type === 'HUTANG' && !form.supplier_name?.trim()) {
       toast.error('Harap masukkan nama supplier untuk transaksi hutang/tempo');
       return;
@@ -387,6 +380,7 @@ export default function StockMovement({ defaultFilterType }) {
         type: form.type,
         qty: Number(form.qty),
         unit_type: form.unit_type,
+        negative_handling: form.negative_handling || 'RESET_TO_ZERO',
         unit_price: form.type === 'PURCHASE' && form.unit_price !== '' ? Number(form.unit_price) : null,
         total_price: form.type === 'PURCHASE' && form.total_price !== '' ? Number(form.total_price) : null,
         payment_type: form.type === 'PURCHASE' ? (form.payment_type || 'CASH') : undefined,
@@ -407,6 +401,7 @@ export default function StockMovement({ defaultFilterType }) {
         qty: '',
         total_price: '',
         note: '',
+        negative_handling: 'RESET_TO_ZERO',
         payment_type: 'CASH',
         supplier_name: '',
         purchase_no: '',
@@ -552,7 +547,8 @@ export default function StockMovement({ defaultFilterType }) {
                   <th>Cabang</th>
                   <th>Bahan</th>
                   <th>Tipe / Alasan</th>
-                  <th className="right">Qty</th>
+                  <th className="right" style={{ minWidth: 100 }}>Qty</th>
+                  <th className="right" style={{ minWidth: 130 }}>Total Nilai (Rp)</th>
                   <th className="right" style={{ minWidth: 150 }}>Harga Beli & Moving Avg</th>
                   <th style={{ minWidth: 160 }}>Petugas / Audit</th>
                   <th>Catatan</th>
@@ -567,6 +563,11 @@ export default function StockMovement({ defaultFilterType }) {
                   const wr = isWaste ? getWasteReason(m.waste_reason) : null;
                   const conv = Number(m.ingredient?.konversi) || 1;
                   const isLatestForIngredient = latestMovementIds.has(m.id);
+
+                  // Calculate total rupiah value of movement
+                  const totalRupiahVal = m.total_price && Number(m.total_price) > 0
+                    ? Math.abs(Number(m.total_price))
+                    : (Number(m.qty) * (m.cost_after || m.unit_price || (m.ingredient?.konversi > 0 ? (Number(m.ingredient.harga) / Number(m.ingredient.konversi)) : 0)));
 
                   return (
                     <tr key={m.id} style={isWaste ? { background: 'rgba(244, 63, 94, 0.03)' } : {}}>
@@ -596,15 +597,15 @@ export default function StockMovement({ defaultFilterType }) {
                           )}
                         </div>
                       </td>
-                      <td className="mono right" style={{ color: ti.color, fontWeight: 600 }}>
-                        {ti.sign}{fmtQtyVal(
-                          m.qty,
-                          m.ingredient?.unit_pakai,
-                          m.total_price && Number(m.total_price) > 0
-                            ? Math.abs(Number(m.total_price))
-                            : (m.cost_after || m.unit_price || (m.ingredient?.konversi > 0 ? (m.ingredient.harga / m.ingredient.konversi) : 0)),
-                          { isTotalVal: Boolean(m.total_price && Number(m.total_price) > 0) }
-                        )}
+
+                      {/* Qty Column */}
+                      <td className="mono right" style={{ color: ti.color, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                        {ti.sign}{num(m.qty)} {m.ingredient?.unit_pakai || 'satuan'}
+                      </td>
+
+                      {/* Total Nilai (Rp) Column */}
+                      <td className="mono right" style={{ color: ti.color, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                        {ti.sign}{rupiah(totalRupiahVal)}
                       </td>
 
                       {/* Harga Beli & Moving Average Column */}
@@ -729,6 +730,87 @@ export default function StockMovement({ defaultFilterType }) {
                   </select>
                   <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>
                     Data ini dipisahkan di Cost Control agar tidak rancu dengan selisih tak terjelaskan.
+                  </div>
+                </div>
+              )}
+
+              {/* VERIFIKASI STOK MINUS + ADA PEMBELIAN */}
+              {form.type === 'PURCHASE' && Number(selectedIng?.current_stock ?? selectedIng?.stok_awal ?? 0) < -0.0001 && (
+                <div style={{
+                  background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, rgba(245, 158, 11, 0.12) 100%)',
+                  padding: '14px 16px',
+                  borderRadius: 12,
+                  border: '1px solid rgba(245, 158, 11, 0.4)',
+                  marginBottom: 16
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#f59e0b', fontWeight: 800, fontSize: 13 }}>
+                      <AlertTriangle size={16} color="#f59e0b" />
+                      <span>Verifikasi Stok Minus: {fmtQtyVal(selectedIng?.current_stock ?? 0)} {selectedIng?.unit_pakai}</span>
+                    </div>
+                    <span className="pill pill-danger" style={{ fontSize: 10, fontWeight: 800 }}>STOK MINUS</span>
+                  </div>
+                  <p style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.4 }}>
+                    Stok bahan baku ini saat ini berstatus <strong>MINUS</strong> di sistem akibat penjualan/pemakaian langsung. Silakan tentukan kategori pembelian barang masuk ini:
+                  </p>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
+                    <label style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 10,
+                      padding: '10px 12px',
+                      borderRadius: 8,
+                      border: form.negative_handling === 'RESET_TO_ZERO' ? '1.5px solid #10b981' : '1px solid rgba(255,255,255,0.1)',
+                      background: form.negative_handling === 'RESET_TO_ZERO' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(0,0,0,0.2)',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}>
+                      <input
+                        type="radio"
+                        name="negative_handling"
+                        value="RESET_TO_ZERO"
+                        checked={form.negative_handling === 'RESET_TO_ZERO'}
+                        onChange={() => setForm(f => ({ ...f, negative_handling: 'RESET_TO_ZERO' }))}
+                        style={{ marginTop: 3 }}
+                      />
+                      <div>
+                        <div style={{ fontWeight: 700, color: '#34d399', fontSize: 12 }}>
+                          📦 Pembelian / Transfer Masuk (Barang Baru) — Disarankan
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                          Barang fisik baru saja tiba. Saldo stok minus direset ke <strong>0</strong>, HPP & Moving Average dihitung ulang dari barang baru ini. <em>Riwayat kartu stok tetap aman & utuh.</em>
+                        </div>
+                      </div>
+                    </label>
+
+                    <label style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 10,
+                      padding: '10px 12px',
+                      borderRadius: 8,
+                      border: form.negative_handling === 'OFFSET_NEGATIVE' ? '1.5px solid #38bdf8' : '1px solid rgba(255,255,255,0.1)',
+                      background: form.negative_handling === 'OFFSET_NEGATIVE' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(0,0,0,0.2)',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}>
+                      <input
+                        type="radio"
+                        name="negative_handling"
+                        value="OFFSET_NEGATIVE"
+                        checked={form.negative_handling === 'OFFSET_NEGATIVE'}
+                        onChange={() => setForm(f => ({ ...f, negative_handling: 'OFFSET_NEGATIVE' }))}
+                        style={{ marginTop: 3 }}
+                      />
+                      <div>
+                        <div style={{ fontWeight: 700, color: '#38bdf8', fontSize: 12 }}>
+                          ⏱️ Lupa Terinput (Barang Sudah Ada Sebelumnya)
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                          Barang fisik sebenarnya sudah ada di gudang sebelumnya. Jumlah barang yang diinput akan mengurangi/menutup angka minus (offset saldo berjalan). <em>Riwayat kartu stok tetap aman & utuh.</em>
+                        </div>
+                      </div>
+                    </label>
                   </div>
                 </div>
               )}
@@ -917,7 +999,7 @@ export default function StockMovement({ defaultFilterType }) {
                         <ShoppingBag size={14} /> Tipe Pembayaran Pembelian:
                       </label>
                       <span className={`pill ${isFormHolding ? 'pill-primary' : 'pill-warning'}`} style={{ fontSize: 10, fontWeight: 700 }}>
-                        {isFormHolding ? '👑 Holding (Hutang, Kas, Bank)' : '📍 Outlet Cabang (Kas Only)'}
+                        {isFormHolding ? '👑 Holding (Hutang, Kas Besar, Bank)' : '📍 Outlet Cabang (Kas Kecil Kasir Only)'}
                       </span>
                     </div>
 
@@ -936,7 +1018,7 @@ export default function StockMovement({ defaultFilterType }) {
                           marginBottom: 8
                         }}>
                           <CheckCircle2 size={13} />
-                          <span>Pembelian cabang menggunakan <strong>KAS ONLY</strong> (Petty Cash Cabang).</span>
+                          <span>Pembelian cabang menggunakan <strong>KAS KECIL KASIR</strong> (Petty Cash Outlet).</span>
                         </div>
                         <button
                           type="button"
@@ -958,7 +1040,7 @@ export default function StockMovement({ defaultFilterType }) {
                           }}
                         >
                           <CheckCircle2 size={13} />
-                          <span>Kas / Tunai Cabang (Petty Cash)</span>
+                          <span>Kas Kecil Outlet (Petty Cash)</span>
                         </button>
                       </div>
                     ) : (
@@ -983,7 +1065,7 @@ export default function StockMovement({ defaultFilterType }) {
                           }}
                         >
                           <CheckCircle2 size={13} />
-                          <span>Kas Tunai</span>
+                          <span>Kas Besar</span>
                         </button>
 
                         <button

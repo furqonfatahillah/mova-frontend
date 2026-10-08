@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ScrollText, Plus, Search, Filter, ArrowUpRight, ArrowDownLeft,
   AlertTriangle, AlertOctagon, Calendar, Printer, X, Check, RefreshCw, Eye, Store,
@@ -80,6 +80,8 @@ export function getItemClassification(it) {
 
 export default function KartuStok() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const {
     activeOutletId,
     activeOutlet,
@@ -96,27 +98,49 @@ export default function KartuStok() {
   // Top level tab: 'stock_card' (Kartu Stok Gudang) | 'in_transit' (Persediaan Dalam Perjalanan)
   const [activeTab, setActiveTab] = useState('stock_card');
 
+  const isConsolidated = useMemo(() => {
+    return canSwitchOutlet && (activeOutletId === 'ALL' || activeOutletId === 'all' || !activeOutletId);
+  }, [canSwitchOutlet, activeOutletId]);
+
   // Resolved warehouse/outlet from global context
   const selectedOutletId = useMemo(() => {
     if (!canSwitchOutlet) {
-      return String(currentUser?.outlet_id || activeOutletId || '1');
+      return String(currentUser?.outlet_id || '1');
     }
-    if (activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all') {
+    if (activeOutletId === 'ALL' || activeOutletId === 'all') {
+      return 'ALL';
+    }
+    if (activeOutletId) {
       return String(activeOutletId);
     }
-    const defaultOut = outlets.find(o => o.is_main) || outlets[0];
-    return String(defaultOut?.id || '1');
-  }, [canSwitchOutlet, currentUser?.outlet_id, activeOutletId, outlets]);
+    return 'ALL';
+  }, [canSwitchOutlet, currentUser?.outlet_id, activeOutletId]);
 
   // Selected ingredient (when empty, displays items summary list; when set, displays specific stock card)
-  const [selectedIngId, setSelectedIngId] = useState('');
+  const [selectedIngId, setSelectedIngId] = useState(() => searchParams.get('ingredient_id') || searchParams.get('id') || '');
 
   // Summary list state (Level 1)
   const [summaryData, setSummaryData] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
-  const [itemSearch, setItemSearch] = useState('');
-  const [itemCategory, setItemCategory] = useState('ALL');
+  const [itemSearch, setItemSearch] = useState(() => searchParams.get('search') || searchParams.get('q') || '');
+  const [itemCategory, setItemCategory] = useState(() => searchParams.get('category') || 'ALL');
   const [itemStatusFilter, setItemStatusFilter] = useState('ALL'); // 'ALL' | 'SAFE' | 'NEGATIVE' | 'LOW' | 'URGENT'
+
+  // Sync with searchParams on URL change
+  useEffect(() => {
+    const qIngId = searchParams.get('ingredient_id') || searchParams.get('id');
+    const qSearch = searchParams.get('search') || searchParams.get('q');
+    const qCat = searchParams.get('category');
+    if (qIngId !== null && qIngId !== undefined) {
+      setSelectedIngId(String(qIngId));
+    }
+    if (qSearch !== null && qSearch !== undefined) {
+      setItemSearch(qSearch);
+    }
+    if (qCat !== null && qCat !== undefined) {
+      setItemCategory(qCat);
+    }
+  }, [searchParams]);
 
   // Stock card detail state (Level 2)
   const [ingredients, setIngredients] = useState([]);
@@ -158,6 +182,7 @@ export default function KartuStok() {
     outlet_id: '',
     date: getTodayStr(),
     type: 'PURCHASE',
+    negative_handling: 'RESET_TO_ZERO',
     payment_type: 'CASH', // 'CASH' | 'BANK' | 'QRIS' | 'HUTANG'
     supplier_name: '',
     purchase_no: '',
@@ -238,7 +263,7 @@ export default function KartuStok() {
     try {
       const { data } = await api.get('/transfers', {
         params: {
-          destination_outlet_id: selectedOutletId,
+          destination_outlet_id: selectedOutletId !== 'ALL' ? selectedOutletId : undefined,
           status: 'IN_TRANSIT,PENDING',
         },
       });
@@ -450,32 +475,6 @@ export default function KartuStok() {
       return;
     }
 
-    // CEK STOK MINUS PADA PEMBELIAN (PURCHASE)
-    if (mutationForm.type === 'PURCHASE') {
-      const targetOutlet = mutationForm.outlet_id || selectedOutletId || 1;
-      const negativeItems = [];
-      for (const it of mutationForm.items) {
-        const ing = ingredients.find(i => Number(i.id) === Number(it.ingredient_id));
-        if (ing) {
-          let stock = 0;
-          if (ing.outlet_stocks && ing.outlet_stocks.length > 0) {
-            const os = ing.outlet_stocks.find(s => String(s.outlet_id) === String(targetOutlet));
-            stock = os ? Number(os.stock ?? 0) : 0;
-          } else {
-            stock = Number(ing.current_stock ?? ing.stock ?? 0);
-          }
-          if (stock < -0.0001) {
-            negativeItems.push(`${ing.name} (Stok: ${stock} ${ing.unit_pakai || 'unit'})`);
-          }
-        }
-      }
-
-      if (negativeItems.length > 0) {
-        toast.error(`Stok bahan baku berstatus MINUS:\n• ${negativeItems.join('\n• ')}\n\nAnda harus melakukan Penyesuaian Stok (Adjust Stock / Opname) terlebih dahulu sebelum melakukan pembelian!`, { duration: 7000 });
-        return;
-      }
-    }
-
     // JIKA SEDANG EDIT DATA MUTASI EKSISTING (PUT)
     if (editingMovementId) {
       const isOwner = Boolean(isOwnerBisnis || isPlatformAdmin);
@@ -505,6 +504,7 @@ export default function KartuStok() {
           date: mutationForm.date,
           qty: Number(it.qty),
           unit_type: mutationForm.type === 'PURCHASE' ? (it.unit_type || 'PAKAI') : 'PAKAI',
+          negative_handling: mutationForm.negative_handling || 'RESET_TO_ZERO',
           unit_price: mutationForm.type === 'PURCHASE' && it.unit_price !== '' ? Number(it.unit_price) : undefined,
           total_price: mutationForm.type === 'PURCHASE' && it.total_price !== '' ? Number(it.total_price) : undefined,
           type: mutationForm.type,
@@ -555,6 +555,7 @@ export default function KartuStok() {
           status: 'IN_TRANSIT',
           driver_name: courier,
           vehicle_no: tracking,
+          negative_handling: mutationForm.negative_handling || 'RESET_TO_ZERO',
           payment_type: mutationForm.payment_type || 'CASH',
           payment_method: mutationForm.payment_method || 'CASH',
           supplier_name: mutationForm.payment_type === 'HUTANG' ? mutationForm.supplier_name : sourceName,
@@ -597,6 +598,7 @@ export default function KartuStok() {
         date: mutationForm.date,
         outlet_id: Number(targetOutlet),
         type: mutationForm.type,
+        negative_handling: mutationForm.negative_handling || 'RESET_TO_ZERO',
         payment_type: mutationForm.type === 'PURCHASE' ? (mutationForm.payment_type || 'CASH') : undefined,
         supplier_name: (mutationForm.type === 'PURCHASE' && mutationForm.payment_type === 'HUTANG') ? mutationForm.supplier_name : undefined,
         purchase_no: (mutationForm.type === 'PURCHASE' && mutationForm.purchase_no) ? mutationForm.purchase_no : undefined,
@@ -608,6 +610,7 @@ export default function KartuStok() {
           ingredient_id: Number(it.ingredient_id),
           qty: Number(it.qty),
           unit_type: mutationForm.type === 'PURCHASE' ? (it.unit_type || 'BELI') : 'PAKAI',
+          negative_handling: mutationForm.negative_handling || 'RESET_TO_ZERO',
           unit_price: mutationForm.type === 'PURCHASE' && it.unit_price !== '' ? Number(it.unit_price) : undefined,
           total_price: mutationForm.type === 'PURCHASE' && it.total_price !== '' ? Number(it.total_price) : undefined,
           waste_reason: mutationForm.type === 'WASTE' ? (it.waste_reason || 'SPOILED') : undefined,
@@ -925,19 +928,30 @@ export default function KartuStok() {
     }
   }
 
-  const currentOutlet = outlets.find(o => String(o.id) === String(selectedOutletId)) || activeOutlet || { name: userOutletName || 'Cabang Penempatan' };
+  const currentOutlet = useMemo(() => {
+    if (isConsolidated) {
+      return {
+        id: 'ALL',
+        name: 'Semua Cabang (Konsolidasi)',
+        is_main: false,
+        is_all: true,
+      };
+    }
+    return outlets.find(o => String(o.id) === String(selectedOutletId)) || activeOutlet || { name: userOutletName || 'Cabang Penempatan' };
+  }, [isConsolidated, outlets, selectedOutletId, activeOutlet, userOutletName]);
+
   const selectedIng = ingredients.find(i => i.id === Number(selectedIngId));
   const activeModalIng = ingredients.find(i => Number(i.id) === Number(mutationForm.ingredient_id));
 
   const activeModalIngPrice = useMemo(() => {
     if (!activeModalIng) return 0;
-    const targetOutlet = mutationForm.outlet_id || selectedOutletId;
+    const targetOutlet = mutationForm.outlet_id || (selectedOutletId !== 'ALL' ? selectedOutletId : (outlets[0]?.id || '1'));
     if (targetOutlet && activeModalIng.outlet_stocks?.length) {
       const match = activeModalIng.outlet_stocks.find(os => String(os.outlet_id) === String(targetOutlet));
       if (match && match.harga) return match.harga;
     }
     return activeModalIng.current_harga ?? activeModalIng.harga ?? 0;
-  }, [activeModalIng, mutationForm.outlet_id, selectedOutletId]);
+  }, [activeModalIng, mutationForm.outlet_id, selectedOutletId, outlets]);
 
   // Kelompok bahan/perlengkapan untuk SearchableSelect di modal mutasi
   const mutationIngredientGroups = useMemo(() => {
@@ -1178,11 +1192,14 @@ export default function KartuStok() {
                 setEditingMovementRef('');
                 const targetIngId = selectedIngId || (ingredients[0]?.id || '');
                 const targetIng = ingredients.find(i => String(i.id) === String(targetIngId));
+                const targetOutletForMutation = (selectedOutletId && selectedOutletId !== 'ALL')
+                  ? selectedOutletId
+                  : String(outlets.find(o => o.is_main)?.id || outlets[0]?.id || '1');
                 const targetPrice = targetIng
-                  ? (targetIng.outlet_stocks?.find(os => String(os.outlet_id) === String(selectedOutletId))?.harga ?? targetIng.current_harga ?? targetIng.harga ?? '')
+                  ? (targetIng.outlet_stocks?.find(os => String(os.outlet_id) === String(targetOutletForMutation))?.harga ?? targetIng.current_harga ?? targetIng.harga ?? '')
                   : '';
                 setMutationForm({
-                  outlet_id: selectedOutletId,
+                  outlet_id: targetOutletForMutation,
                   date: getTodayStr(),
                   type: 'PURCHASE',
                   payment_type: 'CASH',
@@ -1315,7 +1332,7 @@ export default function KartuStok() {
                 <div
                   style={{
                     background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.9) 100%)',
-                    border: '1px solid rgba(139, 92, 246, 0.25)',
+                    border: isConsolidated ? '1px solid rgba(168, 85, 247, 0.35)' : '1px solid rgba(139, 92, 246, 0.25)',
                     borderRadius: 14,
                     padding: '14px 16px',
                     position: 'relative',
@@ -1326,23 +1343,27 @@ export default function KartuStok() {
                     justifyContent: 'space-between',
                   }}
                 >
-                  <div style={{ position: 'absolute', top: -10, right: -10, width: 70, height: 70, borderRadius: '50%', background: 'radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, transparent 70%)', pointerEvents: 'none' }} />
+                  <div style={{ position: 'absolute', top: -10, right: -10, width: 70, height: 70, borderRadius: '50%', background: isConsolidated ? 'radial-gradient(circle, rgba(168, 85, 247, 0.2) 0%, transparent 70%)' : 'radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, transparent 70%)', pointerEvents: 'none' }} />
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.05em', color: '#a78bfa', textTransform: 'uppercase' }}>
-                        Gudang / Cabang Aktif
+                      <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.05em', color: isConsolidated ? '#c084fc' : '#a78bfa', textTransform: 'uppercase' }}>
+                        {isConsolidated ? 'Gudang / Cabang Aktif (Konsol)' : 'Gudang / Cabang Aktif'}
                       </span>
                       <div style={{ width: 26, height: 26, borderRadius: 7, background: 'rgba(139, 92, 246, 0.15)', color: '#c084fc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <Building2 size={14} />
                       </div>
                     </div>
-                    <div style={{ fontSize: 17, fontWeight: 800, color: '#ffffff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {currentOutlet?.name || 'Gudang Pusat'}
+                    <div style={{ fontSize: 17, fontWeight: 800, color: '#ffffff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={isConsolidated ? 'Semua Cabang (Konsolidasi Usaha)' : (currentOutlet?.name || 'Gudang Pusat')}>
+                      {isConsolidated ? 'Semua Cabang (Konsolidasi)' : (currentOutlet?.name || 'Gudang Pusat')}
                     </div>
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#a78bfa' }} />
-                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentOutlet?.is_main ? 'Gudang Distribusi Pusat' : 'Outlet Operasional Cabang'}</span>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: isConsolidated ? '#c084fc' : '#a78bfa' }} />
+                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {isConsolidated
+                        ? `${outlets?.length || 0} Cabang Operasional Terkonsolidasi`
+                        : (currentOutlet?.is_main ? 'Gudang Distribusi Pusat' : 'Outlet Operasional Cabang')}
+                    </span>
                   </div>
                 </div>
 
@@ -3672,32 +3693,96 @@ export default function KartuStok() {
                   </div>
                 </div>
 
-                {/* Alert jika ada bahan yang dibeli berstatus stok MINUS */}
+                {/* Verifikasi Stok Minus + Ada Pembelian */}
                 {mutationForm.type === 'PURCHASE' && negativePurchaseItems.length > 0 && (
                   <div style={{
-                    padding: '12px 16px',
-                    borderRadius: 8,
-                    background: 'rgba(239, 68, 68, 0.15)',
-                    border: '1px solid rgba(239, 68, 68, 0.4)',
-                    marginBottom: 14,
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: 12
+                    padding: '14px 16px',
+                    borderRadius: 12,
+                    background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, rgba(245, 158, 11, 0.12) 100%)',
+                    border: '1px solid rgba(245, 158, 11, 0.4)',
+                    marginBottom: 16
                   }}>
-                    <AlertTriangle size={22} style={{ color: '#ef4444', flexShrink: 0, marginTop: 2 }} />
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#f87171' }}>
-                        ⛔ PERINGATAN: STOK MINUS HARUS DI-ADJUST TERLEBIH DAHULU!
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#f59e0b', fontWeight: 800, fontSize: 13 }}>
+                        <AlertTriangle size={16} color="#f59e0b" />
+                        <span>Verifikasi Stok Minus ({negativePurchaseItems.length} Bahan)</span>
                       </div>
-                      <div style={{ fontSize: 11.5, color: '#fca5a5', marginTop: 4, lineHeight: 1.45 }}>
-                        Bahan berikut memiliki stok <strong>MINUS</strong> di cabang ini:
-                        <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
-                          {negativePurchaseItems.map((neg, i) => (
-                            <li key={i}><strong>{neg.name}</strong> (Stok saat ini: {neg.stock} {neg.unit})</li>
-                          ))}
-                        </ul>
-                        Sesuai SOP, Anda wajib melakukan <strong>Penyesuaian Stok (Adjust Stock / Opname)</strong> terlebih dahulu untuk menormalkan saldo stok sebelum menambah pembelian baru.
+                      <span className="pill pill-danger" style={{ fontSize: 10, fontWeight: 800 }}>STOK MINUS TERDETEKSI</span>
+                    </div>
+
+                    <div style={{ fontSize: 11.5, color: '#fca5a5', marginBottom: 10, lineHeight: 1.4 }}>
+                      Bahan berikut saat ini berstatus <strong>MINUS</strong> di sistem:
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                        {negativePurchaseItems.map((neg, i) => (
+                          <span key={i} style={{ background: 'rgba(239, 68, 68, 0.25)', border: '1px solid rgba(239, 68, 68, 0.4)', padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, color: '#fca5a5' }}>
+                            {neg.name}: {fmtQtyVal(neg.stock)} {neg.unit}
+                          </span>
+                        ))}
                       </div>
+                    </div>
+
+                    <p style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                      Tentukan perlakuan sistem terhadap saldo stok minus:
+                    </p>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
+                      <label style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 10,
+                        padding: '10px 12px',
+                        borderRadius: 8,
+                        border: mutationForm.negative_handling === 'RESET_TO_ZERO' ? '1.5px solid #10b981' : '1px solid rgba(255,255,255,0.1)',
+                        background: mutationForm.negative_handling === 'RESET_TO_ZERO' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(0,0,0,0.2)',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}>
+                        <input
+                          type="radio"
+                          name="kartu_negative_handling"
+                          value="RESET_TO_ZERO"
+                          checked={mutationForm.negative_handling === 'RESET_TO_ZERO'}
+                          onChange={() => setMutationForm(f => ({ ...f, negative_handling: 'RESET_TO_ZERO' }))}
+                          style={{ marginTop: 3 }}
+                        />
+                        <div>
+                          <div style={{ fontWeight: 700, color: '#34d399', fontSize: 12 }}>
+                            📦 Pembelian / Transfer Masuk (Barang Baru) — Disarankan
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                            Barang fisik baru tiba. Saldo stok minus direset ke <strong>0</strong>, HPP & Moving Average dihitung ulang dari barang baru ini. <em>Riwayat kartu stok tetap aman & utuh.</em>
+                          </div>
+                        </div>
+                      </label>
+
+                      <label style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 10,
+                        padding: '10px 12px',
+                        borderRadius: 8,
+                        border: mutationForm.negative_handling === 'OFFSET_NEGATIVE' ? '1.5px solid #38bdf8' : '1px solid rgba(255,255,255,0.1)',
+                        background: mutationForm.negative_handling === 'OFFSET_NEGATIVE' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(0,0,0,0.2)',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}>
+                        <input
+                          type="radio"
+                          name="kartu_negative_handling"
+                          value="OFFSET_NEGATIVE"
+                          checked={mutationForm.negative_handling === 'OFFSET_NEGATIVE'}
+                          onChange={() => setMutationForm(f => ({ ...f, negative_handling: 'OFFSET_NEGATIVE' }))}
+                          style={{ marginTop: 3 }}
+                        />
+                        <div>
+                          <div style={{ fontWeight: 700, color: '#38bdf8', fontSize: 12 }}>
+                            ⏱️ Lupa Terinput (Barang Sudah Ada Sebelumnya)
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                            Barang fisik sebenarnya sudah ada di gudang sebelumnya. Jumlah pembelian ini akan mengurangi/menutup angka minus (offset saldo berjalan). <em>Riwayat kartu stok tetap aman & utuh.</em>
+                          </div>
+                        </div>
+                      </label>
                     </div>
                   </div>
                 )}

@@ -42,7 +42,9 @@ const PurchaseReport = lazy(() => import('./pages/PurchaseReport'));
 const PaymentSettings = lazy(() => import('./pages/PaymentSettings'));
 const Payables = lazy(() => import('./pages/Payables'));
 const Neraca = lazy(() => import('./pages/Neraca'));
+const JournalLedger = lazy(() => import('./pages/JournalLedger'));
 const VoidApproval = lazy(() => import('./pages/VoidApproval'));
+const KasAplikasi = lazy(() => import('./pages/KasAplikasi'));
 
 function PrivateRoute({ children }) {
   const token = localStorage.getItem('pos_token');
@@ -118,14 +120,14 @@ export default function App() {
               <Route path="businesses" element={<RoleRoute roles={['platform_admin', 'superadmin', 'owner_website']}><BusinessManagement /></RoleRoute>} />
               <Route path="coin-management" element={<RoleRoute roles={['owner_bisnis', 'owner_website', 'superadmin', 'platform_admin']}><CoinManagement /></RoleRoute>} />
 
-              {/* Operasional (Staff & Kasir Accessible) */}
-              <Route path="pos"          element={<RoleRoute roles={['pegawai']}><POS /></RoleRoute>} />
-              <Route path="urgent-notes" element={<RoleRoute roles={['pegawai']}><UrgentNotes /></RoleRoute>} />
-              <Route path="shift"        element={<RoleRoute roles={['pegawai']}><ShiftManagement /></RoleRoute>} />
-              <Route path="transfer"     element={<RoleRoute roles={['pegawai']}><TransferBahan /></RoleRoute>} />
-              <Route path="batch-prep"   element={<RoleRoute roles={['pegawai']}><BatchPrep /></RoleRoute>} />
-              <Route path="waste"        element={<RoleRoute roles={['pegawai']}><WasteTracking /></RoleRoute>} />
-              <Route path="kartu-stok"   element={<RoleRoute roles={['pegawai']}><KartuStok /></RoleRoute>} />
+              {/* Operasional (Staff, Kasir, & Manajemen/Owner Accessible) */}
+              <Route path="pos"          element={<RoleRoute roles={['pegawai', 'owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><POS /></RoleRoute>} />
+              <Route path="urgent-notes" element={<RoleRoute roles={['pegawai', 'owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><UrgentNotes /></RoleRoute>} />
+              <Route path="shift"        element={<RoleRoute roles={['pegawai', 'owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><ShiftManagement /></RoleRoute>} />
+              <Route path="transfer"     element={<RoleRoute roles={['pegawai', 'owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><TransferBahan /></RoleRoute>} />
+              <Route path="batch-prep"   element={<RoleRoute roles={['pegawai', 'owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><BatchPrep /></RoleRoute>} />
+              <Route path="waste"        element={<RoleRoute roles={['pegawai', 'owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><WasteTracking /></RoleRoute>} />
+              <Route path="kartu-stok"   element={<RoleRoute roles={['pegawai', 'owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><KartuStok /></RoleRoute>} />
 
               {/* Operasional Manajemen (Owner Bisnis & Manager Cabang) */}
               <Route path="void-approval" element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><VoidApproval /></RoleRoute>} />
@@ -140,7 +142,10 @@ export default function App() {
               <Route path="variance/menu"  element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><VarianceMenu /></RoleRoute>} />
               <Route path="profit-loss"    element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><ProfitLoss /></RoleRoute>} />
               <Route path="cash-flow"      element={<RoleRoute roles={['owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><CashFlow /></RoleRoute>} />
+              <Route path="kas-aplikasi"   element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><KasAplikasi /></RoleRoute>} />
               <Route path="neraca"         element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><Neraca /></RoleRoute>} />
+              <Route path="jurnal-umum"    element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><JournalLedger /></RoleRoute>} />
+              <Route path="jurnal"         element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><JournalLedger /></RoleRoute>} />
               <Route path="piutang"        element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><Receivables /></RoleRoute>} />
               <Route path="hutang"         element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><Payables /></RoleRoute>} />
               <Route path="payables"       element={<RoleRoute roles={['owner_outlet', 'owner_bisnis', 'platform_admin', 'owner_website', 'superadmin']}><Payables /></RoleRoute>} />

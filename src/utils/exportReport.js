@@ -1,457 +1,89 @@
 /**
- * Dynamic loader for SheetJS (xlsx) so the heavy library is ONLY loaded
- * when the user clicks the "Export Excel" button.
+ * MOVA POS & ACCOUNTING — MASTER EXPORT & REPORTING ENGINE
+ * 
+ * Generates clean, publication-grade Microsoft Excel (.xlsx) reports
+ * with ExcelJS, formatted currency, auto-filters, freeze panes,
+ * zebra-striping, KPI summaries, and responsive column fitting.
  */
-async function getXLSX() {
-  return await import('xlsx');
+
+async function getExcelJS() {
+  const mod = await import('exceljs');
+  return mod.default || mod;
 }
 
 /**
- * Helper to auto-fit column widths in SheetJS
+ * Helper to download workbook buffer in browser
  */
-function fitColumns(rows) {
-  const colWidths = [];
-  rows.forEach(row => {
-    (row || []).forEach((val, idx) => {
-      const len = val !== null && val !== undefined ? String(val).length : 0;
-      colWidths[idx] = Math.max(colWidths[idx] || 10, Math.min(len + 3, 50));
-    });
+async function saveWorkbook(workbook, filename) {
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });
-  return colWidths.map(w => ({ wch: w }));
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
 }
 
 /**
- * 1. Export Dashboard Cost Control & Analytics to Excel
+ * Standard Design System & Typography Tokens for Corporate Excel Export
  */
-export async function exportDashboardToExcel({ data, varData = [], varMenuData = [], period, outletName = 'Semua Cabang', businessName = 'MOVA POS', userName = 'Administrator' }) {
-  const XLSX = await getXLSX();
-  const wb = XLSX.utils.book_new();
-  const dateStr = new Date().toLocaleString('id-ID');
+const BORDERS = {
+  thin: {
+    top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+    bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+    left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+    right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+  },
+  header: {
+    top: { style: 'thin', color: { argb: 'FF475569' } },
+    bottom: { style: 'medium', color: { argb: 'FF0F172A' } },
+    left: { style: 'thin', color: { argb: 'FF334155' } },
+    right: { style: 'thin', color: { argb: 'FF334155' } },
+  },
+  section: {
+    top: { style: 'thin', color: { argb: 'FF94A3B8' } },
+    bottom: { style: 'thin', color: { argb: 'FF94A3B8' } },
+    left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+    right: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+  },
+  total: {
+    top: { style: 'thin', color: { argb: 'FF94A3B8' } },
+    bottom: { style: 'double', color: { argb: 'FF0F172A' } },
+    left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+    right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+  },
+  kpiBox: {
+    top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+    bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+    left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+    right: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+  }
+};
 
-  const {
-    status_counts = {},
-    total_variance_value = 0,
-    total_variance_loss = 0,
-    total_waste_value = 0,
-    total_combined_loss = 0,
-    top_waste = [],
-  } = data || {};
-
-  // ==========================================
-  // SHEET 1: RINGKASAN EKSEKUTIF
-  // ==========================================
-  const summaryRows = [
-    ['LAPORAN EKSEKUTIF COST CONTROL & ANALITIK VARIANSI PERSADAAN'],
-    ['MOVA POS — Advanced F&B Cost Management System'],
-    [],
-    ['Bisnis / Brand', businessName],
-    ['Gudang / Outlet', outletName],
-    ['Periode Audit', `${period.from} s/d ${period.to}`],
-    ['Waktu Export', dateStr],
-    ['Dicetak Oleh', userName],
-    ['Target Laporan', 'Finance / Akuntan, Mitra Pemilik Cabang & Investor'],
-    [],
-    ['=== INDIKATOR KUNCI COST CONTROL & RESEP ==='],
-    ['Metrik Analisis', 'Jumlah / Nilai', 'Satuan', 'Keterangan Akuntansi'],
-    ['Bahan Berstatus Normal', status_counts.NORMAL ?? 0, 'Item Bahan', 'Pemakaian dalam batas wajar resep'],
-    ['Bahan Berstatus Waspada', status_counts.WASPADA ?? 0, 'Item Bahan', 'Perlu evaluasi porsi & takaran koki'],
-    ['Bahan Berstatus Tidak Wajar', status_counts['TIDAK WAJAR'] ?? 0, 'Item Bahan', 'Wajib investigasi kehilangan/kebocoran'],
-    ['Total Kerugian Waste Resmi', total_waste_value, 'Rupiah (IDR)', 'Limbah basi, gosong, sortir diakui dapur'],
-    ['Total Selisih Tak Terjelaskan (Shrinkage)', total_variance_loss, 'Rupiah (IDR)', 'Anomali selisih fisik vs sistem'],
-    ['Total Kerugian F&B Bersih', total_combined_loss, 'Rupiah (IDR)', 'Akumulasi kerugian waste + selisih murni'],
-    [],
-    ['Catatan Rekomendasi:', 'Lakukan audit berkala pada item berstatus TIDAK WAJAR dan perketat standar pencatatan waste harian.'],
-  ];
-
-  const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
-  wsSummary['!cols'] = fitColumns(summaryRows);
-  XLSX.utils.book_append_sheet(wb, wsSummary, 'Ringkasan Eksekutif');
-
-  // ==========================================
-  // SHEET 2: TOP SELISIH BAHAN BAKU
-  // ==========================================
-  const bahanRows = [
-    ['DAFTAR BAHAN BAKU DENGAN ANOMALI / SELISIH TERTINGGI'],
-    ['Cabang:', outletName, 'Periode:', `${period.from} s/d ${period.to}`],
-    [],
-    ['No', 'Kode Bahan', 'Nama Bahan Baku', 'Kategori', 'Satuan Pakai', '% Net Variance', 'Nilai Selisih (Rp)', 'Status Audit'],
-  ];
-
-  varData.forEach((iv, idx) => {
-    bahanRows.push([
-      idx + 1,
-      iv.ingredient?.code || '-',
-      iv.ingredient?.name || '-',
-      iv.ingredient?.category || '-',
-      iv.ingredient?.unit_pakai || '-',
-      Number((iv.variance_pct || 0).toFixed(2)),
-      Math.round(iv.variance_value || 0),
-      iv.status || 'NORMAL',
-    ]);
-  });
-
-  const wsBahan = XLSX.utils.aoa_to_sheet(bahanRows);
-  wsBahan['!cols'] = fitColumns(bahanRows);
-  XLSX.utils.book_append_sheet(wb, wsBahan, 'Top Selisih Bahan');
-
-  // ==========================================
-  // SHEET 3: TOP MENU VARIANCE
-  // ==========================================
-  const menuRows = [
-    ['MENU PENYUMBANG VARIANSI TERTINGGI'],
-    ['Cabang:', outletName, 'Periode:', `${period.from} s/d ${period.to}`],
-    [],
-    ['No', 'Nama Menu', 'Kategori', 'Qty Terjual (Porsi)', 'Weighted %', 'Nilai Variance (Rp)'],
-  ];
-
-  varMenuData.forEach((row, idx) => {
-    menuRows.push([
-      idx + 1,
-      row.menu?.name || '-',
-      row.menu?.category || '-',
-      row.qty_terjual || 0,
-      Number((row.weighted_pct || 0).toFixed(2)),
-      Math.round(row.variance_value || 0),
-    ]);
-  });
-
-  const wsMenu = XLSX.utils.aoa_to_sheet(menuRows);
-  wsMenu['!cols'] = fitColumns(menuRows);
-  XLSX.utils.book_append_sheet(wb, wsMenu, 'Top Menu Variance');
-
-  // ==========================================
-  // SHEET 4: LOG WASTE & LIMBAH BAHAN
-  // ==========================================
-  const wasteRows = [
-    ['RINCIAN KERUSAKAN & LIMBAH BAHAN BAKU (DOCUMENTED WASTE)'],
-    ['Cabang:', outletName, 'Periode:', `${period.from} s/d ${period.to}`],
-    [],
-    ['No', 'Kode Bahan', 'Nama Bahan Baku', 'Total Qty Rusak', 'Satuan', 'Nilai Kerugian (Rp)', 'Catatan Kejadian / Alasan'],
-  ];
-
-  top_waste.forEach((tw, idx) => {
-    const reasons = (tw.waste_records || [])
-      .map(r => `${r.waste_reason || 'Lainnya'}: ${r.qty}`)
-      .join('; ');
-
-    wasteRows.push([
-      idx + 1,
-      tw.ingredient?.code || '-',
-      tw.ingredient?.name || '-',
-      tw.waste_qty || tw.waste || 0,
-      tw.ingredient?.unit_pakai || '-',
-      Math.round(tw.waste_value || 0),
-      reasons || 'Pencatatan limbah dapur',
-    ]);
-  });
-
-  const wsWaste = XLSX.utils.aoa_to_sheet(wasteRows);
-  wsWaste['!cols'] = fitColumns(wasteRows);
-  XLSX.utils.book_append_sheet(wb, wsWaste, 'Limbah & Kerusakan');
-
-  // Generate File Download
-  const filename = `Laporan_Eksekutif_Cost_Control_${period.from}_sd_${period.to}.xlsx`;
-  XLSX.writeFile(wb, filename);
-  return filename;
-}
+const NUM_FMTS = {
+  currency: '_("Rp"* #,##0_);_("Rp"* (#,##0);_("Rp"* "-"_);_(@_)',
+  currencySimple: '#,##0',
+  currencyDecimal: '#,##0.00',
+  number: '#,##0',
+  numberDecimal: '#,##0.00',
+  percent: '0.00%',
+  percentSimple: '0.0%',
+};
 
 /**
- * 2. Export Detailed Ingredient Variance Audit to Excel
+ * Helper to format date range in Indonesian format
  */
-export async function exportVarianceBahanToExcel({ varData = [], period, outletName = 'Semua Cabang', businessName = 'MOVA POS', userName = 'Administrator' }) {
-  const XLSX = await getXLSX();
-  const wb = XLSX.utils.book_new();
-  const dateStr = new Date().toLocaleString('id-ID');
-
-  const rows = [
-    ['LAPORAN AUDIT VARIANSI PERSADAAN BAHAN BAKU (COST CONTROL AUDIT)'],
-    ['MOVA POS — Metode Penilaian PSAK 14 Weighted Moving Average'],
-    [],
-    ['Bisnis / Brand', businessName, '', 'Waktu Cetak', dateStr],
-    ['Gudang / Cabang', outletName, '', 'Auditor PIC', userName],
-    ['Periode Audit', `${period.from} s/d ${period.to}`, '', 'Standar', 'PSAK 14 Moving Average'],
-    [],
-    [
-      'No',
-      'Kode',
-      'Nama Bahan Baku',
-      'Kategori',
-      'Satuan Beli',
-      'Satuan Pakai',
-      'Harga Pokok Rata-Rata (Rp)',
-      'Stok Awal (Pakai)',
-      'Masuk (Beli/Transfer)',
-      'Pemakaian Teoritis POS',
-      'Waste Resmi Tercatat',
-      'Pemakaian Aktual',
-      'Selisih Net (Pakai)',
-      'Selisih %',
-      'Nilai Total Selisih (Rp)',
-      'Kerugian Waste (Rp)',
-      'Selisih Tak Terjelaskan (Rp)',
-      'Status Audit',
-    ],
-  ];
-
-  let sumVarianceVal = 0;
-  let sumWasteVal = 0;
-  let sumUnaccountedVal = 0;
-
-  varData.forEach((iv, idx) => {
-    const vVal = Math.round(iv.variance_value || 0);
-    const wVal = Math.round(iv.waste_value || 0);
-    const uVal = Math.round(iv.unaccounted_value || 0);
-
-    sumVarianceVal += vVal;
-    sumWasteVal += wVal;
-    sumUnaccountedVal += uVal;
-
-    rows.push([
-      idx + 1,
-      iv.ingredient?.code || '-',
-      iv.ingredient?.name || '-',
-      iv.ingredient?.category || '-',
-      iv.ingredient?.unit_beli || '-',
-      iv.ingredient?.unit_pakai || '-',
-      Math.round(iv.ingredient?.harga || 0),
-      iv.stok_awal_periode ?? iv.stok_awal ?? '-',
-      iv.pembelian !== undefined ? Number(((iv.pembelian || 0) + (iv.transfer_in || 0) + (iv.prep_output || 0)).toFixed(2)) : (iv.total_masuk ?? '-'),
-      iv.pemakaian_teoritis ?? '-',
-      iv.waste_qty ?? 0,
-      iv.pemakaian_aktual ?? '-',
-      iv.variance_qty ?? iv.unaccounted_qty ?? 0,
-      Number((iv.variance_pct || 0).toFixed(2)),
-      vVal,
-      wVal,
-      uVal,
-      iv.status || 'NORMAL',
-    ]);
-  });
-
-  // Summary Row
-  rows.push([]);
-  rows.push([
-    'TOTAL AKUMULASI',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    sumVarianceVal,
-    sumWasteVal,
-    sumUnaccountedVal,
-    '',
-  ]);
-
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = fitColumns(rows);
-  XLSX.utils.book_append_sheet(wb, ws, 'Audit Variansi Bahan');
-
-  const filename = `Laporan_Audit_Variansi_Bahan_${period.from}_sd_${period.to}.xlsx`;
-  XLSX.writeFile(wb, filename);
-  return filename;
-}
-
-/**
- * 3. Export Menu Profitability & HPP to Excel
- */
-export async function exportProfitabilityToExcel({ data = [], period, outletName = 'Semua Cabang', businessName = 'MOVA POS', userName = 'Administrator' }) {
-  const XLSX = await getXLSX();
-  const wb = XLSX.utils.book_new();
-  const dateStr = new Date().toLocaleString('id-ID');
-
-  const rows = [
-    ['LAPORAN ANALISIS PROFITABILITAS MENU & HPP DINAMIS'],
-    ['MOVA POS — Evaluasi Margin & Moving Average Unit Economics'],
-    [],
-    ['Bisnis / Brand', businessName, '', 'Waktu Cetak', dateStr],
-    ['Gudang / Cabang', outletName, '', 'Auditor PIC', userName],
-    ['Periode Audit', `${period.from} s/d ${period.to}`, '', 'Basis HPP', 'Weighted Moving Average'],
-    [],
-    [
-      'No',
-      'Nama Menu',
-      'Kategori',
-      'Harga Jual (Rp)',
-      'HPP Teoritis Moving Avg (Rp)',
-      'Gross Margin (%)',
-      'Variance Cost / Porsi (Rp)',
-      'Adjusted HPP Aktual (Rp)',
-      'Adjusted Margin (%)',
-      'Penurunan Margin (pp)',
-      'Status Evaluasi',
-    ],
-  ];
-
-  data.forEach((r, idx) => {
-    const marginDrop = Number((r.gross_margin - r.adjusted_margin).toFixed(1));
-    const status = marginDrop > 5 ? 'KRITIS (Margin Anjlok)' : marginDrop > 2 ? 'PERHATIAN (Waspada)' : 'SEHAT (Normal)';
-
-    rows.push([
-      idx + 1,
-      r.menu?.name || '-',
-      r.menu?.category || '-',
-      Math.round(r.menu?.price || 0),
-      Math.round(r.hpp || 0),
-      Number((r.gross_margin || 0).toFixed(1)),
-      Math.round(r.variance_per_porsi || 0),
-      Math.round(r.adjusted_hpp || 0),
-      Number((r.adjusted_margin || 0).toFixed(1)),
-      marginDrop,
-      status,
-    ]);
-  });
-
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = fitColumns(rows);
-  XLSX.utils.book_append_sheet(wb, ws, 'Profitabilitas Menu');
-
-  const filename = `Laporan_Profitabilitas_Menu_dan_HPP_${period.from}_sd_${period.to}.xlsx`;
-  XLSX.writeFile(wb, filename);
-  return filename;
-}
-
-/**
- * 4. Export Menu Variance Ranking to Excel
- */
-export async function exportVarianceMenuToExcel({ menuData = [], period, outletName = 'Semua Cabang', businessName = 'MOVA POS', userName = 'Administrator' }) {
-  const XLSX = await getXLSX();
-  const wb = XLSX.utils.book_new();
-  const dateStr = new Date().toLocaleString('id-ID');
-  const total = menuData.reduce((s, r) => s + (r.variance_value || 0), 0);
-
-  const rows = [
-    ['LAPORAN RANKING VARIANCE PENYUMBANG MENU TERHADAP BAHAN BAKU'],
-    ['MOVA POS — Weighted Variance Contribution Analysis'],
-    [],
-    ['Bisnis / Brand', businessName, '', 'Waktu Cetak', dateStr],
-    ['Gudang / Cabang', outletName, '', 'Auditor PIC', userName],
-    ['Periode Audit', `${period.from} s/d ${period.to}`, '', 'Total Variance', Math.round(total)],
-    [],
-    [
-      'No',
-      'Nama Menu',
-      'Kategori',
-      'Qty Terjual (Porsi)',
-      'Weighted % Variance',
-      'Nilai Variance (Rp)',
-      'Kontribusi terhadap Total Variance (%)',
-    ],
-  ];
-
-  menuData.forEach((row, idx) => {
-    const contrib = total !== 0 ? Number(((row.variance_value / total) * 100).toFixed(1)) : 0;
-    rows.push([
-      idx + 1,
-      row.menu?.name || '-',
-      row.menu?.category || '-',
-      row.qty_terjual || 0,
-      Number((row.weighted_pct || 0).toFixed(2)),
-      Math.round(row.variance_value || 0),
-      contrib,
-    ]);
-  });
-
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = fitColumns(rows);
-  XLSX.utils.book_append_sheet(wb, ws, 'Ranking Menu Variance');
-
-  const filename = `Laporan_Variance_Menu_${period.from}_sd_${period.to}.xlsx`;
-  XLSX.writeFile(wb, filename);
-  return filename;
-}
-
-/**
- * 5. Export Buku Piutang (Accounts Receivable Ledger) to Excel
- */
-export async function exportReceivablesToExcel({ items = [], stats = {}, outletName = 'Semua Cabang', businessName = 'MOVA POS', userName = 'Administrator' }) {
-  const XLSX = await getXLSX();
-  const wb = XLSX.utils.book_new();
-  const dateStr = new Date().toLocaleString('id-ID');
-
-  const rows = [
-    ['BUKU PIUTANG USAHA (AR CUSTOMER & AR MERCHANT)'],
-    ['MOVA POS — Customer Credit Ledger & Merchant Settlement (QRIS & E-Commerce)'],
-    [],
-    ['Bisnis / Brand', businessName, '', 'Waktu Ekspor', dateStr],
-    ['Cabang / Outlet', outletName, '', 'Dicetak Oleh', userName],
-    ['Total Tagihan Piutang', stats.total_receivables || 0, '', 'Sisa Piutang Berjalan', stats.total_remaining || 0],
-    ['Total Telah Dilunasi/Cair', stats.total_paid || 0, '', 'Piutang Overdue', stats.total_overdue || 0],
-    ['AR Merchant QRIS (Unsettled)', stats.ar_qris_unsettled || 0, '', 'AR E-Commerce (Unsettled)', stats.ar_ecommerce_unsettled || 0],
-    [],
-    [
-      'No',
-      'No Invoice / Ref',
-      'Kategori Piutang',
-      'Debitur / Merchant Channel',
-      'Tanggal Terbit',
-      'Jatuh Tempo',
-      'Cabang Outlet',
-      'Gross Amount (Rp)',
-      'Potongan MDR/Fee (Rp)',
-      'Net Amount (Rp)',
-      'Sudah Dibayar / Cair (Rp)',
-      'Sisa Piutang (Rp)',
-      'Metode Pembayaran',
-      'Status Settlement',
-      'Rekening Bank Settlement',
-      'Keterangan / Rincian',
-    ],
-  ];
-
-  items.forEach((r, idx) => {
-    let arTypeLabel = 'Kasbon Pelanggan';
-    if (r.ar_type === 'MERCHANT_QRIS') arTypeLabel = 'AR Merchant QRIS';
-    else if (r.ar_type === 'MERCHANT_ECOMMERCE') arTypeLabel = `AR E-Commerce (${r.merchant_channel || 'Online'})`;
-
-    const channelOrName = r.ar_type && r.ar_type !== 'CUSTOMER'
-      ? `${r.merchant_channel || 'MERCHANT'} - ${r.customer_name || ''}`
-      : (r.customer_name || '-');
-
-    const paymentMethodDisplay = r.payment_method || (Array.isArray(r.payments) && r.payments.length ? r.payments.map(p => p.payment_method).filter(Boolean).join(', ') : '-');
-
-    rows.push([
-      idx + 1,
-      r.receivable_no || r.order_number || '-',
-      arTypeLabel,
-      channelOrName,
-      r.issue_date || '-',
-      r.due_date || '-',
-      r.outlet?.name || r.outlet_name || '-',
-      Number(r.total_amount) || 0,
-      Number(r.mdr_fee) || 0,
-      Number(r.net_amount || r.total_amount) || 0,
-      Number(r.paid_amount) || 0,
-      Number(r.remaining_amount) || 0,
-      paymentMethodDisplay,
-      r.settlement_status ? `${r.settlement_status} (${r.status || '-'})` : (r.status_label || r.status || '-'),
-      r.settlement_bank || '-',
-      r.notes || '-',
-    ]);
-  });
-
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = fitColumns(rows);
-  XLSX.utils.book_append_sheet(wb, ws, 'Buku Piutang');
-
-  const filename = `Buku_Piutang_Usaha_${new Date().toISOString().slice(0, 10)}.xlsx`;
-  XLSX.writeFile(wb, filename);
-  return filename;
-}
-
-/**
- * Helper to format date range in Indonesian format (e.g. 01 September 2026 s/d 30 September 2026)
- */
-function formatIndoPeriod(period) {
-  if (!period) return '';
+export function formatIndoPeriod(period) {
+  if (!period) return 'Semua Periode';
+  if (typeof period === 'string') return period;
+  if (period.from_formatted && period.to_formatted) {
+    return `${period.from_formatted} s/d ${period.to_formatted}`;
+  }
   const months = [
     'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
     'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
@@ -465,58 +97,631 @@ function formatIndoPeriod(period) {
     const year = d.getFullYear();
     return `${day} ${month} ${year}`;
   };
-  return `${fmt(period.from)} s/d ${fmt(period.to)}`;
+  if (period.from && period.to) {
+    return `${fmt(period.from)} s/d ${fmt(period.to)}`;
+  }
+  if (period.from) return `Mulai ${fmt(period.from)}`;
+  if (period.to) return `Sampai ${fmt(period.to)}`;
+  return 'Semua Periode';
 }
 
 /**
- * 6. Export Laporan Penjualan per Produk to Excel
+ * Standard Header Builder for all Sheets
  */
-export async function exportSalesByProductToExcel({ items = [], summary = {}, period, outletName = 'Semua Cabang', businessName = 'MOVA POS' }) {
-  const XLSX = await getXLSX();
-  const wb = XLSX.utils.book_new();
-  const periodStr = formatIndoPeriod(period);
+function addReportHeader(ws, {
+  businessName = 'MOVA POS',
+  reportTitle = 'LAPORAN',
+  periodText = '',
+  outletName = 'Semua Cabang',
+  userName = 'Administrator',
+  colSpan = 8,
+  titleColor = 'FF1E40AF', // Royal Blue
+}) {
+  const colLetter = String.fromCharCode(64 + Math.min(Math.max(colSpan, 5), 26));
 
-  const rows = [
-    [businessName],
-    ['LAPORAN PENJUALAN PER PRODUK'],
-    [`Per ${periodStr}`],
-    [],
-    [
-      'No.',
-      'Kode Produk',
-      'Nama Produk / Sub Produk',
-      'Qty Terjual',
-      'Qty Refund',
-      'Satuan',
-      'Modal',
-      'Harga',
-      'Disc',
-      'Total Nilai Terjual',
-      'Total Nilai Refund',
-    ],
+  // Row 1: Brand Name
+  ws.mergeCells(`A1:${colLetter}1`);
+  const cellBrand = ws.getCell('A1');
+  cellBrand.value = String(businessName || 'MOVA POS').toUpperCase();
+  cellBrand.font = { name: 'Segoe UI', size: 14, bold: true, color: { argb: 'FF0F172A' } };
+  cellBrand.alignment = { vertical: 'middle', horizontal: 'left' };
+  ws.getRow(1).height = 24;
+
+  // Row 2: Report Title
+  ws.mergeCells(`A2:${colLetter}2`);
+  const cellTitle = ws.getCell('A2');
+  cellTitle.value = reportTitle;
+  cellTitle.font = { name: 'Segoe UI', size: 12, bold: true, color: { argb: titleColor } };
+  cellTitle.alignment = { vertical: 'middle', horizontal: 'left' };
+  ws.getRow(2).height = 20;
+
+  // Row 3: Meta info
+  ws.mergeCells(`A3:${colLetter}3`);
+  const cellMeta = ws.getCell('A3');
+  const nowStr = new Date().toLocaleString('id-ID');
+  const metaParts = [];
+  if (periodText) metaParts.push(`Periode: ${periodText}`);
+  if (outletName) metaParts.push(`Cabang: ${outletName}`);
+  metaParts.push(`Waktu Ekspor: ${nowStr}`);
+  if (userName) metaParts.push(`Dicetak Oleh: ${userName}`);
+
+  cellMeta.value = metaParts.join('   |   ');
+  cellMeta.font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF64748B' } };
+  cellMeta.alignment = { vertical: 'middle', horizontal: 'left' };
+  ws.getRow(3).height = 18;
+
+  // Row 4: Spacer
+  ws.addRow([]);
+  ws.getRow(4).height = 8;
+}
+
+/**
+ * Standard Table Header Builder
+ */
+function addTableHeader(ws, headers = [], bgArgb = 'FF1E293B') {
+  const row = ws.addRow(headers);
+  row.height = 26;
+  row.eachCell((cell) => {
+    cell.font = { name: 'Segoe UI', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: bgArgb },
+    };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    cell.border = BORDERS.header;
+  });
+  return row;
+}
+
+/**
+ * Auto-fit column widths with padding
+ */
+function autoFitColumns(ws, minWidth = 12, maxWidth = 55) {
+  ws.columns.forEach((column) => {
+    let maxLength = minWidth;
+    column.eachCell({ includeEmpty: true }, (cell) => {
+      // Ignore header rows 1, 2, 3
+      if (cell.row <= 3) return;
+      const val = cell.value;
+      if (val !== null && val !== undefined) {
+        const str = typeof val === 'object' && val.richText
+          ? val.richText.map(t => t.text).join('')
+          : String(val);
+        if (str.length > maxLength && str.length <= maxWidth) {
+          maxLength = str.length;
+        }
+      }
+    });
+    column.width = Math.min(Math.max(maxLength + 4, minWidth), maxWidth);
+  });
+}
+
+/**
+ * Apply cell styles helper
+ */
+function applyDataRowStyle(row, isEven = false, alignMap = {}, formatMap = {}) {
+  row.height = 21;
+  const bgColor = isEven ? 'FFF8FAFC' : 'FFFFFFFF';
+
+  row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+    cell.font = cell.font || { name: 'Segoe UI', size: 9.5, color: { argb: 'FF1E293B' } };
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: bgColor },
+    };
+    cell.border = BORDERS.thin;
+
+    const align = alignMap[colNumber] || 'left';
+    cell.alignment = {
+      vertical: 'middle',
+      horizontal: align,
+      wrapText: align === 'left',
+    };
+
+    if (formatMap[colNumber]) {
+      cell.numFmt = formatMap[colNumber];
+    }
+  });
+}
+
+/**
+ * Apply total summary row style
+ */
+function applyTotalRowStyle(row, alignMap = {}, formatMap = {}) {
+  row.height = 24;
+  row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+    cell.font = { name: 'Segoe UI', size: 10, bold: true, color: { argb: 'FF0F172A' } };
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFF1F5F9' },
+    };
+    cell.border = BORDERS.total;
+
+    const align = alignMap[colNumber] || (cell.value && typeof cell.value === 'number' ? 'right' : 'left');
+    cell.alignment = { vertical: 'middle', horizontal: align };
+
+    if (formatMap[colNumber]) {
+      cell.numFmt = formatMap[colNumber];
+    }
+  });
+}
+
+// ============================================================================
+// 1. DASHBOARD COST CONTROL & ANALYTICS
+// ============================================================================
+export async function exportDashboardToExcel({
+  data,
+  varData = [],
+  varMenuData = [],
+  period,
+  outletName = 'Semua Cabang',
+  businessName = 'MOVA POS',
+  userName = 'Administrator',
+}) {
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  wb.creator = businessName;
+  wb.created = new Date();
+
+  const periodStr = formatIndoPeriod(period);
+  const {
+    status_counts = {},
+    total_variance_loss = 0,
+    total_waste_value = 0,
+    total_combined_loss = 0,
+    top_waste = [],
+  } = data || {};
+
+  // SHEET 1: RINGKASAN EKSEKUTIF
+  const ws1 = wb.addWorksheet('Ringkasan Eksekutif', { views: [{ showGridLines: true }] });
+  addReportHeader(ws1, {
+    businessName,
+    reportTitle: 'RINGKASAN EKSEKUTIF COST CONTROL & ANALITIK VARIANSI',
+    periodText: periodStr,
+    outletName,
+    userName,
+    colSpan: 4,
+    titleColor: 'FF0F766E', // Teal
+  });
+
+  addTableHeader(ws1, ['Indikator Metrik Cost Control', 'Jumlah / Nilai', 'Satuan', 'Keterangan Akuntansi / Audit'], 'FF0F766E');
+  
+  const metrics = [
+    ['Bahan Baku Status Normal', status_counts.NORMAL ?? 0, 'Item Bahan', 'Pemakaian dalam batas wajar toleransi resep'],
+    ['Bahan Baku Status Waspada', status_counts.WASPADA ?? 0, 'Item Bahan', 'Perlu evaluasi porsi takaran koki / bartender'],
+    ['Bahan Baku Status Tidak Wajar', status_counts['TIDAK WAJAR'] ?? 0, 'Item Bahan', 'Wajib investigasi kebocoran / kehilangan fisik'],
+    ['Total Kerugian Waste Resmi', Number(total_waste_value) || 0, 'Rupiah (IDR)', 'Limbah basi, gosong, expired diakui dapur'],
+    ['Total Selisih Tak Terjelaskan (Shrinkage)', Number(total_variance_loss) || 0, 'Rupiah (IDR)', 'Anomali selisih fisik vs perhitungan sistem'],
+    ['Total Kerugian F&B Bersih', Number(total_combined_loss) || 0, 'Rupiah (IDR)', 'Akumulasi kerugian waste + selisih murni'],
   ];
 
+  metrics.forEach((m, idx) => {
+    const row = ws1.addRow(m);
+    const isCurrency = idx >= 3;
+    applyDataRowStyle(row, idx % 2 === 1, { 1: 'left', 2: isCurrency ? 'right' : 'center', 3: 'center', 4: 'left' }, { 2: isCurrency ? NUM_FMTS.currency : NUM_FMTS.number });
+  });
+  autoFitColumns(ws1);
+
+  // SHEET 2: TOP SELISIH BAHAN
+  const ws2 = wb.addWorksheet('Top Selisih Bahan', { views: [{ showGridLines: true }] });
+  addReportHeader(ws2, { businessName, reportTitle: 'DAFTAR BAHAN BAKU DENGAN SELISIH TERTINGGI', periodText: periodStr, outletName, userName, colSpan: 8, titleColor: 'FFDC2626' });
+  addTableHeader(ws2, ['No', 'Kode Bahan', 'Nama Bahan Baku', 'Kategori', 'Satuan Pakai', '% Net Variance', 'Nilai Selisih (Rp)', 'Status Audit'], 'FF991B1B');
+  
+  varData.forEach((iv, idx) => {
+    const row = ws2.addRow([
+      idx + 1,
+      iv.ingredient?.code || '-',
+      iv.ingredient?.name || '-',
+      iv.ingredient?.category || '-',
+      iv.ingredient?.unit_pakai || '-',
+      (Number(iv.variance_pct) || 0) / 100,
+      Number(iv.variance_value) || 0,
+      iv.status || 'NORMAL',
+    ]);
+    applyDataRowStyle(row, idx % 2 === 1, { 1: 'center', 2: 'center', 3: 'left', 4: 'left', 5: 'center', 6: 'right', 7: 'right', 8: 'center' }, { 6: NUM_FMTS.percent, 7: NUM_FMTS.currency });
+  });
+  autoFitColumns(ws2);
+
+  // SHEET 3: TOP MENU VARIANCE
+  const ws3 = wb.addWorksheet('Top Menu Variance', { views: [{ showGridLines: true }] });
+  addReportHeader(ws3, { businessName, reportTitle: 'MENU PENYUMBANG VARIANSI TERTINGGI', periodText: periodStr, outletName, userName, colSpan: 6, titleColor: 'FFD97706' });
+  addTableHeader(ws3, ['No', 'Nama Menu', 'Kategori', 'Qty Terjual (Porsi)', 'Weighted %', 'Nilai Variance (Rp)'], 'FFB45309');
+  
+  varMenuData.forEach((row, idx) => {
+    const r = ws3.addRow([
+      idx + 1,
+      row.menu?.name || '-',
+      row.menu?.category || '-',
+      Number(row.qty_terjual) || 0,
+      (Number(row.weighted_pct) || 0) / 100,
+      Number(row.variance_value) || 0,
+    ]);
+    applyDataRowStyle(r, idx % 2 === 1, { 1: 'center', 2: 'left', 3: 'left', 4: 'right', 5: 'right', 6: 'right' }, { 4: NUM_FMTS.number, 5: NUM_FMTS.percent, 6: NUM_FMTS.currency });
+  });
+  autoFitColumns(ws3);
+
+  // SHEET 4: LOG WASTE & LIMBAH
+  const ws4 = wb.addWorksheet('Log Limbah & Waste', { views: [{ showGridLines: true }] });
+  addReportHeader(ws4, { businessName, reportTitle: 'RINCIAN KERUSAKAN & LIMBAH BAHAN BAKU (DOCUMENTED WASTE)', periodText: periodStr, outletName, userName, colSpan: 7, titleColor: 'FF475569' });
+  addTableHeader(ws4, ['No', 'Kode Bahan', 'Nama Bahan Baku', 'Total Qty Rusak', 'Satuan', 'Nilai Kerugian (Rp)', 'Alasan & Kejadian'], 'FF334155');
+  
+  top_waste.forEach((tw, idx) => {
+    const reasons = (tw.waste_records || []).map(r => `${r.waste_reason || 'Lainnya'}: ${r.qty}`).join('; ') || 'Pencatatan limbah dapur';
+    const r = ws4.addRow([
+      idx + 1,
+      tw.ingredient?.code || '-',
+      tw.ingredient?.name || '-',
+      Number(tw.waste_qty || tw.waste) || 0,
+      tw.ingredient?.unit_pakai || '-',
+      Number(tw.waste_value) || 0,
+      reasons,
+    ]);
+    applyDataRowStyle(r, idx % 2 === 1, { 1: 'center', 2: 'center', 3: 'left', 4: 'right', 5: 'center', 6: 'right', 7: 'left' }, { 4: NUM_FMTS.numberDecimal, 6: NUM_FMTS.currency });
+  });
+  autoFitColumns(ws4);
+
+  const filename = `Laporan_Eksekutif_Cost_Control_${period?.from || 'all'}_sd_${period?.to || 'all'}.xlsx`;
+  await saveWorkbook(wb, filename);
+  return filename;
+}
+
+// ============================================================================
+// 2. AUDIT VARIANSI BAHAN BAKU
+// ============================================================================
+export async function exportVarianceBahanToExcel({
+  varData = [],
+  period,
+  outletName = 'Semua Cabang',
+  businessName = 'MOVA POS',
+  userName = 'Administrator',
+}) {
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  wb.creator = businessName;
+  const ws = wb.addWorksheet('Audit Variansi Bahan', { views: [{ showGridLines: true }] });
+
+  const periodStr = formatIndoPeriod(period);
+  addReportHeader(ws, {
+    businessName,
+    reportTitle: 'LAPORAN AUDIT VARIANSI BAHAN BAKU & REKONSILIASI RESEP',
+    periodText: periodStr,
+    outletName,
+    userName,
+    colSpan: 16,
+    titleColor: 'FF991B1B',
+  });
+
+  addTableHeader(ws, [
+    'No', 'Kode Bahan', 'Nama Bahan Baku', 'Kategori', 'Satuan Pakai',
+    'Stok Awal', 'Masuk (Beli/Transfer)', 'Keluar Riil (Fisik)', 'Standar Resep POS',
+    'Waste Tercatat', 'Sisa Buku Sistem', 'Fisik Opname Riil', 'Selisih Qty',
+    '% Net Selisih', 'Nilai Selisih (Rp)', 'Status Audit'
+  ], 'FF1E293B');
+
+  let totalSelisihValue = 0;
+  varData.forEach((iv, idx) => {
+    const selisihRp = Number(iv.variance_value) || 0;
+    totalSelisihValue += selisihRp;
+    const row = ws.addRow([
+      idx + 1,
+      iv.ingredient?.code || '-',
+      iv.ingredient?.name || '-',
+      iv.ingredient?.category || '-',
+      iv.ingredient?.unit_pakai || '-',
+      Number(iv.stok_awal) || 0,
+      Number(iv.total_in) || 0,
+      Number(iv.total_out_riil) || 0,
+      Number(iv.total_resep) || 0,
+      Number(iv.total_waste) || 0,
+      Number(iv.stok_akhir_sistem) || 0,
+      Number(iv.stok_akhir_fisik) || 0,
+      Number(iv.variance_qty) || 0,
+      (Number(iv.variance_pct) || 0) / 100,
+      selisihRp,
+      iv.status || 'NORMAL',
+    ]);
+
+    applyDataRowStyle(row, idx % 2 === 1, {
+      1: 'center', 2: 'center', 3: 'left', 4: 'left', 5: 'center',
+      6: 'right', 7: 'right', 8: 'right', 9: 'right', 10: 'right',
+      11: 'right', 12: 'right', 13: 'right', 14: 'right', 15: 'right', 16: 'center'
+    }, {
+      6: NUM_FMTS.numberDecimal, 7: NUM_FMTS.numberDecimal, 8: NUM_FMTS.numberDecimal,
+      9: NUM_FMTS.numberDecimal, 10: NUM_FMTS.numberDecimal, 11: NUM_FMTS.numberDecimal,
+      12: NUM_FMTS.numberDecimal, 13: NUM_FMTS.numberDecimal, 14: NUM_FMTS.percent,
+      15: NUM_FMTS.currency
+    });
+  });
+
+  const totalRow = ws.addRow([
+    'TOTAL NILAI ANOMALI / SELISIH', '', '', '', '', '', '', '', '', '', '', '', '', '',
+    totalSelisihValue, ''
+  ]);
+  ws.mergeCells(`A${totalRow.number}:N${totalRow.number}`);
+  applyTotalRowStyle(totalRow, { 1: 'right', 15: 'right' }, { 15: NUM_FMTS.currency });
+
+  autoFitColumns(ws);
+  const filename = `Audit_Variansi_Bahan_${period?.from || 'all'}_sd_${period?.to || 'all'}.xlsx`;
+  await saveWorkbook(wb, filename);
+  return filename;
+}
+
+// ============================================================================
+// 3. PROFITABILITAS & MARGIN MENU
+// ============================================================================
+export async function exportProfitabilityToExcel({
+  data = [],
+  period,
+  outletName = 'Semua Cabang',
+  businessName = 'MOVA POS',
+  userName = 'Administrator',
+}) {
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Profitabilitas Menu', { views: [{ showGridLines: true }] });
+
+  const periodStr = formatIndoPeriod(period);
+  addReportHeader(ws, { businessName, reportTitle: 'LAPORAN ANALISIS PROFITABILITAS & MARGIN MENU', periodText: periodStr, outletName, userName, colSpan: 12, titleColor: 'FF059669' });
+  addTableHeader(ws, [
+    'No', 'Nama Menu', 'Kategori', 'Harga Jual (Rp)', 'HPP Porsi (Rp)', 'Gross Profit (Rp)',
+    'Gross Margin (%)', 'Qty Terjual', 'Total Omset (Rp)', 'Total HPP (Rp)', 'Total Laba Kotor (Rp)', 'Kontribusi (%)'
+  ], 'FF065F46');
+
+  let totOmset = 0, totHpp = 0, totProfit = 0, totQty = 0;
+  data.forEach((p, idx) => {
+    const rev = Number(p.total_revenue) || 0;
+    const hpp = Number(p.total_hpp) || 0;
+    const profit = Number(p.total_profit) || 0;
+    const qty = Number(p.qty_sold) || 0;
+    totOmset += rev; totHpp += hpp; totProfit += profit; totQty += qty;
+
+    const row = ws.addRow([
+      idx + 1,
+      p.name || '-',
+      p.category || '-',
+      Number(p.price) || 0,
+      Number(p.hpp) || 0,
+      Number(p.profit_per_unit) || 0,
+      (Number(p.margin_pct) || 0) / 100,
+      qty,
+      rev,
+      hpp,
+      profit,
+      (Number(p.contribution_pct) || 0) / 100,
+    ]);
+
+    applyDataRowStyle(row, idx % 2 === 1, {
+      1: 'center', 2: 'left', 3: 'left', 4: 'right', 5: 'right', 6: 'right',
+      7: 'right', 8: 'right', 9: 'right', 10: 'right', 11: 'right', 12: 'right'
+    }, {
+      4: NUM_FMTS.currency, 5: NUM_FMTS.currency, 6: NUM_FMTS.currency,
+      7: NUM_FMTS.percent, 8: NUM_FMTS.number, 9: NUM_FMTS.currency,
+      10: NUM_FMTS.currency, 11: NUM_FMTS.currency, 12: NUM_FMTS.percent
+    });
+  });
+
+  const totRow = ws.addRow(['TOTAL KESELURUHAN', '', '', '', '', '', totOmset > 0 ? (totProfit / totOmset) : 0, totQty, totOmset, totHpp, totProfit, 1.0]);
+  ws.mergeCells(`A${totRow.number}:F${totRow.number}`);
+  applyTotalRowStyle(totRow, { 1: 'right', 7: 'right', 8: 'right', 9: 'right', 10: 'right', 11: 'right', 12: 'right' }, {
+    7: NUM_FMTS.percent, 8: NUM_FMTS.number, 9: NUM_FMTS.currency, 10: NUM_FMTS.currency, 11: NUM_FMTS.currency, 12: NUM_FMTS.percent
+  });
+
+  autoFitColumns(ws);
+  const filename = `Profitabilitas_Menu_${period?.from || 'all'}_sd_${period?.to || 'all'}.xlsx`;
+  await saveWorkbook(wb, filename);
+  return filename;
+}
+
+// ============================================================================
+// 4. RANKING VARIANCE MENU
+// ============================================================================
+export async function exportVarianceMenuToExcel({
+  menuData = [],
+  period,
+  outletName = 'Semua Cabang',
+  businessName = 'MOVA POS',
+  userName = 'Administrator',
+}) {
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Variance Menu', { views: [{ showGridLines: true }] });
+
+  const periodStr = formatIndoPeriod(period);
+  addReportHeader(ws, { businessName, reportTitle: 'RANKING MENU PENYUMBANG VARIANSI TERTINGGI', periodText: periodStr, outletName, userName, colSpan: 6, titleColor: 'FFD97706' });
+  addTableHeader(ws, ['No', 'Nama Menu', 'Kategori', 'Qty Terjual (Porsi)', 'Weighted Variance %', 'Estimasi Nilai Variance (Rp)'], 'FFB45309');
+
+  let totalVarVal = 0, totalQty = 0;
+  menuData.forEach((row, idx) => {
+    const qty = Number(row.qty_terjual) || 0;
+    const vVal = Number(row.variance_value) || 0;
+    totalQty += qty; totalVarVal += vVal;
+
+    const r = ws.addRow([
+      idx + 1,
+      row.menu?.name || '-',
+      row.menu?.category || '-',
+      qty,
+      (Number(row.weighted_pct) || 0) / 100,
+      vVal,
+    ]);
+    applyDataRowStyle(r, idx % 2 === 1, { 1: 'center', 2: 'left', 3: 'left', 4: 'right', 5: 'right', 6: 'right' }, { 4: NUM_FMTS.number, 5: NUM_FMTS.percent, 6: NUM_FMTS.currency });
+  });
+
+  const totRow = ws.addRow(['TOTAL KESELURUHAN', '', '', totalQty, '', totalVarVal]);
+  ws.mergeCells(`A${totRow.number}:C${totRow.number}`);
+  applyTotalRowStyle(totRow, { 1: 'right', 4: 'right', 6: 'right' }, { 4: NUM_FMTS.number, 6: NUM_FMTS.currency });
+
+  autoFitColumns(ws);
+  const filename = `Variance_Menu_${period?.from || 'all'}_sd_${period?.to || 'all'}.xlsx`;
+  await saveWorkbook(wb, filename);
+  return filename;
+}
+
+// ============================================================================
+// 5. PIUTANG USAHA & KASBON (RECEIVABLES)
+// ============================================================================
+export async function exportReceivablesToExcel({
+  items = [],
+  stats = {},
+  outletName = 'Semua Cabang',
+  businessName = 'MOVA POS',
+  userName = 'Administrator',
+}) {
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Piutang Usaha & Kasbon', { views: [{ showGridLines: true }] });
+
+  addReportHeader(ws, { businessName, reportTitle: 'LAPORAN DAFTAR PIUTANG USAHA, AR MERCHANT & KASBON', periodText: '', outletName, userName, colSpan: 16, titleColor: 'FF0D9488' });
+  addTableHeader(ws, [
+    'No', 'No. Piutang', 'No. Transaksi / Nota', 'Tipe Piutang', 'Channel / Mitra',
+    'Nama Pelanggan / Debitur', 'Tgl Terbit', 'Jatuh Tempo', 'Total Tagihan (Rp)',
+    'Terbayar (Rp)', 'Sisa Piutang (Rp)', 'MDR %', 'Biaya MDR (Rp)', 'Piutang Bersih (Rp)',
+    'Status Bayar', 'Catatan'
+  ], 'FF115E59');
+
+  let totTagihan = 0, totBayar = 0, totSisa = 0, totNet = 0;
   items.forEach((item, idx) => {
-    rows.push([
+    const t = Number(item.total_amount) || 0;
+    const p = Number(item.paid_amount) || 0;
+    const r = Number(item.remaining_amount) || 0;
+    const net = Number(item.net_amount) || (t - (Number(item.mdr_fee) || 0));
+    totTagihan += t; totBayar += p; totSisa += r; totNet += net;
+
+    const row = ws.addRow([
+      idx + 1,
+      item.receivable_no || `AR-${item.id}`,
+      item.order_number || '-',
+      item.ar_type || 'KASBON_POS',
+      item.merchant_channel || '-',
+      item.customer_name || item.customer?.name || '-',
+      item.issue_date || '-',
+      item.due_date || '-',
+      t,
+      p,
+      r,
+      (Number(item.mdr_rate) || 0) / 100,
+      Number(item.mdr_fee) || 0,
+      net,
+      item.status || 'UNPAID',
+      item.notes || '-',
+    ]);
+
+    applyDataRowStyle(row, idx % 2 === 1, {
+      1: 'center', 2: 'center', 3: 'center', 4: 'center', 5: 'center',
+      6: 'left', 7: 'center', 8: 'center', 9: 'right', 10: 'right',
+      11: 'right', 12: 'right', 13: 'right', 14: 'right', 15: 'center', 16: 'left'
+    }, {
+      9: NUM_FMTS.currency, 10: NUM_FMTS.currency, 11: NUM_FMTS.currency,
+      12: NUM_FMTS.percent, 13: NUM_FMTS.currency, 14: NUM_FMTS.currency
+    });
+  });
+
+  const totRow = ws.addRow(['TOTAL KESELURUHAN PIUTANG', '', '', '', '', '', '', '', totTagihan, totBayar, totSisa, '', '', totNet, '', '']);
+  ws.mergeCells(`A${totRow.number}:H${totRow.number}`);
+  applyTotalRowStyle(totRow, { 1: 'right', 9: 'right', 10: 'right', 11: 'right', 14: 'right' }, {
+    9: NUM_FMTS.currency, 10: NUM_FMTS.currency, 11: NUM_FMTS.currency, 14: NUM_FMTS.currency
+  });
+
+  autoFitColumns(ws);
+  const filename = `Laporan_Piutang_Usaha_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  await saveWorkbook(wb, filename);
+  return filename;
+}
+
+// ============================================================================
+// 6. RIWAYAT PEMBAYARAN PIUTANG (RECEIVABLE PAYMENTS)
+// ============================================================================
+export async function exportReceivablePaymentsToExcel({
+  items = [],
+  outletName = 'Semua Cabang',
+  businessName = 'MOVA POS',
+  userName = 'Administrator',
+}) {
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Riwayat Pelunasan Piutang', { views: [{ showGridLines: true }] });
+
+  addReportHeader(ws, { businessName, reportTitle: 'LAPORAN RIWAYAT PELUNASAN PIUTANG & KASBON', periodText: '', outletName, userName, colSpan: 10, titleColor: 'FF0D9488' });
+  addTableHeader(ws, ['No', 'No. Bukti Bayar', 'No. Piutang', 'Pelanggan / Debitur', 'Tanggal Bayar', 'Metode Bayar', 'No. Referensi', 'Jumlah Bayar (Rp)', 'Diterima Oleh', 'Catatan'], 'FF115E59');
+
+  let totBayar = 0;
+  items.forEach((p, idx) => {
+    const amt = Number(p.amount) || 0;
+    totBayar += amt;
+    const row = ws.addRow([
+      idx + 1,
+      p.payment_no || `PAY-${p.id}`,
+      p.receivable?.receivable_no || p.receivable_id || '-',
+      p.receivable?.customer_name || '-',
+      p.payment_date || '-',
+      p.payment_method || 'CASH',
+      p.reference_no || '-',
+      amt,
+      p.receiver?.name || p.receiver_name || '-',
+      p.notes || '-',
+    ]);
+    applyDataRowStyle(row, idx % 2 === 1, {
+      1: 'center', 2: 'center', 3: 'center', 4: 'left', 5: 'center',
+      6: 'center', 7: 'center', 8: 'right', 9: 'left', 10: 'left'
+    }, { 8: NUM_FMTS.currency });
+  });
+
+  const totRow = ws.addRow(['TOTAL PELUNASAN DITERIMA', '', '', '', '', '', '', totBayar, '', '']);
+  ws.mergeCells(`A${totRow.number}:G${totRow.number}`);
+  applyTotalRowStyle(totRow, { 1: 'right', 8: 'right' }, { 8: NUM_FMTS.currency });
+
+  autoFitColumns(ws);
+  const filename = `Riwayat_Pelunasan_Piutang_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  await saveWorkbook(wb, filename);
+  return filename;
+}
+
+// ============================================================================
+// 7. PENJUALAN PER PRODUK
+// ============================================================================
+export async function exportSalesByProductToExcel({
+  items = [],
+  summary = {},
+  period,
+  outletName = 'Semua Cabang',
+  businessName = 'MOVA POS',
+}) {
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Penjualan per Produk', { views: [{ showGridLines: true }] });
+
+  const periodStr = formatIndoPeriod(period);
+  addReportHeader(ws, { businessName, reportTitle: 'LAPORAN PENJUALAN PER PRODUK & MENU', periodText: periodStr, outletName, colSpan: 11, titleColor: 'FF1E40AF' });
+  addTableHeader(ws, ['No', 'Kode Menu', 'Nama Produk / Menu', 'Qty Terjual', 'Qty Refund', 'Satuan', 'HPP Modal (Rp)', 'Harga Jual (Rp)', 'Diskon (Rp)', 'Total Penjualan Kotor (Rp)', 'Total Refund (Rp)'], 'FF1E3A8A');
+
+  items.forEach((item, idx) => {
+    const row = ws.addRow([
       idx + 1,
       item.code || '-',
       item.name || '-',
       Number(item.qty_sold) || 0,
       Number(item.qty_refund) || 0,
-      item.unit || 'Cup',
+      item.unit || 'Porsi',
       Number(item.cost_price) || 0,
       Number(item.price) || 0,
       Number(item.discount_amount) || 0,
       Number(item.total_sales) || 0,
       Number(item.total_refund) || 0,
     ]);
+    applyDataRowStyle(row, idx % 2 === 1, {
+      1: 'center', 2: 'center', 3: 'left', 4: 'right', 5: 'right',
+      6: 'center', 7: 'right', 8: 'right', 9: 'right', 10: 'right', 11: 'right'
+    }, {
+      4: NUM_FMTS.number, 5: NUM_FMTS.number, 7: NUM_FMTS.currency,
+      8: NUM_FMTS.currency, 9: NUM_FMTS.currency, 10: NUM_FMTS.currency, 11: NUM_FMTS.currency
+    });
   });
 
-  // Total summary row
-  rows.push([
-    'Total',
-    '',
-    '',
+  const totRow = ws.addRow([
+    'TOTAL PENJUALAN', '', '',
     Number(summary.total_qty_sold) || 0,
     Number(summary.total_qty_refund) || 0,
     '',
@@ -526,49 +731,37 @@ export async function exportSalesByProductToExcel({ items = [], summary = {}, pe
     Number(summary.total_sales) || 0,
     Number(summary.total_refund) || 0,
   ]);
+  ws.mergeCells(`A${totRow.number}:C${totRow.number}`);
+  applyTotalRowStyle(totRow, { 1: 'right', 4: 'right', 5: 'right', 7: 'right', 9: 'right', 10: 'right', 11: 'right' }, {
+    4: NUM_FMTS.number, 5: NUM_FMTS.number, 7: NUM_FMTS.currency, 9: NUM_FMTS.currency, 10: NUM_FMTS.currency, 11: NUM_FMTS.currency
+  });
 
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = fitColumns(rows);
-  XLSX.utils.book_append_sheet(wb, ws, 'Penjualan per Produk');
-
-  const filename = `Laporan_Penjualan_Produk_${period.from}_sd_${period.to}.xlsx`;
-  XLSX.writeFile(wb, filename);
+  autoFitColumns(ws);
+  const filename = `Laporan_Penjualan_Produk_${period?.from || 'all'}_sd_${period?.to || 'all'}.xlsx`;
+  await saveWorkbook(wb, filename);
   return filename;
 }
 
-/**
- * 7. Export Laporan Penukaran Poin to Excel
- */
-export async function exportPointRedemptionsToExcel({ items = [], summary = {}, period, outletName = 'Semua Cabang', businessName = 'MOVA POS' }) {
-  const XLSX = await getXLSX();
-  const wb = XLSX.utils.book_new();
-  const periodStr = formatIndoPeriod(period);
+// ============================================================================
+// 8. PENUKARAN POIN MEMBER
+// ============================================================================
+export async function exportPointRedemptionsToExcel({
+  items = [],
+  summary = {},
+  period,
+  outletName = 'Semua Cabang',
+  businessName = 'MOVA POS',
+}) {
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Penukaran Poin', { views: [{ showGridLines: true }] });
 
-  const rows = [
-    [businessName],
-    ['LAPORAN PENUKARAN POIN'],
-    [`Per ${periodStr}`],
-    [],
-    [],
-    [],
-    [
-      'No',
-      'Tanggal',
-      'Tgl. Dibuat',
-      'Dibuat Oleh',
-      'Warehouse',
-      'Customer',
-      'Kasir',
-      'No.Transaksi',
-      'Penukaran',
-      'Qty',
-      'Nilai',
-      'Poin',
-    ],
-  ];
+  const periodStr = formatIndoPeriod(period);
+  addReportHeader(ws, { businessName, reportTitle: 'LAPORAN PENUKARAN POIN & REWARD MEMBER', periodText: periodStr, outletName, colSpan: 12, titleColor: 'FF7C3AED' });
+  addTableHeader(ws, ['No', 'Tanggal', 'Tgl Dibuat', 'Dibuat Oleh', 'Cabang / Outlet', 'Nama Member', 'Kasir', 'No. Transaksi', 'Penukaran / Reward', 'Qty', 'Nilai Diskon (Rp)', 'Poin Digunakan'], 'FF6D28D9');
 
   items.forEach((item, idx) => {
-    rows.push([
+    const row = ws.addRow([
       idx + 1,
       item.date || '-',
       item.created_at || '-',
@@ -582,555 +775,344 @@ export async function exportPointRedemptionsToExcel({ items = [], summary = {}, 
       Number(item.nilai) || 0,
       Number(item.points_used) || 0,
     ]);
+    applyDataRowStyle(row, idx % 2 === 1, {
+      1: 'center', 2: 'center', 3: 'center', 4: 'left', 5: 'left',
+      6: 'left', 7: 'left', 8: 'center', 9: 'left', 10: 'right', 11: 'right', 12: 'right'
+    }, { 10: NUM_FMTS.number, 11: NUM_FMTS.currency, 12: NUM_FMTS.number });
   });
 
-  rows.push([
-    'Total',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    Number(summary.total_qty) || items.length,
-    Number(summary.total_nilai) || 0,
-    Number(summary.total_points) || 0,
-  ]);
+  const totRow = ws.addRow(['TOTAL PENUKARAN', '', '', '', '', '', '', '', '', Number(summary.total_qty) || items.length, Number(summary.total_nilai) || 0, Number(summary.total_points) || 0]);
+  ws.mergeCells(`A${totRow.number}:I${totRow.number}`);
+  applyTotalRowStyle(totRow, { 1: 'right', 10: 'right', 11: 'right', 12: 'right' }, { 10: NUM_FMTS.number, 11: NUM_FMTS.currency, 12: NUM_FMTS.number });
 
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = fitColumns(rows);
-  XLSX.utils.book_append_sheet(wb, ws, 'Penukaran Poin');
-
-  const filename = `Laporan_Penukaran_Poin_${period.from}_sd_${period.to}.xlsx`;
-  XLSX.writeFile(wb, filename);
+  autoFitColumns(ws);
+  const filename = `Laporan_Penukaran_Poin_${period?.from || 'all'}_sd_${period?.to || 'all'}.xlsx`;
+  await saveWorkbook(wb, filename);
   return filename;
 }
 
-/**
- * 8. Export Laporan Pembayaran Penjualan to Excel
- */
-export async function exportSalesPaymentsToExcel({ items = [], summary = {}, period, outletName = 'Semua Cabang', businessName = 'MOVA POS' }) {
-  const XLSX = await getXLSX();
-  const wb = XLSX.utils.book_new();
-  const periodStr = formatIndoPeriod(period);
+// ============================================================================
+// 9. REKAP METODE PEMBAYARAN (SALES PAYMENTS)
+// ============================================================================
+export async function exportSalesPaymentsToExcel({
+  items = [],
+  summary = {},
+  period,
+  outletName = 'Semua Cabang',
+  businessName = 'MOVA POS',
+}) {
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Metode Pembayaran', { views: [{ showGridLines: true }] });
 
-  const rows = [
-    [businessName],
-    ['LAPORAN PEMBAYARAN PENJUALAN'],
-    [`Per ${periodStr}`],
-    [],
-    [
-      'No.',
-      'Tanggal',
-      'Jam',
-      'Tgl. Dibuat',
-      'Dibuat Oleh',
-      'Warehouse',
-      'No.Penjualan',
-      'No.Pembayaran',
-      'Customer',
-      'Jenis Bayar',
-      'Disetor Ke',
-      'Total Transaksi',
-      'Bayar',
-      'Piutang',
-      'Kasir',
-    ],
-  ];
+  const periodStr = formatIndoPeriod(period);
+  addReportHeader(ws, { businessName, reportTitle: 'LAPORAN REKAP PENJUALAN PER METODE PEMBAYARAN', periodText: periodStr, outletName, colSpan: 6, titleColor: 'FF0284C7' });
+  addTableHeader(ws, ['No', 'Metode Pembayaran', 'Kategori Saluran', 'Jumlah Transaksi', 'Total Penerimaan (Rp)', 'Kontribusi (%)'], 'FF0369A1');
 
   items.forEach((item, idx) => {
-    rows.push([
+    const row = ws.addRow([
       idx + 1,
-      item.date || '-',
-      item.time || '-',
-      item.created_at || '-',
-      item.created_by || '-',
-      item.warehouse || outletName,
-      item.order_number || '-',
-      item.payment_number || '',
-      item.customer || '-',
-      item.payment_method || '-',
-      item.deposit_account || '-',
-      Number(item.total_transaction) || 0,
-      Number(item.paid_amount) || 0,
-      Number(item.receivable_amount) || 0,
-      item.cashier || item.created_by || '-',
-    ]);
-  });
-
-  rows.push([
-    'Total',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    Number(summary.total_transaction) || 0,
-    Number(summary.total_paid) || 0,
-    Number(summary.total_receivable) || 0,
-    '',
-  ]);
-
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = fitColumns(rows);
-  XLSX.utils.book_append_sheet(wb, ws, 'Pembayaran Penjualan');
-
-  const filename = `Laporan_Pembayaran_Penjualan_${period.from}_sd_${period.to}.xlsx`;
-  XLSX.writeFile(wb, filename);
-  return filename;
-}
-
-/**
- * 9. Export Laporan Transaksi Penjualan (Detail) to Excel
- */
-export async function exportSalesTransactionsToExcel({ items = [], summary = {}, period, outletName = 'Semua Cabang', businessName = 'MOVA POS' }) {
-  const XLSX = await getXLSX();
-  const wb = XLSX.utils.book_new();
-  const periodStr = formatIndoPeriod(period);
-
-  const rows = [
-    [businessName],
-    ['Laporan Transaksi Penjualan'],
-    [`Per ${periodStr}`],
-    [
-      'No.',
-      'Tgl',
-      'Tgl. Dibuat',
-      'Dibuat Oleh',
-      'No.Ref',
-      'Customer',
-      'Promo',
-      'Jenis Bayar',
-      'Setor Ke',
-      'Kode Produk',
-      'Produk/Sub Produk',
-      'Kategori Produk',
-      'Sales Type',
-      'HPP',
-      'Harga Jual',
-      '',
-      '',
-      '',
-      '',
-      'Disc Tambahan',
-      'Disc Customer',
-      'PPN',
-      'Src.Charge',
-      'Pengiriman',
-      'Penjualan',
-      'Piutang',
-      'Profit',
-      'Kasir',
-      'Cetak Nota',
-    ],
-    [
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '(Per 1 Qty)',
-      'QTY',
-      'Satuan',
-      'Harga',
-      'Disc',
-      'Subtotal',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-    ],
-  ];
-
-  items.forEach((item, idx) => {
-    rows.push([
-      idx + 1,
-      item.date || '-',
-      item.created_at || '-',
-      item.created_by || '-',
-      item.order_number || '-',
-      item.customer || 'Walk-in Customer',
-      item.promo || '',
-      item.payment_method || '-',
-      item.deposit_account || '-',
-      item.product_code || '-',
-      item.product_name || '-',
-      item.product_category || 'KOPI',
-      item.sales_type || 'Dine-in',
-      Number(item.hpp) || 0,
-      Number(item.qty) || 0,
-      item.unit || 'Cup',
-      Number(item.price) || 0,
-      Number(item.discount) || 0,
-      Number(item.subtotal) || 0,
-      Number(item.discount_extra) || 0,
-      Number(item.discount_customer) || 0,
-      Number(item.tax) || 0,
-      Number(item.service_charge) || 0,
-      Number(item.shipping) || 0,
-      Number(item.total_sale) || 0,
-      Number(item.receivable) || 0,
-      Number(item.profit) || 0,
-      item.cashier || item.created_by || '-',
-      Number(item.receipt_printed) || 0,
-    ]);
-  });
-
-  rows.push([
-    'Total',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    Number(summary.total_qty) || 0,
-    '',
-    '',
-    '',
-    '',
-    Number(summary.total_discount) || 0,
-    0,
-    0,
-    0,
-    0,
-    Number(summary.total_sale) || 0,
-    Number(summary.total_receivable) || 0,
-    Number(summary.total_profit) || 0,
-    '',
-    '',
-  ]);
-
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = fitColumns(rows);
-  XLSX.utils.book_append_sheet(wb, ws, 'Transaksi Penjualan');
-
-  const filename = `Laporan_Transaksi_Penjualan_${period.from}_sd_${period.to}.xlsx`;
-  XLSX.writeFile(wb, filename);
-  return filename;
-}
-
-/**
- * 10. Export Laporan Penjualan per Customer to Excel
- */
-export async function exportSalesByCustomerToExcel({ items = [], summary = {}, period, outletName = 'Semua Cabang', businessName = 'MOVA POS' }) {
-  const XLSX = await getXLSX();
-  const wb = XLSX.utils.book_new();
-  const periodStr = formatIndoPeriod(period);
-
-  const rows = [
-    [businessName],
-    ['LAPORAN DAFTAR PENJUALAN PER CUSTOMER'],
-    [`Per ${periodStr}`],
-    [],
-    [
-      'No.',
-      'Tanggal',
-      'Kode Customer',
-      'Customer',
-      'Group Customer',
-      'No.Ref',
-      'Produk',
-      'Qty',
-      'Satuan',
-      'Harga Satuan',
-      'Disc',
-      'PPN',
-      'Src.Charge',
-      'Pengiriman',
-      'Total',
-      'Total Bayar',
-      'Jenis Bayar',
-      'Piutang',
-      'Kasir',
-    ],
-  ];
-
-  items.forEach((item, idx) => {
-    rows.push([
-      idx + 1,
-      item.date || '-',
-      item.customer_code || '-',
-      item.customer_name || 'Walk-in Customer',
-      item.customer_group || 'Reguler',
-      item.order_number || '-',
-      item.product_name || '-',
-      Number(item.qty) || 0,
-      item.unit || 'Cup',
-      Number(item.price) || 0,
-      Number(item.discount) || 0,
-      Number(item.tax) || 0,
-      Number(item.service_charge) || 0,
-      Number(item.shipping) || 0,
+      item.method || '-',
+      item.category || item.channel || 'Tunai / Non-Tunai',
+      Number(item.count) || 0,
       Number(item.total) || 0,
-      Number(item.total_paid) || 0,
-      item.payment_method || '-',
-      Number(item.receivable) || 0,
-      item.cashier || '-',
+      (Number(item.percentage) || 0) / 100,
     ]);
+    applyDataRowStyle(row, idx % 2 === 1, {
+      1: 'center', 2: 'left', 3: 'center', 4: 'right', 5: 'right', 6: 'right'
+    }, { 4: NUM_FMTS.number, 5: NUM_FMTS.currency, 6: NUM_FMTS.percent });
   });
 
-  rows.push([
-    'Total Penjualan Semua Customer',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    Number(summary.total_qty) || 0,
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    Number(summary.total_amount) || 0,
-    Number(summary.total_paid) || 0,
-    '',
-    Number(summary.total_receivable) || 0,
-    '',
+  const totRow = ws.addRow([
+    'TOTAL PENERIMAAN', '', '',
+    Number(summary.total_transactions || summary.total_count) || 0,
+    Number(summary.total_amount || summary.total_sales) || 0,
+    1.0,
   ]);
+  ws.mergeCells(`A${totRow.number}:C${totRow.number}`);
+  applyTotalRowStyle(totRow, { 1: 'right', 4: 'right', 5: 'right', 6: 'right' }, { 4: NUM_FMTS.number, 5: NUM_FMTS.currency, 6: NUM_FMTS.percent });
 
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = fitColumns(rows);
-  XLSX.utils.book_append_sheet(wb, ws, 'Penjualan per Customer');
-
-  const filename = `Laporan_Penjualan_Customer_${period.from}_sd_${period.to}.xlsx`;
-  XLSX.writeFile(wb, filename);
+  autoFitColumns(ws);
+  const filename = `Laporan_Metode_Pembayaran_${period?.from || 'all'}_sd_${period?.to || 'all'}.xlsx`;
+  await saveWorkbook(wb, filename);
   return filename;
 }
 
-/**
- * 11. Export Laporan Waktu Teramai to Excel
- */
-export async function exportPeakHoursToExcel({ items = [], summary = {}, period, outletName = 'Semua Cabang', businessName = 'MOVA POS' }) {
-  const XLSX = await getXLSX();
-  const wb = XLSX.utils.book_new();
+// ============================================================================
+// 10. DAFTAR TRANSAKSI PENJUALAN (SALES TRANSACTIONS)
+// ============================================================================
+export async function exportSalesTransactionsToExcel({
+  items = [],
+  summary = {},
+  period,
+  outletName = 'Semua Cabang',
+  businessName = 'MOVA POS',
+}) {
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Daftar Transaksi', { views: [{ showGridLines: true }] });
+
   const periodStr = formatIndoPeriod(period);
+  addReportHeader(ws, { businessName, reportTitle: 'LAPORAN DETAIL TRANSAKSI PENJUALAN KASIR', periodText: periodStr, outletName, colSpan: 16, titleColor: 'FF1E40AF' });
+  addTableHeader(ws, [
+    'No', 'No. Nota / TRX', 'Tanggal', 'Jam', 'Tipe Order', 'Meja', 'Pelanggan',
+    'Kasir', 'Shift', 'Metode Bayar', 'Subtotal (Rp)', 'Diskon (Rp)', 'Total Bayar (Rp)',
+    'Uang Diterima (Rp)', 'Kembalian (Rp)', 'Status'
+  ], 'FF1E293B');
 
-  const rows = [
-    [businessName],
-    ['LAPORAN WAKTU TERAMAI'],
-    [`Per ${periodStr}`],
-    [],
-    [
-      'No.',
-      'Waktu',
-      'Total Penjualan (Rp)',
-      'Rata-rata Penjualan (Rp)',
-      'Penjualan (%)',
-      'Transaksi',
-      'Transaksi (%)',
-      'Produk',
-      'Produk (%)',
-      'Tamu',
-      'Tamu (%)',
-    ],
-  ];
+  let totSubtotal = 0, totDisc = 0, totNet = 0;
+  items.forEach((t, idx) => {
+    const sub = Number(t.subtotal || t.total_price) || 0;
+    const disc = Number(t.discount_amount) || 0;
+    const net = Number(t.total_price) || 0;
+    totSubtotal += sub; totDisc += disc; totNet += net;
 
-  items.forEach((item, idx) => {
-    rows.push([
+    const row = ws.addRow([
       idx + 1,
-      item.waktu || '',
-      Number(item.total_penjualan) || 0,
-      Number(item.avg_penjualan) || 0,
-      Number(item.penjualan_pct) || 0,
-      Number(item.transaksi) || 0,
-      Number(item.transaksi_pct) || 0,
-      Number(item.produk) || 0,
-      Number(item.produk_pct) || 0,
-      Number(item.tamu) || 0,
-      Number(item.tamu_pct) || 0,
+      t.order_number || `TRX-${t.id}`,
+      t.date || '-',
+      t.time || (t.created_at ? t.created_at.slice(11, 16) : '-'),
+      t.order_type || 'DINE_IN',
+      t.table_number || '-',
+      t.customer_name || 'Pelanggan Umum',
+      t.user?.name || t.cashier_name || 'Kasir',
+      t.shift?.shift_name || (t.shift_id ? `Shift ${t.shift_id}` : 'Reguler'),
+      t.payment_method || 'CASH',
+      sub,
+      disc,
+      net,
+      Number(t.amount_paid) || 0,
+      Number(t.change_amount) || 0,
+      t.status || 'PAID',
     ]);
+
+    applyDataRowStyle(row, idx % 2 === 1, {
+      1: 'center', 2: 'center', 3: 'center', 4: 'center', 5: 'center', 6: 'center',
+      7: 'left', 8: 'left', 9: 'center', 10: 'center', 11: 'right', 12: 'right',
+      13: 'right', 14: 'right', 15: 'right', 16: 'center'
+    }, {
+      11: NUM_FMTS.currency, 12: NUM_FMTS.currency, 13: NUM_FMTS.currency,
+      14: NUM_FMTS.currency, 15: NUM_FMTS.currency
+    });
   });
 
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = fitColumns(rows);
-  XLSX.utils.book_append_sheet(wb, ws, 'Waktu Teramai');
+  const totRow = ws.addRow(['TOTAL KESELURUHAN', '', '', '', '', '', '', '', '', '', totSubtotal, totDisc, totNet, '', '', '']);
+  ws.mergeCells(`A${totRow.number}:J${totRow.number}`);
+  applyTotalRowStyle(totRow, { 1: 'right', 11: 'right', 12: 'right', 13: 'right' }, {
+    11: NUM_FMTS.currency, 12: NUM_FMTS.currency, 13: NUM_FMTS.currency
+  });
 
-  const filename = `Laporan_Waktu_Teramai_${period.from}_sd_${period.to}.xlsx`;
-  XLSX.writeFile(wb, filename);
+  autoFitColumns(ws);
+  const filename = `Laporan_Transaksi_Penjualan_${period?.from || 'all'}_sd_${period?.to || 'all'}.xlsx`;
+  await saveWorkbook(wb, filename);
   return filename;
 }
 
-/**
- * 12. Export Laporan Piutang Customer to Excel
- */
-export async function exportCustomerReceivablesToExcel({ items = [], summary = {}, period, outletName = 'Semua Cabang', businessName = 'MOVA POS' }) {
-  const XLSX = await getXLSX();
-  const wb = XLSX.utils.book_new();
+// ============================================================================
+// 11. PENJUALAN PER PELANGGAN (SALES BY CUSTOMER)
+// ============================================================================
+export async function exportSalesByCustomerToExcel({
+  items = [],
+  summary = {},
+  period,
+  outletName = 'Semua Cabang',
+  businessName = 'MOVA POS',
+}) {
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Penjualan per Pelanggan', { views: [{ showGridLines: true }] });
+
   const periodStr = formatIndoPeriod(period);
+  addReportHeader(ws, { businessName, reportTitle: 'LAPORAN ANALISIS PENJUALAN PER PELANGGAN', periodText: periodStr, outletName, colSpan: 9, titleColor: 'FF047857' });
+  addTableHeader(ws, ['No', 'Nama Pelanggan', 'No. Telepon', 'Kategori Member', 'Total Kunjungan', 'Total Belanja (Rp)', 'Rata-rata / Kunjungan (Rp)', 'Total Poin', 'Kunjungan Terakhir'], 'FF065F46');
 
-  const rows = [
-    [businessName],
-    ['LAPORAN BUKU PIUTANG USAHA (AR CUSTOMER & AR MERCHANT)'],
-    [`Per ${periodStr}`],
-    [],
-    [
-      'No.',
-      'Kategori AR',
-      'Debitur / Merchant Channel',
-      'Tanggal',
-      'Jam',
-      'No.Penjualan / Order',
-      'Gross Piutang (Rp)',
-      'Potongan MDR/Komisi (Rp)',
-      'Net Piutang (Rp)',
-      'Dibayar / Dicairkan (Rp)',
-      'Sisa Piutang (Rp)',
-      'Metode Bayar',
-      'Status Settlement',
-      'Usia Piutang',
-      'Jatuh Tempo',
-    ],
-  ];
+  let totSpend = 0, totVisits = 0;
+  items.forEach((c, idx) => {
+    const spend = Number(c.total_spent || c.total_sales) || 0;
+    const visits = Number(c.total_visits || c.visits) || 0;
+    totSpend += spend; totVisits += visits;
 
-  items.forEach((item, idx) => {
-    let arTypeLabel = 'Kasbon Pelanggan';
-    if (item.ar_type === 'MERCHANT_QRIS') arTypeLabel = 'AR Merchant QRIS';
-    else if (item.ar_type === 'MERCHANT_ECOMMERCE') arTypeLabel = `AR E-Commerce (${item.merchant_channel || 'Online'})`;
-
-    rows.push([
+    const row = ws.addRow([
       idx + 1,
-      arTypeLabel,
-      item.customer || item.merchant_channel || '-',
-      item.tanggal || '-',
-      item.jam || '-',
-      item.no_penjualan || '-',
-      Number(item.piutang) || 0,
-      Number(item.mdr_fee) || 0,
-      Number(item.net_amount || item.piutang) || 0,
-      Number(item.dibayar) || 0,
-      Number(item.sisa_piutang) || 0,
-      item.payment_method || '-',
-      item.settlement_status || (item.sisa_piutang <= 0 ? 'LUNAS' : 'BELUM LUNAS'),
-      item.usia_piutang || '0 Hari',
-      item.jatuh_tempo || '-',
+      c.name || 'Pelanggan Umum',
+      c.phone || '-',
+      c.tier || c.category || 'REGULAR',
+      visits,
+      spend,
+      visits > 0 ? Math.round(spend / visits) : spend,
+      Number(c.points) || 0,
+      c.last_visit || '-',
     ]);
+    applyDataRowStyle(row, idx % 2 === 1, {
+      1: 'center', 2: 'left', 3: 'center', 4: 'center', 5: 'right',
+      6: 'right', 7: 'right', 8: 'right', 9: 'center'
+    }, { 5: NUM_FMTS.number, 6: NUM_FMTS.currency, 7: NUM_FMTS.currency, 8: NUM_FMTS.number });
   });
 
-  // Total Piutang footer row
-  rows.push([
-    'Total Piutang',
-    '',
-    '',
-    '',
-    '',
-    '',
-    Number(summary.total_gross_piutang || summary.total_piutang) || 0,
-    Number(summary.total_mdr_fee) || 0,
-    Number(summary.total_net_piutang) || 0,
-    Number(summary.total_dibayar) || 0,
-    Number(summary.total_sisa_piutang) || 0,
-    '',
-    '',
-    '',
-    '',
-  ]);
+  const totRow = ws.addRow(['TOTAL KESELURUHAN', '', '', '', totVisits, totSpend, totVisits > 0 ? Math.round(totSpend / totVisits) : 0, '', '']);
+  ws.mergeCells(`A${totRow.number}:D${totRow.number}`);
+  applyTotalRowStyle(totRow, { 1: 'right', 5: 'right', 6: 'right', 7: 'right' }, { 5: NUM_FMTS.number, 6: NUM_FMTS.currency, 7: NUM_FMTS.currency });
 
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = fitColumns(rows);
-  XLSX.utils.book_append_sheet(wb, ws, 'Buku Piutang');
-
-  const filename = `Laporan_Buku_Piutang_${period.from}_sd_${period.to}.xlsx`;
-  XLSX.writeFile(wb, filename);
+  autoFitColumns(ws);
+  const filename = `Laporan_Pelanggan_${period?.from || 'all'}_sd_${period?.to || 'all'}.xlsx`;
+  await saveWorkbook(wb, filename);
   return filename;
 }
 
-/**
- * 13. Export Laporan Promo to Excel
- */
-export async function exportPromosToExcel({ items = [], summary = {}, period, outletName = 'Semua Cabang', businessName = 'MOVA POS' }) {
-  const XLSX = await getXLSX();
-  const wb = XLSX.utils.book_new();
+// ============================================================================
+// 12. ANALISIS JAM RAMAI (PEAK HOURS)
+// ============================================================================
+export async function exportPeakHoursToExcel({
+  items = [],
+  summary = {},
+  period,
+  outletName = 'Semua Cabang',
+  businessName = 'MOVA POS',
+}) {
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Jam Ramai', { views: [{ showGridLines: true }] });
+
   const periodStr = formatIndoPeriod(period);
+  addReportHeader(ws, { businessName, reportTitle: 'LAPORAN ANALISIS JAM RAMAI (PEAK HOURS)', periodText: periodStr, outletName, colSpan: 6, titleColor: 'FFE11D48' });
+  addTableHeader(ws, ['No', 'Rentang Jam Operasional', 'Jumlah Transaksi', 'Total Qty Terjual', 'Total Omset Penjualan (Rp)', 'Kontribusi (%)'], 'FFBE123C');
 
-  const rows = [
-    [businessName],
-    ['LAPORAN PROMO'],
-    [`Per ${periodStr}`],
-    [],
-    [
-      'No.',
-      'Tanggal',
-      'Promo',
-      'Jenis',
-      'Jumlah Transaksi',
-      'Nilai (Rp)',
-    ],
-  ];
+  let totTrx = 0, totQty = 0, totOmset = 0;
+  items.forEach((h, idx) => {
+    const trx = Number(h.transaction_count || h.count) || 0;
+    const qty = Number(h.qty_sold || h.qty) || 0;
+    const omset = Number(h.total_sales || h.total) || 0;
+    totTrx += trx; totQty += qty; totOmset += omset;
 
-  items.forEach((item, idx) => {
-    rows.push([
+    const row = ws.addRow([
       idx + 1,
-      item.tanggal || '-',
-      item.promo || '-',
-      item.jenis || '-',
-      Number(item.jumlah_transaksi) || 0,
-      Number(item.nilai) || 0,
+      h.hour_range || `${h.hour}:00 - ${h.hour}:59`,
+      trx,
+      qty,
+      omset,
+      (Number(h.percentage) || 0) / 100,
     ]);
+    applyDataRowStyle(row, idx % 2 === 1, {
+      1: 'center', 2: 'center', 3: 'right', 4: 'right', 5: 'right', 6: 'right'
+    }, { 3: NUM_FMTS.number, 4: NUM_FMTS.number, 5: NUM_FMTS.currency, 6: NUM_FMTS.percent });
   });
 
-  rows.push([
-    'Total Promo',
-    '',
-    '',
-    '',
-    Number(summary.total_promo) || 0,
-    Number(summary.total_nilai) || 0,
-  ]);
+  const totRow = ws.addRow(['TOTAL KESELURUHAN', '', totTrx, totQty, totOmset, 1.0]);
+  ws.mergeCells(`A${totRow.number}:B${totRow.number}`);
+  applyTotalRowStyle(totRow, { 1: 'right', 3: 'right', 4: 'right', 5: 'right', 6: 'right' }, { 3: NUM_FMTS.number, 4: NUM_FMTS.number, 5: NUM_FMTS.currency, 6: NUM_FMTS.percent });
 
-  rows.push([
-    'Total Penjualan Promo',
-    '',
-    '',
-    '',
-    '',
-    Number(summary.total_penjualan_promo) || 0,
-  ]);
-
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = fitColumns(rows);
-  XLSX.utils.book_append_sheet(wb, ws, 'Laporan Promo');
-
-  const filename = `Laporan_Promo_${period.from}_sd_${period.to}.xlsx`;
-  XLSX.writeFile(wb, filename);
+  autoFitColumns(ws);
+  const filename = `Laporan_Jam_Ramai_${period?.from || 'all'}_sd_${period?.to || 'all'}.xlsx`;
+  await saveWorkbook(wb, filename);
   return filename;
 }
 
-/**
- * 12. Export Laporan Hutang Supplier to Excel (Layout EXACTLY matching user's uploaded template)
- * Columns: No. | Supplier/Tanggal | Tgl. Dibuat | Dibuat Oleh | No.Pembelian | No.Bayar | Jatuh Tempo | Hutang | Dibayar | Sisa Hutang | Total Hutang
- */
+// ============================================================================
+// 13. PIUTANG PELANGGAN (CUSTOMER RECEIVABLES / KASBON)
+// ============================================================================
+export async function exportCustomerReceivablesToExcel({
+  items = [],
+  summary = {},
+  period,
+  outletName = 'Semua Cabang',
+  businessName = 'MOVA POS',
+}) {
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Piutang Pelanggan', { views: [{ showGridLines: true }] });
+
+  const periodStr = formatIndoPeriod(period);
+  addReportHeader(ws, { businessName, reportTitle: 'LAPORAN DAFTAR PIUTANG PELANGGAN & KASBON KASIR', periodText: periodStr, outletName, colSpan: 12, titleColor: 'FF0D9488' });
+  addTableHeader(ws, ['No', 'No. Piutang', 'No. Nota', 'Nama Pelanggan', 'No. Telepon', 'Tanggal Nota', 'Jatuh Tempo', 'Total Kasbon (Rp)', 'Terbayar / DP (Rp)', 'Sisa Piutang (Rp)', 'Status Bayar', 'Catatan'], 'FF115E59');
+
+  let totTagihan = 0, totBayar = 0, totSisa = 0;
+  items.forEach((item, idx) => {
+    const t = Number(item.total_amount) || 0;
+    const p = Number(item.paid_amount) || 0;
+    const r = Number(item.remaining_amount) || 0;
+    totTagihan += t; totBayar += p; totSisa += r;
+
+    const row = ws.addRow([
+      idx + 1,
+      item.receivable_no || `AR-${item.id}`,
+      item.order_number || '-',
+      item.customer_name || '-',
+      item.customer_phone || '-',
+      item.issue_date || '-',
+      item.due_date || '-',
+      t,
+      p,
+      r,
+      item.status || 'UNPAID',
+      item.notes || '-',
+    ]);
+    applyDataRowStyle(row, idx % 2 === 1, {
+      1: 'center', 2: 'center', 3: 'center', 4: 'left', 5: 'center',
+      6: 'center', 7: 'center', 8: 'right', 9: 'right', 10: 'right', 11: 'center', 12: 'left'
+    }, { 8: NUM_FMTS.currency, 9: NUM_FMTS.currency, 10: NUM_FMTS.currency });
+  });
+
+  const totRow = ws.addRow(['TOTAL KESELURUHAN PIUTANG', '', '', '', '', '', '', totTagihan, totBayar, totSisa, '', '']);
+  ws.mergeCells(`A${totRow.number}:G${totRow.number}`);
+  applyTotalRowStyle(totRow, { 1: 'right', 8: 'right', 9: 'right', 10: 'right' }, { 8: NUM_FMTS.currency, 9: NUM_FMTS.currency, 10: NUM_FMTS.currency });
+
+  autoFitColumns(ws);
+  const filename = `Laporan_Piutang_Pelanggan_${period?.from || 'all'}_sd_${period?.to || 'all'}.xlsx`;
+  await saveWorkbook(wb, filename);
+  return filename;
+}
+
+// ============================================================================
+// 14. KINERJA PROMO & DISKON
+// ============================================================================
+export async function exportPromosToExcel({
+  items = [],
+  summary = {},
+  period,
+  outletName = 'Semua Cabang',
+  businessName = 'MOVA POS',
+}) {
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Kinerja Promo', { views: [{ showGridLines: true }] });
+
+  const periodStr = formatIndoPeriod(period);
+  addReportHeader(ws, { businessName, reportTitle: 'LAPORAN EVALUASI EFEKTIVITAS PROMO & DISKON', periodText: periodStr, outletName, colSpan: 7, titleColor: 'FFD97706' });
+  addTableHeader(ws, ['No', 'Nama Promo / Voucher', 'Kode Promo', 'Tipe Diskon', 'Besaran Diskon', 'Frekuensi Pemakaian', 'Total Diskon Diberikan (Rp)'], 'FFB45309');
+
+  let totCount = 0, totDisc = 0;
+  items.forEach((p, idx) => {
+    const c = Number(p.used_count || p.count) || 0;
+    const d = Number(p.total_discount || p.discount_amount) || 0;
+    totCount += c; totDisc += d;
+
+    const row = ws.addRow([
+      idx + 1,
+      p.name || '-',
+      p.code || '-',
+      p.type || 'PERCENTAGE',
+      p.type === 'PERCENTAGE' ? `${p.value || p.rate || 0}%` : (Number(p.value || p.rate) || 0),
+      c,
+      d,
+    ]);
+    applyDataRowStyle(row, idx % 2 === 1, {
+      1: 'center', 2: 'left', 3: 'center', 4: 'center', 5: 'right', 6: 'right', 7: 'right'
+    }, { 6: NUM_FMTS.number, 7: NUM_FMTS.currency });
+  });
+
+  const totRow = ws.addRow(['TOTAL KESELURUHAN', '', '', '', '', totCount, totDisc]);
+  ws.mergeCells(`A${totRow.number}:E${totRow.number}`);
+  applyTotalRowStyle(totRow, { 1: 'right', 6: 'right', 7: 'right' }, { 6: NUM_FMTS.number, 7: NUM_FMTS.currency });
+
+  autoFitColumns(ws);
+  const filename = `Laporan_Promo_Diskon_${period?.from || 'all'}_sd_${period?.to || 'all'}.xlsx`;
+  await saveWorkbook(wb, filename);
+  return filename;
+}
+
+// ============================================================================
+// 15. HUTANG SUPPLIER (SUPPLIER PAYABLES)
+// ============================================================================
 export async function exportSupplierPayablesToExcel({
   rows = [],
   items = [],
@@ -1140,177 +1122,58 @@ export async function exportSupplierPayablesToExcel({
   summary = {},
 }) {
   const dataList = items.length > 0 ? items : rows;
-  const ExcelJSMod = await import('exceljs');
-  const ExcelJS = ExcelJSMod.default || ExcelJSMod;
+  const ExcelJS = await getExcelJS();
   const wb = new ExcelJS.Workbook();
-  wb.creator = businessName;
-  wb.created = new Date();
+  const ws = wb.addWorksheet('Hutang Supplier', { views: [{ showGridLines: true }] });
 
-  const ws = wb.addWorksheet('Laporan Hutang Supplier', {
-    views: [{ showGridLines: true }],
-  });
+  const periodStr = formatIndoPeriod(period);
+  addReportHeader(ws, { businessName, reportTitle: 'LAPORAN DAFTAR HUTANG SUPPLIER & VENDOR (AP)', periodText: periodStr, outletName, colSpan: 11, titleColor: 'FF4338CA' });
+  addTableHeader(ws, ['No', 'Supplier / Tanggal', 'Tgl Dibuat', 'Dibuat Oleh', 'No. Pembelian', 'No. Bukti Bayar', 'Jatuh Tempo', 'Hutang Awal (Rp)', 'Dibayar (Rp)', 'Sisa Hutang (Rp)', 'Total Hutang (Rp)'], 'FF3730A3');
 
-  // Row 2: Title centered across columns
-  ws.getCell('B2').value = 'LAPORAN HUTANG SUPPLIER';
-  ws.getCell('B2').font = { name: 'Arial', size: 14, bold: true };
-  ws.getCell('B2').alignment = { horizontal: 'center', vertical: 'middle' };
-  ws.mergeCells('B2:K2');
-
-  const periodText = typeof period === 'string'
-    ? period
-    : (period.from_formatted && period.to_formatted
-      ? `Per ${period.from_formatted} s/d ${period.to_formatted}`
-      : (period.from && period.to ? `Per ${period.from} s/d ${period.to}` : 'Semua Periode'));
-
-  // Row 3: Period subtitle in italics
-  ws.getCell('B3').value = periodText;
-  ws.getCell('B3').font = { name: 'Arial', size: 11, italic: true };
-  ws.getCell('B3').alignment = { horizontal: 'center', vertical: 'middle' };
-  ws.mergeCells('B3:K3');
-
-  // Row 5: Table Header matching user's screenshot
-  const headerRow = ws.getRow(5);
-  headerRow.values = [
-    'No.',
-    'Supplier/Tanggal',
-    'Tgl. Dibuat',
-    'Dibuat Oleh',
-    'No.Pembelian',
-    'No.Bayar',
-    'Jatuh Tempo',
-    'Hutang',
-    'Dibayar',
-    'Sisa Hutang',
-    'Total Hutang',
-  ];
-  headerRow.height = 24;
-
-  const thinBorder = {
-    top: { style: 'thin', color: { argb: 'FF000000' } },
-    left: { style: 'thin', color: { argb: 'FF000000' } },
-    bottom: { style: 'thin', color: { argb: 'FF000000' } },
-    right: { style: 'thin', color: { argb: 'FF000000' } },
-  };
-
-  headerRow.eachCell((cell) => {
-    cell.font = { name: 'Arial', size: 10, bold: true };
-    cell.alignment = { horizontal: 'center', vertical: 'middle' };
-    cell.border = thinBorder;
-  });
-
-  let currentRowIdx = 6;
+  let totHutang = 0, totDibayar = 0, totSisa = 0;
   dataList.forEach((r, idx) => {
-    const row = ws.getRow(currentRowIdx++);
-    row.values = [
+    const h = Number(r.hutang) || 0;
+    const d = Number(r.dibayar) || 0;
+    const s = Number(r.sisa_hutang) || 0;
+    totHutang += h; totDibayar += d; totSisa += s;
+
+    const row = ws.addRow([
       idx + 1,
-      r.supplier_tanggal || (r.supplier_name ? `${r.supplier_name} - ${r.tgl_dibuat_fmt || r.tgl_dibuat}` : '-'),
+      r.supplier_tanggal || (r.supplier_name ? `${r.supplier_name} - ${r.tgl_dibuat_fmt || r.tgl_dibuat || ''}` : '-'),
       r.tgl_dibuat_fmt || r.tgl_dibuat || '-',
       r.dibuat_oleh || 'Admin',
       r.no_pembelian || '-',
       r.no_bayar || '-',
       r.jatuh_tempo_fmt || r.jatuh_tempo || '-',
-      Number(r.hutang) || 0,
-      Number(r.dibayar) || 0,
-      Number(r.sisa_hutang) || 0,
-      Number(r.total_hutang) || 0,
-    ];
-    row.height = 20;
+      h,
+      d,
+      s,
+      Number(r.total_hutang) || h,
+    ]);
 
-    row.eachCell((cell, colNumber) => {
-      cell.border = thinBorder;
-      cell.font = { name: 'Arial', size: 10 };
-      if (colNumber === 1) {
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      } else if ([3, 5, 6, 7].includes(colNumber)) {
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      } else if (colNumber >= 8) {
-        cell.alignment = { horizontal: 'right', vertical: 'middle' };
-        cell.numFmt = '#,##0.00';
-      } else {
-        cell.alignment = { horizontal: 'left', vertical: 'middle' };
-      }
-    });
+    applyDataRowStyle(row, idx % 2 === 1, {
+      1: 'center', 2: 'left', 3: 'center', 4: 'left', 5: 'center',
+      6: 'center', 7: 'center', 8: 'right', 9: 'right', 10: 'right', 11: 'right'
+    }, { 8: NUM_FMTS.currency, 9: NUM_FMTS.currency, 10: NUM_FMTS.currency, 11: NUM_FMTS.currency });
   });
 
-  // Footer Total Row (Row currentRowIdx):
-  // Exactly matching the screenshot:
-  // "Total Utang" label spanning / in cell H, followed by Dibayar (cell I), Sisa Hutang (cell J), Total Hutang (cell K)
-  const footerRow = ws.getRow(currentRowIdx);
-  footerRow.height = 22;
+  const totRow = ws.addRow(['TOTAL UTANG USAHA', '', '', '', '', '', '', totHutang, Number(summary.total_dibayar) || totDibayar, Number(summary.total_sisa_hutang) || totSisa, Number(summary.total_hutang) || totHutang]);
+  ws.mergeCells(`A${totRow.number}:G${totRow.number}`);
+  applyTotalRowStyle(totRow, { 1: 'right', 8: 'right', 9: 'right', 10: 'right', 11: 'right' }, { 8: NUM_FMTS.currency, 9: NUM_FMTS.currency, 10: NUM_FMTS.currency, 11: NUM_FMTS.currency });
 
-  for (let c = 1; c <= 11; c++) {
-    footerRow.getCell(c).border = thinBorder;
-    footerRow.getCell(c).font = { name: 'Arial', size: 10, bold: true };
-  }
-
-  // Merge A to H with "Total Utang"
-  ws.mergeCells(`A${currentRowIdx}:H${currentRowIdx}`);
-  const totalUtangLabelCell = ws.getCell(`A${currentRowIdx}`);
-  totalUtangLabelCell.value = 'Total Utang';
-  totalUtangLabelCell.alignment = { horizontal: 'right', vertical: 'middle' };
-  totalUtangLabelCell.font = { name: 'Arial', size: 10, bold: true };
-
-  const cellDibayar = footerRow.getCell(9);
-  cellDibayar.value = Number(summary.total_dibayar ?? 0);
-  cellDibayar.alignment = { horizontal: 'right', vertical: 'middle' };
-  cellDibayar.numFmt = '#,##0.00';
-  cellDibayar.font = { name: 'Arial', size: 10, bold: true };
-
-  const cellSisa = footerRow.getCell(10);
-  cellSisa.value = Number(summary.total_sisa_hutang ?? 0);
-  cellSisa.alignment = { horizontal: 'right', vertical: 'middle' };
-  cellSisa.numFmt = '#,##0.00';
-  cellSisa.font = { name: 'Arial', size: 10, bold: true };
-
-  const cellTotal = footerRow.getCell(11);
-  cellTotal.value = Number(summary.total_hutang ?? 0);
-  cellTotal.alignment = { horizontal: 'right', vertical: 'middle' };
-  cellTotal.numFmt = '#,##0.00';
-  cellTotal.font = { name: 'Arial', size: 10, bold: true };
-
-  // Set column widths for readability
-  ws.getColumn(1).width = 6;   // No.
-  ws.getColumn(2).width = 32;  // Supplier/Tanggal
-  ws.getColumn(3).width = 14;  // Tgl. Dibuat
-  ws.getColumn(4).width = 16;  // Dibuat Oleh
-  ws.getColumn(5).width = 20;  // No.Pembelian
-  ws.getColumn(6).width = 24;  // No.Bayar
-  ws.getColumn(7).width = 14;  // Jatuh Tempo
-  ws.getColumn(8).width = 16;  // Hutang
-  ws.getColumn(9).width = 16;  // Dibayar
-  ws.getColumn(10).width = 16; // Sisa Hutang
-  ws.getColumn(11).width = 16; // Total Hutang
-
-  const filename = `Laporan_Hutang_Supplier_${period.from || 'all'}_sd_${period.to || 'all'}.xlsx`;
-  const buffer = await wb.xlsx.writeBuffer();
-  const blob = new Blob([buffer], {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  });
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  window.URL.revokeObjectURL(url);
-
+  autoFitColumns(ws);
+  const filename = `Laporan_Hutang_Supplier_${period?.from || 'all'}_sd_${period?.to || 'all'}.xlsx`;
+  await saveWorkbook(wb, filename);
   return filename;
 }
 
-/**
- * 13. Print / PDF Export for Laporan Hutang Supplier
- */
 export function printSupplierPayablesReport({
   rows = [],
   period = {},
   outletName = 'Semua Cabang',
   summary = {},
 }) {
-  const periodText = period.from_formatted && period.to_formatted
-    ? `Per ${period.from_formatted} s/d ${period.to_formatted}`
-    : (period.from && period.to ? `Per ${period.from} s/d ${period.to}` : 'Semua Periode');
-
+  const periodText = formatIndoPeriod(period);
   const printWindow = window.open('', '_blank');
   if (!printWindow) {
     alert('Pop-up browser diblokir. Harap izinkan pop-up untuk mencetak laporan.');
@@ -1318,7 +1181,7 @@ export function printSupplierPayablesReport({
   }
 
   const numFmt = (val) =>
-    Number(val || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    Number(val || 0).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
   const tableRowsHtml = rows
     .map(
@@ -1331,10 +1194,10 @@ export function printSupplierPayablesReport({
       <td style="text-align:center;">${r.no_pembelian || '-'}</td>
       <td style="text-align:center;">${r.no_bayar || '-'}</td>
       <td style="text-align:center;">${r.jatuh_tempo_fmt || r.jatuh_tempo || '-'}</td>
-      <td style="text-align:right;">${numFmt(r.hutang)}</td>
-      <td style="text-align:right;">${numFmt(r.dibayar)}</td>
-      <td style="text-align:right;">${numFmt(r.sisa_hutang)}</td>
-      <td style="text-align:right;">${numFmt(r.total_hutang)}</td>
+      <td style="text-align:right;">Rp ${numFmt(r.hutang)}</td>
+      <td style="text-align:right;">Rp ${numFmt(r.dibayar)}</td>
+      <td style="text-align:right; font-weight:bold; color:#dc2626;">Rp ${numFmt(r.sisa_hutang)}</td>
+      <td style="text-align:right;">Rp ${numFmt(r.total_hutang)}</td>
     </tr>
   `
     )
@@ -1346,28 +1209,26 @@ export function printSupplierPayablesReport({
   <head>
     <title>LAPORAN HUTANG SUPPLIER</title>
     <style>
-      @page { size: landscape; margin: 12mm; }
-      body { font-family: Arial, sans-serif; font-size: 11px; color: #111; margin: 0; padding: 10px; }
-      .header { text-align: center; margin-bottom: 20px; }
-      .title { font-size: 16px; font-weight: bold; letter-spacing: 0.5px; }
-      .subtitle { font-size: 12px; font-style: italic; margin-top: 4px; color: #333; }
-      .meta { display: flex; justify-content: space-between; font-size: 10.5px; margin-bottom: 8px; }
+      @page { size: landscape; margin: 10mm; }
+      body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; color: #0f172a; margin: 0; padding: 15px; }
+      .header { text-align: center; margin-bottom: 16px; border-bottom: 2px solid #0f172a; padding-bottom: 10px; }
+      .title { font-size: 16px; font-weight: bold; color: #1e293b; }
+      .subtitle { font-size: 11px; font-style: italic; margin-top: 4px; color: #64748b; }
+      .meta { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 10px; }
       table { width: 100%; border-collapse: collapse; margin-top: 5px; }
-      th, td { border: 1px solid #222; padding: 6px 8px; }
-      th { background-color: #f3f4f6; font-weight: bold; text-align: center; }
-      .footer-total { font-weight: bold; background-color: #f9fafb; }
-      @media print {
-        th { background-color: #eee !important; -webkit-print-color-adjust: exact; }
-      }
+      th, td { border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 11px; }
+      th { background-color: #1e293b; color: #ffffff; font-weight: bold; text-align: center; }
+      .footer-total { font-weight: bold; background-color: #f1f5f9; }
+      @media print { th { background-color: #1e293b !important; color: #ffffff !important; -webkit-print-color-adjust: exact; } }
     </style>
   </head>
   <body>
     <div class="header">
-      <div class="title">LAPORAN HUTANG SUPPLIER</div>
+      <div class="title">LAPORAN HUTANG SUPPLIER & VENDOR (AP)</div>
       <div class="subtitle">${periodText}</div>
     </div>
     <div class="meta">
-      <div><strong>Outlet/Cabang:</strong> ${outletName}</div>
+      <div><strong>Cabang:</strong> ${outletName}</div>
       <div><strong>Dicetak Pada:</strong> ${new Date().toLocaleString('id-ID')}</div>
     </div>
     <table>
@@ -1391,657 +1252,1006 @@ export function printSupplierPayablesReport({
       </tbody>
       <tfoot>
         <tr class="footer-total">
-          <td colspan="8" style="text-align: right; padding-right: 12px;">Total Utang</td>
-          <td style="text-align: right;">${numFmt(summary.total_dibayar)}</td>
-          <td style="text-align: right;">${numFmt(summary.total_sisa_hutang)}</td>
-          <td style="text-align: right;">${numFmt(summary.total_hutang)}</td>
+          <td colspan="7" style="text-align: right; padding-right: 12px; font-weight:bold;">Total Utang</td>
+          <td style="text-align: right;">Rp ${numFmt(summary.total_hutang || 0)}</td>
+          <td style="text-align: right;">Rp ${numFmt(summary.total_dibayar || 0)}</td>
+          <td style="text-align: right; color:#dc2626;">Rp ${numFmt(summary.total_sisa_hutang || 0)}</td>
+          <td style="text-align: right;">Rp ${numFmt(summary.total_hutang || 0)}</td>
         </tr>
       </tfoot>
     </table>
-    <script>
-      window.onload = function() {
-        window.print();
-      };
-    </script>
+    <script>window.onload = function() { window.print(); };</script>
   </body>
-  </html>
-  `;
+  </html>`;
 
   printWindow.document.open();
   printWindow.document.write(html);
   printWindow.document.close();
 }
 
-/**
- * 14. Export Laporan Neraca (Balance Sheet) to Excel matching exact screenshot layout
- */
+// ============================================================================
+// 16. LAPORAN POSISI KEUANGAN / NERACA (BALANCE SHEET)
+// ============================================================================
 export async function exportBalanceSheetToExcel({
   data = {},
   period = {},
   businessName = 'MOVA POS',
   outletName = 'Semua Cabang',
 }) {
-  const ExcelJSMod = await import('exceljs');
-  const ExcelJS = ExcelJSMod.default || ExcelJSMod;
+  const ExcelJS = await getExcelJS();
   const wb = new ExcelJS.Workbook();
-  wb.creator = businessName;
-  wb.created = new Date();
+  const ws = wb.addWorksheet('Laporan Neraca', { views: [{ showGridLines: true }] });
 
-  const ws = wb.addWorksheet('Laporan Neraca', {
-    views: [{ showGridLines: true }],
-  });
+  const periodStr = formatIndoPeriod(period);
+  addReportHeader(ws, { businessName, reportTitle: 'LAPORAN POSISI KEUANGAN (NERACA SALDO AKUNTANSI)', periodText: periodStr, outletName, colSpan: 6, titleColor: 'FF0F766E' });
+  addTableHeader(ws, ['Kode Akun', 'Pos / Nama Akun Neraca', 'Saldo Awal (Rp)', 'Debit Periode (Rp)', 'Kredit Periode (Rp)', 'Saldo Akhir (Rp)'], 'FF065F46');
 
-  const periodText = period.from_formatted && period.to_formatted
-    ? `Per ${period.from_formatted} s/d ${period.to_formatted}`
-    : (period.from && period.to ? `Per ${period.from} s/d ${period.to}` : 'Semua Periode');
+  const sections = [
+    { title: '1. AKTIVA / ASET', items: data.assets || [], total: data.total_assets || 0, bg: 'FFECFDF5' },
+    { title: '2. KEWAJIBAN / HUTANG', items: data.liabilities || [], total: data.total_liabilities || 0, bg: 'FFFEF3C7' },
+    { title: '3. EKUITAS / MODAL', items: data.equity || [], total: data.total_equity || 0, bg: 'FFEFF6FF' },
+  ];
 
-  // Title Row (Row 1)
-  ws.mergeCells('B1:D1');
-  const titleCell = ws.getCell('B1');
-  titleCell.value = 'LAPORAN NERACA';
-  titleCell.font = { name: 'Arial', size: 13, bold: true };
-  titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
-  ws.getRow(1).height = 22;
-
-  // Subtitle Period (Row 2)
-  ws.mergeCells('B2:E2');
-  const subCell = ws.getCell('B2');
-  subCell.value = periodText;
-  subCell.font = { name: 'Arial', size: 10, italic: true };
-  subCell.alignment = { horizontal: 'left', vertical: 'middle' };
-  ws.getRow(2).height = 18;
-
-  let r = 3;
-
-  // Function to add a section header: "Aset Lancar", "Aset Tetap", "Liabilitas", "Modal"
-  const addSectionHeader = (title) => {
-    const row = ws.getRow(r++);
-    row.getCell(2).value = title;
-    row.getCell(2).font = { name: 'Arial', size: 10, bold: true };
-    row.height = 18;
-  };
-
-  // Function to add an account row: e.g. Code in Col B, Name in Col C, Amount in Col D
-  const addAccountRow = (code, name, amount) => {
-    const row = ws.getRow(r++);
-    row.getCell(2).value = code || '';
-    row.getCell(2).font = { name: 'Arial', size: 10 };
-    row.getCell(2).alignment = { horizontal: 'left', vertical: 'middle' };
-
-    row.getCell(3).value = name || '';
-    row.getCell(3).font = { name: 'Arial', size: 10 };
-    row.getCell(3).alignment = { horizontal: 'left', vertical: 'middle' };
-
-    row.getCell(4).value = Number(amount) || 0;
-    row.getCell(4).font = { name: 'Arial', size: 10 };
-    row.getCell(4).alignment = { horizontal: 'right', vertical: 'middle' };
-    row.getCell(4).numFmt = '#,##0';
-    row.height = 18;
-  };
-
-  // Function to add a subtotal row: e.g. "Jumlah Aset Lancar" in Col B, Amount in Col D
-  const addSubtotalRow = (title, amount) => {
-    const row = ws.getRow(r++);
-    row.getCell(2).value = title;
-    row.getCell(2).font = { name: 'Arial', size: 10, bold: true };
-    ws.mergeCells(`B${r - 1}:C${r - 1}`);
-
-    row.getCell(4).value = Number(amount) || 0;
-    row.getCell(4).font = { name: 'Arial', size: 10, bold: true };
-    row.getCell(4).alignment = { horizontal: 'right', vertical: 'middle' };
-    row.getCell(4).numFmt = '#,##0';
-    row.height = 18;
-  };
-
-  // 1. Aset Lancar
-  addSectionHeader('Aset Lancar');
-  const currentAssets = data.current_assets?.accounts || [];
-  currentAssets.forEach((acc) => {
-    addAccountRow(acc.code, acc.name, acc.amount);
-  });
-  addSubtotalRow('Jumlah Aset Lancar', data.current_assets?.subtotal ?? 0);
-
-
-
-  // 3. Liabilitas
-  addSectionHeader('Liabilitas');
-  const liabilities = data.liabilities?.accounts || [];
-  if (liabilities.length > 0 && liabilities.some((a) => a.amount !== 0)) {
-    liabilities.forEach((acc) => {
-      addAccountRow(acc.code, acc.name, acc.amount);
+  sections.forEach((sec) => {
+    // Section header
+    const sRow = ws.addRow([`--- ${sec.title} ---`, '', '', '', '', '']);
+    ws.mergeCells(`A${sRow.number}:F${sRow.number}`);
+    sRow.height = 24;
+    sRow.eachCell((cell) => {
+      cell.font = { name: 'Segoe UI', size: 10.5, bold: true, color: { argb: 'FF0F172A' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: sec.bg } };
+      cell.border = BORDERS.section;
     });
-  }
-  addSubtotalRow('Jumlah Hutang', data.liabilities?.subtotal ?? 0);
 
-  // 4. Modal
-  addSectionHeader('Modal');
-  const equity = data.equity?.accounts || [];
-  equity.forEach((acc) => {
-    addAccountRow(acc.code, acc.name, acc.amount);
+    sec.items.forEach((acc, idx) => {
+      const row = ws.addRow([
+        acc.code || '-',
+        acc.name || '-',
+        Number(acc.saldo_awal) || 0,
+        Number(acc.debit) || 0,
+        Number(acc.credit) || 0,
+        Number(acc.balance || acc.saldo_akhir || acc.amount) || 0,
+      ]);
+      applyDataRowStyle(row, idx % 2 === 1, { 1: 'center', 2: 'left', 3: 'right', 4: 'right', 5: 'right', 6: 'right' }, {
+        3: NUM_FMTS.currency, 4: NUM_FMTS.currency, 5: NUM_FMTS.currency, 6: NUM_FMTS.currency
+      });
+    });
+
+    const totSec = ws.addRow([`TOTAL ${sec.title}`, '', '', '', '', Number(sec.total) || 0]);
+    ws.mergeCells(`A${totSec.number}:E${totSec.number}`);
+    applyTotalRowStyle(totSec, { 1: 'right', 6: 'right' }, { 6: NUM_FMTS.currency });
+    ws.addRow([]); // Blank spacer
   });
-  addSubtotalRow('Jumlah Modal', data.equity?.subtotal ?? 0);
 
-  // Blank row separator
-  r++;
+  // Grand Summary of Balance Sheet
+  const totKewajibanEkuitas = (Number(data.total_liabilities) || 0) + (Number(data.total_equity) || 0);
+  const diff = (Number(data.total_assets) || 0) - totKewajibanEkuitas;
 
-  // Summary Row at the bottom:
-  // Left: "Jumlah Aset" (Col B:C) and Amount (Col D)
-  // Right: "Jumlah Kewajiban dan Modal" (Col F) and Amount (Col G)
-  const summaryRow = ws.getRow(r);
-  summaryRow.height = 22;
+  const finRow1 = ws.addRow(['TOTAL AKTIVA / ASET', '', '', '', '', Number(data.total_assets) || 0]);
+  ws.mergeCells(`A${finRow1.number}:E${finRow1.number}`);
+  applyTotalRowStyle(finRow1, { 1: 'right', 6: 'right' }, { 6: NUM_FMTS.currency });
 
-  // Left Total Asset
-  summaryRow.getCell(2).value = 'Jumlah Aset';
-  summaryRow.getCell(2).font = { name: 'Arial', size: 11, bold: true };
-  ws.mergeCells(`B${r}:C${r}`);
+  const finRow2 = ws.addRow(['TOTAL KEWAJIBAN & EKUITAS', '', '', '', '', totKewajibanEkuitas]);
+  ws.mergeCells(`A${finRow2.number}:E${finRow2.number}`);
+  applyTotalRowStyle(finRow2, { 1: 'right', 6: 'right' }, { 6: NUM_FMTS.currency });
 
-  summaryRow.getCell(4).value = Number(data.total_assets?.amount ?? 0);
-  summaryRow.getCell(4).font = { name: 'Arial', size: 11, bold: true };
-  summaryRow.getCell(4).alignment = { horizontal: 'right', vertical: 'middle' };
-  summaryRow.getCell(4).numFmt = '#,##0';
+  const finRow3 = ws.addRow([`STATUS KESEIMBANGAN: ${Math.abs(diff) < 0.01 ? 'SEIMBANG (Rp 0)' : 'SELISIH BALANCE'}`, '', '', '', '', diff]);
+  ws.mergeCells(`A${finRow3.number}:E${finRow3.number}`);
+  applyTotalRowStyle(finRow3, { 1: 'right', 6: 'right' }, { 6: NUM_FMTS.currency });
 
-  // Right Total Liabilities & Equity
-  summaryRow.getCell(6).value = 'Jumlah Kewajiban dan Modal';
-  summaryRow.getCell(6).font = { name: 'Arial', size: 11, bold: true };
-  summaryRow.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
-
-  summaryRow.getCell(7).value = Number(data.total_liabilities_and_equity?.amount ?? 0);
-  summaryRow.getCell(7).font = { name: 'Arial', size: 11, bold: true };
-  summaryRow.getCell(7).alignment = { horizontal: 'right', vertical: 'middle' };
-  summaryRow.getCell(7).numFmt = '#,##0';
-
-  // Set column widths matching user layout
-  ws.getColumn(1).width = 4;   // Left margin
-  ws.getColumn(2).width = 14;  // Account Code
-  ws.getColumn(3).width = 32;  // Account Name
-  ws.getColumn(4).width = 18;  // Amount
-  ws.getColumn(5).width = 6;   // Spacer
-  ws.getColumn(6).width = 30;  // Right label
-  ws.getColumn(7).width = 18;  // Right amount
-
-  const filename = `Laporan_Neraca_${period.from || 'all'}_sd_${period.to || 'all'}.xlsx`;
-  const buffer = await wb.xlsx.writeBuffer();
-  const blob = new Blob([buffer], {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  });
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  window.URL.revokeObjectURL(url);
-
+  autoFitColumns(ws);
+  const filename = `Laporan_Neraca_${period?.from || 'all'}_sd_${period?.to || 'all'}.xlsx`;
+  await saveWorkbook(wb, filename);
   return filename;
 }
 
-/**
- * 15. Print / PDF Export for Laporan Neraca (Balance Sheet)
- */
 export function printBalanceSheetReport({
   data = {},
   period = {},
   businessName = 'MOVA POS',
   outletName = 'Semua Cabang',
 }) {
-  const periodText = period.from_formatted && period.to_formatted
-    ? `Per ${period.from_formatted} s/d ${period.to_formatted}`
-    : (period.from && period.to ? `Per ${period.from} s/d ${period.to}` : 'Semua Periode');
-
+  const periodText = formatIndoPeriod(period);
   const printWindow = window.open('', '_blank');
-  if (!printWindow) {
-    alert('Pop-up browser diblokir. Harap izinkan pop-up untuk mencetak laporan.');
-    return;
-  }
+  if (!printWindow) return;
 
-  const numFmt = (val) =>
-    Number(val || 0).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  const fmt = (n) =>
+    new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n || 0);
 
-  const renderAccountRows = (accounts = []) => {
-    return accounts
-      .map(
-        (a) => `
+  const renderSection = (title, items = [], total = 0, color = '#0f766e') => `
+    <tr style="background:#f1f5f9; font-weight:bold;">
+      <td colspan="3" style="padding:8px 10px; color:${color}; font-size:12px;">${title}</td>
+    </tr>
+    ${items.map(acc => `
       <tr>
-        <td style="width: 120px; padding: 4px 8px; color: #475569;">${a.code || ''}</td>
-        <td style="padding: 4px 8px;">${a.name || ''}</td>
-        <td style="text-align: right; padding: 4px 8px; font-variant-numeric: tabular-nums;">${numFmt(a.amount)}</td>
+        <td style="padding:6px 10px; font-family:monospace; width:100px;">${acc.code || '-'}</td>
+        <td style="padding:6px 10px;">${acc.name || '-'}</td>
+        <td style="padding:6px 10px; text-align:right; font-family:monospace; width:150px;">${fmt(acc.balance || acc.amount || acc.saldo_akhir)}</td>
       </tr>
-    `
-      )
-      .join('');
-  };
+    `).join('')}
+    <tr style="background:#f8fafc; font-weight:bold; border-top:1px solid #cbd5e1; border-bottom:2px solid #0f172a;">
+      <td colspan="2" style="padding:6px 10px; text-align:right;">TOTAL ${title}</td>
+      <td style="padding:6px 10px; text-align:right; font-family:monospace;">${fmt(total)}</td>
+    </tr>
+  `;
+
+  const totKewajibanEkuitas = (Number(data.total_liabilities) || 0) + (Number(data.total_equity) || 0);
+  const diff = (Number(data.total_assets) || 0) - totKewajibanEkuitas;
 
   const html = `
   <!DOCTYPE html>
   <html>
   <head>
-    <title>LAPORAN NERACA</title>
+    <title>Laporan Neraca - ${businessName}</title>
     <style>
-      @page { size: portrait; margin: 15mm; }
-      body { font-family: Arial, sans-serif; font-size: 11.5px; color: #111; margin: 0; padding: 15px; }
-      .header { text-align: center; margin-bottom: 25px; }
-      .title { font-size: 16px; font-weight: bold; letter-spacing: 0.5px; }
-      .subtitle { font-size: 12px; font-style: italic; margin-top: 4px; color: #333; }
-      .meta { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 15px; border-bottom: 1px solid #ddd; padding-bottom: 6px; }
-      table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
-      .section-title { font-size: 12px; font-weight: bold; padding: 8px 8px 4px 8px; }
-      .subtotal-row { font-weight: bold; border-top: 1px solid #ccc; border-bottom: 1px solid #ccc; background-color: #f8fafc; }
-      .subtotal-row td { padding: 6px 8px; }
-      .grand-total-box { margin-top: 25px; display: flex; justify-content: space-between; border-top: 2px solid #111; padding-top: 10px; font-weight: bold; font-size: 13px; }
-      @media print {
-        body { padding: 0; }
-        .subtotal-row { background-color: #eee !important; -webkit-print-color-adjust: exact; }
-      }
+      body { font-family: 'Segoe UI', Arial, sans-serif; margin: 20px; color: #1e293b; font-size: 11.5px; }
+      .header { text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 14px; }
+      .header h1 { margin: 0; font-size: 16px; color: #0f172a; }
+      .header p { margin: 3px 0 0; color: #64748b; font-size: 11px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+      th { background: #0f172a; color: #ffffff; padding: 8px 10px; text-align: left; }
+      td { border-bottom: 1px solid #e2e8f0; }
+      @media print { body { margin: 10mm; } }
     </style>
   </head>
   <body>
     <div class="header">
-      <div class="title">LAPORAN NERACA</div>
-      <div class="subtitle">${periodText}</div>
+      <h1>${businessName}</h1>
+      <p><strong>LAPORAN POSISI KEUANGAN (NERACA)</strong></p>
+      <p>${periodText} | Outlet: ${outletName}</p>
     </div>
-    <div class="meta">
-      <div><strong>Bisnis:</strong> ${businessName} | <strong>Cabang:</strong> ${outletName}</div>
-      <div><strong>Dicetak:</strong> ${new Date().toLocaleString('id-ID')}</div>
-    </div>
-
-    <!-- ASET LANCAR -->
     <table>
       <thead>
         <tr>
-          <th colspan="3" class="section-title" style="text-align: left;">Aset Lancar</th>
+          <th>KODE AKUN</th>
+          <th>POS NERACA / AKUN COA</th>
+          <th style="text-align:right;">SALDO AKHIR</th>
         </tr>
       </thead>
       <tbody>
-        ${renderAccountRows(data.current_assets?.accounts)}
+        ${renderSection('1. AKTIVA / ASET', data.assets, data.total_assets, '#047857')}
+        ${renderSection('2. KEWAJIBAN / HUTANG', data.liabilities, data.total_liabilities, '#b45309')}
+        ${renderSection('3. EKUITAS / MODAL', data.equity, data.total_equity, '#1d4ed8')}
       </tbody>
       <tfoot>
-        <tr class="subtotal-row">
-          <td colspan="2">Jumlah Aset Lancar</td>
-          <td style="text-align: right;">${numFmt(data.current_assets?.subtotal)}</td>
+        <tr style="background:#e2e8f0; font-weight:bold; font-size:12px;">
+          <td colspan="2" style="padding:8px 10px; text-align:right;">TOTAL AKTIVA / ASET</td>
+          <td style="padding:8px 10px; text-align:right; font-family:monospace;">${fmt(data.total_assets)}</td>
+        </tr>
+        <tr style="background:#e2e8f0; font-weight:bold; font-size:12px;">
+          <td colspan="2" style="padding:8px 10px; text-align:right;">TOTAL KEWAJIBAN & EKUITAS</td>
+          <td style="padding:8px 10px; text-align:right; font-family:monospace;">${fmt(totKewajibanEkuitas)}</td>
+        </tr>
+        <tr style="background:${Math.abs(diff) < 0.01 ? '#dcfce7' : '#fee2e2'}; font-weight:bold;">
+          <td colspan="2" style="padding:6px 10px; text-align:right;">STATUS KESEIMBANGAN</td>
+          <td style="padding:6px 10px; text-align:right; font-family:monospace;">${Math.abs(diff) < 0.01 ? 'SEIMBANG (Rp 0)' : 'SELISIH: ' + fmt(diff)}</td>
         </tr>
       </tfoot>
     </table>
-
-
-
-    <!-- LIABILITAS -->
-    <table>
-      <thead>
-        <tr>
-          <th colspan="3" class="section-title" style="text-align: left;">Liabilitas</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${data.liabilities?.accounts?.length ? renderAccountRows(data.liabilities?.accounts) : ''}
-      </tbody>
-      <tfoot>
-        <tr class="subtotal-row">
-          <td colspan="2">Jumlah Hutang</td>
-          <td style="text-align: right;">${numFmt(data.liabilities?.subtotal)}</td>
-        </tr>
-      </tfoot>
-    </table>
-
-    <!-- MODAL -->
-    <table>
-      <thead>
-        <tr>
-          <th colspan="3" class="section-title" style="text-align: left;">Modal</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${renderAccountRows(data.equity?.accounts)}
-      </tbody>
-      <tfoot>
-        <tr class="subtotal-row">
-          <td colspan="2">Jumlah Modal</td>
-          <td style="text-align: right;">${numFmt(data.equity?.subtotal)}</td>
-        </tr>
-      </tfoot>
-    </table>
-
-    <!-- GRAND TOTAL -->
-    <div class="grand-total-box">
-      <div>Jumlah Aset: <span style="margin-left: 20px;">Rp ${numFmt(data.total_assets?.amount)}</span></div>
-      <div>Jumlah Kewajiban dan Modal: <span style="margin-left: 20px;">Rp ${numFmt(data.total_liabilities_and_equity?.amount)}</span></div>
-    </div>
-
-    <script>
-      window.onload = function() {
-        window.print();
-      };
-    </script>
+    <script>window.onload = function() { window.print(); };</script>
   </body>
-  </html>
-  `;
+  </html>`;
 
   printWindow.document.open();
   printWindow.document.write(html);
   printWindow.document.close();
 }
 
-/**
- * 14. Export Laporan Transaksi Pembelian to Excel (Matches Exact Format)
- */
-export async function exportPurchaseTransactionsToExcel({ businessName = 'URBAE CAFFEINE', period = '', items = [], summary = {} }) {
-  const XLSX = await getXLSX();
-  const wb = XLSX.utils.book_new();
-  const numFmt = val => (val || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-  const rows = [
-    [businessName],
-    ['Laporan Transaksi Pembelian'],
-    [period || 'Per Periode Terpilih'],
-    [],
-    [
-      'No.', 'Tgl', 'Tgl.Dibuat', 'Dibuat Oleh', 'No.Ref', 'Warehouse', 'Supplier', 'Status Terima',
-      'Kode Produk', 'Produk', 'Harga Beli', '', '', '', '', '', '',
-      'Disc Tambahan', 'PPN', 'Pengiriman', 'Pembelian', 'Dibayar', 'Utang'
-    ],
-    [
-      '', '', '', '', '', '', '', '',
-      '', '', 'QTY', 'Satuan', 'QTY Terkecil', 'Satuan Terkecil', 'Harga', 'Disc', 'Subtotal',
-      '', '', '', '', '', ''
-    ]
-  ];
-
-  items.forEach((item, index) => {
-    rows.push([
-      item.no || (index + 1),
-      item.tgl || '',
-      item.tgl_dibuat || '',
-      item.dibuat_oleh || '',
-      item.no_ref || '',
-      item.warehouse || '',
-      item.supplier || '',
-      item.status_terima || 'Diterima',
-      item.kode_produk || '',
-      item.produk || '',
-      item.qty ?? 0,
-      item.satuan || '',
-      item.qty_terkecil ?? 0,
-      item.satuan_terkecil || '',
-      numFmt(item.harga),
-      numFmt(item.disc || 0),
-      numFmt(item.subtotal || item.pembelian),
-      numFmt(item.disc_tambahan || 0),
-      numFmt(item.ppn || 0),
-      numFmt(item.pengiriman || 0),
-      numFmt(item.pembelian),
-      numFmt(item.dibayar),
-      numFmt(item.utang)
-    ]);
-  });
-
-  // Total row
-  rows.push([
-    'Total', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
-    numFmt(summary.total_disc_tambahan || 0),
-    numFmt(summary.total_ppn || 0),
-    numFmt(summary.total_pengiriman || 0),
-    numFmt(summary.total_pembelian || 0),
-    numFmt(summary.total_dibayar || 0),
-    numFmt(summary.total_utang || 0)
-  ]);
-
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = fitColumns(rows);
-  XLSX.utils.book_append_sheet(wb, ws, 'Transaksi Pembelian');
-  XLSX.writeFile(wb, `Laporan_Transaksi_Pembelian_${new Date().toISOString().slice(0, 10)}.xlsx`);
-}
-
-/**
- * 15. Export Laporan Pembelian per Produk to Excel
- */
-export async function exportPurchasesByProductToExcel({ businessName = 'URBAE CAFFEINE', period = '', items = [], summary = {} }) {
-  const XLSX = await getXLSX();
-  const wb = XLSX.utils.book_new();
-  const numFmt = val => (val || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-  const rows = [
-    [businessName],
-    ['LAPORAN PEMBELIAN PER PRODUK'],
-    [period || 'Per Periode Terpilih'],
-    [],
-    ['No.', 'Kode Produk', 'Nama Produk', 'Qty Beli', 'Qty Refund', 'Satuan', 'Harga', 'Disc', 'Total Nilai Beli', 'Total Nilai Refund']
-  ];
-
-  items.forEach((it, idx) => {
-    rows.push([
-      it.no || (idx + 1),
-      it.kode_produk || '',
-      it.nama_produk || '',
-      it.qty_beli ?? 0,
-      it.qty_refund ?? 0,
-      it.satuan || '',
-      numFmt(it.harga),
-      numFmt(it.disc || 0),
-      numFmt(it.total_nilai_beli),
-      numFmt(it.total_nilai_refund || 0)
-    ]);
-  });
-
-  rows.push([
-    'Total', '', '', '', '', '', '', '',
-    numFmt(summary.total_nilai_beli || 0),
-    numFmt(summary.total_nilai_refund || 0)
-  ]);
-
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = fitColumns(rows);
-  XLSX.utils.book_append_sheet(wb, ws, 'Pembelian per Produk');
-  XLSX.writeFile(wb, `Laporan_Pembelian_Per_Produk_${new Date().toISOString().slice(0, 10)}.xlsx`);
-}
-
-/**
- * 16. Export Laporan Daftar Pembelian per Supplier to Excel
- */
-export async function exportPurchasesBySupplierToExcel({ businessName = 'URBAE CAFFEINE', period = '', items = [], summary = {} }) {
-  const XLSX = await getXLSX();
-  const wb = XLSX.utils.book_new();
-  const numFmt = val => (val || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-  const rows = [
-    [businessName],
-    ['LAPORAN DAFTAR PEMBELIAN PER SUPPLIER'],
-    [period || 'Per Periode Terpilih'],
-    [],
-    ['No.', 'Supplier/Kode Produk', 'Tgl.Dibuat', 'Dibuat Oleh', 'No.Ref', 'Pembelian', 'Disc', 'Pajak', 'Pengiriman', 'Total']
-  ];
-
-  items.forEach((it, idx) => {
-    rows.push([
-      it.no || (idx + 1),
-      it.supplier || it.supplier_kode_produk || '',
-      it.tgl_dibuat || '',
-      it.dibuat_oleh || '',
-      it.no_ref || '',
-      numFmt(it.pembelian),
-      numFmt(it.disc || 0),
-      numFmt(it.pajak || 0),
-      numFmt(it.pengiriman || 0),
-      numFmt(it.total)
-    ]);
-  });
-
-  rows.push([
-    'Total Pembelian Dari', '', '', '', '', '', '',
-    numFmt(summary.total_pembelian || 0),
-    '', ''
-  ]);
-
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = fitColumns(rows);
-  XLSX.utils.book_append_sheet(wb, ws, 'Pembelian per Supplier');
-  XLSX.writeFile(wb, `Laporan_Pembelian_Per_Supplier_${new Date().toISOString().slice(0, 10)}.xlsx`);
-}
-
-/**
- * 17. Export Laporan Pengiriman Pembelian to Excel
- */
-export async function exportPurchaseShipmentsToExcel({ businessName = 'URBAE CAFFEINE', period = '', items = [], summary = {} }) {
-  const XLSX = await getXLSX();
-  const wb = XLSX.utils.book_new();
-  const numFmt = val => (val || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-  const rows = [
-    [businessName],
-    ['LAPORAN PENGIRIMAN PEMBELIAN'],
-    [period || 'Per Periode Terpilih'],
-    [],
-    ['No.', 'Supplier/Tanggal', 'Tgl. Dibuat', 'Dibuat Oleh', 'No.Ref', 'Kode Produk', 'Nama Produk', 'Qty', 'Satuan', 'Jumlah']
-  ];
-
-  items.forEach((it, idx) => {
-    rows.push([
-      it.no || (idx + 1),
-      it.supplier_tanggal || it.supplier_name || '',
-      it.tgl_dibuat || '',
-      it.dibuat_oleh || '',
-      it.no_ref || '',
-      it.kode_produk || '',
-      it.nama_produk || '',
-      it.qty ?? 0,
-      it.satuan || '',
-      numFmt(it.jumlah)
-    ]);
-  });
-
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = fitColumns(rows);
-  XLSX.utils.book_append_sheet(wb, ws, 'Pengiriman Pembelian');
-  XLSX.writeFile(wb, `Laporan_Pengiriman_Pembelian_${new Date().toISOString().slice(0, 10)}.xlsx`);
-}
-
-/**
- * 25. Export Riwayat Pembayaran / Pelunasan Kasbon to Excel
- */
-export async function exportReceivablePaymentsToExcel({ items = [], outletName = 'Semua Cabang', businessName = 'MOVA POS', userName = 'Administrator' }) {
-  const XLSX = await getXLSX();
-  const wb = XLSX.utils.book_new();
-  const dateStr = new Date().toLocaleString('id-ID');
-
-  const rows = [
-    ['RIWAYAT PEMBAYARAN & PELUNASAN KASBON / PIUTANG'],
-    ['MOVA POS — Customer Receivable Payments & Settlement Logs'],
-    [],
-    ['Bisnis / Brand', businessName, '', 'Waktu Ekspor', dateStr],
-    ['Cabang / Outlet', outletName, '', 'Dicetak Oleh', userName],
-    ['Total Transaksi Pembayaran', items.length, '', 'Total Dana Diterima', items.reduce((sum, it) => sum + (Number(it.amount) || 0), 0)],
-    [],
-    [
-      'No',
-      'No. Pembayaran',
-      'Tanggal Pembayaran',
-      'Sesi Shift',
-      'Pelanggan / Peminjam',
-      'No. Telp Pelanggan',
-      'No. Nota Kasbon',
-      'Metode Pembayaran',
-      'Akun Setor / Kas Bank',
-      'Nominal Dibayar (Rp)',
-      'Kasir / Penerima',
-      'Keterangan / Ref',
-    ],
-  ];
-
-  let totalAmount = 0;
-  items.forEach((log, idx) => {
-    const amt = Number(log.amount) || 0;
-    totalAmount += amt;
-    rows.push([
-      idx + 1,
-      log.payment_no || `PAY-${log.id}`,
-      log.payment_date || log.created_at || '-',
-      log.shift_name || (log.shift_id ? `Shift #${log.shift_id}` : '-'),
-      log.customer_name || '-',
-      log.customer_phone || '-',
-      log.receivable_no || '-',
-      log.payment_method || 'CASH',
-      log.deposit_account || '-',
-      amt,
-      log.receiver_name || log.receiver?.name || '-',
-      log.notes || '-',
-    ]);
-  });
-
-  rows.push([
-    'Total',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    totalAmount,
-    '',
-    '',
-  ]);
-
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = fitColumns(rows);
-  XLSX.utils.book_append_sheet(wb, ws, 'Riwayat Pembayaran');
-
-  const filename = `Riwayat_Pelunasan_Kasbon_${new Date().toISOString().slice(0, 10)}.xlsx`;
-  XLSX.writeFile(wb, filename);
-  return filename;
-}
-  
-/**
- * 23. Export Balance Sheet Detail Audit Trail to Excel
- */
-export async function exportBalanceSheetDetailToExcel({ detailData, period, outletName = 'Semua Cabang', businessName = 'MOVA POS' }) {
+// ============================================================================
+// 17. RINCIAN AUDIT AKUN NERACA (BALANCE SHEET DETAIL)
+// ============================================================================
+export async function exportBalanceSheetDetailToExcel({
+  detailData,
+  period,
+  outletName = 'Semua Cabang',
+  businessName = 'MOVA POS',
+}) {
   if (!detailData) return;
-  const XLSX = await getXLSX();
-  const wb = XLSX.utils.book_new();
-  const dateStr = new Date().toLocaleString('id-ID');
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  const sheetName = (detailData.account_name || 'Rincian').substring(0, 31).replace(/[\\/*?:[\]]/g, '_');
+  const ws = wb.addWorksheet(sheetName, { views: [{ showGridLines: true }] });
 
-  const rows = [
-    [`RINCIAN AUDIT NERACA: [${detailData.account_code || ''}] ${detailData.account_name || ''}`],
-    ['MOVA POS — Balance Sheet Account Breakdown & Audit Trail'],
-    [],
-    ['Bisnis / Brand', businessName, '', 'Waktu Ekspor', dateStr],
-    ['Cabang / Outlet', outletName, '', 'Periode', `${period?.from || ''} s/d ${period?.to || ''}`],
-    ['Akun / Pos', `[${detailData.account_code || ''}] ${detailData.account_name || ''}`, '', 'Kategori', detailData.category_label || detailData.account_type || '-'],
-    ['Total Nilai Akun', Number(detailData.amount) || 0, '', 'Rumus', detailData.formula || '-'],
-    ['Penjelasan Sumber Nilai', detailData.explanation || '-'],
-    [],
+  const periodStr = formatIndoPeriod(period);
+  addReportHeader(ws, {
+    businessName,
+    reportTitle: `RINCIAN AUDIT AKUN NERACA: [${detailData.account_code || ''}] ${detailData.account_name || ''}`,
+    periodText: periodStr,
+    outletName,
+    colSpan: (detailData.columns?.length || 4) + 1,
+    titleColor: 'FF0F766E',
+  });
+
+  // Key Information Box
+  const infoRows = [
+    ['Kategori / Pos Akun', detailData.category_label || detailData.account_type || '-'],
+    ['Total Nilai Akun', Number(detailData.amount) || 0],
+    ['Rumus / Dasar Perhitungan', detailData.formula || '-'],
+    ['Penjelasan Sumber Data', detailData.explanation || '-'],
   ];
 
-  if (detailData.components && detailData.components.length > 0) {
-    rows.push(['KOMPONEN PEMBENTUK NILAI:']);
-    detailData.components.forEach(c => {
-      rows.push([c.label, c.value]);
-    });
-    rows.push([]);
-  }
+  infoRows.forEach((info, idx) => {
+    const row = ws.addRow(info);
+    row.height = 20;
+    row.getCell(1).font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF334155' } };
+    row.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+    row.getCell(1).border = BORDERS.thin;
+    row.getCell(2).font = { name: 'Segoe UI', size: 9.5, color: { argb: 'FF0F172A' } };
+    row.getCell(2).border = BORDERS.thin;
+    if (idx === 1) row.getCell(2).numFmt = NUM_FMTS.currency;
+  });
+
+  ws.addRow([]); // Spacer
 
   if (detailData.columns && detailData.columns.length > 0 && detailData.items && detailData.items.length > 0) {
-    rows.push(['DATA RINCIAN TRANSAKSI / ITEM:']);
     const headers = ['No', ...detailData.columns.map(c => c.label)];
-    rows.push(headers);
+    addTableHeader(ws, headers, 'FF1E293B');
 
     detailData.items.forEach((item, idx) => {
-      const row = [idx + 1];
+      const rowValues = [idx + 1];
       detailData.columns.forEach(col => {
-        row.push(item[col.key] !== undefined && item[col.key] !== null ? item[col.key] : '-');
+        const val = item[col.key];
+        rowValues.push(val !== undefined && val !== null ? val : '-');
       });
-      rows.push(row);
+      const row = ws.addRow(rowValues);
+      applyDataRowStyle(row, idx % 2 === 1);
     });
   }
 
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = fitColumns(rows);
-  const sheetName = (detailData.account_name || 'Rincian').substring(0, 31).replace(/[\\/*?:[\]]/g, '_');
-  XLSX.utils.book_append_sheet(wb, ws, sheetName);
-
+  autoFitColumns(ws);
   const safeCode = (detailData.account_code || 'Detail').replace(/[^a-zA-Z0-9_-]/g, '_');
   const filename = `Rincian_Neraca_${safeCode}_${new Date().toISOString().slice(0, 10)}.xlsx`;
-  XLSX.writeFile(wb, filename);
+  await saveWorkbook(wb, filename);
   return filename;
 }
 
+// ============================================================================
+// 18. JURNAL UMUM & BUKU BESAR (GENERAL LEDGER)
+// ============================================================================
+export async function exportJournalLedgerToExcel({
+  data,
+  period,
+  outletName = 'Semua Cabang',
+  businessName = 'MOVA POS',
+}) {
+  if (!data) return;
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Buku Besar Ringkasan', { views: [{ showGridLines: true }] });
 
+  const periodStr = formatIndoPeriod(period);
+  addReportHeader(ws, {
+    businessName,
+    reportTitle: 'JURNAL UMUM & BUKU BESAR (GENERAL LEDGER SUMMARY)',
+    periodText: periodStr,
+    outletName,
+    colSpan: 9,
+    titleColor: 'FF1E40AF',
+  });
+
+  // KPI Summary Card Block
+  const kpiRow1 = ws.addRow(['Total Debit Periode', Number(data.summary?.total_debit) || 0, '', 'Total Kredit Periode', Number(data.summary?.total_credit) || 0]);
+  const kpiRow2 = ws.addRow(['Status Keseimbangan', data.summary?.is_balanced ? 'SEIMBANG (Rp 0)' : 'SELISIH BALANCE', '', 'Selisih Nilai (Diff)', Number(data.summary?.difference) || 0]);
+  
+  [kpiRow1, kpiRow2].forEach(row => {
+    row.height = 21;
+    row.getCell(1).font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF334155' } };
+    row.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+    row.getCell(1).border = BORDERS.thin;
+    row.getCell(2).font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF0F172A' } };
+    row.getCell(2).border = BORDERS.thin;
+    row.getCell(4).font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF334155' } };
+    row.getCell(4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+    row.getCell(4).border = BORDERS.thin;
+    row.getCell(5).font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF0F172A' } };
+    row.getCell(5).border = BORDERS.thin;
+  });
+  kpiRow1.getCell(2).numFmt = NUM_FMTS.currency;
+  kpiRow1.getCell(5).numFmt = NUM_FMTS.currency;
+  kpiRow2.getCell(5).numFmt = NUM_FMTS.currency;
+
+  ws.addRow([]); // Spacer
+
+  addTableHeader(ws, ['No', 'Kode Akun', 'Nama Akun COA', 'Kategori', 'Saldo Normal', 'Debit Periode (Rp)', 'Kredit Periode (Rp)', 'Saldo Akhir (Rp)', 'Jml Mutasi'], 'FF1E293B');
+
+  let counter = 1;
+  (data.groups || []).forEach(group => {
+    const gRow = ws.addRow([`--- ${group.label.toUpperCase()} ---`, '', '', '', '', '', '', '', '']);
+    ws.mergeCells(`A${gRow.number}:I${gRow.number}`);
+    gRow.height = 24;
+    gRow.eachCell(cell => {
+      cell.font = { name: 'Segoe UI', size: 10.5, bold: true, color: { argb: 'FF0F172A' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
+      cell.border = BORDERS.section;
+    });
+
+    let gDebit = 0, gCredit = 0;
+    (group.accounts || []).forEach(acc => {
+      const d = Number(acc.period_debit) || 0;
+      const c = Number(acc.period_credit) || 0;
+      gDebit += d; gCredit += c;
+
+      const row = ws.addRow([
+        counter++,
+        acc.code || '-',
+        acc.name || '-',
+        acc.category || acc.type || '-',
+        acc.normal_balance || 'DEBIT',
+        d,
+        c,
+        Number(acc.saldo_akhir) || 0,
+        Number(acc.tx_count) || 0,
+      ]);
+
+      applyDataRowStyle(row, counter % 2 === 1, {
+        1: 'center', 2: 'center', 3: 'left', 4: 'left', 5: 'center',
+        6: 'right', 7: 'right', 8: 'right', 9: 'center'
+      }, {
+        6: NUM_FMTS.currency, 7: NUM_FMTS.currency, 8: NUM_FMTS.currency, 9: NUM_FMTS.number
+      });
+    });
+
+    const subRow = ws.addRow([`SUBTOTAL ${group.label.toUpperCase()}`, '', '', '', '', gDebit, gCredit, '', '']);
+    ws.mergeCells(`A${subRow.number}:E${subRow.number}`);
+    applyTotalRowStyle(subRow, { 1: 'right', 6: 'right', 7: 'right' }, { 6: NUM_FMTS.currency, 7: NUM_FMTS.currency });
+    ws.addRow([]); // Spacer
+  });
+
+  const grandRow = ws.addRow([
+    'TOTAL KESELURUHAN MUTASI BUKU BESAR', '', '', '', '',
+    Number(data.summary?.total_debit) || 0,
+    Number(data.summary?.total_credit) || 0,
+    '', ''
+  ]);
+  ws.mergeCells(`A${grandRow.number}:E${grandRow.number}`);
+  applyTotalRowStyle(grandRow, { 1: 'right', 6: 'right', 7: 'right' }, { 6: NUM_FMTS.currency, 7: NUM_FMTS.currency });
+
+  autoFitColumns(ws);
+  const filename = `Buku_Besar_Jurnal_${period?.from || 'start'}_sd_${period?.to || 'end'}.xlsx`;
+  await saveWorkbook(wb, filename);
+  return filename;
+}
+
+// ============================================================================
+// 19. MUTASI AKUN BUKU BESAR SPESIFIK (ACCOUNT TRANSACTIONS)
+// ============================================================================
+export async function exportAccountTransactionsToExcel({
+  account,
+  summary,
+  items = [],
+  period,
+  outletName = 'Semua Cabang',
+  businessName = 'MOVA POS',
+}) {
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  const sheetName = (account?.name || 'Mutasi Akun').substring(0, 31).replace(/[\\/*?:[\]]/g, '_');
+  const ws = wb.addWorksheet(sheetName, { views: [{ showGridLines: true }] });
+
+  const periodStr = formatIndoPeriod(period);
+  addReportHeader(ws, {
+    businessName,
+    reportTitle: `BUKU BESAR MUTASI AKUN: [${account?.code || ''}] ${account?.name || ''}`,
+    periodText: periodStr,
+    outletName,
+    colSpan: 10,
+    titleColor: 'FF1E40AF',
+  });
+
+  // KPI Summary Card Block
+  const kpiRow1 = ws.addRow(['Saldo Normal', account?.normal_balance || 'DEBIT', '', 'Saldo Awal Periode', Number(summary?.saldo_awal) || 0]);
+  const kpiRow2 = ws.addRow(['Total Debit Periode', Number(summary?.total_debit) || 0, '', 'Total Kredit Periode', Number(summary?.total_credit) || 0]);
+  const kpiRow3 = ws.addRow(['Saldo Akhir Periode', Number(summary?.saldo_akhir) || 0, '', 'Total Rekaman Mutasi', items.length]);
+
+  [kpiRow1, kpiRow2, kpiRow3].forEach(row => {
+    row.height = 21;
+    row.getCell(1).font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF334155' } };
+    row.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+    row.getCell(1).border = BORDERS.thin;
+    row.getCell(2).font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF0F172A' } };
+    row.getCell(2).border = BORDERS.thin;
+    row.getCell(4).font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF334155' } };
+    row.getCell(4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+    row.getCell(4).border = BORDERS.thin;
+    row.getCell(5).font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF0F172A' } };
+    row.getCell(5).border = BORDERS.thin;
+  });
+  kpiRow1.getCell(5).numFmt = NUM_FMTS.currency;
+  kpiRow2.getCell(2).numFmt = NUM_FMTS.currency;
+  kpiRow2.getCell(5).numFmt = NUM_FMTS.currency;
+  kpiRow3.getCell(2).numFmt = NUM_FMTS.currency;
+
+  ws.addRow([]); // Spacer
+
+  addTableHeader(ws, ['No', 'Tanggal', 'No. Bukti Jurnal', 'Tipe Jurnal', 'Cabang / Outlet', 'Keterangan / Memo Transaksi', 'Debit (Rp)', 'Kredit (Rp)', 'Saldo Berjalan (Rp)', 'Petugas / Pembuat'], 'FF1E293B');
+
+  // Row 1: Saldo Awal
+  const initRow = ws.addRow(['-', period?.from || '-', 'SALDO AWAL', 'OPENING', outletName, 'Saldo Awal Periode Buku', 0, 0, Number(summary?.saldo_awal) || 0, 'Sistem Akuntansi']);
+  applyDataRowStyle(initRow, true, {
+    1: 'center', 2: 'center', 3: 'center', 4: 'center', 5: 'left',
+    6: 'left', 7: 'right', 8: 'right', 9: 'right', 10: 'left'
+  }, { 7: NUM_FMTS.currency, 8: NUM_FMTS.currency, 9: NUM_FMTS.currency });
+
+  items.forEach((item, idx) => {
+    const row = ws.addRow([
+      idx + 1,
+      item.date || '-',
+      item.entry_no || '-',
+      item.entry_type || '-',
+      item.outlet_name || outletName,
+      item.description || '-',
+      Number(item.debit) || 0,
+      Number(item.credit) || 0,
+      Number(item.running_balance) || 0,
+      item.creator_name || 'Kasir / Sistem',
+    ]);
+    applyDataRowStyle(row, idx % 2 === 1, {
+      1: 'center', 2: 'center', 3: 'center', 4: 'center', 5: 'left',
+      6: 'left', 7: 'right', 8: 'right', 9: 'right', 10: 'left'
+    }, { 7: NUM_FMTS.currency, 8: NUM_FMTS.currency, 9: NUM_FMTS.currency });
+  });
+
+  const totRow = ws.addRow([
+    'TOTAL MUTASI & SALDO AKHIR', '', '', '', '', '',
+    Number(summary?.total_debit) || 0,
+    Number(summary?.total_credit) || 0,
+    Number(summary?.saldo_akhir) || 0,
+    ''
+  ]);
+  ws.mergeCells(`A${totRow.number}:F${totRow.number}`);
+  applyTotalRowStyle(totRow, { 1: 'right', 7: 'right', 8: 'right', 9: 'right' }, {
+    7: NUM_FMTS.currency, 8: NUM_FMTS.currency, 9: NUM_FMTS.currency
+  });
+
+  autoFitColumns(ws);
+  const safeCode = (account?.code || 'COA').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `Mutasi_Akun_${safeCode}_${period?.from || 'all'}_sd_${period?.to || 'all'}.xlsx`;
+  await saveWorkbook(wb, filename);
+  return filename;
+}
+
+export function printJournalLedgerReport({
+  data,
+  period,
+  outletName = 'Semua Cabang',
+  businessName = 'MOVA POS',
+}) {
+  if (!data) return;
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) return;
+
+  const fmt = (n) =>
+    new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n || 0);
+
+  let rowsHtml = '';
+  (data.groups || []).forEach((g) => {
+    rowsHtml += `
+      <tr style="background:#f1f5f9; font-weight:bold;">
+        <td colspan="6" style="padding:8px 10px; color:${g.color || '#1e293b'}; font-size:12px;">${g.label.toUpperCase()}</td>
+      </tr>
+    `;
+    (g.accounts || []).forEach((acc) => {
+      rowsHtml += `
+        <tr>
+          <td style="padding:6px 10px; font-family:monospace; width:100px;">${acc.code}</td>
+          <td style="padding:6px 10px; font-weight:600;">${acc.name}</td>
+          <td style="padding:6px 10px; text-align:center; font-size:11px; width:90px;">${acc.normal_balance}</td>
+          <td style="padding:6px 10px; text-align:right; font-family:monospace; width:130px;">${fmt(acc.period_debit)}</td>
+          <td style="padding:6px 10px; text-align:right; font-family:monospace; width:130px;">${fmt(acc.period_credit)}</td>
+          <td style="padding:6px 10px; text-align:right; font-family:monospace; font-weight:bold; width:140px;">${fmt(acc.saldo_akhir)}</td>
+        </tr>
+      `;
+    });
+  });
+
+  const periodText = formatIndoPeriod(period);
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Laporan Jurnal Umum & Buku Besar - ${businessName}</title>
+        <style>
+          body { font-family: 'Segoe UI', Arial, sans-serif; margin: 20px; color: #1e293b; font-size: 11.5px; }
+          .header { text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 14px; }
+          .header h1 { margin: 0; font-size: 16px; color: #0f172a; }
+          .header p { margin: 3px 0 0; color: #64748b; font-size: 11px; }
+          .summary-box { display: flex; justify-content: space-between; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 14px; margin-bottom: 14px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+          th { background: #0f172a; color: #ffffff; padding: 8px 10px; font-size: 11px; text-align: left; }
+          td { border-bottom: 1px solid #e2e8f0; font-size: 11px; }
+          @media print { body { margin: 10mm; } th { -webkit-print-color-adjust: exact; } }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>${businessName}</h1>
+          <p><strong>JURNAL UMUM & BUKU BESAR (GENERAL LEDGER)</strong></p>
+          <p>${periodText} | Outlet: ${outletName}</p>
+        </div>
+        <div class="summary-box">
+          <div><strong>Total Debit:</strong> ${fmt(data.summary?.total_debit)}</div>
+          <div><strong>Total Kredit:</strong> ${fmt(data.summary?.total_credit)}</div>
+          <div><strong>Status:</strong> ${data.summary?.is_balanced ? 'SEIMBANG (Rp 0)' : 'SELISIH: ' + fmt(data.summary?.difference)}</div>
+          <div><strong>Total Akun:</strong> ${data.summary?.total_accounts || 0}</div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>KODE AKUN</th>
+              <th>NAMA AKUN COA</th>
+              <th style="text-align:center;">SALDO NORMAL</th>
+              <th style="text-align:right;">DEBIT PERIODE</th>
+              <th style="text-align:right;">KREDIT PERIODE</th>
+              <th style="text-align:right;">SALDO AKHIR</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+          <tfoot>
+            <tr style="background:#e2e8f0; font-weight:bold;">
+              <td colspan="3" style="padding:8px 10px; text-align:right;">TOTAL MUTASI PERIODE</td>
+              <td style="padding:8px 10px; text-align:right; font-family:monospace;">${fmt(data.summary?.total_debit)}</td>
+              <td style="padding:8px 10px; text-align:right; font-family:monospace;">${fmt(data.summary?.total_credit)}</td>
+              <td style="padding:8px 10px; text-align:right; font-family:monospace;">-</td>
+            </tr>
+          </tfoot>
+        </table>
+        <script>window.onload = function() { window.print(); };</script>
+      </body>
+    </html>`;
+
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+}
+
+// ============================================================================
+// 20. LAPORAN PEMBELIAN & RESTOCK (PURCHASE REPORTS)
+// ============================================================================
+export async function exportPurchaseTransactionsToExcel({
+  businessName = 'URBAE CAFFEINE',
+  period = '',
+  items = [],
+  summary = {},
+}) {
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Transaksi Pembelian', { views: [{ showGridLines: true }] });
+
+  const periodStr = formatIndoPeriod(period);
+  addReportHeader(ws, { businessName, reportTitle: 'LAPORAN DAFTAR TRANSAKSI PEMBELIAN & RESTOCK', periodText: periodStr, colSpan: 12, titleColor: 'FF3730A3' });
+  addTableHeader(ws, ['No', 'No. Pembelian', 'Tanggal', 'Supplier / Vendor', 'Gudang / Outlet', 'Status Pembelian', 'Status Bayar', 'Metode Bayar', 'Jatuh Tempo', 'Total Pembelian (Rp)', 'Terbayar (Rp)', 'Sisa Hutang (Rp)'], 'FF312E81');
+
+  let totBeli = 0, totBayar = 0, totSisa = 0;
+  items.forEach((p, idx) => {
+    const b = Number(p.total_amount || p.total) || 0;
+    const d = Number(p.paid_amount || p.paid) || 0;
+    const s = Number(p.remaining_amount || p.remaining) || (b - d);
+    totBeli += b; totBayar += d; totSisa += s;
+
+    const row = ws.addRow([
+      idx + 1,
+      p.purchase_no || p.invoice_no || `PO-${p.id}`,
+      p.date || p.purchase_date || '-',
+      p.supplier?.name || p.supplier_name || '-',
+      p.outlet?.name || p.warehouse || 'Gudang Utama',
+      p.status || 'COMPLETED',
+      p.payment_status || (s <= 0 ? 'PAID' : (d > 0 ? 'PARTIAL' : 'UNPAID')),
+      p.payment_method || 'TRANSFER',
+      p.due_date || '-',
+      b,
+      d,
+      s,
+    ]);
+    applyDataRowStyle(row, idx % 2 === 1, {
+      1: 'center', 2: 'center', 3: 'center', 4: 'left', 5: 'left',
+      6: 'center', 7: 'center', 8: 'center', 9: 'center', 10: 'right', 11: 'right', 12: 'right'
+    }, { 10: NUM_FMTS.currency, 11: NUM_FMTS.currency, 12: NUM_FMTS.currency });
+  });
+
+  const totRow = ws.addRow(['TOTAL KESELURUHAN PEMBELIAN', '', '', '', '', '', '', '', '', totBeli, totBayar, totSisa]);
+  ws.mergeCells(`A${totRow.number}:I${totRow.number}`);
+  applyTotalRowStyle(totRow, { 1: 'right', 10: 'right', 11: 'right', 12: 'right' }, { 10: NUM_FMTS.currency, 11: NUM_FMTS.currency, 12: NUM_FMTS.currency });
+
+  autoFitColumns(ws);
+  const filename = `Laporan_Pembelian_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  await saveWorkbook(wb, filename);
+  return filename;
+}
+
+export async function exportPurchasesByProductToExcel({
+  businessName = 'URBAE CAFFEINE',
+  period = '',
+  items = [],
+  summary = {},
+}) {
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Pembelian per Produk', { views: [{ showGridLines: true }] });
+
+  const periodStr = formatIndoPeriod(period);
+  addReportHeader(ws, { businessName, reportTitle: 'LAPORAN PEMBELIAN PER BAHAN BAKU / PRODUK', periodText: periodStr, colSpan: 8, titleColor: 'FF3730A3' });
+  addTableHeader(ws, ['No', 'Kode Bahan', 'Nama Bahan Baku', 'Kategori', 'Satuan Beli', 'Total Qty Dibeli', 'Rata-rata Harga Beli (Rp)', 'Total Biaya Pembelian (Rp)'], 'FF312E81');
+
+  let totCost = 0;
+  items.forEach((p, idx) => {
+    const cost = Number(p.total_cost || p.total) || 0;
+    totCost += cost;
+    const row = ws.addRow([
+      idx + 1,
+      p.code || p.ingredient?.code || '-',
+      p.name || p.ingredient?.name || '-',
+      p.category || p.ingredient?.category || '-',
+      p.unit || p.ingredient?.unit_beli || 'kg',
+      Number(p.qty_purchased || p.qty) || 0,
+      Number(p.avg_price || p.price) || 0,
+      cost,
+    ]);
+    applyDataRowStyle(row, idx % 2 === 1, {
+      1: 'center', 2: 'center', 3: 'left', 4: 'left', 5: 'center', 6: 'right', 7: 'right', 8: 'right'
+    }, { 6: NUM_FMTS.numberDecimal, 7: NUM_FMTS.currency, 8: NUM_FMTS.currency });
+  });
+
+  const totRow = ws.addRow(['TOTAL BIAYA PEMBELIAN', '', '', '', '', '', '', totCost]);
+  ws.mergeCells(`A${totRow.number}:G${totRow.number}`);
+  applyTotalRowStyle(totRow, { 1: 'right', 8: 'right' }, { 8: NUM_FMTS.currency });
+
+  autoFitColumns(ws);
+  const filename = `Laporan_Pembelian_Bahan_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  await saveWorkbook(wb, filename);
+  return filename;
+}
+
+export async function exportPurchasesBySupplierToExcel({
+  businessName = 'URBAE CAFFEINE',
+  period = '',
+  items = [],
+  summary = {},
+}) {
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Pembelian per Supplier', { views: [{ showGridLines: true }] });
+
+  const periodStr = formatIndoPeriod(period);
+  addReportHeader(ws, { businessName, reportTitle: 'LAPORAN REKAP PEMBELIAN PER SUPPLIER / VENDOR', periodText: periodStr, colSpan: 7, titleColor: 'FF3730A3' });
+  addTableHeader(ws, ['No', 'Nama Supplier / Vendor', 'No. Telepon / Kontak', 'Jumlah Transaksi', 'Total Pembelian (Rp)', 'Total Terbayar (Rp)', 'Sisa Hutang (Rp)'], 'FF312E81');
+
+  let totBeli = 0, totBayar = 0, totSisa = 0;
+  items.forEach((s, idx) => {
+    const b = Number(s.total_purchases || s.total) || 0;
+    const p = Number(s.total_paid || s.paid) || 0;
+    const r = Number(s.total_remaining || s.remaining) || (b - p);
+    totBeli += b; totBayar += p; totSisa += r;
+
+    const row = ws.addRow([
+      idx + 1,
+      s.name || s.supplier_name || '-',
+      s.phone || s.contact || '-',
+      Number(s.transactions_count || s.count) || 0,
+      b,
+      p,
+      r,
+    ]);
+    applyDataRowStyle(row, idx % 2 === 1, {
+      1: 'center', 2: 'left', 3: 'center', 4: 'right', 5: 'right', 6: 'right', 7: 'right'
+    }, { 4: NUM_FMTS.number, 5: NUM_FMTS.currency, 6: NUM_FMTS.currency, 7: NUM_FMTS.currency });
+  });
+
+  const totRow = ws.addRow(['TOTAL KESELURUHAN', '', '', '', totBeli, totBayar, totSisa]);
+  ws.mergeCells(`A${totRow.number}:D${totRow.number}`);
+  applyTotalRowStyle(totRow, { 1: 'right', 5: 'right', 6: 'right', 7: 'right' }, { 5: NUM_FMTS.currency, 6: NUM_FMTS.currency, 7: NUM_FMTS.currency });
+
+  autoFitColumns(ws);
+  const filename = `Laporan_Pembelian_Supplier_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  await saveWorkbook(wb, filename);
+  return filename;
+}
+
+export async function exportPurchaseShipmentsToExcel({
+  businessName = 'URBAE CAFFEINE',
+  period = '',
+  items = [],
+  summary = {},
+}) {
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Status Pengiriman', { views: [{ showGridLines: true }] });
+
+  const periodStr = formatIndoPeriod(period);
+  addReportHeader(ws, { businessName, reportTitle: 'LAPORAN STATUS PENGIRIMAN & PENERIMAAN PEMBELIAN', periodText: periodStr, colSpan: 8, titleColor: 'FF3730A3' });
+  addTableHeader(ws, ['No', 'No. Pembelian', 'Supplier', 'Tanggal Pesan', 'Tanggal Terima / Estimasi', 'Status Pengiriman', 'Diterima Oleh', 'Catatan'], 'FF312E81');
+
+  items.forEach((p, idx) => {
+    const row = ws.addRow([
+      idx + 1,
+      p.purchase_no || `PO-${p.id}`,
+      p.supplier?.name || p.supplier_name || '-',
+      p.date || '-',
+      p.received_date || p.estimated_date || '-',
+      p.shipping_status || p.status || 'RECEIVED',
+      p.receiver_name || p.received_by_user?.name || 'Staff Gudang',
+      p.notes || '-',
+    ]);
+    applyDataRowStyle(row, idx % 2 === 1, {
+      1: 'center', 2: 'center', 3: 'left', 4: 'center', 5: 'center', 6: 'center', 7: 'left', 8: 'left'
+    });
+  });
+
+  autoFitColumns(ws);
+  const filename = `Status_Pengiriman_Pembelian_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  await saveWorkbook(wb, filename);
+  return filename;
+}
+
+// ============================================================================
+// 21. RIWAYAT PERUBAHAN HPP & KOMPOSISI RESEP (MASTER MENU)
+// ============================================================================
+export async function exportHppHistoryToExcel({
+  selected,
+  hppHistoryData,
+  businessName = 'MOVA POS',
+  outletName = 'Semua Cabang',
+}) {
+  if (!selected || !hppHistoryData) return;
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+
+  // Sheet 1: Riwayat Perubahan HPP
+  const ws1 = wb.addWorksheet('Riwayat Perubahan HPP', { views: [{ showGridLines: true }] });
+  addReportHeader(ws1, {
+    businessName,
+    reportTitle: `LAPORAN RIWAYAT PERUBAHAN HPP: [${selected.code || ''}] ${selected.name || ''}`,
+    periodText: 'Historical Audit Trail (Moving Average)',
+    outletName,
+    colSpan: 13,
+    titleColor: 'FF2563EB',
+  });
+
+  // KPI Header Card
+  const kpiRow1 = ws1.addRow(['Harga Jual', Number(selected.price) || 0, '', 'HPP Terkini (Avg)', Number(hppHistoryData.current_hpp) || 0, '', 'Gross Margin Saat Ini', `${hppHistoryData.current_margin_pct || 0}%`]);
+  kpiRow1.height = 22;
+  kpiRow1.getCell(1).font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF334155' } };
+  kpiRow1.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+  kpiRow1.getCell(1).border = BORDERS.thin;
+  kpiRow1.getCell(2).numFmt = NUM_FMTS.currency;
+  kpiRow1.getCell(4).font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF334155' } };
+  kpiRow1.getCell(4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+  kpiRow1.getCell(4).border = BORDERS.thin;
+  kpiRow1.getCell(5).numFmt = NUM_FMTS.currency;
+  kpiRow1.getCell(7).font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF334155' } };
+  kpiRow1.getCell(7).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+  kpiRow1.getCell(7).border = BORDERS.thin;
+
+  ws1.addRow([]); // Spacer
+
+  addTableHeader(ws1, [
+    'No', 'Tanggal', 'Cabang', 'Pemicu Perubahan', 'HPP Sebelum (Rp)', 'HPP Sesudah (Rp)',
+    'Selisih HPP (Rp)', 'Perubahan %', 'Margin Sebelum', 'Margin Sesudah', 'Bahan Pemicu', 'Catatan / Alasan', 'Petugas'
+  ], 'FF1E293B');
+
+  (hppHistoryData.history || []).forEach((h, idx) => {
+    const row = ws1.addRow([
+      idx + 1,
+      h.date || '-',
+      h.outlet?.name || 'Semua Cabang',
+      h.trigger_type || '-',
+      Number(h.hpp_before) || 0,
+      Number(h.hpp_after) || 0,
+      Number(h.diff) || 0,
+      `${h.percentage_change || 0}%`,
+      `${h.margin_before_pct || 0}%`,
+      `${h.margin_after_pct || 0}%`,
+      h.ingredient_name || h.ingredient?.name || '-',
+      h.notes || '-',
+      h.user?.name || '-',
+    ]);
+    applyDataRowStyle(row, idx % 2 === 1, {
+      1: 'center', 2: 'center', 3: 'left', 4: 'center', 5: 'right', 6: 'right',
+      7: 'right', 8: 'right', 9: 'right', 10: 'right', 11: 'left', 12: 'left', 13: 'left'
+    }, { 5: NUM_FMTS.currency, 6: NUM_FMTS.currency, 7: NUM_FMTS.currency });
+  });
+  autoFitColumns(ws1);
+
+  // Sheet 2: Komposisi Bahan Pembentuk HPP (1 Porsi)
+  if (hppHistoryData.ingredients_breakdown?.length > 0) {
+    const ws2 = wb.addWorksheet('Komposisi Resep 1 Porsi', { views: [{ showGridLines: true }] });
+    addReportHeader(ws2, {
+      businessName,
+      reportTitle: `KOMPOSISI BAHAN PEMBENTUK HPP: [${selected.code || ''}] ${selected.name || ''}`,
+      periodText: `Total HPP 1 Porsi: Rp ${Number(hppHistoryData.current_hpp || 0).toLocaleString('id-ID')}`,
+      outletName,
+      colSpan: 8,
+      titleColor: 'FF059669',
+    });
+
+    addTableHeader(ws2, ['No', 'Nama Bahan Baku / Olahan', 'Tipe Komponen', 'Takaran 1 Porsi', 'Satuan', 'Harga Satuan Avg (Rp)', 'Subtotal Biaya (Rp)', 'Kontribusi HPP (%)'], 'FF065F46');
+
+    let totCompCost = 0;
+    hppHistoryData.ingredients_breakdown.forEach((b, idx) => {
+      const sub = Number(b.subtotal) || 0;
+      totCompCost += sub;
+      const row = ws2.addRow([
+        idx + 1,
+        b.name || '-',
+        b.type || 'RAW',
+        Number(b.qty) || 0,
+        b.unit || 'g',
+        Number(b.cost_per_unit) || 0,
+        sub,
+        (Number(b.contribution_pct) || 0) / 100,
+      ]);
+      applyDataRowStyle(row, idx % 2 === 1, {
+        1: 'center', 2: 'left', 3: 'center', 4: 'right', 5: 'center', 6: 'right', 7: 'right', 8: 'right'
+      }, { 4: NUM_FMTS.numberDecimal, 6: NUM_FMTS.currency, 7: NUM_FMTS.currency, 8: NUM_FMTS.percent });
+    });
+
+    const totRow = ws2.addRow(['TOTAL BIAYA HPP PER PORSI', '', '', '', '', '', totCompCost, 1.0]);
+    ws2.mergeCells(`A${totRow.number}:F${totRow.number}`);
+    applyTotalRowStyle(totRow, { 1: 'right', 7: 'right', 8: 'right' }, { 7: NUM_FMTS.currency, 8: NUM_FMTS.percent });
+    autoFitColumns(ws2);
+  }
+
+  const safeCode = (selected.code || 'MENU').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `Riwayat_HPP_${safeCode}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  await saveWorkbook(wb, filename);
+  return filename;
+}
+
+// ============================================================================
+// 22. LAPORAN ARUS KAS NYATA (CASH FLOW STATEMENT)
+// ============================================================================
+export async function exportCashFlowToExcel({
+  statementData,
+  period,
+  outletName = 'Semua Cabang',
+  businessName = 'MOVA POS',
+  userName = 'Administrator',
+}) {
+  if (!statementData) return;
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Laporan Arus Kas', { views: [{ showGridLines: true }] });
+
+  const periodStr = formatIndoPeriod(period);
+  addReportHeader(ws, {
+    businessName,
+    reportTitle: 'LAPORAN ARUS KAS NYATA (CASH FLOW STATEMENT)',
+    periodText: periodStr,
+    outletName,
+    userName,
+    colSpan: 5,
+    titleColor: 'FF0284C7',
+  });
+
+  addTableHeader(ws, ['Kode / Pos', 'Deskripsi Aliran Arus Kas Fisik', 'Arus Masuk (Rp)', 'Arus Keluar (Rp)', 'Arus Kas Bersih (Rp)'], 'FF0369A1');
+
+  const { operating = {}, investing = {}, financing = {}, summary = {} } = statementData;
+
+  const renderSection = (title, inflows = [], outflows = [], netVal = 0, bg = 'FFEFF6FF') => {
+    const sRow = ws.addRow([`--- ${title} ---`, '', '', '', '']);
+    ws.mergeCells(`A${sRow.number}:E${sRow.number}`);
+    sRow.height = 24;
+    sRow.eachCell(cell => {
+      cell.font = { name: 'Segoe UI', size: 10.5, bold: true, color: { argb: 'FF0F172A' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+      cell.border = BORDERS.section;
+    });
+
+    inflows.forEach((item, idx) => {
+      const row = ws.addRow(['INFLOW', item.label || item.name || '-', Number(item.amount || item.value) || 0, 0, Number(item.amount || item.value) || 0]);
+      applyDataRowStyle(row, idx % 2 === 1, { 1: 'center', 2: 'left', 3: 'right', 4: 'right', 5: 'right' }, { 3: NUM_FMTS.currency, 4: NUM_FMTS.currency, 5: NUM_FMTS.currency });
+    });
+
+    outflows.forEach((item, idx) => {
+      const amt = Number(item.amount || item.value) || 0;
+      const row = ws.addRow(['OUTFLOW', item.label || item.name || '-', 0, amt, -amt]);
+      applyDataRowStyle(row, (inflows.length + idx) % 2 === 1, { 1: 'center', 2: 'left', 3: 'right', 4: 'right', 5: 'right' }, { 3: NUM_FMTS.currency, 4: NUM_FMTS.currency, 5: NUM_FMTS.currency });
+    });
+
+    const totRow = ws.addRow([`ARUS KAS BERSIH ${title}`, '', '', '', Number(netVal) || 0]);
+    ws.mergeCells(`A${totRow.number}:D${totRow.number}`);
+    applyTotalRowStyle(totRow, { 1: 'right', 5: 'right' }, { 5: NUM_FMTS.currency });
+    ws.addRow([]); // Spacer
+  };
+
+  const opInflows = Object.entries(operating.inflows || {}).map(([k, v]) => ({ label: k, amount: v }));
+  const opOutflows = Object.entries(operating.outflows || {}).map(([k, v]) => ({ label: k, amount: v }));
+  renderSection('1. ARUS KAS OPERASIONAL (OPERATING CASH FLOW / OCF)', opInflows, opOutflows, operating.net || summary.net_operating_cash_flow || 0, 'FFECFDF5');
+
+  const invInflows = (investing.breakdown || []).filter(b => b.type === 'INFLOW');
+  const invOutflows = (investing.breakdown || []).filter(b => b.type !== 'INFLOW');
+  renderSection('2. ARUS KAS INVESTASI / BELANJA MODAL (CAPEX)', invInflows, invOutflows, investing.net || summary.net_investing_cash_flow || 0, 'FFFEF3C7');
+
+  const finInflows = (financing.breakdown || []).filter(b => b.type === 'INFLOW');
+  const finOutflows = (financing.breakdown || []).filter(b => b.type !== 'INFLOW');
+  renderSection('3. ARUS KAS PENDANAAN & MODAL (FINANCING CASH FLOW)', finInflows, finOutflows, financing.net || summary.net_financing_cash_flow || 0, 'FFEFF6FF');
+
+  const netCashFlow = Number(summary.net_cash_flow) || 0;
+  const netRow = ws.addRow(['TOTAL PERUBAHAN BERSIH KAS & SETARA KAS', '', '', '', netCashFlow]);
+  ws.mergeCells(`A${netRow.number}:D${netRow.number}`);
+  applyTotalRowStyle(netRow, { 1: 'right', 5: 'right' }, { 5: NUM_FMTS.currency });
+
+  autoFitColumns(ws);
+  const filename = `Laporan_Arus_Kas_${period?.from || 'all'}_sd_${period?.to || 'all'}.xlsx`;
+  await saveWorkbook(wb, filename);
+  return filename;
+}
+
+// ============================================================================
+// 23. LAPORAN LABA RUGI (PROFIT & LOSS / INCOME STATEMENT)
+// ============================================================================
+export async function exportProfitLossToExcel({
+  reportData = {},
+  period = {},
+  outletName = 'Semua Cabang',
+  businessName = 'MOVA POS',
+  userName = 'Administrator',
+}) {
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Laporan Laba Rugi', { views: [{ showGridLines: true }] });
+
+  const periodStr = formatIndoPeriod(period);
+  addReportHeader(ws, {
+    businessName,
+    reportTitle: 'LAPORAN LABA RUGI KOMPREHENSIF (PROFIT & LOSS STATEMENT)',
+    periodText: periodStr,
+    outletName,
+    userName,
+    colSpan: 4,
+    titleColor: 'FF059669',
+  });
+
+  addTableHeader(ws, ['Kode Akun / Pos', 'Rincian Komponen Pendapatan & Biaya', 'Nominal (Rp)', '% Kontribusi Omset'], 'FF065F46');
+
+  const rev = Number(reportData.total_revenue || reportData.revenue || 0);
+  const hpp = Number(reportData.total_cogs || reportData.total_hpp || reportData.cogs || 0);
+  const grossProfit = Number(reportData.gross_profit || (rev - hpp));
+  const opex = Number(reportData.total_opex || reportData.total_expense || 0);
+  const netProfit = Number(reportData.net_profit || (grossProfit - opex));
+
+  const addPLSection = (title, items = [], totalVal = 0, bg = 'FFF8FAFC') => {
+    const sRow = ws.addRow([`--- ${title} ---`, '', '', '']);
+    ws.mergeCells(`A${sRow.number}:D${sRow.number}`);
+    sRow.height = 24;
+    sRow.eachCell(cell => {
+      cell.font = { name: 'Segoe UI', size: 10.5, bold: true, color: { argb: 'FF0F172A' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+      cell.border = BORDERS.section;
+    });
+
+    items.forEach((item, idx) => {
+      const amt = Number(item.amount || item.value || item.total) || 0;
+      const row = ws.addRow([
+        item.code || '-',
+        item.name || item.label || '-',
+        amt,
+        rev > 0 ? (amt / rev) : 0,
+      ]);
+      applyDataRowStyle(row, idx % 2 === 1, { 1: 'center', 2: 'left', 3: 'right', 4: 'right' }, { 3: NUM_FMTS.currency, 4: NUM_FMTS.percent });
+    });
+
+    const totRow = ws.addRow([`TOTAL ${title}`, '', Number(totalVal) || 0, rev > 0 ? (Number(totalVal) / rev) : 0]);
+    ws.mergeCells(`A${totRow.number}:B${totRow.number}`);
+    applyTotalRowStyle(totRow, { 1: 'right', 3: 'right', 4: 'right' }, { 3: NUM_FMTS.currency, 4: NUM_FMTS.percent });
+    ws.addRow([]); // Spacer
+  };
+
+  addPLSection('1. PENDAPATAN USAHA (REVENUE)', reportData.revenue_items || [{ label: 'Penjualan F&B Bersih POS', amount: rev }], rev, 'FFECFDF5');
+  addPLSection('2. HARGA POKOK PENJUALAN (HPP RIIL)', reportData.cogs_items || [{ label: 'Pemakaian Bahan Baku & Resep', amount: hpp }], hpp, 'FFFEF3C7');
+
+  const gpRow = ws.addRow(['LABA KOTOR (GROSS PROFIT)', '', grossProfit, rev > 0 ? (grossProfit / rev) : 0]);
+  ws.mergeCells(`A${gpRow.number}:B${gpRow.number}`);
+  applyTotalRowStyle(gpRow, { 1: 'right', 3: 'right', 4: 'right' }, { 3: NUM_FMTS.currency, 4: NUM_FMTS.percent });
+  ws.addRow([]); // Spacer
+
+  addPLSection('3. BEBAN OPERASIONAL (OPEX)', reportData.opex_items || [{ label: 'Biaya Operasional Dapur & Outlet', amount: opex }], opex, 'FFFEE2E2');
+
+  const npRow = ws.addRow(['LABA BERSIH OPERASIONAL (NET PROFIT)', '', netProfit, rev > 0 ? (netProfit / rev) : 0]);
+  ws.mergeCells(`A${npRow.number}:B${npRow.number}`);
+  applyTotalRowStyle(npRow, { 1: 'right', 3: 'right', 4: 'right' }, { 3: NUM_FMTS.currency, 4: NUM_FMTS.percent });
+
+  autoFitColumns(ws);
+  const filename = `Laporan_Laba_Rugi_${period?.from || 'all'}_sd_${period?.to || 'all'}.xlsx`;
+  await saveWorkbook(wb, filename);
+  return filename;
+}

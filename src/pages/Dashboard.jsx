@@ -5,7 +5,7 @@ import {
   Layers, FileSpreadsheet, Printer, X, Download, ShieldCheck, Building2,
   Calendar, User, Plus, LayoutGrid, RotateCw, Search, Check, DollarSign,
   CreditCard, Clock, ArrowUpRight, ArrowDownRight, ShoppingBag, Receipt,
-  Wallet, PieChart, Activity, SlidersHorizontal, ArrowRight, Sparkles, RefreshCw
+  Wallet, PieChart, Activity, SlidersHorizontal, ArrowRight, Sparkles, RefreshCw, Eye
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, pct, num, StatusPill, LoadingState, PeriodPicker, PageHeader } from '../components/ui';
@@ -14,6 +14,7 @@ import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 import { exportDashboardToExcel } from '../utils/exportReport';
 import { printElement } from '../utils/print';
+import ReportPreviewModal from '../components/ReportPreviewModal';
 
 // -------------------------------------------------------------
 // METADATA WIDGET DARI ACCURATE ONLINE / MOVA POS ECOSYSTEM
@@ -169,6 +170,8 @@ export default function Dashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [showWidgetModal, setShowWidgetModal] = useState(false);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // Widget customizer states
   const [activeWidgets, setActiveWidgets] = useState(() => {
@@ -276,6 +279,7 @@ export default function Dashboard() {
   }
 
   async function handleExportExcel() {
+    setExporting(true);
     try {
       const fname = await exportDashboardToExcel({
         data,
@@ -290,6 +294,8 @@ export default function Dashboard() {
     } catch (err) {
       console.error(err);
       toast.error('Gagal mengekspor laporan ke Excel');
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -300,6 +306,110 @@ export default function Dashboard() {
       { orientation: 'portrait' }
     );
   }
+
+  // Preview Modal Sheets & KPIs
+  const previewKpis = useMemo(() => [
+    { label: 'Kerugian Waste Terdata', value: data?.total_waste_value || 0, format: 'rupiah', color: '#fb923c' },
+    { label: 'Selisih Tak Terjelaskan (Shrinkage)', value: data?.total_variance_loss || 0, format: 'rupiah', color: '#fb7185' },
+    { label: 'Total Kerugian F&B Bersih', value: data?.total_combined_loss || 0, format: 'rupiah', color: '#c084fc' },
+    { label: 'Bahan Perlu Investigasi', value: `${data?.status_counts?.['TIDAK WAJAR'] || 0} Bahan`, color: '#ef4444' }
+  ], [data]);
+
+  const previewSheets = useMemo(() => {
+    const sc = data?.status_counts || {};
+    const executiveSummaryRows = [
+      { metric: 'Bahan Baku Status Normal', value: `${sc.NORMAL ?? 0} Item`, desc: 'Pemakaian dalam batas wajar toleransi resep' },
+      { metric: 'Bahan Baku Status Waspada', value: `${sc.WASPADA ?? 0} Item`, desc: 'Perlu evaluasi porsi takaran koki / bartender' },
+      { metric: 'Bahan Baku Status Tidak Wajar', value: `${sc['TIDAK WAJAR'] ?? 0} Item`, desc: 'Wajib investigasi kebocoran / kehilangan fisik' },
+      { metric: 'Total Kerugian Waste Resmi', value: rupiah(data?.total_waste_value || 0), desc: 'Limbah basi, gosong, expired diakui dapur' },
+      { metric: 'Total Selisih Tak Terjelaskan (Shrinkage)', value: rupiah(data?.total_variance_loss || 0), desc: 'Anomali selisih fisik vs perhitungan sistem' },
+      { metric: 'Total Kerugian F&B Bersih', value: rupiah(data?.total_combined_loss || 0), desc: 'Akumulasi kerugian waste + selisih murni' }
+    ];
+
+    const topWasteRows = (data?.top_waste || []).map(w => ({
+      name: w.ingredient?.name || '-',
+      qty: Number(w.waste_qty || 0),
+      unit: w.ingredient?.unit_pakai || '-',
+      value: Number(w.waste_value || 0)
+    }));
+
+    const topVarBahanRows = varData.map(v => ({
+      name: v.ingredient?.name || '-',
+      unit: v.ingredient?.unit_pakai || '-',
+      teoritis: Number(v.pemakaian_teoritis || 0),
+      aktual: Number(v.pemakaian_aktual || 0),
+      selisih: Number(v.variance_gross_qty ?? v.variance_qty ?? 0),
+      variance_pct: Number(v.variance_pct || 0),
+      variance_value: Number(v.variance_value || 0),
+      status: v.status || 'NORMAL'
+    }));
+
+    const topVarMenuRows = varMenuData.map(m => ({
+      menu_name: m.menu?.name || '-',
+      qty_terjual: Number(m.qty_terjual || 0),
+      weighted_pct: Number(m.weighted_pct || 0),
+      variance_value: Number(m.variance_value || 0)
+    }));
+
+    return [
+      {
+        id: 'ringkasan_eksekutif',
+        name: 'Ringkasan Eksekutif',
+        columns: [
+          { key: 'metric', label: 'Indikator Metrik Cost Control', align: 'left', width: 30 },
+          { key: 'value', label: 'Jumlah / Nilai', align: 'right', width: 22 },
+          { key: 'desc', label: 'Keterangan Audit Akuntansi', align: 'left', width: 38 }
+        ],
+        data: executiveSummaryRows
+      },
+      ...(topWasteRows.length > 0 ? [{
+        id: 'top_waste',
+        name: 'Top 5 Kerugian Waste',
+        columns: [
+          { key: 'name', label: 'Bahan Baku', align: 'left', width: 25 },
+          { key: 'qty', label: 'Qty Waste', align: 'right', format: 'number', width: 14 },
+          { key: 'unit', label: 'Satuan', align: 'left', width: 10 },
+          { key: 'value', label: 'Nilai Kerugian', align: 'right', format: 'rupiah', width: 18 }
+        ],
+        data: topWasteRows,
+        totals: [
+          { label: 'Total Kerugian Top Waste', value: topWasteRows.reduce((s, w) => s + w.value, 0), format: 'rupiah' }
+        ]
+      }] : []),
+      ...(topVarBahanRows.length > 0 ? [{
+        id: 'top_var_bahan',
+        name: 'Top 5 Variansi Bahan',
+        columns: [
+          { key: 'name', label: 'Bahan Baku', align: 'left', width: 22 },
+          { key: 'unit', label: 'Satuan', align: 'left', width: 9 },
+          { key: 'teoritis', label: 'Teoritis POS', align: 'right', format: 'number', width: 12 },
+          { key: 'aktual', label: 'Aktual Fisik', align: 'right', format: 'number', width: 12 },
+          { key: 'selisih', label: 'Selisih Qty', align: 'right', format: 'number', width: 12 },
+          { key: 'variance_pct', label: '% Selisih', align: 'right', format: 'percent', width: 10 },
+          { key: 'variance_value', label: 'Nilai Selisih', align: 'right', format: 'rupiah', width: 15 },
+          { key: 'status', label: 'Status', align: 'center', width: 12 }
+        ],
+        data: topVarBahanRows,
+        totals: [
+          { label: 'Total Nilai Selisih Bahan', value: topVarBahanRows.reduce((s, v) => s + v.variance_value, 0), format: 'rupiah' }
+        ]
+      }] : []),
+      ...(topVarMenuRows.length > 0 ? [{
+        id: 'top_var_menu',
+        name: 'Top 5 Variansi Menu',
+        columns: [
+          { key: 'menu_name', label: 'Nama Menu', align: 'left', width: 25 },
+          { key: 'qty_terjual', label: 'Qty Terjual', align: 'right', format: 'number', width: 14 },
+          { key: 'weighted_pct', label: 'Weighted %', align: 'right', format: 'percent', width: 14 },
+          { key: 'variance_value', label: 'Nilai Alokasi Selisih', align: 'right', format: 'rupiah', width: 18 }
+        ],
+        data: topVarMenuRows,
+        totals: [
+          { label: 'Total Alokasi Selisih Menu', value: topVarMenuRows.reduce((s, m) => s + m.variance_value, 0), format: 'rupiah' }
+        ]
+      }] : [])
+    ];
+  }, [data, varData, varMenuData]);
 
   // Filtered widgets in modal
   const filteredCatalog = useMemo(() => {
@@ -567,6 +677,25 @@ export default function Dashboard() {
             <RotateCw size={14} className={refreshing ? 'spin-anim' : ''} />
           </button>
 
+          {/* Preview Modal */}
+          <button
+            className="btn btn-secondary btn-sm"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              borderColor: 'rgba(99, 102, 241, 0.4)',
+              color: 'var(--accent-bright)',
+              background: 'rgba(99, 102, 241, 0.08)',
+              fontWeight: 600,
+              fontSize: 12,
+            }}
+            onClick={() => setShowPreviewModal(true)}
+            title="Pratinjau interaktif laporan eksekutif di layar"
+          >
+            <Eye size={14} /> Pratinjau Laporan
+          </button>
+
           {/* Export Excel */}
           <button
             className="btn btn-secondary btn-sm"
@@ -581,9 +710,10 @@ export default function Dashboard() {
               fontSize: 12,
             }}
             onClick={handleExportExcel}
+            disabled={exporting}
             title="Unduh laporan lengkap dalam format Excel (.xlsx)"
           >
-            <FileSpreadsheet size={14} /> Export Excel
+            <FileSpreadsheet size={14} /> {exporting ? 'Mengekspor...' : 'Export Excel'}
           </button>
 
           {/* PDF Modal */}
@@ -872,9 +1002,9 @@ export default function Dashboard() {
           </button>
         </div>
       ) : (
-        <div style={{
+        <div className="dashboard-widgets-grid" style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(460px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))',
           gap: 16,
           marginBottom: 24,
         }}>
@@ -1853,6 +1983,22 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* Universal Report Preview Modal */}
+      <ReportPreviewModal
+        isOpen={showPreviewModal}
+        onClose={() => setShowPreviewModal(false)}
+        title="Pratinjau Ringkasan Eksekutif & Cost Control"
+        reportTitle="LAPORAN EKSEKUTIF COST CONTROL & ANALISIS VARIANSI"
+        businessName={businessName}
+        outletName={outletName}
+        periodText={`${period.from} s/d ${period.to}`}
+        kpis={previewKpis}
+        sheets={previewSheets}
+        onExportExcel={handleExportExcel}
+        onPrint={handlePrintPdf}
+        exporting={exporting}
+      />
     </div>
   );
 }

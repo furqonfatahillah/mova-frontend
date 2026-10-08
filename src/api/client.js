@@ -1,9 +1,23 @@
 import axios from 'axios';
 
-const apiHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+const getBaseUrl = () => {
+  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+  if (typeof window !== 'undefined') {
+    const proto = window.location.protocol;
+    const host = window.location.hostname;
+    // If running on dev localhost (e.g. port 5173), default to port 8000 for standard Laravel backend
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return `${proto}//${host}:8000/api`;
+    }
+    return `${proto}//${window.location.host}/api`;
+  }
+  return 'http://localhost:8000/api';
+};
 
 const api = axios.create({
-  baseURL: `http://${apiHost}/api`,
+  baseURL: getBaseUrl(),
   headers: {
     'Content-Type': 'application/json',
     Accept: 'application/json',
@@ -13,14 +27,27 @@ const api = axios.create({
   timeout: 30000,
 });
 
+export const getMediaUrl = (url) => {
+  if (!url) return '';
+  if (url.startsWith('data:') || url.startsWith('blob:')) {
+    return url;
+  }
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+  const baseUrl = (api.defaults.baseURL || getBaseUrl() || '').replace(/\/api\/?$/, '');
+  const cleanPath = url.startsWith('/') ? url : `/${url}`;
+  return baseUrl ? `${baseUrl}${cleanPath}` : cleanPath;
+};
+
 // ============================================================================
 // IN-FLIGHT DEDUPLICATION + SHORT-LIVED RESPONSE CACHE
 // Prevents duplicate GET requests AND caches responses for 3 seconds
-// to avoid redundant network calls when switching tabs/components quickly
+// Auto-invalidates immediately when any mutation (POST/PUT/PATCH/DELETE) occurs
 // ============================================================================
 const inFlightRequests = new Map();
 const responseCache = new Map();
-const CACHE_TTL_MS = 3000; // 3 seconds — enough for tab switches, not stale for real data
+const CACHE_TTL_MS = 2500; // 2.5 seconds max for quick tab/component switches
 
 // Attach token and active outlet automatically
 api.interceptors.request.use((config) => {
@@ -48,6 +75,12 @@ api.interceptors.request.use((config) => {
     } else if (config.method === 'get' && !config.params) {
       config.params = { outlet_id: activeOutletId };
     }
+  }
+
+  // Auto-invalidate GET cache on mutating requests (POST, PUT, PATCH, DELETE)
+  const method = (config.method || 'get').toLowerCase();
+  if (['post', 'put', 'patch', 'delete'].includes(method)) {
+    responseCache.clear();
   }
 
   return config;
@@ -115,7 +148,14 @@ if (typeof window !== 'undefined') {
 
 // Handle 401 globally (only redirect if not already on /login)
 api.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    // If mutation succeeded, ensure cache is cleared
+    const method = (res.config?.method || 'get').toLowerCase();
+    if (['post', 'put', 'patch', 'delete'].includes(method)) {
+      responseCache.clear();
+    }
+    return res;
+  },
   (err) => {
     if (err.response?.status === 401 && !window.location.pathname.includes('/login')) {
       localStorage.removeItem('pos_token');

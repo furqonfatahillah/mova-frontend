@@ -4,7 +4,8 @@ import {
   ArrowUpRight, RefreshCw, Printer, Plus, Search, Filter,
   Building2, Layers, CheckCircle2, AlertCircle, Sparkles,
   HelpCircle, Store, Edit3, Trash, Info, Package, Landmark, Flame,
-  Clock, CheckSquare, Square, X, SlidersHorizontal, Check, UserCheck, ChevronDown, Scale, Coins, ArrowRightLeft
+  Clock, CheckSquare, Square, X, SlidersHorizontal, Check, UserCheck, ChevronDown, ChevronRight, Scale, Coins, ArrowRightLeft,
+  Eye, FileSpreadsheet
 } from 'lucide-react';
 import api from '../api/client';
 import { rupiah, num, pct, LoadingState, PageHeader, PeriodPicker } from '../components/ui';
@@ -13,6 +14,9 @@ import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 import { printElement } from '../utils/print';
 import { confirmDialog } from '../utils/swal';
+import { exportCashFlowToExcel } from '../utils/exportReport';
+import ReportPreviewModal from '../components/ReportPreviewModal';
+import JournalVoucherModal from '../components/JournalVoucherModal';
 
 export const ACTIVITY_TYPES = [
   { value: 'OPERATING', label: 'Operasi (Operating)', color: '#10b981' },
@@ -42,48 +46,75 @@ export const CASH_CATEGORIES = [
 
 export const ACCOUNT_TYPES = [
   { value: 'BANK_MAIN', label: 'Rekening Bank Utama Resto' },
-  { value: 'CASH_DRAWER', label: 'Kas Toko / Laci Kasir' },
+  { value: 'CASH_DRAWER', label: 'Kas Kecil (Laci Kasir Outlet)' },
 ];
 
 export const AVAILABLE_PAYMENT_METHODS = [
-  { id: 'CASH', label: 'Kas Laci Kasir (Cash)', desc: 'Uang fisik tunai transaksi penjualan & belanja di laci kasir', color: '#10b981', icon: Wallet },
+  { id: 'CASH', label: 'Kas Kecil (Tunai Kasir)', desc: 'Uang fisik tunai kas kecil di laci kasir outlet', color: '#10b981', icon: Wallet },
   { id: 'QRIS', label: 'QRIS', desc: 'QRIS BCA, GoPay, ShopeePay, Dana', color: '#06b6d4', icon: Sparkles },
-  { id: 'GRAB', label: 'Grab / E-Commerce', desc: 'GrabFood, GoFood, ShopeeFood, TikTok', color: '#f59e0b', icon: Flame },
+  { id: 'GRAB', label: 'GrabFood', desc: 'Pesanan online delivery GrabFood', color: '#00B14F', icon: Flame },
+  { id: 'GOFOOD', label: 'GoFood', desc: 'Pesanan online delivery GoFood / Gojek', color: '#EE2737', icon: Flame },
+  { id: 'SHOPEEFOOD', label: 'ShopeeFood', desc: 'Pesanan online delivery ShopeeFood', color: '#EE4D2D', icon: Flame },
   { id: 'TRANSFER', label: 'Transfer Bank', desc: 'BCA, Mandiri, BRI & Rekening Giro', color: '#8b5cf6', icon: Landmark },
   { id: 'DEBIT', label: 'Debit / EDC', desc: 'Kartu Debit & Mesin Gesek EDC', color: '#ec4899', icon: DollarSign },
 ];
 
 export const PAYMENT_METHOD_TABS = [
   { id: 'ALL', label: 'Semua Metode', sub: 'Semua Aliran Kas Gabungan', color: '#38bdf8', icon: Layers, isPreset: true },
-  { id: 'NON_CASH', label: 'Gabungan Non-Tunai', sub: 'QRIS + Grab + Transfer + EDC', color: '#06b6d4', icon: Sparkles, isPreset: true },
+  { id: 'NON_CASH', label: 'Gabungan Non-Tunai', sub: 'QRIS + Grab + GoFood + Shopee + Transfer', color: '#06b6d4', icon: Sparkles, isPreset: true },
   { id: 'ECOMMERCE_ALL', label: 'Gabungan E-Commerce', sub: 'Grab + GoFood + ShopeeFood', color: '#f59e0b', icon: Flame, isPreset: true },
-  { id: 'CASH', label: 'Kas Laci Kasir', sub: 'Uang Fisik di Laci POS / Tunai', color: '#10b981', icon: Wallet },
+  { id: 'CASH', label: 'Kas Kecil (Kasir)', sub: 'Uang Fisik Kas Kecil di Laci POS / Tunai', color: '#10b981', icon: Wallet },
   { id: 'QRIS', label: 'QRIS', sub: 'BCA, GoPay, Shopee', color: '#06b6d4', icon: Sparkles },
-  { id: 'GRAB', label: 'Grab / Delivery', sub: 'E-Commerce Delivery', color: '#f59e0b', icon: Flame },
+  { id: 'GRAB', label: 'GrabFood', sub: 'Grab Delivery', color: '#00B14F', icon: Flame },
+  { id: 'GOFOOD', label: 'GoFood', sub: 'GoFood Delivery', color: '#EE2737', icon: Flame },
+  { id: 'SHOPEEFOOD', label: 'ShopeeFood', sub: 'ShopeeFood Delivery', color: '#EE4D2D', icon: Flame },
   { id: 'TRANSFER', label: 'Transfer Bank', sub: 'Rekening Bank', color: '#8b5cf6', icon: Landmark },
   { id: 'DEBIT', label: 'Debit / EDC', sub: 'Kartu Debit & EDC', color: '#ec4899', icon: DollarSign },
 ];
 
+export const CASH_ACCOUNT_OPTIONS = [
+  { code: 'ALL', name: 'SEMUA KAS & BANK', category: 'ALL', icon: Layers, color: '#38bdf8', desc: 'Konsolidasi Seluruh Akun Kas' },
+  { code: '1-11001', name: 'KAS BESAR', category: 'CASH', icon: Landmark, color: '#10b981', desc: '1-11001 • Kas Besar' },
+  { code: '1-11002', name: 'KAS KECIL KASIR', category: 'CASH', icon: Wallet, color: '#f59e0b', desc: '1-11002 • Kas Kecil Kasir' },
+  { code: '1-11003', name: 'BANK', category: 'BANK', icon: DollarSign, color: '#8b5cf6', desc: '1-11003 • Bank' },
+  { code: '1-11004', name: 'KAS APLIKASI', category: 'CASH', icon: Sparkles, color: '#06b6d4', desc: '1-11004 • Kas Aplikasi' },
+];
+
 export default function CashFlow() {
-  const { activeOutletId, activeOutlet, outlets, currentBusiness, dateFrom, dateTo } = useOutlet();
+  const { activeOutletId, activeOutlet, outlets, currentBusiness, dateFrom: ctxDateFrom, dateTo: ctxDateTo, dateRange } = useOutlet();
   const currentUser = JSON.parse(localStorage.getItem('pos_user') || '{}');
 
+  const fromDate = ctxDateFrom || dateRange?.from || getMonthStartStr();
+  const toDate = ctxDateTo || dateRange?.to || getTodayStr();
+  const dateFrom = fromDate;
+  const dateTo = toDate;
+
   const todayStr = getTodayStr();
-  const [activeTab, setActiveTab] = useState('statement'); // 'statement' | 'reconciliation' | 'journal'
+  const [activeTab, setActiveTab] = useState('statement'); // 'statement' | 'journal_ledger' | 'reconciliation' | 'journal'
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('ALL');
-  const [selectedShift, setSelectedShift] = useState('ALL'); // 'ALL' | single ID | comma-separated IDs e.g. '1,2'
+  const [selectedCashAccount, setSelectedCashAccount] = useState('ALL');
 
   // Modals for multi-select / combined filters
-  const [shiftModalOpen, setShiftModalOpen] = useState(false);
-  const [tempShiftIds, setTempShiftIds] = useState([]);
   const [customPmModalOpen, setCustomPmModalOpen] = useState(false);
   const [tempPmList, setTempPmList] = useState([]);
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [voucherModal, setVoucherModal] = useState({
+    isOpen: false,
+    journalId: null,
+    entryNo: null,
+  });
+
+  const handleOpenVoucher = (item) => {
+    setVoucherModal({
+      isOpen: true,
+      journalId: item.journal_id || item.journal_entry_id || null,
+      entryNo: item.ref_no || null,
+    });
+  };
 
   const [loading, setLoading] = useState(true);
   const [statementData, setStatementData] = useState(null);
   const [journalEntries, setJournalEntries] = useState([]);
-
-  const availableShifts = statementData?.available_shifts || [];
 
   // Active Payment Method metadata
   const activePmMeta = useMemo(() => {
@@ -110,123 +141,19 @@ export default function CashFlow() {
     };
   }, [selectedPaymentMethod]);
 
-  // Active Shift metadata and calculated initial cash & closing discrepancy
-  const activeShiftMeta = useMemo(() => {
-    // Chronological shifts for inter-shift handover discrepancy
-    const chronShifts = [...(availableShifts || [])].sort((a, b) => {
-      const dateA = a.opened_at || a.created_at || '';
-      const dateB = b.opened_at || b.created_at || '';
-      return dateA.localeCompare(dateB) || Number(a.id) - Number(b.id);
-    });
-
-    const shiftInterMap = {};
-    let prevClosedShift = null;
-    chronShifts.forEach(cs => {
-      let diffAntar = Number(cs.inter_shift_diff ?? 0);
-      let prevName = cs.prev_shift_name || null;
-      let prevClosing = cs.prev_closing_cash != null ? Number(cs.prev_closing_cash) : null;
-
-      if (prevClosedShift && prevClosedShift.closing_cash !== null && prevClosedShift.closing_cash !== undefined) {
-        if (!cs.inter_shift_diff && cs.inter_shift_diff !== 0) {
-          prevClosing = Number(prevClosedShift.closing_cash || 0);
-          prevName = prevClosedShift.shift_name;
-          diffAntar = Number(cs.initial_cash || 0) - prevClosing;
-        } else if (!prevName) {
-          prevName = prevClosedShift.shift_name;
-          prevClosing = Number(prevClosedShift.closing_cash || 0);
-        }
-      }
-
-      shiftInterMap[cs.id] = {
-        diffAntar,
-        prevName,
-        prevClosing,
-      };
-
-      if (cs.status === 'CLOSED' && cs.closing_cash !== null && cs.closing_cash !== undefined) {
-        prevClosedShift = cs;
-      }
-    });
-
-    const allInitial = (availableShifts || []).reduce((acc, s) => acc + Number(s.initial_cash || 0), 0);
-    const closedShifts = (availableShifts || []).filter(s => s.status === 'CLOSED');
-    const allClosing = closedShifts.reduce((acc, s) => acc + Number(s.closing_cash || 0), 0);
-    const allSystem = closedShifts.reduce((acc, s) => acc + Number(s.system_cash || 0), 0);
-    const allDiff = closedShifts.reduce((acc, s) => acc + Number(s.cash_difference || 0), 0);
-    const allInterDiff = (availableShifts || []).reduce((acc, s) => acc + (shiftInterMap[s.id]?.diffAntar || Number(s.inter_shift_diff || 0)), 0);
-
-    if (!selectedShift || selectedShift === 'ALL' || selectedShift === 'all') {
-      return {
-        id: 'ALL',
-        label: 'Semua Shift (Gabungan Total)',
-        isAll: true,
-        count: availableShifts.length,
-        closedCount: closedShifts.length,
-        initialCashTotal: statementData?.summary?.initial_cash_total ?? allInitial,
-        closingCashTotal: statementData?.summary?.closing_cash_total ?? allClosing,
-        systemCashTotal: statementData?.summary?.system_cash_total ?? allSystem,
-        cashDifferenceTotal: statementData?.summary?.cash_difference_total ?? allDiff,
-        interShiftDiffTotal: statementData?.summary?.inter_shift_difference_total ?? allInterDiff,
-        prevShiftName: null,
-        prevClosingCash: null,
-        shifts: availableShifts,
-        closedShifts: closedShifts,
-        shiftNames: 'Semua Shift Gabungan',
-      };
+  // Active Cash Account Metadata
+  const activeCashAccountMeta = useMemo(() => {
+    if (!selectedCashAccount || selectedCashAccount === 'ALL') {
+      return { code: 'ALL', name: 'SEMUA KAS & BANK', category: 'ALL', icon: Layers, color: '#38bdf8' };
     }
-
-    const ids = selectedShift.toString().split(',').map(id => Number(id.trim())).filter(Boolean);
-    const matchedShifts = (availableShifts || []).filter(s => ids.includes(s.id));
-    const matchedClosed = matchedShifts.filter(s => s.status === 'CLOSED');
-    const totalInitial = matchedShifts.reduce((acc, s) => acc + Number(s.initial_cash || 0), 0);
-    const totalClosing = matchedClosed.reduce((acc, s) => acc + Number(s.closing_cash || 0), 0);
-    const totalSystem = matchedClosed.reduce((acc, s) => acc + Number(s.system_cash || 0), 0);
-    const totalDiff = matchedClosed.reduce((acc, s) => acc + Number(s.cash_difference || 0), 0);
-    const totalInterDiff = matchedShifts.reduce((acc, s) => acc + (shiftInterMap[s.id]?.diffAntar || Number(s.inter_shift_diff || 0)), 0);
-
-    if (ids.length === 1) {
-      const s = matchedShifts[0] || (availableShifts || []).find(x => x.id === ids[0]);
-      const isClosed = s?.status === 'CLOSED';
-      const inter = shiftInterMap[s?.id] || { diffAntar: Number(s?.inter_shift_diff || 0), prevName: s?.prev_shift_name, prevClosing: s?.prev_closing_cash };
-      return {
-        id: selectedShift,
-        label: s ? `${s.shift_name} (${s.cashier_name || 'Kasir'})` : `Shift ${ids[0]}`,
-        isSingle: true,
-        count: 1,
-        closedCount: isClosed ? 1 : 0,
-        shift: s,
-        shifts: s ? [s] : [],
-        closedShifts: isClosed ? [s] : [],
-        initialCashTotal: s ? Number(s.initial_cash || 0) : totalInitial,
-        closingCashTotal: isClosed ? Number(s.closing_cash || 0) : totalClosing,
-        systemCashTotal: isClosed ? Number(s.system_cash || 0) : totalSystem,
-        cashDifferenceTotal: isClosed ? Number(s.cash_difference || 0) : totalDiff,
-        interShiftDiffTotal: inter.diffAntar,
-        prevShiftName: inter.prevName,
-        prevClosingCash: inter.prevClosing,
-        shiftNames: s ? s.shift_name : `Shift ${ids[0]}`,
-      };
+    const overviewMatch = statementData?.cash_accounts_overview?.find(a => a.code === selectedCashAccount);
+    if (overviewMatch) {
+      return { code: overviewMatch.code, name: overviewMatch.name, category: overviewMatch.category, icon: Landmark, color: '#10b981' };
     }
-
-    const names = matchedShifts.map(s => s.shift_name).join(', ') || ids.map(i => `Shift ${i}`).join(', ');
-    return {
-      id: selectedShift,
-      label: `Gabungan ${ids.length} Shift (${names})`,
-      isCombined: true,
-      count: ids.length,
-      closedCount: matchedClosed.length,
-      shifts: matchedShifts,
-      closedShifts: matchedClosed,
-      initialCashTotal: totalInitial,
-      closingCashTotal: totalClosing,
-      systemCashTotal: totalSystem,
-      cashDifferenceTotal: totalDiff,
-      interShiftDiffTotal: totalInterDiff,
-      prevShiftName: null,
-      prevClosingCash: null,
-      shiftNames: names,
-    };
-  }, [selectedShift, availableShifts, statementData]);
+    const found = CASH_ACCOUNT_OPTIONS.find(a => a.code === selectedCashAccount);
+    if (found) return found;
+    return { code: selectedCashAccount, name: selectedCashAccount, category: 'CASH', icon: Wallet, color: '#10b981' };
+  }, [selectedCashAccount, statementData]);
 
   // Detail Drilldown Modal State
   const [detailModal, setDetailModal] = useState({
@@ -239,14 +166,99 @@ export default function CashFlow() {
     extraData: null,
   });
 
+  // Card IN & Card OUT Filter states
+  const [inflowCategoryFilter, setInflowCategoryFilter] = useState('ALL');
+  const [inflowSearch, setInflowSearch] = useState('');
+  const [outflowCategoryFilter, setOutflowCategoryFilter] = useState('ALL');
+  const [outflowSearch, setOutflowSearch] = useState('');
+
+  // Inflow Categories & Filtered Inflow Items
+  const availableInflowCategories = useMemo(() => {
+    if (!statementData?.inflow_items) return [];
+    const map = new Map();
+    statementData.inflow_items.forEach((it) => {
+      const key = it.title || it.category;
+      if (key) {
+        map.set(key, (map.get(key) || 0) + 1);
+      }
+    });
+    return Array.from(map.entries()).map(([name, count]) => ({ name, count }));
+  }, [statementData?.inflow_items]);
+
+  const filteredInflows = useMemo(() => {
+    if (!statementData?.inflow_items) return [];
+    return statementData.inflow_items.filter((it) => {
+      const cat = it.title || it.category;
+      const matchCat = inflowCategoryFilter === 'ALL' || cat === inflowCategoryFilter;
+      if (!matchCat) return false;
+      if (inflowSearch && inflowSearch.trim()) {
+        const q = inflowSearch.toLowerCase().trim();
+        const matchSearch =
+          (it.title && it.title.toLowerCase().includes(q)) ||
+          (it.category && it.category.toLowerCase().includes(q)) ||
+          (it.description && it.description.toLowerCase().includes(q)) ||
+          (it.ref_no && it.ref_no.toLowerCase().includes(q)) ||
+          (it.counter_accounts && it.counter_accounts.toLowerCase().includes(q)) ||
+          (it.outlet_name && it.outlet_name.toLowerCase().includes(q)) ||
+          (it.date && it.date.includes(q));
+        if (!matchSearch) return false;
+      }
+      return true;
+    });
+  }, [statementData?.inflow_items, inflowCategoryFilter, inflowSearch]);
+
+  const filteredInflowTotal = useMemo(() => {
+    return filteredInflows.reduce((acc, it) => acc + Number(it.debit || it.amount || 0), 0);
+  }, [filteredInflows]);
+
+  // Outflow Categories & Filtered Outflow Items
+  const availableOutflowCategories = useMemo(() => {
+    if (!statementData?.outflow_items) return [];
+    const map = new Map();
+    statementData.outflow_items.forEach((it) => {
+      const key = it.title || it.category;
+      if (key) {
+        map.set(key, (map.get(key) || 0) + 1);
+      }
+    });
+    return Array.from(map.entries()).map(([name, count]) => ({ name, count }));
+  }, [statementData?.outflow_items]);
+
+  const filteredOutflows = useMemo(() => {
+    if (!statementData?.outflow_items) return [];
+    return statementData.outflow_items.filter((it) => {
+      const cat = it.title || it.category;
+      const matchCat = outflowCategoryFilter === 'ALL' || cat === outflowCategoryFilter;
+      if (!matchCat) return false;
+      if (outflowSearch && outflowSearch.trim()) {
+        const q = outflowSearch.toLowerCase().trim();
+        const matchSearch =
+          (it.title && it.title.toLowerCase().includes(q)) ||
+          (it.category && it.category.toLowerCase().includes(q)) ||
+          (it.description && it.description.toLowerCase().includes(q)) ||
+          (it.ref_no && it.ref_no.toLowerCase().includes(q)) ||
+          (it.counter_accounts && it.counter_accounts.toLowerCase().includes(q)) ||
+          (it.outlet_name && it.outlet_name.toLowerCase().includes(q)) ||
+          (it.date && it.date.includes(q));
+        if (!matchSearch) return false;
+      }
+      return true;
+    });
+  }, [statementData?.outflow_items, outflowCategoryFilter, outflowSearch]);
+
+  const filteredOutflowTotal = useMemo(() => {
+    return filteredOutflows.reduce((acc, it) => acc + Number(it.credit || itemCreditAmount(it)), 0);
+    function itemCreditAmount(item) {
+      return Number(item.credit || item.amount || 0);
+    }
+  }, [filteredOutflows]);
+
   async function handleCardClick(type, initialSubTab = null) {
     const targetOutlet = activeOutletId && activeOutletId !== 'ALL' && activeOutletId !== 'all'
       ? activeOutletId
       : undefined;
     const pm = selectedPaymentMethod !== 'ALL' ? selectedPaymentMethod : undefined;
-    const shift = selectedShift !== 'ALL' ? selectedShift : undefined;
     const pmLabel = activePmMeta?.label || 'Semua Metode';
-    const shiftLabel = selectedShift !== 'ALL' ? ` [${activeShiftMeta?.label}]` : '';
 
     if (type === 'SALES_INFLOW' || type === 'RECEIVABLE_INFLOW' || type === 'INFLOWS_ALL') {
       const directTotal = Number(statementData?.operating?.inflows?.direct_sales_total || 0);
@@ -266,14 +278,14 @@ export default function CashFlow() {
         open: true,
         type: 'SALES_INFLOW',
         subTab: chosenSubTab,
-        title: `Rincian Kas Masuk Operasional Kasir (${pmLabel}${shiftLabel})`,
+        title: `Rincian Kas Masuk Operasional Kasir (${pmLabel})`,
         loading: true,
         items: [],
         extraData: statementData?.operating?.inflows
       });
       try {
         const res = await api.get('/transactions', {
-          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet, status: 'PAID', exclude_kasbon: 1, payment_method: pm, shift_id: shift, limit: 200 }
+          params: { from: fromDate, to: toDate, outlet_id: targetOutlet, status: 'PAID', exclude_kasbon: 1, payment_method: pm, limit: 200 }
         });
         setDetailModal(p => ({ ...p, loading: false, items: res.data?.data || res.data || [] }));
       } catch {
@@ -284,14 +296,14 @@ export default function CashFlow() {
       setDetailModal({
         open: true,
         type: 'PURCHASES_OUTFLOW',
-        title: `Rincian Kas Keluar untuk Pembelian Stok Bahan Baku (${pmLabel}${shiftLabel})`,
+        title: `Rincian Kas Keluar untuk Pembelian Stok Bahan Baku (${pmLabel})`,
         loading: true,
         items: [],
         extraData: statementData?.operating?.top_purchases
       });
       try {
         const res = await api.get('/movements', {
-          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet, type: 'PURCHASE', payment_type: pm, shift_id: shift }
+          params: { from: fromDate, to: toDate, outlet_id: targetOutlet, type: 'PURCHASE', payment_type: pm }
         });
         setDetailModal(p => ({ ...p, loading: false, items: res.data || [] }));
       } catch {
@@ -302,13 +314,13 @@ export default function CashFlow() {
       setDetailModal({
         open: true,
         type: 'OPEX_OUTFLOW',
-        title: `Rincian Kas Keluar untuk Beban Operasional Toko (${pmLabel}${shiftLabel})`,
+        title: `Rincian Kas Keluar untuk Beban Operasional Toko (${pmLabel})`,
         loading: true,
         items: []
       });
       try {
         const res = await api.get('/expenses', {
-          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet, payment_method: pm }
+          params: { from: fromDate, to: toDate, outlet_id: targetOutlet, payment_method: pm }
         });
         setDetailModal(p => ({ ...p, loading: false, items: res.data || [] }));
       } catch {
@@ -316,18 +328,18 @@ export default function CashFlow() {
         setDetailModal(p => ({ ...p, loading: false }));
       }
     } else if (type === 'OPERATING') {
-      setDetailModal({ open: true, type: 'OPERATING', title: `Rincian & Formula Arus Kas Operasi (Operating Cash Flow / OCF) - ${pmLabel}${shiftLabel}`, loading: false, items: [] });
+      setDetailModal({ open: true, type: 'OPERATING', title: `Rincian & Formula Arus Kas Operasi (Operating Cash Flow / OCF) - ${pmLabel}`, loading: false, items: [] });
     } else if (type === 'INVESTING') {
       setDetailModal({
         open: true,
         type: 'INVESTING',
-        title: `Rincian Belanja Modal & Investasi Aset (${pmLabel}${shiftLabel})`,
+        title: `Rincian Belanja Modal & Investasi Aset (${pmLabel})`,
         loading: true,
         items: []
       });
       try {
         const res = await api.get('/cash-transactions', {
-          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet, activity_type: 'INVESTING', payment_method: pm }
+          params: { from: fromDate, to: toDate, outlet_id: targetOutlet, activity_type: 'INVESTING', payment_method: pm }
         });
         setDetailModal(p => ({ ...p, loading: false, items: res.data || [] }));
       } catch {
@@ -338,13 +350,13 @@ export default function CashFlow() {
       setDetailModal({
         open: true,
         type: 'FINANCING',
-        title: `Rincian Arus Kas Pendanaan, Modal & Prive Owner (${pmLabel}${shiftLabel})`,
+        title: `Rincian Arus Kas Pendanaan, Modal & Prive Owner (${pmLabel})`,
         loading: true,
         items: []
       });
       try {
         const res = await api.get('/cash-transactions', {
-          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet, activity_type: 'FINANCING', payment_method: pm }
+          params: { from: fromDate, to: toDate, outlet_id: targetOutlet, activity_type: 'FINANCING', payment_method: pm }
         });
         setDetailModal(p => ({ ...p, loading: false, items: res.data || [] }));
       } catch {
@@ -352,37 +364,16 @@ export default function CashFlow() {
         setDetailModal(p => ({ ...p, loading: false }));
       }
     } else if (type === 'NET_CASH') {
-      setDetailModal({ open: true, type: 'NET_CASH', title: `Jembatan Total Perubahan Bersih Kas Riil (Net Cash Flow) - ${pmLabel}${shiftLabel}`, loading: false, items: [] });
+      setDetailModal({ open: true, type: 'NET_CASH', title: `Jembatan Total Perubahan Bersih Kas Riil (Net Cash Flow) - ${pmLabel}`, loading: false, items: [] });
     } else if (type === 'INVENTORY_TRAPPED') {
       setDetailModal({ open: true, type: 'INVENTORY_TRAPPED', title: 'Rincian Analisis Kas Terkunci di Persediaan Bahan Baku', loading: false, items: [] });
-    } else if (type === 'SHIFT_DISCREPANCY') {
-      const targetShifts = (selectedShift && selectedShift !== 'ALL')
-        ? (activeShiftMeta.shifts || [])
-        : availableShifts;
-      setDetailModal({
-        open: true,
-        type: 'SHIFT_DISCREPANCY',
-        title: `Rincian Rekonsiliasi Kas Laci & Selisih Kasir Sesi Shift (${pmLabel}${shiftLabel})`,
-        loading: false,
-        items: targetShifts,
-        extraData: {
-          initialCashTotal: activeShiftMeta.initialCashTotal,
-          closingCashTotal: activeShiftMeta.closingCashTotal,
-          systemCashTotal: activeShiftMeta.systemCashTotal,
-          cashDifferenceTotal: activeShiftMeta.cashDifferenceTotal,
-          interShiftDiffTotal: activeShiftMeta.interShiftDiffTotal,
-          prevShiftName: activeShiftMeta.prevShiftName,
-          prevClosingCash: activeShiftMeta.prevClosingCash,
-          closedCount: activeShiftMeta.closedCount,
-          totalCount: activeShiftMeta.count,
-        }
-      });
     }
   }
 
   // Journal filters
   const [searchQuery, setSearchQuery] = useState('');
   const [activityFilter, setActivityFilter] = useState('ALL');
+  const [ledgerAccountFilter, setLedgerAccountFilter] = useState('ALL');
 
   // Modal form state
   const [modalOpen, setModalOpen] = useState(false);
@@ -405,7 +396,7 @@ export default function CashFlow() {
 
   useEffect(() => {
     fetchData();
-  }, [dateFrom, dateTo, activeOutletId, selectedPaymentMethod, selectedShift]);
+  }, [fromDate, toDate, activeOutletId, selectedPaymentMethod, selectedCashAccount]);
 
   async function fetchData() {
     setLoading(true);
@@ -414,14 +405,19 @@ export default function CashFlow() {
         ? activeOutletId
         : undefined;
       const pm = selectedPaymentMethod !== 'ALL' ? selectedPaymentMethod : undefined;
-      const shift = selectedShift !== 'ALL' ? selectedShift : undefined;
 
       const [resStatement, resJournal] = await Promise.all([
         api.get('/cash-flow/statement', {
-          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet, payment_method: pm, shift_id: shift },
+          params: {
+            from: fromDate,
+            to: toDate,
+            outlet_id: targetOutlet,
+            payment_method: pm,
+            account_code: selectedCashAccount,
+          },
         }),
         api.get('/cash-transactions', {
-          params: { from: dateFrom, to: dateTo, outlet_id: targetOutlet, payment_method: pm, shift_id: shift },
+          params: { from: fromDate, to: toDate, outlet_id: targetOutlet, payment_method: pm },
         }),
       ]);
 
@@ -634,10 +630,28 @@ export default function CashFlow() {
     return list;
   }, [groupedSalesOrders, filteredReceivablePayments]);
 
+  async function handleExportExcel() {
+    if (!statementData) return;
+    try {
+      toast.loading('Menyiapkan file Excel Arus Kas...', { id: 'export-cashflow' });
+      await exportCashFlowToExcel({
+        statementData,
+        period: { from: fromDate, to: toDate },
+        outletName: outletTitle,
+        businessName: businessTitle,
+        userName: currentUser?.name || 'Administrator',
+      });
+      toast.success('Laporan Arus Kas berhasil diekspor ke Excel!', { id: 'export-cashflow' });
+    } catch (err) {
+      console.error(err);
+      toast.error('Gagal mengekspor laporan Arus Kas ke Excel', { id: 'export-cashflow' });
+    }
+  }
+
   function handlePrint() {
     printElement(
       'printable-cashflow-statement',
-      `Laporan Arus Kas Nyata - ${dateFrom} sd ${dateTo}`,
+      `Laporan Arus Kas Nyata - ${fromDate} sd ${toDate}`,
       { orientation: 'portrait' }
     );
   }
@@ -646,6 +660,89 @@ export default function CashFlow() {
   const outletTitle = (activeOutlet && activeOutletId !== 'ALL' && activeOutletId !== 'all')
     ? activeOutlet.name
     : 'Semua Cabang (Konsolidasi Usaha)';
+
+  const previewSheets = useMemo(() => {
+    if (!statementData) return [];
+
+    const opInflows = statementData.operating?.inflows || {};
+    const opOutflows = statementData.operating?.outflows || {};
+    const invData = statementData.investing || {};
+    const finData = statementData.financing || {};
+
+    const mainSheetRows = [
+      { item: '1. ARUS KAS DARI AKTIVITAS OPERASIONAL (OPERATING)', category: 'OPERATIONAL', amount: null },
+      { item: '  (+) Kas Masuk Penjualan Langsung POS Kasir', category: 'Kas Masuk Operasi', amount: Number(opInflows.direct_sales_total) || 0 },
+      { item: '  (+) Kas Masuk Pelunasan Piutang / Kasbon Pelanggan', category: 'Kas Masuk Operasi', amount: Number(opInflows.receivable_collections) || 0 },
+      { item: '  (+) Penerimaan Kas Operasional Lain', category: 'Kas Masuk Operasi', amount: Number(opInflows.other_operating_income) || 0 },
+      { item: '  (-) Pengeluaran Kas Belanja Bahan Baku', category: 'Kas Keluar Operasi', amount: -(Number(opOutflows.purchases_cash) || 0) },
+      { item: '  (-) Pengeluaran Kas Beban Operasional (OPEX)', category: 'Kas Keluar Operasi', amount: -(Number(opOutflows.opex_cash) || 0) },
+      { item: '  (-) Pengeluaran Kas Operasional Lain', category: 'Kas Keluar Operasi', amount: -(Number(opOutflows.other_operating_expenses) || 0) },
+      { item: 'TOTAL ARUS KAS OPERASI (OCF)', category: 'SUBTOTAL', amount: Number(statementData.summary?.net_operating_cash_flow) || 0 },
+      { item: '2. ARUS KAS DARI AKTIVITAS INVESTASI (CAPEX / INVESTING)', category: 'INVESTING', amount: null },
+      { item: '  (+) Penerimaan Penjualan Aset Bekas', category: 'Kas Masuk Investasi', amount: Number(invData.inflows) || 0 },
+      { item: '  (-) Pengeluaran Belanja Modal / Aset Tetap / Mesin', category: 'Kas Keluar Investasi', amount: -(Number(invData.outflows) || 0) },
+      { item: 'TOTAL ARUS KAS INVESTASI (CAPEX)', category: 'SUBTOTAL', amount: Number(statementData.summary?.net_investing_cash_flow) || 0 },
+      { item: '3. ARUS KAS DARI AKTIVITAS PENDANAAN (FINANCING)', category: 'FINANCING', amount: null },
+      { item: '  (+) Setoran Modal Owner / Pinjaman Diterima', category: 'Kas Masuk Pendanaan', amount: Number(finData.inflows) || 0 },
+      { item: '  (-) Penarikan Prive Owner / Pembayaran Pokok Pinjaman', category: 'Kas Keluar Pendanaan', amount: -(Number(finData.outflows) || 0) },
+      { item: 'TOTAL ARUS KAS PENDANAAN', category: 'SUBTOTAL', amount: Number(statementData.summary?.net_financing_cash_flow) || 0 },
+    ];
+
+    const sheets = [
+      {
+        id: 'cashflow_main',
+        name: 'Arus Kas Komprehensif',
+        columns: [
+          { key: 'item', label: 'Uraian Aliran Kas (Aktivitas)', align: 'left', width: 44 },
+          { key: 'category', label: 'Klasifikasi Kas', align: 'left', width: 22 },
+          { key: 'amount', label: 'Nominal Arus Kas (Rp)', align: 'right', format: 'currency', width: 22 },
+        ],
+        data: mainSheetRows,
+        totals: [
+          {
+            label: 'KENAIKAN / (PENURUNAN) BERSIH KAS',
+            amount: Number(statementData.summary?.net_cash_flow) || 0,
+          },
+        ],
+      },
+    ];
+
+    if (statementData.reconciliation?.steps) {
+      sheets.push({
+        id: 'reconciliation',
+        name: 'Rekonsiliasi Laba vs Kas',
+        columns: [
+          { key: 'step_label', label: 'Langkah Penyesuaian Rekonsiliasi', align: 'left', width: 40 },
+          { key: 'description', label: 'Keterangan Akuntansi', align: 'left', width: 34 },
+          { key: 'amount', label: 'Pengaruh Kas (Rp)', align: 'right', format: 'currency', width: 22 },
+        ],
+        data: statementData.reconciliation.steps.map(s => ({
+          step_label: s.step || s.label || s.title,
+          description: s.description || s.notes || s.formula || '-',
+          amount: Number(s.amount) || 0,
+        })),
+        totals: [
+          {
+            label: 'TOTAL SALDO AKHIR KAS RIIL',
+            amount: Number(statementData.summary?.net_cash_flow) || 0,
+          },
+        ],
+      });
+    }
+
+    return sheets;
+  }, [statementData]);
+
+  const previewKpis = useMemo(() => {
+    if (!statementData?.summary) return [];
+    const s = statementData.summary;
+    return [
+      { label: 'Arus Kas Operasi (OCF)', value: s.net_operating_cash_flow || 0, format: 'currency', color: '#10b981' },
+      { label: 'Arus Kas Investasi (CapEx)', value: s.net_investing_cash_flow || 0, format: 'currency', color: '#8b5cf6' },
+      { label: 'Arus Kas Pendanaan', value: s.net_financing_cash_flow || 0, format: 'currency', color: '#ec4899' },
+      { label: 'Kenaikan Bersih Kas', value: s.net_cash_flow || 0, format: 'currency', color: s.net_cash_flow >= 0 ? '#10b981' : '#f43f5e' },
+    ];
+  }, [statementData]);
 
   if (loading && !statementData) return <LoadingState />;
 
@@ -684,7 +781,8 @@ export default function CashFlow() {
           </button>
           <button
             className="btn btn-secondary btn-sm"
-            onClick={handlePrint}
+            onClick={() => setPreviewModalOpen(true)}
+            title="Lihat Pratinjau Dokumen Laporan Arus Kas Resmi"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -695,7 +793,38 @@ export default function CashFlow() {
               fontWeight: 600,
             }}
           >
-            <Printer size={15} /> Cetak Laporan Kas
+            <Eye size={15} /> Pratinjau Laporan
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={handleExportExcel}
+            title="Unduh laporan Arus Kas ke Excel (.xlsx)"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              borderColor: 'rgba(16, 185, 129, 0.4)',
+              color: '#10b981',
+              background: 'rgba(16, 185, 129, 0.08)',
+              fontWeight: 600,
+            }}
+          >
+            <FileSpreadsheet size={15} /> Export Excel (.xlsx)
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={handlePrint}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              borderColor: 'rgba(167, 139, 250, 0.4)',
+              color: '#a78bfa',
+              background: 'rgba(167, 139, 250, 0.08)',
+              fontWeight: 600,
+            }}
+          >
+            <Printer size={15} /> Cetak / PDF
           </button>
           <button
             className="btn btn-primary btn-sm"
@@ -707,25 +836,24 @@ export default function CashFlow() {
         </div>
       </div>
 
-      {/* 1.4 Filter Shift Kasir (Per Shift & Gabungan Shift) */}
+      {/* 1.2 Pemilih Akun Kas Neraca (Cash Accounts Balance Sheet Selector) */}
       <div
-        className="card mb-3"
+        className="card mb-4"
         style={{
-          padding: '14px 18px',
-          background: 'rgba(15, 23, 42, 0.85)',
-          border: selectedShift !== 'ALL' ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(165, 180, 252, 0.15)',
-          borderRadius: 12,
-          boxShadow: selectedShift !== 'ALL' ? '0 4px 18px rgba(56, 189, 248, 0.08)' : 'none',
-          transition: 'all 0.2s ease',
+          padding: '16px 20px',
+          background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.9) 100%)',
+          border: selectedCashAccount !== 'ALL' ? '1.5px solid #38bdf8' : '1px solid rgba(56, 189, 248, 0.25)',
+          borderRadius: 14,
+          boxShadow: '0 8px 30px rgba(0, 0, 0, 0.25)',
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div
               style={{
-                width: 28,
-                height: 28,
-                borderRadius: 8,
+                width: 36,
+                height: 36,
+                borderRadius: 10,
                 background: 'rgba(56, 189, 248, 0.15)',
                 color: '#38bdf8',
                 display: 'flex',
@@ -733,314 +861,90 @@ export default function CashFlow() {
                 justifyContent: 'center',
               }}
             >
-              <Clock size={16} />
-            </div>
-            <span style={{ fontSize: 13, fontWeight: 700, color: '#f8fafc' }}>
-              Filter Sesi Shift Kasir:
-            </span>
-            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-              ({availableShifts.length} Sesi Terbuka/Tercatat di Periode Ini)
-            </span>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            {selectedShift !== 'ALL' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span
-                  style={{
-                    fontSize: 11,
-                    padding: '3px 10px',
-                    borderRadius: 20,
-                    background: 'rgba(56, 189, 248, 0.18)',
-                    color: '#38bdf8',
-                    border: '1px solid rgba(56, 189, 248, 0.45)',
-                    fontWeight: 700,
-                  }}
-                >
-                  Shift Aktif: {activeShiftMeta.label}
-                </span>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => setSelectedShift('ALL')}
-                  style={{ fontSize: 11, padding: '2px 8px', color: 'var(--text-muted)' }}
-                  title="Tampilkan data seluruh shift digabung"
-                >
-                  ✕ Semua Shift
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Shift Buttons Horizontal Bar */}
-        <div
-          style={{
-            display: 'flex',
-            gap: 10,
-            overflowX: 'auto',
-            paddingBottom: 4,
-            scrollbarWidth: 'thin',
-          }}
-        >
-          {/* Button Semua Shift Gabungan */}
-          <button
-            onClick={() => setSelectedShift('ALL')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 9,
-              padding: '8px 14px',
-              borderRadius: 10,
-              border: selectedShift === 'ALL' ? '1.5px solid #38bdf8' : '1px solid rgba(255, 255, 255, 0.08)',
-              background: selectedShift === 'ALL'
-                ? 'linear-gradient(135deg, rgba(56, 189, 248, 0.22) 0%, rgba(15, 23, 42, 0.95) 100%)'
-                : 'rgba(255, 255, 255, 0.03)',
-              boxShadow: selectedShift === 'ALL' ? '0 4px 14px rgba(56, 189, 248, 0.25)' : 'none',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              flexShrink: 0,
-              textAlign: 'left',
-            }}
-          >
-            <div
-              style={{
-                width: 30,
-                height: 30,
-                borderRadius: 8,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: selectedShift === 'ALL' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(255, 255, 255, 0.06)',
-                color: selectedShift === 'ALL' ? '#38bdf8' : 'var(--text-muted)',
-              }}
-            >
-              <Layers size={15} />
+              <Landmark size={20} />
             </div>
             <div>
-              <div style={{ fontSize: 12.5, fontWeight: selectedShift === 'ALL' ? 800 : 600, color: selectedShift === 'ALL' ? '#ffffff' : '#cbd5e1' }}>
-                Semua Shift (Gabungan)
+              <div style={{ fontSize: 14, fontWeight: 800, color: '#f8fafc' }}>
+                Posisi & Arus Kas Akun Neraca (Berdasarkan Jurnal Umum):
               </div>
-              <div style={{ fontSize: 10, color: selectedShift === 'ALL' ? '#38bdf8' : 'var(--text-muted)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span>{availableShifts.length} Sesi ({activeShiftMeta.closedCount} Tutup)</span>
-                {activeShiftMeta.closedCount > 0 && (
-                  <span style={{
-                    fontSize: 9,
-                    padding: '1px 6px',
-                    borderRadius: 8,
-                    background: activeShiftMeta.cashDifferenceTotal === 0 ? 'rgba(16, 185, 129, 0.2)' : (activeShiftMeta.cashDifferenceTotal > 0 ? 'rgba(56, 189, 248, 0.2)' : 'rgba(244, 63, 94, 0.2)'),
-                    color: activeShiftMeta.cashDifferenceTotal === 0 ? '#34d399' : (activeShiftMeta.cashDifferenceTotal > 0 ? '#38bdf8' : '#f43f5e'),
-                    fontWeight: 700
-                  }}>
-                    {activeShiftMeta.cashDifferenceTotal === 0 ? 'Selisih Rp0 (Pas)' : (activeShiftMeta.cashDifferenceTotal > 0 ? `+${rupiah(activeShiftMeta.cashDifferenceTotal)} (Lebih)` : `-${rupiah(Math.abs(activeShiftMeta.cashDifferenceTotal))} (Tekor)`)}
-                  </span>
-                )}
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                Pilih akun kas spesifik untuk melihat cash flow dan buku besar mutasinya, atau pilih Konsolidasi untuk melihat seluruh kas usaha.
               </div>
             </div>
-          </button>
-
-          {/* Individual Shift Buttons */}
-          {availableShifts.map((s) => {
-            const isSelected = selectedShift === s.id.toString() || (selectedShift !== 'ALL' && selectedShift.toString().split(',').includes(s.id.toString()));
-            const isSingleSelected = selectedShift === s.id.toString();
-            const isOpen = s.status === 'OPEN';
-            const diff = Number(s.cash_difference || 0);
-
-            return (
-              <button
-                key={s.id}
-                onClick={() => setSelectedShift(isSingleSelected ? 'ALL' : s.id.toString())}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 9,
-                  padding: '8px 14px',
-                  borderRadius: 10,
-                  border: isSelected ? '1.5px solid #10b981' : '1px solid rgba(255, 255, 255, 0.08)',
-                  background: isSelected
-                    ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.22) 0%, rgba(15, 23, 42, 0.95) 100%)'
-                    : 'rgba(255, 255, 255, 0.03)',
-                  boxShadow: isSelected ? '0 4px 14px rgba(16, 185, 129, 0.2)' : 'none',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  flexShrink: 0,
-                  textAlign: 'left',
-                }}
-              >
-                <div
-                  style={{
-                    width: 30,
-                    height: 30,
-                    borderRadius: 8,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: isSelected ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255, 255, 255, 0.06)',
-                    color: isSelected ? '#10b981' : 'var(--text-muted)',
-                  }}
-                >
-                  <Clock size={15} />
-                </div>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 12.5, fontWeight: isSelected ? 800 : 600, color: isSelected ? '#ffffff' : '#cbd5e1' }}>
-                      {s.shift_name}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: 9.5,
-                        padding: '1px 6px',
-                        borderRadius: 10,
-                        background: isOpen ? 'rgba(16, 185, 129, 0.2)' : 'rgba(148, 163, 184, 0.15)',
-                        color: isOpen ? '#34d399' : '#94a3b8',
-                        fontWeight: 700,
-                      }}
-                    >
-                      {isOpen ? 'AKTIF' : 'TUTUP'}
-                    </span>
-                    {!isOpen && (
-                      <span
-                        style={{
-                          fontSize: 9,
-                          padding: '1px 5px',
-                          borderRadius: 8,
-                          background: diff === 0 ? 'rgba(16, 185, 129, 0.2)' : (diff > 0 ? 'rgba(56, 189, 248, 0.2)' : 'rgba(244, 63, 94, 0.2)'),
-                          color: diff === 0 ? '#34d399' : (diff > 0 ? '#38bdf8' : '#f43f5e'),
-                          fontWeight: 700,
-                        }}
-                      >
-                        {diff === 0 ? 'Pas (Rp0)' : (diff > 0 ? `+${rupiah(diff)}` : `-${rupiah(Math.abs(diff))}`)}
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ fontSize: 10, color: isSelected ? '#34d399' : 'var(--text-muted)', marginTop: 2 }}>
-                    {s.cashier_name} • {isOpen ? `Modal: ${rupiah(s.initial_cash)}` : `Fisik Closing: ${rupiah(s.closing_cash)}`}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-
-          {/* Button Modal Multi-Select Gabungan Shift */}
-          <button
-            onClick={() => {
-              const curIds = selectedShift === 'ALL'
-                ? availableShifts.map(s => s.id)
-                : selectedShift.toString().split(',').map(id => Number(id.trim())).filter(Boolean);
-              setTempShiftIds(curIds);
-              setShiftModalOpen(true);
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '8px 14px',
-              borderRadius: 10,
-              border: '1.5px dashed rgba(168, 85, 247, 0.6)',
-              background: 'rgba(168, 85, 247, 0.08)',
-              color: '#c084fc',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              flexShrink: 0,
-              fontWeight: 700,
-              fontSize: 12,
-            }}
-            title="Pilih kombinasi beberapa shift sekaligus"
-          >
-            <SlidersHorizontal size={15} />
-            <span>+ Gabungan Shift (Multi-Pilih...)</span>
-          </button>
-        </div>
-      </div>
-
-      {/* 1.5 Filter Tab Metode Pembayaran (Per & Gabungan Metode) */}
-      <div
-        className="card mb-4"
-        style={{
-          padding: '14px 18px',
-          background: 'rgba(15, 23, 42, 0.85)',
-          border: selectedPaymentMethod !== 'ALL' ? '1px solid rgba(168, 85, 247, 0.4)' : '1px solid rgba(165, 180, 252, 0.15)',
-          borderRadius: 12,
-          boxShadow: selectedPaymentMethod !== 'ALL' ? '0 4px 18px rgba(168, 85, 247, 0.08)' : 'none',
-          transition: 'all 0.2s ease',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div
-              style={{
-                width: 28,
-                height: 28,
-                borderRadius: 8,
-                background: 'rgba(168, 85, 247, 0.15)',
-                color: '#a855f7',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Filter size={16} />
-            </div>
-            <span style={{ fontSize: 13, fontWeight: 700, color: '#f8fafc' }}>
-              Filter Arus Kas Berdasarkan Metode Pembayaran:
-            </span>
           </div>
-          {selectedPaymentMethod !== 'ALL' && (
+          {selectedCashAccount !== 'ALL' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span
                 style={{
-                  fontSize: 11,
-                  padding: '3px 10px',
+                  fontSize: 11.5,
+                  padding: '4px 12px',
                   borderRadius: 20,
-                  background: `${activePmMeta?.color || '#38bdf8'}20`,
-                  color: activePmMeta?.color || '#38bdf8',
-                  border: `1px solid ${activePmMeta?.color || '#38bdf8'}45`,
+                  background: 'rgba(56, 189, 248, 0.18)',
+                  color: '#38bdf8',
+                  border: '1px solid rgba(56, 189, 248, 0.4)',
                   fontWeight: 700,
                 }}
               >
-                Metode Aktif: {activePmMeta?.label}
+                Akun Terpilih: {activeCashAccountMeta?.name}
               </span>
               <button
                 className="btn btn-ghost btn-sm"
-                onClick={() => setSelectedPaymentMethod('ALL')}
-                style={{ fontSize: 11, padding: '2px 8px', color: 'var(--text-muted)' }}
+                onClick={() => setSelectedCashAccount('ALL')}
+                style={{ fontSize: 11.5, padding: '3px 10px', color: '#cbd5e1' }}
               >
-                ✕ Tampilkan Semua
+                ✕ Tampilkan Konsolidasi (Semua Kas)
               </button>
             </div>
           )}
         </div>
 
-        {/* Tab Buttons Horizontal Bar */}
+        {/* Tab Buttons Horizontal Bar untuk Akun Kas */}
         <div
           style={{
             display: 'flex',
             gap: 10,
             overflowX: 'auto',
-            paddingBottom: 4,
+            paddingBottom: 6,
             scrollbarWidth: 'thin',
+            marginBottom: selectedCashAccount !== 'ALL' ? 12 : 16,
           }}
         >
-          {PAYMENT_METHOD_TABS.map((pmTab) => {
-            const isSelected = selectedPaymentMethod === pmTab.id;
-            const TabIcon = pmTab.icon;
-            const isCashTab = pmTab.id === 'CASH';
-            const initialCash = activeShiftMeta.initialCashTotal || 0;
+          {CASH_ACCOUNT_OPTIONS.map((accOpt) => {
+            const isSelected = accOpt.code === 'ALL'
+              ? selectedCashAccount === 'ALL'
+              : (selectedCashAccount === accOpt.code || selectedCashAccount.startsWith(accOpt.code + '.'));
+            const IconComponent = accOpt.icon;
+            const accOverview = accOpt.code === 'ALL'
+              ? statementData?.total_accounts_overview
+              : statementData?.cash_accounts_overview?.find(a => a.code === accOpt.code);
+
+            const displayName = accOpt.code === 'ALL'
+              ? 'SEMUA KAS & BANK'
+              : (accOverview?.name || accOpt.name);
 
             return (
               <button
-                key={pmTab.id}
-                onClick={() => setSelectedPaymentMethod(pmTab.id)}
+                key={accOpt.code}
+                onClick={() => {
+                  if (accOpt.code === 'ALL') {
+                    setSelectedCashAccount('ALL');
+                  } else if (selectedCashAccount === accOpt.code) {
+                    setSelectedCashAccount('ALL');
+                  } else {
+                    setSelectedCashAccount(accOpt.code);
+                  }
+                }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 10,
-                  padding: '9px 14px',
+                  gap: 12,
+                  padding: '10px 16px',
                   borderRadius: 10,
-                  border: isSelected ? `1.5px solid ${pmTab.color}` : '1px solid rgba(255, 255, 255, 0.08)',
+                  border: isSelected ? `2px solid ${accOpt.color}` : '1px solid rgba(255, 255, 255, 0.09)',
                   background: isSelected
-                    ? `linear-gradient(135deg, ${pmTab.color}22 0%, rgba(15, 23, 42, 0.95) 100%)`
+                    ? `linear-gradient(135deg, ${accOpt.color}25 0%, rgba(15, 23, 42, 0.95) 100%)`
                     : 'rgba(255, 255, 255, 0.03)',
-                  boxShadow: isSelected ? `0 4px 14px ${pmTab.color}25` : 'none',
+                  boxShadow: isSelected ? `0 4px 16px ${accOpt.color}30` : 'none',
                   cursor: 'pointer',
                   transition: 'all 0.2s ease',
                   flexShrink: 0,
@@ -1049,107 +953,154 @@ export default function CashFlow() {
               >
                 <div
                   style={{
-                    width: 32,
-                    height: 32,
+                    width: 36,
+                    height: 36,
                     borderRadius: 8,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    background: isSelected ? `${pmTab.color}30` : 'rgba(255, 255, 255, 0.06)',
-                    color: isSelected ? pmTab.color : 'var(--text-muted)',
-                    transition: 'all 0.2s ease',
+                    background: isSelected ? `${accOpt.color}35` : 'rgba(255, 255, 255, 0.06)',
+                    color: isSelected ? accOpt.color : 'var(--text-muted)',
                   }}
                 >
-                  <TabIcon size={16} />
+                  <IconComponent size={18} />
                 </div>
                 <div>
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      fontSize: 13,
-                      fontWeight: isSelected ? 800 : 600,
-                      color: isSelected ? '#ffffff' : '#cbd5e1',
-                      lineHeight: 1.2,
-                    }}
-                  >
-                    <span>{pmTab.label}</span>
-                    {isCashTab && initialCash > 0 && (
-                      <span
-                        style={{
-                          fontSize: 10,
-                          padding: '2px 7px',
-                          borderRadius: 6,
-                          background: isSelected ? 'rgba(16, 185, 129, 0.35)' : 'rgba(16, 185, 129, 0.18)',
-                          color: '#34d399',
-                          border: '1px solid rgba(16, 185, 129, 0.45)',
-                          fontWeight: 700,
-                          letterSpacing: 0.2,
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 3,
-                        }}
-                        title="Modal Awal Kas di Laci Kasir"
-                      >
-                        <Wallet size={10} /> Modal: {rupiah(initialCash)}
-                      </span>
-                    )}
+                  <div style={{ fontSize: 13, fontWeight: isSelected ? 800 : 700, color: isSelected ? '#ffffff' : '#e2e8f0', letterSpacing: 0.2 }}>
+                    {displayName}
                   </div>
-                  <div
-                    style={{
-                      fontSize: 10.5,
-                      color: isSelected ? pmTab.color : 'var(--text-muted)',
-                      fontWeight: isSelected ? 600 : 400,
-                      marginTop: 2,
-                    }}
-                  >
-                    {isCashTab && initialCash > 0
-                      ? `Uang Laci POS • Modal Awal ${rupiah(initialCash)}`
-                      : pmTab.sub}
+                  <div style={{ fontSize: 11, color: isSelected ? accOpt.color : 'var(--text-muted)', fontWeight: 600, marginTop: 2 }}>
+                    Saldo Akhir: {rupiah(accOverview?.ending_balance ?? 0)}
                   </div>
                 </div>
               </button>
             );
           })}
-
-          {/* Button Modal Multi-Select Gabungan Metode Pembayaran */}
-          <button
-            onClick={() => {
-              const curMethods = selectedPaymentMethod === 'ALL'
-                ? AVAILABLE_PAYMENT_METHODS.map(m => m.id)
-                : selectedPaymentMethod.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
-              setTempPmList(curMethods);
-              setCustomPmModalOpen(true);
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '9px 14px',
-              borderRadius: 10,
-              border: '1.5px dashed rgba(56, 189, 248, 0.6)',
-              background: 'rgba(56, 189, 248, 0.08)',
-              color: '#38bdf8',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              flexShrink: 0,
-              fontWeight: 700,
-              fontSize: 12,
-            }}
-            title="Pilih kombinasi beberapa metode pembayaran sekaligus secara kustom"
-          >
-            <SlidersHorizontal size={16} />
-            <span>+ Gabungan Kustom (Multi-Pilih...)</span>
-          </button>
         </div>
+
+        {/* Rincian Cabang / Sub-Akun (Muncul hanya saat Akun Kas dipilih, seperti di Neraca) */}
+        {(() => {
+          if (selectedCashAccount === 'ALL' || !statementData?.cash_accounts_overview) return null;
+          const activeParentCode = selectedCashAccount.includes('.') ? selectedCashAccount.split('.')[0] : selectedCashAccount;
+          const parentMeta = CASH_ACCOUNT_OPTIONS.find(a => a.code === activeParentCode);
+          const parentOverview = statementData.cash_accounts_overview.find(a => a.code === activeParentCode);
+          const subAccounts = statementData.cash_accounts_overview.filter(a => 
+            a.code !== activeParentCode && (a.code.startsWith(activeParentCode + '.') || a.parent_code === activeParentCode)
+          );
+
+          if (subAccounts.length === 0) return null;
+
+          return (
+            <div
+              className="fade-in"
+              style={{
+                background: 'rgba(15, 23, 42, 0.75)',
+                border: '1px solid rgba(56, 189, 248, 0.25)',
+                borderRadius: 12,
+                padding: '14px 16px',
+                marginBottom: 16,
+                boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <ChevronDown size={16} color="#38bdf8" />
+                  <span style={{ fontSize: 13, fontWeight: 800, color: '#ffffff' }}>
+                    Rincian Cabang & Sub-Akun: {parentOverview?.name || parentMeta?.name || activeParentCode}
+                  </span>
+                  <span style={{ fontSize: 11, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', padding: '2px 8px', borderRadius: 12, fontWeight: 700 }}>
+                    {subAccounts.length} Cabang Terhubung
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCashAccount(activeParentCode)}
+                    style={{
+                      background: selectedCashAccount === activeParentCode ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+                      border: selectedCashAccount === activeParentCode ? '1.5px solid #38bdf8' : '1px solid rgba(255, 255, 255, 0.1)',
+                      color: selectedCashAccount === activeParentCode ? '#38bdf8' : 'var(--text-muted)',
+                      padding: '5px 12px',
+                      borderRadius: 7,
+                      fontSize: 11.5,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    {selectedCashAccount === activeParentCode && <Check size={12} />}
+                    Semua Cabang (Induk Gabungan)
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10 }}>
+                {subAccounts.map((subAcc) => {
+                  const isSubSelected = selectedCashAccount === subAcc.code;
+                  return (
+                    <div
+                      key={subAcc.code}
+                      onClick={() => setSelectedCashAccount(isSubSelected ? activeParentCode : subAcc.code)}
+                      style={{
+                        padding: '10px 12px',
+                        borderRadius: 8,
+                        background: isSubSelected ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255, 255, 255, 0.02)',
+                        border: isSubSelected ? '1.5px solid #38bdf8' : '1px solid rgba(255, 255, 255, 0.07)',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isSubSelected) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isSubSelected) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.02)';
+                      }}
+                      title={`Klik untuk memfilter arus kas ke cabang ${subAcc.name}`}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <span className="mono" style={{ fontSize: 11, fontWeight: 700, color: isSubSelected ? '#38bdf8' : 'var(--text-secondary)' }}>
+                          {subAcc.code}
+                        </span>
+                        {isSubSelected && (
+                          <span style={{ fontSize: 9.5, background: '#38bdf8', color: '#0f172a', padding: '1px 6px', borderRadius: 8, fontWeight: 800 }}>
+                            DIPILIH
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 12.5, fontWeight: 700, color: '#ffffff', marginBottom: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {subAcc.name}
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>
+                        <span>Saldo Awal:</span>
+                        <span className="mono">{rupiah(subAcc.initial_balance)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)', marginBottom: 3 }}>
+                        <span>Mutasi Bersih (D - K):</span>
+                        <span className="mono" style={{ color: subAcc.net_change >= 0 ? '#34d399' : '#f43f5e' }}>
+                          {subAcc.net_change >= 0 ? `+${rupiah(subAcc.net_change)}` : rupiah(subAcc.net_change)}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 800, color: '#ffffff', borderTop: '1px dashed rgba(255, 255, 255, 0.08)', paddingTop: 4 }}>
+                        <span style={{ color: '#38bdf8' }}>Saldo Akhir:</span>
+                        <span className="mono">{rupiah(subAcc.ending_balance)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
-      {/* 2. Top 4 Cash Flow KPI Cards */}
+      {/* 2. Top Cash Flow KPI Cards (Berdasarkan Jurnal Umum Buku Besar) */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
           gap: 14,
           marginBottom: 20,
         }}
@@ -1169,7 +1120,7 @@ export default function CashFlow() {
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#34d399', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Arus Kas Operasi (OCF)
+              Arus Kas Operasi ({selectedCashAccount === 'ALL' ? 'Semua Kas' : activeCashAccountMeta?.name})
             </span>
           </div>
           <div style={{ fontSize: 22, fontWeight: 800, color: sum.net_operating_cash_flow >= 0 ? '#ffffff' : '#f43f5e', letterSpacing: -0.5, marginBottom: 4 }}>
@@ -1199,7 +1150,7 @@ export default function CashFlow() {
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Belanja Modal (CapEx)
+              Belanja Modal ({selectedCashAccount === 'ALL' ? 'CapEx' : activeCashAccountMeta?.name})
             </span>
           </div>
           <div style={{ fontSize: 22, fontWeight: 800, color: '#ffffff', letterSpacing: -0.5, marginBottom: 4 }}>
@@ -1229,7 +1180,7 @@ export default function CashFlow() {
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#f472b6', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Arus Kas Pendanaan (FCF)
+              Arus Kas Pendanaan ({selectedCashAccount === 'ALL' ? 'FCF' : activeCashAccountMeta?.name})
             </span>
           </div>
           <div style={{ fontSize: 22, fontWeight: 800, color: '#ffffff', letterSpacing: -0.5, marginBottom: 4 }}>
@@ -1260,7 +1211,7 @@ export default function CashFlow() {
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 800, color: sum.liquidity_color, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Perubahan Kas Bersih
+              Perubahan Bersih ({selectedCashAccount === 'ALL' ? 'Semua Kas' : activeCashAccountMeta?.name})
             </span>
             <div
               style={{
@@ -1283,187 +1234,66 @@ export default function CashFlow() {
             <span style={{ color: sum.liquidity_color, fontWeight: 700 }}>
               {sum.liquidity_label}
             </span>
-            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Saldo Riil Bertambah/Berkurang</span>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{activeCashAccountMeta?.name}</span>
           </div>
           <div style={{ fontSize: 10, color: sum.liquidity_color, fontWeight: 600, marginTop: 4 }}>
             Lihat rincian formula kas riil →
           </div>
         </div>
 
-        {/* Card 5: Shift Closing Discrepancy (Selisih Kasir) */}
-        {(() => {
-          const diff = Number(activeShiftMeta.cashDifferenceTotal || 0);
-          const isBalanced = diff === 0;
-          const isOver = diff > 0;
-          const isShort = diff < 0;
-          const cardColor = isBalanced ? '#10b981' : (isOver ? '#38bdf8' : '#f43f5e');
-          const badgeBg = isBalanced ? 'rgba(16, 185, 129, 0.2)' : (isOver ? 'rgba(56, 189, 248, 0.2)' : 'rgba(244, 63, 94, 0.2)');
-          const badgeBorder = isBalanced ? 'rgba(16, 185, 129, 0.4)' : (isOver ? 'rgba(56, 189, 248, 0.4)' : 'rgba(244, 63, 94, 0.4)');
-          const badgeText = isBalanced ? '✓ BALANCE' : (isOver ? '+ LEBIH KAS' : '⚠️ TEKOR KAS');
-          const statusText = isBalanced ? 'Uang Laci Pas' : (isOver ? `Lebih Kas +${rupiah(diff)}` : `Kurang Kas -${rupiah(Math.abs(diff))}`);
+        {/* Card 5: Saldo Kas Awal (Opening Cash) */}
+        <div
+          className="card"
+          style={{
+            padding: 18,
+            background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.08) 0%, rgba(15, 23, 42, 0.8) 100%)',
+            border: '1px solid rgba(56, 189, 248, 0.25)',
+            transition: 'all 0.2s ease',
+          }}
+          title="Saldo kas awal dari pembukuan jurnal umum sebelum awal periode"
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#38bdf8', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              Saldo Awal ({selectedCashAccount === 'ALL' ? 'Semua Kas & Bank' : activeCashAccountMeta?.name})
+            </span>
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: '#f8fafc', letterSpacing: -0.5, marginBottom: 4 }}>
+            {rupiah(sum.initial_cash_total)}
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+            Saldo berjalan s/d sebelum {fromDate}
+          </div>
+          <div style={{ fontSize: 10, color: '#38bdf8', fontWeight: 600, marginTop: 4 }}>
+            Buku Besar {selectedCashAccount === 'ALL' ? 'Kas & Setara Kas' : activeCashAccountMeta?.name}
+          </div>
+        </div>
 
-          return (
-            <div
-              className="card"
-              onClick={() => handleCardClick('SHIFT_DISCREPANCY')}
-              style={{
-                padding: 18,
-                background: `linear-gradient(135deg, ${cardColor}15 0%, rgba(15, 23, 42, 0.85) 100%)`,
-                border: `1.5px solid ${cardColor}40`,
-                boxShadow: `0 8px 25px ${cardColor}15`,
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-              }}
-              title="Klik untuk melihat rincian rekonsiliasi kas laci & selisih shift kasir saat closing"
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 800, color: cardColor, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                  Selisih Kasir (Closing Shift)
-                </span>
-                <div
-                  style={{
-                    padding: '2px 8px',
-                    borderRadius: 20,
-                    fontSize: 10,
-                    fontWeight: 800,
-                    background: badgeBg,
-                    color: cardColor,
-                    border: `1px solid ${badgeBorder}`,
-                  }}
-                >
-                  {badgeText}
-                </div>
-              </div>
-              <div style={{ fontSize: 22, fontWeight: 900, color: cardColor, letterSpacing: -0.5, marginBottom: 4 }}>
-                {isOver ? `+${rupiah(diff)}` : (isShort ? `-${rupiah(Math.abs(diff))}` : rupiah(0))}
-              </div>
-              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span>Fisik: <strong style={{ color: '#f8fafc' }}>{rupiah(activeShiftMeta.closingCashTotal || 0)}</strong></span>
-                <span>Sistem: <strong style={{ color: '#f8fafc' }}>{rupiah(activeShiftMeta.systemCashTotal || 0)}</strong></span>
-              </div>
-              <div style={{ fontSize: 10, color: cardColor, fontWeight: 700, marginTop: 4, display: 'flex', justifyContent: 'space-between' }}>
-                <span>{statusText}</span>
-                <span>{activeShiftMeta.closedCount} sesi tutup →</span>
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Card 6: Shift Handover Discrepancy (Selisih Antar Kasir) */}
-        {(() => {
-          const interDiff = Number(activeShiftMeta.interShiftDiffTotal || 0);
-          const isInterBalanced = interDiff === 0;
-          const isInterOver = interDiff > 0;
-          const isInterShort = interDiff < 0;
-          const cardColor = isInterBalanced ? '#10b981' : (isInterOver ? '#38bdf8' : '#f43f5e');
-          const badgeBg = isInterBalanced ? 'rgba(16, 185, 129, 0.2)' : (isInterOver ? 'rgba(56, 189, 248, 0.2)' : 'rgba(244, 63, 94, 0.2)');
-          const badgeBorder = isInterBalanced ? 'rgba(16, 185, 129, 0.4)' : (isInterOver ? 'rgba(56, 189, 248, 0.4)' : 'rgba(244, 63, 94, 0.4)');
-          const badgeText = isInterBalanced ? '✓ BALANCE' : (isInterOver ? '+ LEBIH MODAL' : '⚠️ TEKOR SERAH TERIMA');
-
-          const subtitle = activeShiftMeta.isSingle && activeShiftMeta.prevShiftName
-            ? `Modal ${activeShiftMeta.label.split('(')[0]} (${rupiah(activeShiftMeta.initialCashTotal || 0)}) vs Kas Lalu ${activeShiftMeta.prevShiftName} (${rupiah(activeShiftMeta.prevClosingCash || 0)})`
-            : (activeShiftMeta.isSingle
-              ? `Modal Awal Shift Perdana (${rupiah(activeShiftMeta.initialCashTotal || 0)})`
-              : `Akumulasi Selisih Modal Sesi Baru vs Kas Closing Sesi Sebelumnya`);
-
-          return (
-            <div
-              className="card"
-              onClick={() => handleCardClick('SHIFT_DISCREPANCY')}
-              style={{
-                padding: 18,
-                background: `linear-gradient(135deg, ${cardColor}15 0%, rgba(15, 23, 42, 0.85) 100%)`,
-                border: `1.5px solid ${cardColor}40`,
-                boxShadow: `0 8px 25px ${cardColor}15`,
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-              }}
-              title="Klik untuk melihat rincian rekonsiliasi kas laci & selisih serah terima antar kasir"
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 800, color: cardColor, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                  Selisih Antar Kasir
-                </span>
-                <div
-                  style={{
-                    padding: '2px 8px',
-                    borderRadius: 20,
-                    fontSize: 10,
-                    fontWeight: 800,
-                    background: badgeBg,
-                    color: cardColor,
-                    border: `1px solid ${badgeBorder}`,
-                  }}
-                >
-                  {badgeText}
-                </div>
-              </div>
-              <div style={{ fontSize: 22, fontWeight: 900, color: cardColor, letterSpacing: -0.5, marginBottom: 4 }}>
-                {isInterOver ? `+${rupiah(interDiff)}` : (isInterShort ? `-${rupiah(Math.abs(interDiff))}` : rupiah(0))}
-              </div>
-              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={subtitle}>
-                {subtitle}
-              </div>
-              <div style={{ fontSize: 10, color: cardColor, fontWeight: 700, marginTop: 4 }}>
-                {isInterBalanced ? 'Serah terima modal sesuai' : (isInterOver ? 'Modal awal lebih banyak dari fisik lalu' : 'Modal awal berkurang saat serah terima')} →
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Card 6: Total Sisa Kas Dipegang Setelah Selisih Kasir */}
-        {(() => {
-          const modalAwal = Number(activeShiftMeta.initialCashTotal || 0);
-          const netKas = Number(sum.net_cash_flow || 0);
-          const kasSebelumSelisih = modalAwal + netKas;
-          const diff = Number(activeShiftMeta.cashDifferenceTotal || 0);
-          const sisaKasAkhir = kasSebelumSelisih + diff;
-
-          return (
-            <div
-              className="card"
-              onClick={() => handleCardClick('SHIFT_DISCREPANCY')}
-              style={{
-                padding: 18,
-                background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.16) 0%, rgba(15, 23, 42, 0.85) 100%)',
-                border: '1.5px solid rgba(6, 182, 212, 0.45)',
-                boxShadow: '0 8px 25px rgba(6, 182, 212, 0.15)',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-              }}
-              title="Klik untuk melihat rincian rekonsiliasi kas laci & selisih shift kasir"
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 800, color: '#22d3ee', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                  Total Sisa Kas Dipegang
-                </span>
-                <div
-                  style={{
-                    padding: '2px 8px',
-                    borderRadius: 20,
-                    fontSize: 10,
-                    fontWeight: 800,
-                    background: 'rgba(6, 182, 212, 0.25)',
-                    color: '#22d3ee',
-                    border: '1px solid rgba(6, 182, 212, 0.45)',
-                  }}
-                >
-                  NET KAS AKHIR
-                </div>
-              </div>
-              <div style={{ fontSize: 22, fontWeight: 900, color: '#22d3ee', letterSpacing: -0.5, marginBottom: 4, fontFamily: 'monospace' }}>
-                {rupiah(sisaKasAkhir)}
-              </div>
-              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span>Kas Laci: <strong style={{ color: '#f8fafc' }}>{rupiah(kasSebelumSelisih)}</strong></span>
-                <span>Selisih: <strong style={{ color: diff < 0 ? '#f43f5e' : (diff > 0 ? '#38bdf8' : '#10b981') }}>{diff >= 0 ? `+${rupiah(diff)}` : `-${rupiah(Math.abs(diff))}`}</strong></span>
-              </div>
-              <div style={{ fontSize: 10, color: '#06b6d4', fontWeight: 600, marginTop: 4 }}>
-                Sisa fisik riil di tangan kasir →
-              </div>
-            </div>
-          );
-        })()}
+        {/* Card 6: Saldo Kas Akhir (Closing Cash) */}
+        <div
+          className="card"
+          style={{
+            padding: 18,
+            background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(15, 23, 42, 0.8) 100%)',
+            border: '1px solid rgba(99, 102, 241, 0.25)',
+            transition: 'all 0.2s ease',
+          }}
+          title="Saldo kas akhir = Saldo Awal + Total Perubahan Kas Bersih"
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#818cf8', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              Saldo Akhir ({selectedCashAccount === 'ALL' ? 'Semua Kas & Bank' : activeCashAccountMeta?.name})
+            </span>
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: '#f8fafc', letterSpacing: -0.5, marginBottom: 4 }}>
+            {rupiah(sum.closing_cash_total)}
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+            Posisi kas riil per {toDate}
+          </div>
+          <div style={{ fontSize: 10, color: '#818cf8', fontWeight: 600, marginTop: 4 }}>
+            Saldo Awal + Perubahan Bersih
+          </div>
+        </div>
       </div>
 
       {/* 3. Tab Navigation */}
@@ -1473,6 +1303,8 @@ export default function CashFlow() {
           gap: 10,
           borderBottom: '1px solid rgba(165, 180, 252, 0.15)',
           marginBottom: 20,
+          overflowX: 'auto',
+          scrollbarWidth: 'thin',
         }}
       >
         <button
@@ -1485,9 +1317,35 @@ export default function CashFlow() {
             alignItems: 'center',
             gap: 8,
             padding: '10px 18px',
+            whiteSpace: 'nowrap',
           }}
         >
           <Wallet size={16} /> Laporan Arus Kas Formal (Direct Method)
+        </button>
+        <button
+          className={`btn ${activeTab === 'journal_ledger' ? 'btn-primary' : 'btn-ghost'}`}
+          onClick={() => setActiveTab('journal_ledger')}
+          style={{
+            borderRadius: '8px 8px 0 0',
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '10px 18px',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <Layers size={16} /> Buku Besar Mutasi Jurnal Kas (General Ledger)
+          <span
+            style={{
+              padding: '2px 7px',
+              borderRadius: 12,
+              fontSize: 11,
+              background: activeTab === 'journal_ledger' ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.08)',
+            }}
+          >
+            {statementData?.journal_lines?.length || 0}
+          </span>
         </button>
         <button
           className={`btn ${activeTab === 'reconciliation' ? 'btn-primary' : 'btn-ghost'}`}
@@ -1499,6 +1357,7 @@ export default function CashFlow() {
             alignItems: 'center',
             gap: 8,
             padding: '10px 18px',
+            whiteSpace: 'nowrap',
           }}
         >
           <Sparkles size={16} /> Jembatan Rekonsiliasi (Laba P&L vs Kas Nyata)
@@ -1513,9 +1372,10 @@ export default function CashFlow() {
             alignItems: 'center',
             gap: 8,
             padding: '10px 18px',
+            whiteSpace: 'nowrap',
           }}
         >
-          <Layers size={16} /> Jurnal Mutasi Kas Ekstra (CapEx & Prive)
+          <Edit3 size={16} /> Jurnal Mutasi Kas Ekstra (CapEx & Prive)
           <span
             style={{
               padding: '2px 7px',
@@ -1529,653 +1389,812 @@ export default function CashFlow() {
         </button>
       </div>
 
-      {/* 4. TAB 1: FORMAL CASH FLOW STATEMENT (DIRECT METHOD) */}
+      {/* 4. TAB 1: CASH IN & CASH OUT FLOW STATEMENT (BERDASARKAN JURNAL UMUM) */}
       {activeTab === 'statement' && (
-        <div className="card" style={{ padding: 24, background: 'rgba(15, 23, 42, 0.85)' }}>
-          <div style={{ borderBottom: '2px solid rgba(165, 180, 252, 0.2)', paddingBottom: 16, marginBottom: 20 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {/* Header Info Banner */}
+          <div className="card" style={{ padding: '16px 20px', background: 'rgba(15, 23, 42, 0.85)', border: '1px solid rgba(165, 180, 252, 0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
               <div>
-                <h2 style={{ fontSize: 20, fontWeight: 800, margin: 0, color: '#f8fafc' }}>
+                <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: '#f8fafc' }}>
                   {businessTitle}
                 </h2>
-                <div style={{ fontSize: 13, color: '#38bdf8', fontWeight: 600, marginTop: 2 }}>
-                  LAPORAN ARUS KAS NYATA (CASH FLOW STATEMENT)
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                  Cabang: <strong>{outletTitle}</strong> &nbsp;|&nbsp; Periode: <strong>{dateFrom}</strong> s/d <strong>{dateTo}</strong> &nbsp;|&nbsp; Filter Pembayaran: <strong style={{ color: activePmMeta?.color || '#38bdf8' }}>{activePmMeta?.label}</strong>
+                <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                  Cabang: <strong>{outletTitle}</strong> &nbsp;|&nbsp; Periode: <strong>{fromDate}</strong> s/d <strong>{toDate}</strong> &nbsp;|&nbsp; Akun Kas: <strong style={{ color: activeCashAccountMeta?.color || '#38bdf8' }}>{activeCashAccountMeta?.name}</strong>
                 </div>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <span
-                  style={{
-                    display: 'inline-block',
-                    padding: '4px 12px',
-                    borderRadius: 20,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    background: `${sum.liquidity_color}20`,
-                    color: sum.liquidity_color,
-                    border: `1px solid ${sum.liquidity_color}40`,
-                  }}
-                >
-                  Status Kas: {sum.liquidity_label}
-                </span>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                  Metode: Langsung (Direct Real Cash)
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ padding: '4px 12px', borderRadius: 8, background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.3)', fontSize: 12, color: '#38bdf8', fontWeight: 700 }}>
+                  Saldo Awal: {rupiah(sum.initial_cash_total)}
+                </div>
+                <div style={{ padding: '4px 12px', borderRadius: 8, background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', fontSize: 12, color: '#34d399', fontWeight: 700 }}>
+                  Saldo Akhir: {rupiah(sum.closing_cash_total)}
                 </div>
               </div>
             </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-            {/* I. ARUS KAS DARI AKTIVITAS OPERASI */}
+          {/* 2 CARD BERDAMPINGAN: CARD IN & CARD OUT */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 20, alignItems: 'start' }}>
+
+            {/* ========================================================================= */}
+            {/* CARD 1: KAS MASUK (CASH INFLOWS / DEBET JURNAL) */}
+            {/* ========================================================================= */}
             <div
               className="card"
-              onClick={() => handleCardClick('OPERATING')}
               style={{
-                background: 'rgba(255, 255, 255, 0.02)',
-                borderRadius: 10,
-                padding: '14px 18px',
-                border: '1px solid rgba(16, 185, 129, 0.25)',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
+                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.04) 0%, rgba(15, 23, 42, 0.95) 100%)',
+                border: '1.5px solid rgba(16, 185, 129, 0.4)',
+                borderRadius: 14,
+                padding: 20,
+                boxShadow: '0 8px 30px rgba(16, 185, 129, 0.08)',
               }}
-              title="Klik untuk melihat rincian arus kas operasional (penjualan, belanja stok, beban OPEX)"
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
-                <span style={{ fontSize: 14, fontWeight: 800, color: '#34d399', letterSpacing: 0.5 }}>
-                  I. ARUS KAS DARI AKTIVITAS OPERASI (OPERATING ACTIVITIES)
-                </span>
+              {/* Header Card Kas Masuk */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1.5px solid rgba(16, 185, 129, 0.25)', paddingBottom: 14, marginBottom: 14 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <button
-                    className="btn btn-sm"
+                  <div
                     style={{
-                      fontSize: 11,
-                      padding: '3px 10px',
-                      borderRadius: 6,
-                      background: 'rgba(52, 211, 153, 0.15)',
+                      width: 40,
+                      height: 40,
+                      borderRadius: 10,
+                      background: 'rgba(16, 185, 129, 0.2)',
                       color: '#34d399',
-                      border: '1px solid rgba(52, 211, 153, 0.35)',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: 5,
-                      fontWeight: 700,
+                      justifyContent: 'center',
                     }}
-                    onClick={(e) => { e.stopPropagation(); handleCardClick('OPERATING'); }}
                   >
-                    <Search size={12} /> Rincian Operasi
-                  </button>
-                  <span style={{ fontSize: 15, fontWeight: 800, color: op.net >= 0 ? '#34d399' : '#f43f5e' }}>
-                    {rupiah(op.net)}
-                  </span>
-                </div>
-              </div>
-              <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
-                <tbody>
-                  <tr style={{ fontWeight: 600, color: '#f8fafc' }}>
-                    <td colSpan={2} style={{ padding: '6px 0 2px' }}>Penerimaan Kas Operasi (Cash Inflows):</td>
-                  </tr>
-                  <tr
-                    style={{ borderBottom: '1px dashed rgba(255, 255, 255, 0.06)', cursor: 'pointer' }}
-                    onClick={(e) => { e.stopPropagation(); handleCardClick('SALES_INFLOW'); }}
-                    title="Klik untuk melihat rincian transaksi kas masuk penjualan langsung kasir"
-                  >
-                    <td style={{ padding: '6px 0 6px 16px', color: '#cbd5e1' }}>
-                      Penerimaan Kas dari Penjualan Langsung Kasir (Tunai, QRIS, Grab, Transfer, EDC)
-                      <span style={{ fontSize: 11, color: '#38bdf8', marginLeft: 8, background: 'rgba(56, 189, 248, 0.12)', padding: '2px 6px', borderRadius: 4 }}>
-                        🔍 Rincian Penjualan Langsung
-                      </span>
-                    </td>
-                    <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 600, color: '#34d399' }}>
-                      {rupiah(op.inflows?.direct_sales_total != null ? op.inflows?.direct_sales_total : ((op.inflows?.cash_sales || 0) + (op.inflows?.qris_sales || 0) + (op.inflows?.grab_sales || 0) + (op.inflows?.transfer_sales || 0) + (op.inflows?.debit_sales || 0) + (op.inflows?.other_sales || 0)))}
-                    </td>
-                  </tr>
-                  <tr
-                    style={{ borderBottom: '1px dashed rgba(255, 255, 255, 0.06)', cursor: 'pointer' }}
-                    onClick={(e) => { e.stopPropagation(); handleCardClick('RECEIVABLE_INFLOW'); }}
-                    title="Klik untuk melihat rincian uang kas masuk dari pembayaran / pelunasan kasbon pelanggan"
-                  >
-                    <td style={{ padding: '6px 0 6px 16px', color: '#cbd5e1' }}>
-                      Penerimaan Kas dari Pembayaran Kasbon Pelanggan (Pelunasan Piutang)
-                      <span style={{ fontSize: 11, color: '#a78bfa', marginLeft: 8, background: 'rgba(167, 139, 250, 0.12)', padding: '2px 6px', borderRadius: 4 }}>
-                        🔍 Rincian Kasbon Terbayar
-                      </span>
-                      {op.inflows?.unpaid_kasbon_omzet > 0 && (
-                        <span style={{ fontSize: 10.5, color: '#f59e0b', marginLeft: 8, background: 'rgba(245, 158, 11, 0.12)', padding: '1px 6px', borderRadius: 4 }}>
-                          Kasbon baru belum lunas ({rupiah(op.inflows?.unpaid_kasbon_omzet)}) tidak dihitung kas
-                        </span>
-                      )}
-                    </td>
-                    <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 600, color: '#34d399' }}>
-                      {rupiah(op.inflows?.receivable_collections || 0)}
-                    </td>
-                  </tr>
-                  {op.inflows?.extra_income > 0 && (
-                    <tr style={{ borderBottom: '1px dashed rgba(255, 255, 255, 0.06)' }}>
-                      <td style={{ padding: '4px 0 4px 16px', color: '#cbd5e1' }}>Penerimaan Kas Operasional Lain-lain</td>
-                      <td style={{ padding: '4px 0', textAlign: 'right', fontWeight: 600, color: '#34d399' }}>{rupiah(op.inflows?.extra_income)}</td>
-                    </tr>
-                  )}
-
-                  <tr style={{ fontWeight: 600, color: '#f8fafc' }}>
-                    <td colSpan={2} style={{ padding: '10px 0 2px' }}>Pengeluaran Kas Operasi (Cash Outflows):</td>
-                  </tr>
-                  <tr
-                    style={{ borderBottom: '1px dashed rgba(255, 255, 255, 0.06)', cursor: 'pointer' }}
-                    onClick={(e) => { e.stopPropagation(); handleCardClick('PURCHASES_OUTFLOW'); }}
-                    title="Klik untuk melihat rincian pembelian stok bahan baku fisik"
-                  >
-                    <td style={{ padding: '6px 0 6px 16px', color: '#cbd5e1' }}>
-                      Pembelian Persediaan Bahan Baku Riil (Stok Masuk Gudang / Chiller)
-                      <span style={{ fontSize: 11, color: '#f87171', marginLeft: 8, background: 'rgba(248, 113, 113, 0.12)', padding: '2px 6px', borderRadius: 4 }}>
-                        🔍 Rincian Pembelian Stok
-                      </span>
-                    </td>
-                    <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 600, color: '#f87171' }}>
-                      ({rupiah(op.outflows?.stock_purchases)})
-                    </td>
-                  </tr>
-                  <tr
-                    style={{ borderBottom: '1px dashed rgba(255, 255, 255, 0.06)', cursor: 'pointer' }}
-                    onClick={(e) => { e.stopPropagation(); handleCardClick('OPEX_OUTFLOW'); }}
-                    title="Klik untuk melihat rincian pembayaran biaya operasional toko (gaji, listrik, sewa, dll)"
-                  >
-                    <td style={{ padding: '6px 0 6px 16px', color: '#cbd5e1' }}>
-                      Pembayaran Beban Operasional Toko (Gaji, Listrik, Gas LPG, Sewa, dll)
-                      <span style={{ fontSize: 11, color: '#fbbf24', marginLeft: 8, background: 'rgba(251, 191, 36, 0.12)', padding: '2px 6px', borderRadius: 4 }}>
-                        🔍 Rincian Beban OPEX
-                      </span>
-                    </td>
-                    <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 600, color: '#f87171' }}>
-                      ({rupiah(op.outflows?.opex_expenses)})
-                    </td>
-                  </tr>
-                  <tr style={{ fontWeight: 700, color: op.net >= 0 ? '#34d399' : '#f43f5e' }}>
-                    <td style={{ padding: '8px 0 4px' }}>ARUS KAS BERSIH DARI OPERASI (NET OPERATING CASH FLOW)</td>
-                    <td style={{ padding: '8px 0 4px', textAlign: 'right' }}>{rupiah(op.net)}</td>
-                  </tr>
-                </tbody>
-              </table>
-
-              {/* Top ingredient purchases chip */}
-              {op.top_purchases && op.top_purchases.length > 0 && (
-                <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(255, 255, 255, 0.04)', fontSize: 11, color: 'var(--text-muted)' }}>
-                  <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Top 5 Belanja Pembelian Stok Terbesar:</span>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {op.top_purchases.map((p, idx) => (
-                      <span key={idx} style={{ background: 'rgba(255, 255, 255, 0.04)', padding: '2px 8px', borderRadius: 6 }}>
-                        {p.name}: <strong>{rupiah(p.total)}</strong> ({num(p.qty, 1)} {p.unit})
-                      </span>
-                    ))}
+                    <ArrowDownLeft size={22} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: '#34d399', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                      TOTAL KAS MASUK ({selectedCashAccount === 'ALL' ? 'SEMUA KAS' : activeCashAccountMeta?.name})
+                    </div>
+                    <div style={{ fontSize: 20, fontWeight: 900, color: '#ffffff', letterSpacing: -0.5 }}>
+                      +{rupiah(inflowCategoryFilter === 'ALL' && !inflowSearch ? (statementData?.total_inflows || op.inflows?.total_inflows || 0) : filteredInflowTotal)}
+                    </div>
                   </div>
                 </div>
-              )}
-            </div>
-
-            {/* II. ARUS KAS DARI AKTIVITAS INVESTASI / CAPEX */}
-            <div
-              className="card"
-              onClick={() => handleCardClick('INVESTING')}
-              style={{
-                background: 'rgba(255, 255, 255, 0.02)',
-                borderRadius: 10,
-                padding: '14px 18px',
-                border: '1px solid rgba(139, 92, 246, 0.25)',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-              }}
-              title="Klik untuk melihat rincian belanja modal (CapEx: kulkas, chiller, renovasi, POS)"
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
-                <span style={{ fontSize: 14, fontWeight: 800, color: '#a78bfa', letterSpacing: 0.5 }}>
-                  II. ARUS KAS DARI AKTIVITAS INVESTASI / CAPEX (INVESTING ACTIVITIES)
+                <span
+                  style={{
+                    fontSize: 11,
+                    padding: '3px 10px',
+                    borderRadius: 20,
+                    background: 'rgba(16, 185, 129, 0.15)',
+                    color: '#34d399',
+                    border: '1px solid rgba(16, 185, 129, 0.35)',
+                    fontWeight: 700,
+                  }}
+                >
+                  {filteredInflows.length} {filteredInflows.length !== (statementData?.inflow_items?.length || 0) ? `/ ${statementData?.inflow_items?.length || 0}` : ''} Transaksi In
                 </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <button
-                    className="btn btn-sm"
-                    style={{
-                      fontSize: 11,
-                      padding: '3px 10px',
-                      borderRadius: 6,
-                      background: 'rgba(139, 92, 246, 0.15)',
-                      color: '#a78bfa',
-                      border: '1px solid rgba(139, 92, 246, 0.35)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 5,
-                      fontWeight: 700,
-                    }}
-                    onClick={(e) => { e.stopPropagation(); handleCardClick('INVESTING'); }}
-                  >
-                    <Search size={12} /> Rincian CapEx
-                  </button>
-                  <span style={{ fontSize: 15, fontWeight: 800, color: inv.net >= 0 ? '#a78bfa' : '#f87171' }}>
-                    {rupiah(inv.net)}
-                  </span>
-                </div>
               </div>
-              <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
-                <tbody>
-                  {inv.breakdown && inv.breakdown.length > 0 ? (
-                    inv.breakdown.map((b, i) => (
-                      <tr key={i} style={{ borderBottom: '1px dashed rgba(255, 255, 255, 0.06)' }}>
-                        <td style={{ padding: '6px 0', color: '#cbd5e1' }}>
-                          {b.label} ({b.count} transaksi)
-                        </td>
-                        <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 600, color: b.type === 'IN' ? '#34d399' : '#f87171' }}>
-                          {b.type === 'IN' ? `+${rupiah(b.amount)}` : `(${rupiah(b.amount)})`}
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={2} style={{ padding: '6px 0', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                        Tidak ada transaksi belanja modal (CapEx) pada periode ini ({rupiah(0)}). Klik "+ Catat Mutasi Kas" untuk mencatat pembelian kulkas, chiller, atau renovasi.
-                      </td>
-                    </tr>
-                  )}
-                  <tr style={{ fontWeight: 700, color: '#a78bfa' }}>
-                    <td style={{ padding: '8px 0 4px' }}>ARUS KAS BERSIH DARI INVESTASI (NET INVESTING CASH FLOW)</td>
-                    <td style={{ padding: '8px 0 4px', textAlign: 'right' }}>{rupiah(inv.net)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
 
-            {/* III. ARUS KAS DARI AKTIVITAS PENDANAAN */}
-            <div
-              className="card"
-              onClick={() => handleCardClick('FINANCING')}
-              style={{
-                background: 'rgba(255, 255, 255, 0.02)',
-                borderRadius: 10,
-                padding: '14px 18px',
-                border: '1px solid rgba(236, 72, 153, 0.25)',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-              }}
-              title="Klik untuk melihat rincian mutasi pendanaan, modal baru, dan prive owner"
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
-                <span style={{ fontSize: 14, fontWeight: 800, color: '#f472b6', letterSpacing: 0.5 }}>
-                  III. ARUS KAS DARI AKTIVITAS PENDANAAN (FINANCING ACTIVITIES)
-                </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <button
-                    className="btn btn-sm"
-                    style={{
-                      fontSize: 11,
-                      padding: '3px 10px',
-                      borderRadius: 6,
-                      background: 'rgba(236, 72, 153, 0.15)',
-                      color: '#f472b6',
-                      border: '1px solid rgba(236, 72, 153, 0.35)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 5,
-                      fontWeight: 700,
-                    }}
-                    onClick={(e) => { e.stopPropagation(); handleCardClick('FINANCING'); }}
-                  >
-                    <Search size={12} /> Rincian Prive & Modal
-                  </button>
-                  <span style={{ fontSize: 15, fontWeight: 800, color: fin.net >= 0 ? '#f472b6' : '#f87171' }}>
-                    {rupiah(fin.net)}
-                  </span>
+              {/* Filter Bar & Search Kas Masuk */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <div style={{ position: 'relative', flex: 1 }}>
+                    <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                    <input
+                      type="text"
+                      className="input"
+                      placeholder="Cari transaksi masuk (memo, ref no, akun lawan)..."
+                      value={inflowSearch}
+                      onChange={(e) => setInflowSearch(e.target.value)}
+                      style={{
+                        paddingLeft: 32,
+                        paddingRight: inflowSearch ? 28 : 10,
+                        height: 32,
+                        fontSize: 12,
+                        borderRadius: 8,
+                        background: 'rgba(255, 255, 255, 0.04)',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        width: '100%',
+                      }}
+                    />
+                    {inflowSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setInflowSearch('')}
+                        style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 2 }}
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+                  {availableInflowCategories.length > 3 && (
+                    <select
+                      className="input"
+                      value={inflowCategoryFilter}
+                      onChange={(e) => setInflowCategoryFilter(e.target.value)}
+                      style={{
+                        width: 'auto',
+                        minWidth: 140,
+                        height: 32,
+                        fontSize: 11.5,
+                        borderRadius: 8,
+                        background: 'rgba(15, 23, 42, 0.9)',
+                        border: '1px solid rgba(16, 185, 129, 0.3)',
+                        color: '#34d399',
+                        fontWeight: 700,
+                        padding: '0 8px',
+                      }}
+                    >
+                      <option value="ALL">Semua Kategori ({statementData?.inflow_items?.length || 0})</option>
+                      {availableInflowCategories.map((c) => (
+                        <option key={c.name} value={c.name}>
+                          {c.name} ({c.count})
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
-              </div>
-              <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
-                <tbody>
-                  {fin.breakdown && fin.breakdown.length > 0 ? (
-                    fin.breakdown.map((b, i) => (
-                      <tr key={i} style={{ borderBottom: '1px dashed rgba(255, 255, 255, 0.06)' }}>
-                        <td style={{ padding: '6px 0', color: '#cbd5e1' }}>
-                          {b.label} ({b.count} transaksi)
-                        </td>
-                        <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 600, color: b.type === 'IN' ? '#34d399' : '#f87171' }}>
-                          {b.type === 'IN' ? `+${rupiah(b.amount)}` : `(${rupiah(b.amount)})`}
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={2} style={{ padding: '6px 0', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                        Tidak ada transaksi pendanaan / prive owner pada periode ini ({rupiah(0)})
-                      </td>
-                    </tr>
-                  )}
-                  <tr style={{ fontWeight: 700, color: '#f472b6' }}>
-                    <td style={{ padding: '8px 0 4px' }}>ARUS KAS BERSIH DARI PENDANAAN (NET FINANCING CASH FLOW)</td>
-                    <td style={{ padding: '8px 0 4px', textAlign: 'right' }}>{rupiah(fin.net)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
 
-            {/* GRAND TOTAL: PERUBAHAN BERSIH KAS RIIL & TOTAL FISIK UANG DIPEGANG KASIR */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-                gap: 12,
-                marginTop: 14,
-              }}
-            >
-              {/* CARD 1: KENAIKAN / PENURUNAN KAS BERSIH (NET CASH FLOW) */}
+                {/* Quick Filter Pills Kas Masuk */}
+                {availableInflowCategories.length > 0 && (
+                  <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none' }}>
+                    <button
+                      type="button"
+                      onClick={() => setInflowCategoryFilter('ALL')}
+                      style={{
+                        padding: '3px 10px',
+                        borderRadius: 14,
+                        fontSize: 11,
+                        fontWeight: inflowCategoryFilter === 'ALL' ? 800 : 600,
+                        background: inflowCategoryFilter === 'ALL' ? 'rgba(16, 185, 129, 0.25)' : 'rgba(255, 255, 255, 0.04)',
+                        color: inflowCategoryFilter === 'ALL' ? '#34d399' : 'var(--text-muted)',
+                        border: inflowCategoryFilter === 'ALL' ? '1px solid rgba(16, 185, 129, 0.5)' : '1px solid rgba(255, 255, 255, 0.08)',
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      Semua ({statementData?.inflow_items?.length || 0})
+                    </button>
+                    {availableInflowCategories.map((cat) => {
+                      const isActive = inflowCategoryFilter === cat.name;
+                      return (
+                        <button
+                          key={cat.name}
+                          type="button"
+                          onClick={() => setInflowCategoryFilter(isActive ? 'ALL' : cat.name)}
+                          style={{
+                            padding: '3px 10px',
+                            borderRadius: 14,
+                            fontSize: 11,
+                            fontWeight: isActive ? 800 : 600,
+                            background: isActive ? 'rgba(16, 185, 129, 0.25)' : 'rgba(255, 255, 255, 0.04)',
+                            color: isActive ? '#34d399' : '#cbd5e1',
+                            border: isActive ? '1px solid rgba(16, 185, 129, 0.5)' : '1px solid rgba(255, 255, 255, 0.08)',
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          {cat.name} ({cat.count})
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Rincian Transaksi Masuk (In Karna Apa) */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 600, overflowY: 'auto', paddingRight: 4, scrollbarWidth: 'thin' }}>
+                {filteredInflows && filteredInflows.length > 0 ? (
+                  filteredInflows.map((item, idx) => (
+                    <div
+                      key={item.id || idx}
+                      onClick={() => handleOpenVoucher(item)}
+                      style={{
+                        padding: '12px 14px',
+                        borderRadius: 10,
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        border: '1px solid rgba(255, 255, 255, 0.06)',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: 12,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(16, 185, 129, 0.08)';
+                        e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+                        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.06)';
+                      }}
+                      title={`Klik untuk membuka bukti voucher jurnal: ${item.ref_no}`}
+                    >
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                          <span
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 800,
+                              padding: '2px 7px',
+                              borderRadius: 4,
+                              background: 'rgba(16, 185, 129, 0.18)',
+                              color: '#34d399',
+                              border: '1px solid rgba(16, 185, 129, 0.3)',
+                            }}
+                          >
+                            {item.title || item.category}
+                          </span>
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.date}</span>
+                          <span className="mono" style={{ fontSize: 10.5, color: '#38bdf8', fontWeight: 700 }}>{item.ref_no}</span>
+                        </div>
+                        {/* Keterangan Jurnal Umum */}
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#f8fafc', lineHeight: 1.4 }}>
+                          {item.description}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>
+                          Akun Lawan: <span className="mono" style={{ color: '#cbd5e1' }}>{item.counter_accounts}</span>
+                          {item.outlet_name && ` • Cabang: ${item.outlet_name}`}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                        <div style={{ textAlign: 'right' }}>
+                          <div className="mono" style={{ fontSize: 14.5, fontWeight: 800, color: '#34d399' }}>
+                            +{rupiah(item.debit || item.amount)}
+                          </div>
+                          <div style={{ fontSize: 10, color: '#38bdf8', fontWeight: 600 }}>
+                            Lihat Jurnal →
+                          </div>
+                        </div>
+                        <ChevronRight size={16} color="var(--text-muted)" style={{ opacity: 0.7 }} />
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div style={{ textAlign: 'center', padding: '36px 0', color: 'var(--text-muted)', fontSize: 13 }}>
+                    Tidak ada transaksi kas masuk yang sesuai filter.
+                  </div>
+                )}
+              </div>
+
+              {/* Subtotal Footer */}
               <div
-                className="card"
-                onClick={() => handleCardClick('NET_CASH')}
                 style={{
+                  borderTop: '1.5px solid rgba(16, 185, 129, 0.25)',
+                  paddingTop: 12,
+                  marginTop: 14,
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  padding: '16px 20px',
-                  borderRadius: 12,
-                  background: `linear-gradient(135deg, ${sum.liquidity_color}18 0%, rgba(15, 23, 42, 0.95) 100%)`,
-                  border: `1.5px solid ${sum.liquidity_color}45`,
-                  boxShadow: `0 6px 20px ${sum.liquidity_color}15`,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
                 }}
-                title="Klik untuk melihat formula kalkulasi perubahan bersih kas riil"
               >
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                    <TrendingUp size={18} color={sum.liquidity_color} />
-                    <span style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', letterSpacing: 0.3 }}>
-                      KENAIKAN / (PENURUNAN) BERSIH KAS
-                    </span>
-                    <span style={{ fontSize: 10, color: sum.liquidity_color, background: `${sum.liquidity_color}25`, padding: '1px 5px', borderRadius: 4 }}>
-                      🔍 Formula
-                    </span>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: '#f8fafc' }}>
+                  Total Kas Masuk Terverifikasi Jurnal {inflowCategoryFilter !== 'ALL' ? `(${inflowCategoryFilter})` : `(${selectedCashAccount === 'ALL' ? 'Semua Kas' : activeCashAccountMeta?.name})`}:
+                </span>
+                <span className="mono" style={{ fontSize: 15, fontWeight: 900, color: '#34d399' }}>
+                  +{rupiah(inflowCategoryFilter === 'ALL' && !inflowSearch ? (statementData?.total_inflows || op.inflows?.total_inflows || 0) : filteredInflowTotal)}
+                </span>
+              </div>
+            </div>
+
+            {/* ========================================================================= */}
+            {/* CARD 2: KAS KELUAR (CASH OUTFLOWS / KREDIT JURNAL) */}
+            {/* ========================================================================= */}
+            <div
+              className="card"
+              style={{
+                background: 'linear-gradient(135deg, rgba(244, 63, 94, 0.04) 0%, rgba(15, 23, 42, 0.95) 100%)',
+                border: '1.5px solid rgba(244, 63, 94, 0.4)',
+                borderRadius: 14,
+                padding: 20,
+                boxShadow: '0 8px 30px rgba(244, 63, 94, 0.08)',
+              }}
+            >
+              {/* Header Card Kas Keluar */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1.5px solid rgba(244, 63, 94, 0.25)', paddingBottom: 14, marginBottom: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 10,
+                      background: 'rgba(244, 63, 94, 0.2)',
+                      color: '#f87171',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <ArrowUpRight size={22} />
                   </div>
-                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>
-                    Realisasi: Operasi + Investasi + Pendanaan
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: '#f87171', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                      TOTAL KAS KELUAR ({selectedCashAccount === 'ALL' ? 'SEMUA KAS' : activeCashAccountMeta?.name})
+                    </div>
+                    <div style={{ fontSize: 20, fontWeight: 900, color: '#ffffff', letterSpacing: -0.5 }}>
+                      -{rupiah(outflowCategoryFilter === 'ALL' && !outflowSearch ? (statementData?.total_outflows || op.outflows?.total_outflows || 0) : filteredOutflowTotal)}
+                    </div>
                   </div>
                 </div>
+                <span
+                  style={{
+                    fontSize: 11,
+                    padding: '3px 10px',
+                    borderRadius: 20,
+                    background: 'rgba(244, 63, 94, 0.15)',
+                    color: '#f87171',
+                    border: '1px solid rgba(244, 63, 94, 0.35)',
+                    fontWeight: 700,
+                  }}
+                >
+                  {filteredOutflows.length} {filteredOutflows.length !== (statementData?.outflow_items?.length || 0) ? `/ ${statementData?.outflow_items?.length || 0}` : ''} Transaksi Out
+                </span>
+              </div>
+
+              {/* Filter Bar & Search Kas Keluar */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <div style={{ position: 'relative', flex: 1 }}>
+                    <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                    <input
+                      type="text"
+                      className="input"
+                      placeholder="Cari transaksi keluar (memo, ref no, akun lawan)..."
+                      value={outflowSearch}
+                      onChange={(e) => setOutflowSearch(e.target.value)}
+                      style={{
+                        paddingLeft: 32,
+                        paddingRight: outflowSearch ? 28 : 10,
+                        height: 32,
+                        fontSize: 12,
+                        borderRadius: 8,
+                        background: 'rgba(255, 255, 255, 0.04)',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        width: '100%',
+                      }}
+                    />
+                    {outflowSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setOutflowSearch('')}
+                        style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 2 }}
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+                  {availableOutflowCategories.length > 3 && (
+                    <select
+                      className="input"
+                      value={outflowCategoryFilter}
+                      onChange={(e) => setOutflowCategoryFilter(e.target.value)}
+                      style={{
+                        width: 'auto',
+                        minWidth: 140,
+                        height: 32,
+                        fontSize: 11.5,
+                        borderRadius: 8,
+                        background: 'rgba(15, 23, 42, 0.9)',
+                        border: '1px solid rgba(244, 63, 94, 0.3)',
+                        color: '#f87171',
+                        fontWeight: 700,
+                        padding: '0 8px',
+                      }}
+                    >
+                      <option value="ALL">Semua Kategori ({statementData?.outflow_items?.length || 0})</option>
+                      {availableOutflowCategories.map((c) => (
+                        <option key={c.name} value={c.name}>
+                          {c.name} ({c.count})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* Quick Filter Pills Kas Keluar */}
+                {availableOutflowCategories.length > 0 && (
+                  <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none' }}>
+                    <button
+                      type="button"
+                      onClick={() => setOutflowCategoryFilter('ALL')}
+                      style={{
+                        padding: '3px 10px',
+                        borderRadius: 14,
+                        fontSize: 11,
+                        fontWeight: outflowCategoryFilter === 'ALL' ? 800 : 600,
+                        background: outflowCategoryFilter === 'ALL' ? 'rgba(244, 63, 94, 0.25)' : 'rgba(255, 255, 255, 0.04)',
+                        color: outflowCategoryFilter === 'ALL' ? '#f87171' : 'var(--text-muted)',
+                        border: outflowCategoryFilter === 'ALL' ? '1px solid rgba(244, 63, 94, 0.5)' : '1px solid rgba(255, 255, 255, 0.08)',
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      Semua ({statementData?.outflow_items?.length || 0})
+                    </button>
+                    {availableOutflowCategories.map((cat) => {
+                      const isActive = outflowCategoryFilter === cat.name;
+                      return (
+                        <button
+                          key={cat.name}
+                          type="button"
+                          onClick={() => setOutflowCategoryFilter(isActive ? 'ALL' : cat.name)}
+                          style={{
+                            padding: '3px 10px',
+                            borderRadius: 14,
+                            fontSize: 11,
+                            fontWeight: isActive ? 800 : 600,
+                            background: isActive ? 'rgba(244, 63, 94, 0.25)' : 'rgba(255, 255, 255, 0.04)',
+                            color: isActive ? '#f87171' : '#cbd5e1',
+                            border: isActive ? '1px solid rgba(244, 63, 94, 0.5)' : '1px solid rgba(255, 255, 255, 0.08)',
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          {cat.name} ({cat.count})
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Rincian Transaksi Keluar (Out Karna Apa) */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 600, overflowY: 'auto', paddingRight: 4, scrollbarWidth: 'thin' }}>
+                {filteredOutflows && filteredOutflows.length > 0 ? (
+                  filteredOutflows.map((item, idx) => (
+                    <div
+                      key={item.id || idx}
+                      onClick={() => handleOpenVoucher(item)}
+                      style={{
+                        padding: '12px 14px',
+                        borderRadius: 10,
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        border: '1px solid rgba(255, 255, 255, 0.06)',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: 12,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(244, 63, 94, 0.08)';
+                        e.currentTarget.style.borderColor = 'rgba(244, 63, 94, 0.3)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+                        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.06)';
+                      }}
+                      title={`Klik untuk membuka bukti voucher jurnal: ${item.ref_no}`}
+                    >
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                          <span
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 800,
+                              padding: '2px 7px',
+                              borderRadius: 4,
+                              background: 'rgba(244, 63, 94, 0.18)',
+                              color: '#f87171',
+                              border: '1px solid rgba(244, 63, 94, 0.3)',
+                            }}
+                          >
+                            {item.title || item.category}
+                          </span>
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.date}</span>
+                          <span className="mono" style={{ fontSize: 10.5, color: '#38bdf8', fontWeight: 700 }}>{item.ref_no}</span>
+                        </div>
+                        {/* Keterangan Jurnal Umum */}
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#f8fafc', lineHeight: 1.4 }}>
+                          {item.description}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>
+                          Akun Lawan: <span className="mono" style={{ color: '#cbd5e1' }}>{item.counter_accounts}</span>
+                          {item.outlet_name && ` • Cabang: ${item.outlet_name}`}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                        <div style={{ textAlign: 'right' }}>
+                          <div className="mono" style={{ fontSize: 14.5, fontWeight: 800, color: '#f87171' }}>
+                            -{rupiah(item.credit || item.amount)}
+                          </div>
+                          <div style={{ fontSize: 10, color: '#f87171', fontWeight: 600 }}>
+                            Lihat Jurnal →
+                          </div>
+                        </div>
+                        <ChevronRight size={16} color="var(--text-muted)" style={{ opacity: 0.7 }} />
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div style={{ textAlign: 'center', padding: '36px 0', color: 'var(--text-muted)', fontSize: 13 }}>
+                    Tidak ada transaksi kas keluar yang sesuai filter.
+                  </div>
+                )}
+              </div>
+
+              {/* Subtotal Footer */}
+              <div
+                style={{
+                  borderTop: '1.5px solid rgba(244, 63, 94, 0.25)',
+                  paddingTop: 12,
+                  marginTop: 14,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: '#f8fafc' }}>
+                  Total Kas Keluar Terverifikasi Jurnal {outflowCategoryFilter !== 'ALL' ? `(${outflowCategoryFilter})` : `(${selectedCashAccount === 'ALL' ? 'Semua Kas' : activeCashAccountMeta?.name})`}:
+                </span>
+                <span className="mono" style={{ fontSize: 15, fontWeight: 900, color: '#f87171' }}>
+                  -{rupiah(outflowCategoryFilter === 'ALL' && !outflowSearch ? (statementData?.total_outflows || op.outflows?.total_outflows || 0) : filteredOutflowTotal)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* JEMBATAN REKAPITULASI ARUS KAS: SALDO AWAL + IN - OUT = SALDO AKHIR */}
+          <div
+            className="card"
+            style={{
+              padding: '18px 24px',
+              borderRadius: 14,
+              background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.95) 100%)',
+              border: '1.5px solid rgba(56, 189, 248, 0.3)',
+              boxShadow: '0 8px 30px rgba(0, 0, 0, 0.3)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 12,
+                    background: 'rgba(56, 189, 248, 0.15)',
+                    color: '#38bdf8',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Scale size={24} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: '#ffffff' }}>
+                    Rekapitulasi Arus Kas ({activeCashAccountMeta?.name})
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    Saldo Awal ({rupiah(sum.initial_cash_total)}) + Kas Masuk ({rupiah(statementData?.total_inflows || op.inflows?.total_inflows || 0)}) - Kas Keluar ({rupiah(statementData?.total_outflows || op.outflows?.total_outflows || 0)})
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 20, fontWeight: 900, color: sum.net_cash_flow >= 0 ? sum.liquidity_color : '#f43f5e', fontFamily: 'monospace' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                    Perubahan Kas Bersih
+                  </div>
+                  <div className="mono" style={{ fontSize: 18, fontWeight: 900, color: sum.net_cash_flow >= 0 ? '#34d399' : '#f87171' }}>
                     {sum.net_cash_flow >= 0 ? `+${rupiah(sum.net_cash_flow)}` : rupiah(sum.net_cash_flow)}
                   </div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: sum.liquidity_color, marginTop: 1 }}>
-                    {sum.liquidity_label}
-                  </div>
                 </div>
-              </div>
-
-              {/* CARD 2: MODAL AWAL KAS DI LACI */}
-              <div
-                className="card"
-                onClick={() => handleCardClick('SHIFT_DISCREPANCY')}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '16px 20px',
-                  borderRadius: 12,
-                  background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.12) 0%, rgba(15, 23, 42, 0.95) 100%)',
-                  border: '1.5px solid rgba(56, 189, 248, 0.35)',
-                  boxShadow: '0 6px 20px rgba(56, 189, 248, 0.1)',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                }}
-                title="Klik untuk melihat rincian modal awal kas di laci dari sesi shift kasir"
-              >
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                    <Clock size={18} color="#38bdf8" />
-                    <span style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', letterSpacing: 0.3 }}>
-                      MODAL AWAL KAS DI LACI
-                    </span>
-                    <span style={{ fontSize: 10, color: '#38bdf8', background: 'rgba(56, 189, 248, 0.2)', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>
-                      🔍 Rincian Shift
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>
-                    Kas fisik awal saat pembukaan shift
-                  </div>
-                </div>
+                <div style={{ width: 1, height: 36, background: 'rgba(255, 255, 255, 0.1)' }} />
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 20, fontWeight: 900, color: '#38bdf8', fontFamily: 'monospace' }}>
-                    {rupiah(activeShiftMeta.initialCashTotal || 0)}
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#38bdf8', textTransform: 'uppercase' }}>
+                    Saldo Akhir Neraca
                   </div>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginTop: 1 }}>
-                    {activeShiftMeta.isAll ? `${activeShiftMeta.count} Sesi Shift →` : `${activeShiftMeta.label} →`}
-                  </div>
-                </div>
-              </div>
-
-              {/* CARD 3: TOTAL FISIK UANG YANG DIPEGANG KASIR (TOTAL CASH ON HAND) */}
-              <div
-                className="card"
-                onClick={() => handleCardClick('SHIFT_DISCREPANCY')}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '16px 20px',
-                  borderRadius: 12,
-                  background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.25) 0%, rgba(15, 23, 42, 0.95) 100%)',
-                  border: '2px solid rgba(16, 185, 129, 0.7)',
-                  boxShadow: '0 8px 25px rgba(16, 185, 129, 0.25)',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                }}
-                title="Klik untuk melihat rincian rekonsiliasi total fisik kas yang dipegang kasir"
-              >
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                    <Wallet size={20} color="#34d399" />
-                    <span style={{ fontSize: 13.5, fontWeight: 900, color: '#ffffff', letterSpacing: 0.3 }}>
-                      TOTAL FISIK UANG DIPEGANG KASIR
-                    </span>
-                    <span style={{ fontSize: 9.5, color: '#34d399', background: 'rgba(16, 185, 129, 0.25)', border: '1px solid rgba(16, 185, 129, 0.4)', padding: '1px 5px', borderRadius: 4, fontWeight: 800 }}>
-                      KAS FISIK LACI
-                    </span>
-                    <span style={{ fontSize: 10, color: '#34d399', background: 'rgba(16, 185, 129, 0.2)', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>
-                      🔍 Formula
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 3 }}>
-                    Modal Awal ({rupiah(activeShiftMeta.initialCashTotal || 0)}) + Net Kas ({sum.net_cash_flow >= 0 ? `+${rupiah(sum.net_cash_flow)}` : rupiah(sum.net_cash_flow)})
-                  </div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 24, fontWeight: 900, color: '#34d399', fontFamily: 'monospace' }}>
-                    {rupiah((activeShiftMeta.initialCashTotal || 0) + (sum.net_cash_flow || 0))}
-                  </div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#10b981', marginTop: 1 }}>
-                    Saldo Akhir Kas Laci Riil →
+                  <div className="mono" style={{ fontSize: 22, fontWeight: 900, color: '#ffffff' }}>
+                    {rupiah(sum.closing_cash_total)}
                   </div>
                 </div>
               </div>
-
-              {/* CARD 4: SELISIH KASIR DARI HASIL CLOSING SHIFT */}
-              {(() => {
-                const diff = Number(activeShiftMeta.cashDifferenceTotal || 0);
-                const isBalanced = diff === 0;
-                const isOver = diff > 0;
-                const isShort = diff < 0;
-                const cardColor = isBalanced ? '#10b981' : (isOver ? '#38bdf8' : '#f43f5e');
-
-                return (
-                  <div
-                    className="card"
-                    onClick={() => handleCardClick('SHIFT_DISCREPANCY')}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      padding: '16px 20px',
-                      borderRadius: 12,
-                      background: `linear-gradient(135deg, ${cardColor}18 0%, rgba(15, 23, 42, 0.95) 100%)`,
-                      border: `1.5px solid ${cardColor}45`,
-                      boxShadow: `0 6px 20px ${cardColor}15`,
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                    }}
-                    title="Klik untuk melihat rincian rekonsiliasi kas laci kasir"
-                  >
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                        <Scale size={18} color={cardColor} />
-                        <span style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', letterSpacing: 0.3 }}>
-                          SELISIH KASIR (CLOSING SHIFT)
-                        </span>
-                        <span style={{
-                          fontSize: 9.5,
-                          padding: '1px 6px',
-                          borderRadius: 4,
-                          fontWeight: 800,
-                          background: isBalanced ? 'rgba(16, 185, 129, 0.25)' : (isOver ? 'rgba(56, 189, 248, 0.25)' : 'rgba(244, 63, 94, 0.25)'),
-                          color: cardColor,
-                          border: `1px solid ${cardColor}40`,
-                        }}>
-                          {isBalanced ? '✓ PAS / BALANCE' : (isOver ? '+ LEBIH KAS' : '⚠️ TEKOR KAS')}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>
-                        Fisik Closing ({rupiah(activeShiftMeta.closingCashTotal || 0)}) vs Sistem ({rupiah(activeShiftMeta.systemCashTotal || 0)})
-                      </div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 20, fontWeight: 900, color: cardColor, fontFamily: 'monospace' }}>
-                        {isOver ? `+${rupiah(diff)}` : (isShort ? `-${rupiah(Math.abs(diff))}` : rupiah(0))}
-                      </div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: cardColor, marginTop: 1 }}>
-                        {isBalanced ? 'Tidak Ada Selisih' : (isOver ? 'Kas Lebih di Laci' : 'Kas Kurang di Laci')}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* CARD 5: SELISIH ANTAR KASIR (SERAH TERIMA MODAL AWAL VS KAS CLOSING LALU) */}
-              {(() => {
-                const interDiff = Number(activeShiftMeta.interShiftDiffTotal || 0);
-                const isInterBalanced = interDiff === 0;
-                const isInterOver = interDiff > 0;
-                const isInterShort = interDiff < 0;
-                const cardColor = isInterBalanced ? '#10b981' : (isInterOver ? '#38bdf8' : '#f43f5e');
-
-                const subtitle = activeShiftMeta.isSingle && activeShiftMeta.prevShiftName
-                  ? `Modal Buka (${rupiah(activeShiftMeta.initialCashTotal || 0)}) vs Kas Lalu ${activeShiftMeta.prevShiftName} (${rupiah(activeShiftMeta.prevClosingCash || 0)})`
-                  : (activeShiftMeta.isSingle
-                    ? `Modal Awal Shift Perdana (${rupiah(activeShiftMeta.initialCashTotal || 0)})`
-                    : `Akumulasi Selisih Modal Sesi Baru vs Kas Closing Sesi Sebelumnya`);
-
-                return (
-                  <div
-                    className="card"
-                    onClick={() => handleCardClick('SHIFT_DISCREPANCY')}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      padding: '16px 20px',
-                      borderRadius: 12,
-                      background: `linear-gradient(135deg, ${cardColor}18 0%, rgba(15, 23, 42, 0.95) 100%)`,
-                      border: `1.5px solid ${cardColor}45`,
-                      boxShadow: `0 6px 20px ${cardColor}15`,
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                    }}
-                    title="Klik untuk melihat rincian rekonsiliasi kas laci & serah terima antar kasir"
-                  >
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                        <ArrowRightLeft size={18} color={cardColor} />
-                        <span style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', letterSpacing: 0.3 }}>
-                          SELISIH ANTAR KASIR
-                        </span>
-                        <span style={{
-                          fontSize: 9.5,
-                          padding: '1px 6px',
-                          borderRadius: 4,
-                          fontWeight: 800,
-                          background: isInterBalanced ? 'rgba(16, 185, 129, 0.25)' : (isInterOver ? 'rgba(56, 189, 248, 0.25)' : 'rgba(244, 63, 94, 0.25)'),
-                          color: cardColor,
-                          border: `1px solid ${cardColor}40`,
-                        }}>
-                          {isInterBalanced ? '✓ PAS / BALANCE' : (isInterOver ? '+ LEBIH MODAL' : '⚠️ TEKOR SERAH TERIMA')}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>
-                        {subtitle}
-                      </div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 20, fontWeight: 900, color: cardColor, fontFamily: 'monospace' }}>
-                        {isInterOver ? `+${rupiah(interDiff)}` : (isInterShort ? `-${rupiah(Math.abs(interDiff))}` : rupiah(0))}
-                      </div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: cardColor, marginTop: 1 }}>
-                        {isInterBalanced ? 'Serah Terima Sesuai' : (isInterOver ? 'Modal Awal Lebih Banyak' : 'Modal Awal Berkurang')}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* CARD 5: TOTAL SISA UANG DIPEGANG KASIR SETELAH MENGURANGI SELISIH KASIR */}
-              {(() => {
-                const modalAwal = Number(activeShiftMeta.initialCashTotal || 0);
-                const netKas = Number(sum.net_cash_flow || 0);
-                const kasSebelumSelisih = modalAwal + netKas;
-                const diff = Number(activeShiftMeta.cashDifferenceTotal || 0);
-                const sisaKasAkhir = kasSebelumSelisih + diff;
-
-                return (
-                  <div
-                    className="card"
-                    onClick={() => handleCardClick('SHIFT_DISCREPANCY')}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      padding: '16px 20px',
-                      borderRadius: 12,
-                      background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.25) 0%, rgba(15, 23, 42, 0.95) 100%)',
-                      border: '2px solid rgba(6, 182, 212, 0.7)',
-                      boxShadow: '0 8px 25px rgba(6, 182, 212, 0.25)',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                    }}
-                    title="Klik untuk melihat rincian rekonsiliasi kas laci kasir"
-                  >
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                        <Coins size={20} color="#22d3ee" />
-                        <span style={{ fontSize: 13.5, fontWeight: 900, color: '#ffffff', letterSpacing: 0.3 }}>
-                          TOTAL SISA KAS DIPEGANG
-                        </span>
-                        <span style={{
-                          fontSize: 9.5,
-                          color: '#22d3ee',
-                          background: 'rgba(6, 182, 212, 0.25)',
-                          border: '1px solid rgba(6, 182, 212, 0.45)',
-                          padding: '1px 6px',
-                          borderRadius: 4,
-                          fontWeight: 800,
-                        }}>
-                          SETELAH SELISIH
-                        </span>
-                      </div>
-                      <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 3 }}>
-                        Kas Fisik ({rupiah(kasSebelumSelisih)}) {diff === 0 ? '' : (diff > 0 ? `+ Selisih (${rupiah(diff)})` : `- Selisih (${rupiah(Math.abs(diff))})`)}
-                      </div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 24, fontWeight: 900, color: '#22d3ee', fontFamily: 'monospace' }}>
-                        {rupiah(sisaKasAkhir)}
-                      </div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: '#06b6d4', marginTop: 1 }}>
-                        Sisa Fisik Riil di Tangan Kasir
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4.5 TAB: BUKU BESAR MUTASI JURNAL KAS (GENERAL LEDGER AUDIT TRAIL) */}
+      {activeTab === 'journal_ledger' && (
+        <div className="card" style={{ padding: 24, background: 'rgba(15, 23, 42, 0.9)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
+            <div>
+              <h3 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Layers size={20} color="#38bdf8" /> Buku Besar Mutasi Jurnal Kas (General Ledger)
+              </h3>
+              <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '4px 0 0' }}>
+                Audit trail seluruh baris Jurnal Umum yang mendebit/mengkredit akun kas: <strong>{activeCashAccountMeta?.name}</strong>.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <div
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: 10,
+                  background: 'rgba(56, 189, 248, 0.1)',
+                  border: '1px solid rgba(56, 189, 248, 0.3)',
+                  fontSize: 12,
+                  color: '#38bdf8',
+                  fontWeight: 700,
+                }}
+              >
+                Saldo Awal: {rupiah(sum.initial_cash_total)}
+              </div>
+              <div
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: 10,
+                  background: 'rgba(16, 185, 129, 0.1)',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  fontSize: 12,
+                  color: '#34d399',
+                  fontWeight: 700,
+                }}
+              >
+                Saldo Akhir: {rupiah(sum.closing_cash_total)}
+              </div>
+            </div>
+          </div>
+
+          {/* Search & Account Filter Toolbar */}
+          <div style={{ display: 'flex', gap: 12, marginBottom: 18, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
+              <Search size={15} style={{ position: 'absolute', left: 10, top: 11, color: 'var(--text-muted)' }} />
+              <input
+                type="text"
+                className="form-control"
+                style={{ paddingLeft: 32, fontSize: 13, height: 38 }}
+                placeholder="Cari no jurnal, memo transaksi, akun lawan..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+              />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Filter size={15} color="var(--text-muted)" />
+              <select
+                className="form-control"
+                style={{ fontSize: 13, height: 38, minWidth: 200 }}
+                value={selectedCashAccount}
+                onChange={e => setSelectedCashAccount(e.target.value)}
+              >
+                <option value="ALL">Semua Akun Kas (Konsolidasi)</option>
+                {statementData?.cash_accounts_overview?.map(a => (
+                  <option key={a.code} value={a.code}>{a.name} ({a.code})</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* General Ledger Table */}
+          <div className="table-responsive" style={{ border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 10 }}>
+            <table className="table" style={{ width: '100%', fontSize: 12.5, borderCollapse: 'collapse', margin: 0 }}>
+              <thead style={{ background: 'rgba(30, 41, 59, 0.8)' }}>
+                <tr>
+                  <th style={{ padding: '10px 12px', textAlign: 'left' }}>Tanggal</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'left' }}>No. Jurnal (Ref)</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'left' }}>Akun Kas</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'left' }}>Akun Lawan</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'left' }}>Kategori</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'left' }}>Uraian / Memo Jurnal</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'right', color: '#34d399' }}>Kas Masuk (D)</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'right', color: '#f87171' }}>Kas Keluar (K)</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'right', color: '#38bdf8' }}>Saldo Berjalan</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'center' }}>Cabang</th>
+                </tr>
+              </thead>
+              <tbody>
+                {/* Saldo Awal Row */}
+                <tr style={{ background: 'rgba(56, 189, 248, 0.05)', fontWeight: 700 }}>
+                  <td style={{ padding: '9px 12px' }}>{fromDate}</td>
+                  <td style={{ padding: '9px 12px' }} className="mono">SALDO-AWAL</td>
+                  <td style={{ padding: '9px 12px' }}>{activeCashAccountMeta?.name}</td>
+                  <td style={{ padding: '9px 12px' }}>—</td>
+                  <td style={{ padding: '9px 12px' }}>
+                    <span style={{ fontSize: 10.5, padding: '2px 6px', borderRadius: 4, background: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8' }}>
+                      SALDO AWAL
+                    </span>
+                  </td>
+                  <td style={{ padding: '9px 12px', color: '#cbd5e1' }}>Saldo Kas Sebelum Periode Berjalan</td>
+                  <td style={{ padding: '9px 12px', textAlign: 'right' }}>—</td>
+                  <td style={{ padding: '9px 12px', textAlign: 'right' }}>—</td>
+                  <td style={{ padding: '9px 12px', textAlign: 'right', color: '#38bdf8' }} className="mono">
+                    {rupiah(sum.initial_cash_total)}
+                  </td>
+                  <td style={{ padding: '9px 12px', textAlign: 'center' }}>{outletTitle}</td>
+                </tr>
+
+                {/* Rows from backend statementData.journal_lines */}
+                {statementData?.journal_lines && statementData.journal_lines.length > 0 ? (
+                  statementData.journal_lines
+                    .filter(item => {
+                      if (!searchQuery) return true;
+                      const q = searchQuery.toLowerCase();
+                      return (
+                        item.ref_no?.toLowerCase().includes(q) ||
+                        item.description?.toLowerCase().includes(q) ||
+                        item.account_code?.toLowerCase().includes(q) ||
+                        item.counter_accounts?.toLowerCase().includes(q) ||
+                        item.category?.toLowerCase().includes(q)
+                      );
+                    })
+                    .map((jl, idx) => (
+                      <tr key={jl.id || idx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                        <td style={{ padding: '9px 12px', whiteSpace: 'nowrap' }}>{jl.date}</td>
+                        <td style={{ padding: '9px 12px', whiteSpace: 'nowrap', color: '#38bdf8', fontWeight: 600 }} className="mono">
+                          {jl.ref_no}
+                        </td>
+                        <td style={{ padding: '9px 12px', whiteSpace: 'nowrap' }}>
+                          <span style={{ fontWeight: 600, color: '#f8fafc' }}>{jl.account_code}</span>
+                        </td>
+                        <td style={{ padding: '9px 12px', color: '#94a3b8', fontSize: 11.5 }} className="mono">
+                          {jl.counter_accounts}
+                        </td>
+                        <td style={{ padding: '9px 12px' }}>
+                          <span
+                            style={{
+                              fontSize: 10,
+                              padding: '2px 6px',
+                              borderRadius: 4,
+                              fontWeight: 700,
+                              background: jl.category === 'SALES' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(168, 85, 247, 0.15)',
+                              color: jl.category === 'SALES' ? '#34d399' : '#c084fc',
+                            }}
+                          >
+                            {jl.category}
+                          </span>
+                        </td>
+                        <td style={{ padding: '9px 12px', color: '#cbd5e1' }}>
+                          {jl.description}
+                        </td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: jl.debit > 0 ? 700 : 400, color: jl.debit > 0 ? '#34d399' : 'var(--text-muted)' }} className="mono">
+                          {jl.debit > 0 ? rupiah(jl.debit) : '—'}
+                        </td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: jl.credit > 0 ? 700 : 400, color: jl.credit > 0 ? '#f87171' : 'var(--text-muted)' }} className="mono">
+                          {jl.credit > 0 ? rupiah(jl.credit) : '—'}
+                        </td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700, color: '#38bdf8' }} className="mono">
+                          {rupiah(jl.running_balance)}
+                        </td>
+                        <td style={{ padding: '9px 12px', textAlign: 'center', fontSize: 11, color: 'var(--text-muted)' }}>
+                          {jl.outlet_name}
+                        </td>
+                      </tr>
+                    ))
+                ) : (
+                  <tr>
+                    <td colSpan={10} style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
+                      Tidak ada baris mutasi jurnal kas pada periode ini.
+                    </td>
+                  </tr>
+                )}
+
+                {/* Saldo Akhir Row */}
+                <tr style={{ background: 'rgba(16, 185, 129, 0.1)', fontWeight: 800, borderTop: '2px solid rgba(16, 185, 129, 0.4)' }}>
+                  <td style={{ padding: '10px 12px' }}>{toDate}</td>
+                  <td style={{ padding: '10px 12px' }} className="mono">SALDO-AKHIR</td>
+                  <td style={{ padding: '10px 12px' }}>{activeCashAccountMeta?.name}</td>
+                  <td style={{ padding: '10px 12px' }}>—</td>
+                  <td style={{ padding: '10px 12px' }}>
+                    <span style={{ fontSize: 10.5, padding: '2px 6px', borderRadius: 4, background: 'rgba(16, 185, 129, 0.3)', color: '#34d399' }}>
+                      SALDO AKHIR
+                    </span>
+                  </td>
+                  <td style={{ padding: '10px 12px', color: '#ffffff' }}>Saldo Akhir Kas Buku Besar Neraca</td>
+                  <td style={{ padding: '10px 12px', textAlign: 'right', color: '#34d399' }} className="mono">
+                    {rupiah(op.inflows?.total_inflows || 0)}
+                  </td>
+                  <td style={{ padding: '10px 12px', textAlign: 'right', color: '#f87171' }} className="mono">
+                    {rupiah(op.outflows?.total_outflows || 0)}
+                  </td>
+                  <td style={{ padding: '10px 12px', textAlign: 'right', color: '#34d399', fontSize: 14 }} className="mono">
+                    {rupiah(sum.closing_cash_total)}
+                  </td>
+                  <td style={{ padding: '10px 12px', textAlign: 'center' }}>{outletTitle}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -2627,9 +2646,10 @@ export default function CashFlow() {
       {detailModal.open && (
         <div className="modal-overlay" style={{ zIndex: 99999 }}>
           <div
-            className="modal-card"
+            className="modal-card modal-xl"
             style={{
-              maxWidth: detailModal.type === 'SHIFT_DISCREPANCY' ? 1220 : 880,
+              maxWidth: detailModal.type === 'SHIFT_DISCREPANCY' ? '1420px' : '1160px',
+              '--modal-max-w': detailModal.type === 'SHIFT_DISCREPANCY' ? '1420px' : '1160px',
               width: '95%',
               maxHeight: '94vh',
               display: 'flex',
@@ -2949,7 +2969,7 @@ export default function CashFlow() {
                           {/* Summary Cards */}
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
                             <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-                              <div style={{ fontSize: 11, color: '#a7f3d0' }}>Pembayaran Tunai</div>
+                              <div style={{ fontSize: 11, color: '#a7f3d0' }}>Kas Kecil (Tunai Kasir)</div>
                               <div style={{ fontSize: 15, fontWeight: 800, color: '#34d399', marginTop: 2 }}>
                                 {rupiah(statementData?.operating?.inflows?.receivable_breakdown?.cash || 0)}
                               </div>
@@ -3056,7 +3076,7 @@ export default function CashFlow() {
                           {/* Summary Cards */}
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
                             <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-                              <div style={{ fontSize: 11, color: '#a7f3d0' }}>Tunai (Semua)</div>
+                              <div style={{ fontSize: 11, color: '#a7f3d0' }}>Kas Kecil Kasir (Tunai)</div>
                               <div style={{ fontSize: 15, fontWeight: 800, color: '#34d399', marginTop: 2 }}>
                                 {rupiah((op.inflows?.cash_sales || 0) + (statementData?.operating?.inflows?.receivable_breakdown?.cash || 0))}
                               </div>
@@ -3744,6 +3764,15 @@ export default function CashFlow() {
                         const interBg = isInterBal ? 'rgba(16, 185, 129, 0.1)' : (isInterOver ? 'rgba(56, 189, 248, 0.1)' : 'rgba(244, 63, 94, 0.1)');
                         const interBorder = isInterBal ? 'rgba(16, 185, 129, 0.3)' : (isInterOver ? 'rgba(56, 189, 248, 0.3)' : 'rgba(244, 63, 94, 0.3)');
 
+                        const depositTotal = Number(detailModal.extraData?.depositTotal || 0);
+                        const depositDiff = Number(detailModal.extraData?.depositDiffTotal || 0);
+                        const isDepBal = depositDiff === 0;
+                        const isDepOver = depositDiff > 0;
+                        const hasDeposit = depositTotal > 0;
+                        const depColor = !hasDeposit ? '#94a3b8' : (isDepBal ? '#10b981' : (isDepOver ? '#38bdf8' : '#f43f5e'));
+                        const depBg = !hasDeposit ? 'rgba(148, 163, 184, 0.1)' : (isDepBal ? 'rgba(16, 185, 129, 0.1)' : (isDepOver ? 'rgba(56, 189, 248, 0.1)' : 'rgba(244, 63, 94, 0.1)'));
+                        const depBorder = !hasDeposit ? 'rgba(148, 163, 184, 0.3)' : (isDepBal ? 'rgba(16, 185, 129, 0.3)' : (isDepOver ? 'rgba(56, 189, 248, 0.3)' : 'rgba(244, 63, 94, 0.3)'));
+
                         const closedList = (detailModal.items || []).filter(s => s.status === 'CLOSED');
                         const closedFormulaStr = closedList.length > 0
                           ? closedList.map(s => `${s.shift_name} (${rupiah(s.closing_cash || 0)})`).join(' + ')
@@ -3753,7 +3782,7 @@ export default function CashFlow() {
 
                         return (
                           <>
-                            {/* 5 KPI Cards in Responsive Row/Grid */}
+                            {/* 6 KPI Cards in Responsive Row/Grid */}
                             <div className="modal-kpi-5-grid">
                               {/* 1. Modal Awal */}
                               <div style={{ background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.25)', padding: '9px 12px', borderRadius: 9 }}>
@@ -3834,6 +3863,22 @@ export default function CashFlow() {
                                   Modal Baru vs Kas Closing Lalu
                                 </div>
                               </div>
+
+                              {/* 6. Setoran Kasir ke Kas Besar / Bank */}
+                              <div style={{ background: depBg, border: `1.5px solid ${depBorder}`, padding: '9px 12px', borderRadius: 9 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <div style={{ fontSize: 10.5, color: depColor, fontWeight: 700 }}>6. Setor Kas Besar</div>
+                                  <span style={{ fontSize: 9, background: `${depColor}25`, color: depColor, padding: '1px 5px', borderRadius: 4, fontWeight: 800 }}>
+                                    {!hasDeposit ? 'BELUM SETOR' : (isDepBal ? '✓ SESUAI' : (isDepOver ? '+ LEBIH SETOR' : '⚠️ KURANG SETOR'))}
+                                  </span>
+                                </div>
+                                <div style={{ fontSize: 16, fontWeight: 900, color: depColor, marginTop: 2 }}>
+                                  {rupiah(depositTotal)}
+                                </div>
+                                <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`Disetor vs Fisik: ${depositDiff >= 0 ? `+${rupiah(depositDiff)}` : `-${rupiah(Math.abs(depositDiff))}`}`}>
+                                  {hasDeposit ? `vs Fisik: ${depositDiff >= 0 ? `+${rupiah(depositDiff)}` : `-${rupiah(Math.abs(depositDiff))}`}` : 'Disimpan di Kasir'}
+                                </div>
+                              </div>
                             </div>
 
                             {/* Compact Formula & Explanation Strip */}
@@ -3864,7 +3909,10 @@ export default function CashFlow() {
                                   • <strong>Selisih Closing:</strong> Fisik ({rupiah(closingTotal)}) - Sistem ({rupiah(sysTotal)}) = <span style={{ color: diffColor, fontWeight: 800 }}>{isOver ? `+${rupiah(diff)} (Lebih Kas)` : (diff < 0 ? `-${rupiah(Math.abs(diff))} (Tekor Kasir)` : 'Rp0 (Pas)')}</span>
                                 </div>
                                 <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title="Selisih Antar Kasir: Modal Shift Baru vs Kas Closing Shift Sebelumnya">
-                                  • <strong>Selisih Antar Kasir:</strong> <span style={{ color: interColor, fontWeight: 800 }}>{isInterOver ? `+${rupiah(interDiff)} (Lebih Modal)` : (interDiff < 0 ? `-${rupiah(Math.abs(interDiff))} (Tekor Serah Terima)` : 'Rp0 (Sesuai)')}</span> {detailModal.items?.length === 1 && detailModal.extraData?.prevShiftName ? `(vs ${detailModal.extraData?.prevShiftName})` : ''}
+                                  • <strong>Selisih Antar Kasir:</strong> <span style={{ color: interColor, fontWeight: 800 }}>{isInterOver ? `+${rupiah(interDiff)} (Lebih Antar Kasir)` : (interDiff < 0 ? `-${rupiah(Math.abs(interDiff))} (Tekor Antar Kasir)` : 'Rp0 (Sesuai)')}</span> {detailModal.items?.length === 1 && detailModal.extraData?.prevShiftName ? `(vs ${detailModal.extraData?.prevShiftName})` : ''}
+                                </div>
+                                <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`Setoran ke Kas Besar: ${rupiah(depositTotal)} (vs Kas Fisik ${rupiah(closingTotal)})`}>
+                                  • <strong>Setoran Kas Besar:</strong> <span style={{ color: depColor, fontWeight: 800 }}>{rupiah(depositTotal)}</span> {hasDeposit ? `(${isDepBal ? 'Sesuai Fisik Laci' : (isDepOver ? `+${rupiah(depositDiff)} Lebih Setor` : `-${rupiah(Math.abs(depositDiff))} Kurang Setor`)})` : '(Belum Disetor)'}
                                 </div>
                                 <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`Total Fisik Kas: Modal Awal (${rupiah(modalTotal)}) + Net Kas (${rupiah(sum.net_cash_flow)})`}>
                                   • <strong>Total Kas di Laci:</strong> Modal ({rupiah(modalTotal)}) + Net Kas ({rupiah(sum.net_cash_flow)}) = <span style={{ color: '#34d399', fontWeight: 700 }}>{rupiah(modalTotal + (sum.net_cash_flow || 0))}</span>
@@ -3899,6 +3947,7 @@ export default function CashFlow() {
                                     <th style={{ background: '#0f172a', borderBottom: '2px solid rgba(255, 255, 255, 0.12)', textAlign: 'right', padding: '9px 12px' }}>Fisik Closing</th>
                                     <th style={{ background: '#0f172a', borderBottom: '2px solid rgba(255, 255, 255, 0.12)', textAlign: 'right', padding: '9px 12px' }}>Selisih Closing</th>
                                     <th style={{ background: '#0f172a', borderBottom: '2px solid rgba(255, 255, 255, 0.12)', textAlign: 'right', padding: '9px 12px' }}>Selisih Antar Kasir</th>
+                                    <th style={{ background: '#0f172a', borderBottom: '2px solid rgba(255, 255, 255, 0.12)', textAlign: 'right', padding: '9px 12px' }}>Setoran Kas Besar</th>
                                     <th style={{ background: '#0f172a', borderBottom: '2px solid rgba(255, 255, 255, 0.12)', padding: '9px 12px' }}>Catatan Closing</th>
                                   </tr>
                                 </thead>
@@ -3917,6 +3966,12 @@ export default function CashFlow() {
                                       const isInterOver = interDiff > 0;
                                       const interColor = isInterBal ? '#34d399' : (isInterOver ? '#38bdf8' : '#f87171');
                                       const interBg = isInterBal ? 'rgba(16, 185, 129, 0.15)' : (isInterOver ? 'rgba(56, 189, 248, 0.15)' : 'rgba(248, 113, 113, 0.15)');
+
+                                      const depAmt = Number(s.deposit_amount || 0);
+                                      const depDiff = Number(s.deposit_diff || 0);
+                                      const isDepTrx = depAmt > 0;
+                                      const depColorRow = !isDepTrx ? '#94a3b8' : (depDiff === 0 ? '#34d399' : (depDiff > 0 ? '#38bdf8' : '#f87171'));
+                                      const depBgRow = !isDepTrx ? 'rgba(148, 163, 184, 0.1)' : (depDiff === 0 ? 'rgba(16, 185, 129, 0.15)' : (depDiff > 0 ? 'rgba(56, 189, 248, 0.15)' : 'rgba(248, 113, 113, 0.15)'));
 
                                       return (
                                         <tr key={s.id || idx}>
@@ -4006,6 +4061,43 @@ export default function CashFlow() {
                                               </div>
                                             )}
                                           </td>
+                                          <td style={{ textAlign: 'right', padding: '8px 12px' }}>
+                                            {isDepTrx ? (
+                                              <div>
+                                                <div style={{ fontWeight: 800, color: s.deposit_status === 'APPROVED' || !s.deposit_status ? '#38bdf8' : (s.deposit_status === 'PENDING' ? '#fbbf24' : '#f87171') }}>
+                                                  {rupiah(depAmt)}
+                                                </div>
+                                                <div style={{ marginTop: 2, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                                                  <span
+                                                    style={{
+                                                      padding: '1px 6px',
+                                                      borderRadius: 5,
+                                                      background: s.deposit_status === 'PENDING' ? 'rgba(245, 158, 11, 0.15)' : s.deposit_status === 'REJECTED' ? 'rgba(239, 68, 68, 0.15)' : depBgRow,
+                                                      color: s.deposit_status === 'PENDING' ? '#fbbf24' : s.deposit_status === 'REJECTED' ? '#f87171' : depColorRow,
+                                                      fontWeight: 800,
+                                                      fontSize: 9.5,
+                                                      display: 'inline-block',
+                                                    }}
+                                                    title={`Disetor ${rupiah(depAmt)} vs Fisik Laci ${rupiah(s.closing_cash || 0)}`}
+                                                  >
+                                                    {s.deposit_status === 'PENDING'
+                                                      ? '⏳ Menunggu Approval'
+                                                      : s.deposit_status === 'REJECTED'
+                                                        ? '✕ Ditolak Owner'
+                                                        : (depDiff === 0 ? '✓ Disetujui (Pas)' : (depDiff > 0 ? `+${rupiah(depDiff)} Lebih Setor` : `-${rupiah(Math.abs(depDiff))} Kurang Setor`))}
+                                                  </span>
+                                                  <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>
+                                                    ke {s.deposit_account_label || 'Kas Besar'}
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            ) : (
+                                              <div>
+                                                <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Belum Setor</span>
+                                                <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>Tinggal di Laci</div>
+                                              </div>
+                                            )}
+                                          </td>
                                           <td style={{ fontSize: 10.5, color: 'var(--text-muted)', maxWidth: 160, padding: '8px 12px' }}>
                                             {s.notes || '—'}
                                           </td>
@@ -4014,7 +4106,7 @@ export default function CashFlow() {
                                     })
                                   ) : (
                                     <tr>
-                                      <td colSpan={9} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)' }}>
+                                      <td colSpan={10} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)' }}>
                                         Tidak ada data shift kasir pada periode ini.
                                       </td>
                                     </tr>
@@ -4055,227 +4147,7 @@ export default function CashFlow() {
         </div>
       )}
 
-      {/* MODAL GABUNGAN SHIFT KASIR (MULTI-SELECT) */}
-      {shiftModalOpen && (
-        <div className="modal-backdrop" style={{ zIndex: 99999 }}>
-          <div
-            className="modal-content card"
-            style={{
-              maxWidth: 580,
-              width: '90%',
-              padding: 0,
-              background: '#0f172a',
-              border: '1px solid rgba(168, 85, 247, 0.35)',
-              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.6)',
-              borderRadius: 14,
-              overflow: 'hidden',
-            }}
-          >
-            <div
-              className="modal-header"
-              style={{
-                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-                background: 'rgba(168, 85, 247, 0.1)',
-                padding: '16px 20px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div
-                  style={{
-                    width: 34,
-                    height: 34,
-                    borderRadius: 8,
-                    background: 'rgba(168, 85, 247, 0.25)',
-                    color: '#c084fc',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <SlidersHorizontal size={18} />
-                </div>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: '#f8fafc' }}>
-                    Pilih Gabungan Shift Kasir
-                  </h3>
-                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
-                    Centang 2 atau lebih sesi shift untuk melihat akumulasi arus kas gabungan
-                  </div>
-                </div>
-              </div>
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() => setShiftModalOpen(false)}
-                style={{ padding: 4 }}
-              >
-                <X size={18} />
-              </button>
-            </div>
 
-            <div className="modal-body" style={{ padding: '18px 20px', maxHeight: '60vh', overflowY: 'auto' }}>
-              {/* Quick selection bar */}
-              <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => setTempShiftIds(availableShifts.map(s => s.id))}
-                  style={{ fontSize: 11, padding: '4px 10px' }}
-                >
-                  ✓ Pilih Semua ({availableShifts.length})
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => setTempShiftIds(availableShifts.filter(s => s.status === 'OPEN').map(s => s.id))}
-                  style={{ fontSize: 11, padding: '4px 10px' }}
-                >
-                  Hanya Shift Aktif (OPEN)
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => setTempShiftIds(availableShifts.filter(s => s.status === 'CLOSED').map(s => s.id))}
-                  style={{ fontSize: 11, padding: '4px 10px' }}
-                >
-                  Hanya Shift Selesai (CLOSED)
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => setTempShiftIds([])}
-                  style={{ fontSize: 11, padding: '4px 8px', color: 'var(--text-muted)' }}
-                >
-                  ✕ Kosongkan
-                </button>
-              </div>
-
-              {/* Shift List with Checkboxes */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {availableShifts.map(s => {
-                  const isChecked = tempShiftIds.includes(s.id);
-                  const isOpen = s.status === 'OPEN';
-                  return (
-                    <div
-                      key={s.id}
-                      onClick={() => {
-                        setTempShiftIds(prev =>
-                          prev.includes(s.id) ? prev.filter(x => x !== s.id) : [...prev, s.id]
-                        );
-                      }}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 12,
-                        padding: '10px 14px',
-                        borderRadius: 10,
-                        border: isChecked ? '1.5px solid #a855f7' : '1px solid rgba(255, 255, 255, 0.08)',
-                        background: isChecked ? 'rgba(168, 85, 247, 0.12)' : 'rgba(255, 255, 255, 0.02)',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                      }}
-                    >
-                      <div style={{ color: isChecked ? '#c084fc' : 'var(--text-muted)' }}>
-                        {isChecked ? <CheckSquare size={18} /> : <Square size={18} />}
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
-                          <div style={{ fontWeight: isChecked ? 700 : 500, color: '#f8fafc', fontSize: 13 }}>
-                            {s.shift_name} <span style={{ color: 'var(--text-muted)', fontSize: 11.5 }}>({s.cashier_name})</span>
-                          </div>
-                          <span
-                            style={{
-                              fontSize: 10,
-                              padding: '1px 6px',
-                              borderRadius: 10,
-                              background: isOpen ? 'rgba(16, 185, 129, 0.2)' : 'rgba(148, 163, 184, 0.15)',
-                              color: isOpen ? '#34d399' : '#94a3b8',
-                              fontWeight: 700,
-                            }}
-                          >
-                            {isOpen ? 'AKTIF / OPEN' : 'CLOSED'}
-                          </span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                          <span>Tanggal: {s.date || (s.opened_at ? s.opened_at.slice(0, 10) : '—')}</span>
-                          <span style={{ color: '#34d399', fontWeight: 600 }}>Modal Awal Kas: {rupiah(s.initial_cash)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Live Calculation Box */}
-              <div
-                style={{
-                  marginTop: 14,
-                  padding: 12,
-                  borderRadius: 8,
-                  background: 'rgba(16, 185, 129, 0.08)',
-                  border: '1px solid rgba(16, 185, 129, 0.25)',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Shift Dipilih: {tempShiftIds.length} dari {availableShifts.length} Sesi</div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#34d399' }}>
-                    Total Modal Awal Kas Gabungan:
-                  </div>
-                </div>
-                <div style={{ fontSize: 16, fontWeight: 800, color: '#34d399' }}>
-                  {rupiah(
-                    availableShifts
-                      .filter(s => tempShiftIds.includes(s.id))
-                      .reduce((acc, s) => acc + Number(s.initial_cash || 0), 0)
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div
-              className="modal-footer"
-              style={{
-                borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-                background: 'rgba(15, 23, 42, 0.95)',
-                padding: '12px 20px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-            >
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setShiftModalOpen(false)}
-              >
-                Batal
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                onClick={() => {
-                  if (tempShiftIds.length === 0 || tempShiftIds.length === availableShifts.length) {
-                    setSelectedShift('ALL');
-                  } else if (tempShiftIds.length === 1) {
-                    setSelectedShift(tempShiftIds[0].toString());
-                  } else {
-                    setSelectedShift(tempShiftIds.join(','));
-                  }
-                  setShiftModalOpen(false);
-                }}
-                style={{ fontWeight: 700 }}
-              >
-                ✓ Terapkan Gabungan ({tempShiftIds.length} Shift)
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* MODAL GABUNGAN METODE PEMBAYARAN (MULTI-SELECT) */}
       {customPmModalOpen && (
@@ -4351,7 +4223,7 @@ export default function CashFlow() {
                 <button
                   type="button"
                   className="btn btn-secondary btn-sm"
-                  onClick={() => setTempPmList(['QRIS', 'GRAB', 'TRANSFER', 'DEBIT'])}
+                  onClick={() => setTempPmList(['QRIS', 'GRAB', 'GOFOOD', 'SHOPEEFOOD', 'TRANSFER', 'DEBIT'])}
                   style={{ fontSize: 11, padding: '4px 10px', color: '#06b6d4' }}
                 >
                   ⚡ Semua Non-Tunai Saja
@@ -4470,7 +4342,7 @@ export default function CashFlow() {
               LAPORAN ARUS KAS NYATA (CASH FLOW STATEMENT)
             </div>
             <div style={{ fontSize: 11, color: '#333', marginTop: 4 }}>
-              Cabang: {outletTitle} | Periode: {dateFrom} s/d {dateTo} | Shift: {activeShiftMeta?.label} (Modal Awal: {rupiah(activeShiftMeta?.initialCashTotal || 0)}) | Metode Kas: {activePmMeta?.label || 'Semua Metode'} | Dicetak: {new Date().toLocaleString('id-ID')}
+              Cabang: {outletTitle} | Periode: {dateFrom} s/d {dateTo} | Metode Kas: {activePmMeta?.label || 'Semua Metode'} | Dicetak: {new Date().toLocaleString('id-ID')}
             </div>
           </div>
 
@@ -4488,9 +4360,27 @@ export default function CashFlow() {
                 <td style={{ textAlign: 'right', padding: '6px 8px' }}></td>
               </tr>
               <tr>
-                <td style={{ padding: '4px 8px 4px 20px' }}>Penerimaan Kas dari Penjualan Kasir</td>
-                <td style={{ textAlign: 'right', padding: '4px 8px' }}>{rupiah(op.inflows?.total_inflows)}</td>
+                <td style={{ padding: '4px 8px 4px 20px' }}>Penerimaan Kas dari Penjualan Langsung Kasir</td>
+                <td style={{ textAlign: 'right', padding: '4px 8px' }}>{rupiah(op.inflows?.direct_sales_total != null ? op.inflows?.direct_sales_total : ((op.inflows?.cash_sales || 0) + (op.inflows?.qris_sales || 0) + (op.inflows?.grab_sales || 0) + (op.inflows?.transfer_sales || 0) + (op.inflows?.debit_sales || 0) + (op.inflows?.other_sales || 0)))}</td>
               </tr>
+              {Number(op.inflows?.receivable_collections || 0) > 0 && (
+                <tr>
+                  <td style={{ padding: '4px 8px 4px 20px' }}>Penerimaan Kas dari Pelunasan Kasbon Pelanggan</td>
+                  <td style={{ textAlign: 'right', padding: '4px 8px' }}>+{rupiah(op.inflows?.receivable_collections)}</td>
+                </tr>
+              )}
+              {Number(op.inflows?.shift_cash_over || 0) > 0 && (
+                <tr>
+                  <td style={{ padding: '4px 8px 4px 20px', color: '#0284c7' }}>Selisih Kelebihan Kasir / Surplus Laci (+)</td>
+                  <td style={{ textAlign: 'right', padding: '4px 8px', color: '#0284c7' }}>+{rupiah(op.inflows?.shift_cash_over)}</td>
+                </tr>
+              )}
+              {Number(op.inflows?.handover_surplus || 0) > 0 && (
+                <tr>
+                  <td style={{ padding: '4px 8px 4px 20px', color: '#0284c7' }}>Selisih Lebih Antar Kasir (Surplus Kas Awal) (+)</td>
+                  <td style={{ textAlign: 'right', padding: '4px 8px', color: '#0284c7' }}>+{rupiah(op.inflows?.handover_surplus)}</td>
+                </tr>
+              )}
               <tr>
                 <td style={{ padding: '4px 8px 4px 20px', color: '#b91c1c' }}>Pembelian Persediaan Bahan Baku Riil (-)</td>
                 <td style={{ textAlign: 'right', padding: '4px 8px', color: '#b91c1c' }}>({rupiah(op.outflows?.stock_purchases)})</td>
@@ -4499,6 +4389,18 @@ export default function CashFlow() {
                 <td style={{ padding: '4px 8px 4px 20px', color: '#b91c1c' }}>Pembayaran Beban Operasional Toko (OPEX) (-)</td>
                 <td style={{ textAlign: 'right', padding: '4px 8px', color: '#b91c1c' }}>({rupiah(op.outflows?.opex_expenses)})</td>
               </tr>
+              {Number(op.outflows?.shift_cash_short || 0) > 0 && (
+                <tr>
+                  <td style={{ padding: '4px 8px 4px 20px', color: '#b91c1c' }}>Selisih Kekurangan Kasir / Tekor Laci (-)</td>
+                  <td style={{ textAlign: 'right', padding: '4px 8px', color: '#b91c1c' }}>({rupiah(op.outflows?.shift_cash_short)})</td>
+                </tr>
+              )}
+              {Number(op.outflows?.handover_shortage || 0) > 0 && (
+                <tr>
+                  <td style={{ padding: '4px 8px 4px 20px', color: '#b91c1c' }}>Selisih Kurang Antar Kasir (Tekor Antar Kasir) (-)</td>
+                  <td style={{ textAlign: 'right', padding: '4px 8px', color: '#b91c1c' }}>({rupiah(op.outflows?.handover_shortage)})</td>
+                </tr>
+              )}
               <tr style={{ fontWeight: 'bold', borderBottom: '1px solid #ccc' }}>
                 <td style={{ padding: '6px 8px' }}>Arus Kas Bersih dari Aktivitas Operasi</td>
                 <td style={{ textAlign: 'right', padding: '6px 8px' }}>{rupiah(op.net)}</td>
@@ -4547,44 +4449,18 @@ export default function CashFlow() {
               </tr>
               <tr style={{ fontSize: 11, background: '#f8fafc' }}>
                 <td style={{ padding: '5px 8px 5px 20px', color: '#475569' }}>
-                  (+) Modal Awal Kas di Laci ({activeShiftMeta?.label || 'Semua Shift'})
+                  (+) Saldo Awal Kas & Bank (Buku Besar)
                 </td>
                 <td style={{ textAlign: 'right', padding: '5px 8px', color: '#0369a1', fontWeight: 600 }}>
-                  {rupiah(activeShiftMeta?.initialCashTotal || 0)}
+                  {rupiah(sum.initial_cash_total || 0)}
                 </td>
               </tr>
-              <tr style={{ fontWeight: 'bold', fontSize: 13, background: '#cbd5e1', borderTop: '1.5px solid #0f172a', borderBottom: '3px double #000' }}>
-                <td style={{ padding: '8px' }}>TOTAL FISIK UANG DIPEGANG KASIR (SALDO AKHIR KAS LACI)</td>
-                <td style={{ textAlign: 'right', padding: '8px', color: '#047857' }}>
-                  {rupiah((activeShiftMeta?.initialCashTotal || 0) + (sum.net_cash_flow || 0))}
+              <tr style={{ fontWeight: 'bold', fontSize: 13, background: '#e0f2fe', borderTop: '1.5px solid #0284c7', borderBottom: '3px double #000' }}>
+                <td style={{ padding: '8px' }}>SALDO AKHIR KAS & BANK (BUKU BESAR JURNAL UMUM)</td>
+                <td style={{ textAlign: 'right', padding: '8px', color: '#0284c7' }}>
+                  {rupiah(sum.closing_cash_total || 0)}
                 </td>
               </tr>
-              {activeShiftMeta?.closedCount > 0 && (
-                <>
-                  <tr style={{ fontSize: 11, background: '#f1f5f9' }}>
-                    <td style={{ padding: '5px 8px 5px 20px', color: '#475569' }}>
-                      (+/-) Selisih Kasir Selesai Shift ({activeShiftMeta.closedCount} Sesi Ditutup: Fisik {rupiah(activeShiftMeta.closingCashTotal || 0)} vs Sistem {rupiah(activeShiftMeta.systemCashTotal || 0)})
-                    </td>
-                    <td style={{ textAlign: 'right', padding: '5px 8px', fontWeight: 700, color: activeShiftMeta.cashDifferenceTotal === 0 ? '#047857' : (activeShiftMeta.cashDifferenceTotal > 0 ? '#0284c7' : '#b91c1c') }}>
-                      {activeShiftMeta.cashDifferenceTotal > 0 ? `+${rupiah(activeShiftMeta.cashDifferenceTotal)} (Lebih)` : (activeShiftMeta.cashDifferenceTotal < 0 ? `-${rupiah(Math.abs(activeShiftMeta.cashDifferenceTotal))} (Tekor)` : 'Rp0 (Pas)')}
-                    </td>
-                  </tr>
-                  <tr style={{ fontSize: 11, background: '#f8fafc' }}>
-                    <td style={{ padding: '5px 8px 5px 20px', color: '#475569' }}>
-                      (+/-) Selisih Antar Kasir (Serah Terima Shift: Modal Buka vs Kas Closing Lalu)
-                    </td>
-                    <td style={{ textAlign: 'right', padding: '5px 8px', fontWeight: 700, color: Number(activeShiftMeta?.interShiftDiffTotal || 0) === 0 ? '#047857' : (Number(activeShiftMeta?.interShiftDiffTotal || 0) > 0 ? '#0284c7' : '#b91c1c') }}>
-                      {Number(activeShiftMeta?.interShiftDiffTotal || 0) > 0 ? `+${rupiah(activeShiftMeta.interShiftDiffTotal)} (Lebih)` : (Number(activeShiftMeta?.interShiftDiffTotal || 0) < 0 ? `-${rupiah(Math.abs(activeShiftMeta.interShiftDiffTotal))} (Tekor)` : 'Rp0 (Pas)')}
-                    </td>
-                  </tr>
-                  <tr style={{ fontWeight: 'bold', fontSize: 13, background: '#e0f2fe', borderTop: '1.5px solid #0284c7', borderBottom: '3px double #000' }}>
-                    <td style={{ padding: '8px' }}>TOTAL SISA KAS DIPEGANG (SETELAH SELISIH KASIR)</td>
-                    <td style={{ textAlign: 'right', padding: '8px', color: '#0284c7' }}>
-                      {rupiah((activeShiftMeta?.initialCashTotal || 0) + (sum.net_cash_flow || 0) + Number(activeShiftMeta.cashDifferenceTotal || 0))}
-                    </td>
-                  </tr>
-                </>
-              )}
             </tbody>
           </table>
 
@@ -4604,6 +4480,29 @@ export default function CashFlow() {
           </div>
         </div>
       </div>
+
+      {/* Interactive Report Preview Modal */}
+      <ReportPreviewModal
+        isOpen={previewModalOpen}
+        onClose={() => setPreviewModalOpen(false)}
+        title="Pratinjau Laporan Arus Kas Nyata"
+        reportTitle="LAPORAN ARUS KAS NYATA (CASH FLOW STATEMENT)"
+        businessName={businessTitle}
+        outletName={outletTitle}
+        periodText={`Per ${dateFrom} s/d ${dateTo}`}
+        kpis={previewKpis}
+        sheets={previewSheets}
+        onExportExcel={handleExportExcel}
+        onPrint={handlePrint}
+      />
+
+      {/* Journal Voucher Audit Trail Modal */}
+      <JournalVoucherModal
+        isOpen={voucherModal.isOpen}
+        onClose={() => setVoucherModal({ isOpen: false, journalId: null, entryNo: null })}
+        journalId={voucherModal.journalId}
+        entryNo={voucherModal.entryNo}
+      />
     </div>
   );
 }

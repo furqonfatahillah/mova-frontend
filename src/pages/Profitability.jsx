@@ -1,16 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import api from '../api/client';
 import { rupiah, pct, LoadingState, PeriodPicker, PageHeader } from '../components/ui';
-import { FileSpreadsheet, Printer, X, ShieldCheck, TrendingDown, DollarSign } from 'lucide-react';
+import { FileSpreadsheet, Printer, X, ShieldCheck, TrendingDown, DollarSign, Eye } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 import { exportProfitabilityToExcel } from '../utils/exportReport';
 import { printElement } from '../utils/print';
+import ReportPreviewModal from '../components/ReportPreviewModal';
 
 export default function Profitability() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const { activeOutletId, activeOutlet, currentBusiness, dateRange: period } = useOutlet();
   const currentUser = JSON.parse(localStorage.getItem('pos_user') || '{}');
@@ -32,6 +35,7 @@ export default function Profitability() {
   }
 
   async function handleExportExcel() {
+    setExporting(true);
     try {
       const fname = await exportProfitabilityToExcel({
         data,
@@ -44,6 +48,8 @@ export default function Profitability() {
     } catch (err) {
       console.error(err);
       toast.error('Gagal mengekspor laporan ke Excel');
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -72,6 +78,52 @@ export default function Profitability() {
   const avgAdjustedMargin = data.length > 0 ? (data.reduce((s, r) => s + (r.adjusted_margin || 0), 0) / data.length) : 0;
   const criticalDropCount = data.filter(r => (r.gross_margin - r.adjusted_margin) > 3).length;
 
+  // Preview Modal Sheets & KPIs
+  const previewKpis = useMemo(() => [
+    { label: 'Rata-Rata Gross Margin', value: avgGrossMargin, format: 'percent', color: '#10b981' },
+    { label: 'Rata-Rata Adjusted Margin', value: avgAdjustedMargin, format: 'percent', color: '#6366f1' },
+    { label: 'Menu Margin Anjlok (>3pp)', value: `${criticalDropCount} Menu`, color: criticalDropCount > 0 ? '#ef4444' : '#10b981' },
+    { label: 'Total Menu Dianalisis', value: `${data.length} Menu`, color: '#0ea5e9' }
+  ], [avgGrossMargin, avgAdjustedMargin, criticalDropCount, data.length]);
+
+  const previewSheets = useMemo(() => {
+    const rows = data.map(r => {
+      const drop = (r.gross_margin || 0) - (r.adjusted_margin || 0);
+      return {
+        menu_name: r.menu?.name || '-',
+        price: Number(r.menu?.price || 0),
+        hpp: Number(r.hpp || 0),
+        gross_margin: Number(r.gross_margin || 0),
+        variance_per_porsi: Number(r.variance_per_porsi || 0),
+        adjusted_hpp: Number(r.adjusted_hpp || 0),
+        adjusted_margin: Number(r.adjusted_margin || 0),
+        evaluasi: drop > 5 ? 'KRITIS' : drop > 2 ? 'WASPADA' : 'SEHAT'
+      };
+    });
+
+    return [
+      {
+        id: 'analisis_profitabilitas',
+        name: 'Analisis Profitabilitas Menu',
+        columns: [
+          { key: 'menu_name', label: 'Nama Menu', align: 'left', width: 25 },
+          { key: 'price', label: 'Harga Jual', align: 'right', format: 'rupiah', width: 14 },
+          { key: 'hpp', label: 'HPP Moving Avg', align: 'right', format: 'rupiah', width: 14 },
+          { key: 'gross_margin', label: 'Gross Margin', align: 'right', format: 'percent', width: 13 },
+          { key: 'variance_per_porsi', label: 'Var. Cost / Porsi', align: 'right', format: 'rupiah', width: 15 },
+          { key: 'adjusted_hpp', label: 'Adjusted HPP', align: 'right', format: 'rupiah', width: 14 },
+          { key: 'adjusted_margin', label: 'Adjusted Margin', align: 'right', format: 'percent', width: 14 },
+          { key: 'evaluasi', label: 'Evaluasi', align: 'center', width: 12 }
+        ],
+        data: rows,
+        totals: [
+          { label: 'Rata-Rata Gross Margin', value: avgGrossMargin, format: 'percent' },
+          { label: 'Rata-Rata Adjusted Margin', value: avgAdjustedMargin, format: 'percent' }
+        ]
+      }
+    ];
+  }, [data, avgGrossMargin, avgAdjustedMargin]);
+
   if (loading) return <LoadingState />;
 
   return (
@@ -89,15 +141,32 @@ export default function Profitability() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: 6,
+                borderColor: 'rgba(99, 102, 241, 0.4)',
+                color: 'var(--accent-bright)',
+                background: 'rgba(99, 102, 241, 0.08)',
+                fontWeight: 600
+              }}
+              onClick={() => setShowPreviewModal(true)}
+              title="Pratinjau interaktif laporan profitabilitas menu di layar"
+            >
+              <Eye size={15} /> Pratinjau Laporan
+            </button>
+            <button
+              className="btn btn-secondary btn-sm"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
                 borderColor: 'rgba(16, 185, 129, 0.4)',
                 color: '#34d399',
                 background: 'rgba(16, 185, 129, 0.08)',
                 fontWeight: 600
               }}
               onClick={handleExportExcel}
+              disabled={exporting}
               title="Unduh laporan profitabilitas ke format Excel (.xlsx)"
             >
-              <FileSpreadsheet size={15} /> Export Excel
+              <FileSpreadsheet size={15} /> {exporting ? 'Mengekspor...' : 'Export Excel'}
             </button>
             <button
               className="btn btn-primary btn-sm"
@@ -410,6 +479,22 @@ export default function Profitability() {
           </div>
         </div>
       )}
+
+      {/* Universal Report Preview Modal */}
+      <ReportPreviewModal
+        isOpen={showPreviewModal}
+        onClose={() => setShowPreviewModal(false)}
+        title="Pratinjau Analisis Profitabilitas Menu & Unit Economics"
+        reportTitle="LAPORAN ANALISIS PROFITABILITAS MENU & HPP DINAMIS"
+        businessName={businessName}
+        outletName={outletName}
+        periodText={`${period.from} s/d ${period.to}`}
+        kpis={previewKpis}
+        sheets={previewSheets}
+        onExportExcel={handleExportExcel}
+        onPrint={handlePrintPdf}
+        exporting={exporting}
+      />
     </div>
   );
 }

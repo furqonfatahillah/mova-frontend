@@ -21,9 +21,11 @@ import {
   DollarSign,
   Flame,
   BadgeAlert,
-  X
+  X,
+  Eye,
 } from 'lucide-react';
 import { printElement } from '../utils/print';
+import ReportPreviewModal from '../components/ReportPreviewModal';
 import {
   exportSalesByProductToExcel,
   exportPointRedemptionsToExcel,
@@ -115,6 +117,7 @@ export default function SalesReport() {
   const [activeTab, setActiveTab] = useState('by-product');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [arTypeFilter, setArTypeFilter] = useState('ALL'); // 'ALL' | 'CUSTOMER' | 'MERCHANT_QRIS' | 'MERCHANT_ECOMMERCE'
   const [reportData, setReportData] = useState({
     items: [],
@@ -249,9 +252,9 @@ export default function SalesReport() {
       return {
         total_qty_sold: items.reduce((s, i) => s + (Number(i.qty_sold) || 0), 0),
         total_qty_refund: items.reduce((s, i) => s + (Number(i.qty_refund) || 0), 0),
-        total_modal: items.reduce((s, i) => s + ((Number(i.cost_price) || 0) * (Number(i.qty_sold) || 0)), 0),
-        total_discount: items.reduce((s, i) => s + (Number(i.discount_amount) || 0), 0),
-        total_sales: items.reduce((s, i) => s + (Number(i.total_sales) || 0), 0),
+        total_modal: items.reduce((s, i) => s + ((Number(i.cost_price ?? i.hpp) || 0) * (Number(i.qty_sold) || 0)), 0),
+        total_discount: items.reduce((s, i) => s + (Number(i.discount_amount ?? i.discount) || 0), 0),
+        total_sales: items.reduce((s, i) => s + (Number(i.total_sales ?? i.subtotal) || 0), 0),
         total_refund: items.reduce((s, i) => s + (Number(i.total_refund) || 0), 0),
       };
     }
@@ -264,53 +267,57 @@ export default function SalesReport() {
     }
     if (activeTab === 'payments') {
       return {
-        total_transaction: items.reduce((s, i) => s + (Number(i.total_transaction) || 0), 0),
-        total_paid: items.reduce((s, i) => s + (Number(i.paid_amount) || 0), 0),
-        total_receivable: items.reduce((s, i) => s + (Number(i.receivable_amount) || 0), 0),
+        total_transaction: items.reduce((s, i) => s + (Number(i.total_transaction ?? i.total) || 0), 0),
+        total_paid: items.reduce((s, i) => s + (Number(i.paid_amount ?? i.paid) || 0), 0),
+        total_receivable: items.reduce((s, i) => s + (Number(i.receivable_amount ?? i.receivable ?? i.piutang) || 0), 0),
       };
     }
     if (activeTab === 'transactions') {
       return {
-        total_discount: items.reduce((s, i) => s + (Number(i.discount_extra) || 0), 0),
-        total_sales: items.reduce((s, i) => s + (Number(i.penjualan) || 0), 0),
-        total_receivable: items.reduce((s, i) => s + (Number(i.piutang) || 0), 0),
+        total_discount: items.reduce((s, i) => s + (Number(i.discount ?? i.discount_amount ?? i.discount_extra) || 0), 0),
+        total_sales: items.reduce((s, i) => s + (Number(i.penjualan ?? i.total_sales ?? i.total_sale ?? i.subtotal) || 0), 0),
+        total_receivable: items.reduce((s, i) => s + (Number(i.piutang ?? i.receivable) || 0), 0),
         total_profit: items.reduce((s, i) => s + (Number(i.profit) || 0), 0),
       };
     }
     if (activeTab === 'by-customer') {
       return {
-        total_sales: items.reduce((s, i) => s + (Number(i.subtotal) || 0), 0),
-        total_paid: items.reduce((s, i) => s + (Number(i.total_paid) || 0), 0),
-        total_receivable: items.reduce((s, i) => s + (Number(i.receivable) || 0), 0),
+        total_sales: items.reduce((s, i) => s + (Number(i.subtotal ?? i.total ?? i.total_sales) || 0), 0),
+        total_amount: items.reduce((s, i) => s + (Number(i.subtotal ?? i.total ?? i.total_sales) || 0), 0),
+        total_paid: items.reduce((s, i) => s + (Number(i.total_paid ?? i.paid) || 0), 0),
+        total_receivable: items.reduce((s, i) => s + (Number(i.receivable ?? i.piutang) || 0), 0),
+        total_piutang: items.reduce((s, i) => s + (Number(i.receivable ?? i.piutang) || 0), 0),
       };
     }
     if (activeTab === 'peak-hours') {
       return {
-        total_sales: items.reduce((s, i) => s + (Number(i.total_penjualan) || 0), 0),
-        total_transactions: items.reduce((s, i) => s + (Number(i.transaksi) || 0), 0),
-        total_products: items.reduce((s, i) => s + (Number(i.produk) || 0), 0),
+        total_sales: items.reduce((s, i) => s + (Number(i.total_penjualan ?? i.total_sales) || 0), 0),
+        total_penjualan: items.reduce((s, i) => s + (Number(i.total_penjualan ?? i.total_sales) || 0), 0),
+        total_transactions: items.reduce((s, i) => s + (Number(i.transaksi ?? i.count) || 0), 0),
+        total_products: items.reduce((s, i) => s + (Number(i.produk ?? i.qty) || 0), 0),
         total_guests: items.reduce((s, i) => s + (Number(i.tamu) || 0), 0),
+        avg_sales_overall: items.length > 0 ? (items.reduce((s, i) => s + (Number(i.total_penjualan ?? i.total_sales) || 0), 0) / Math.max(1, items.reduce((s, i) => s + (Number(i.transaksi ?? i.count) || 0), 0))) : 0,
       };
     }
     if (activeTab === 'customer-receivables') {
       return {
-        total_piutang: items.reduce((s, i) => s + (Number(i.piutang) || 0), 0),
-        total_gross_piutang: items.reduce((s, i) => s + (Number(i.piutang) || 0), 0),
+        total_piutang: items.reduce((s, i) => s + (Number(i.piutang ?? i.total_amount) || 0), 0),
+        total_gross_piutang: items.reduce((s, i) => s + (Number(i.piutang ?? i.total_amount) || 0), 0),
         total_mdr_fee: items.reduce((s, i) => s + (Number(i.mdr_fee) || 0), 0),
         total_net_piutang: items.reduce((s, i) => s + (Number(i.net_amount || i.piutang) || 0), 0),
-        total_dibayar: items.reduce((s, i) => s + (Number(i.dibayar) || 0), 0),
-        total_sisa_piutang: items.reduce((s, i) => s + (Number(i.sisa_piutang) || 0), 0),
-        total_customer_piutang: items.filter(i => (i.ar_type || 'CUSTOMER') === 'CUSTOMER').reduce((s, i) => s + (Number(i.sisa_piutang) || 0), 0),
-        total_merchant_qris: items.filter(i => i.ar_type === 'MERCHANT_QRIS').reduce((s, i) => s + (Number(i.sisa_piutang) || 0), 0),
-        total_merchant_ecommerce: items.filter(i => i.ar_type === 'MERCHANT_ECOMMERCE').reduce((s, i) => s + (Number(i.sisa_piutang) || 0), 0),
-        total_unsettled_merchant: items.filter(i => i.ar_type !== 'CUSTOMER' && i.settlement_status !== 'SETTLED').reduce((s, i) => s + (Number(i.sisa_piutang) || 0), 0),
+        total_dibayar: items.reduce((s, i) => s + (Number(i.dibayar ?? i.paid_amount) || 0), 0),
+        total_sisa_piutang: items.reduce((s, i) => s + (Number(i.sisa_piutang ?? i.remaining_amount) || 0), 0),
+        total_customer_piutang: items.filter(i => (i.ar_type || 'CUSTOMER') === 'CUSTOMER').reduce((s, i) => s + (Number(i.sisa_piutang ?? i.remaining_amount) || 0), 0),
+        total_merchant_qris: items.filter(i => i.ar_type === 'MERCHANT_QRIS').reduce((s, i) => s + (Number(i.sisa_piutang ?? i.remaining_amount) || 0), 0),
+        total_merchant_ecommerce: items.filter(i => i.ar_type === 'MERCHANT_ECOMMERCE').reduce((s, i) => s + (Number(i.sisa_piutang ?? i.remaining_amount) || 0), 0),
+        total_unsettled_merchant: items.filter(i => i.ar_type !== 'CUSTOMER' && i.settlement_status !== 'SETTLED').reduce((s, i) => s + (Number(i.sisa_piutang ?? i.remaining_amount) || 0), 0),
       };
     }
     if (activeTab === 'promos') {
       return {
-        total_promo: items.reduce((s, i) => s + (Number(i.jumlah_transaksi) || 0), 0),
-        total_nilai: items.reduce((s, i) => s + (Number(i.nilai) || 0), 0),
-        total_penjualan_promo: items.reduce((s, i) => s + (Number(i.penjualan_promo) || 0), 0),
+        total_promo: items.reduce((s, i) => s + (Number(i.jumlah_transaksi ?? i.count) || 0), 0),
+        total_nilai: items.reduce((s, i) => s + (Number(i.nilai ?? i.discount_amount) || 0), 0),
+        total_penjualan_promo: items.reduce((s, i) => s + (Number(i.penjualan_promo ?? i.total_sales) || 0), 0),
       };
     }
     return reportData.summary;
@@ -373,6 +380,245 @@ export default function SalesReport() {
     ? `Per ${formatIndoDate(period?.from)}`
     : `Per ${formatIndoDate(period?.from)} s/d ${formatIndoDate(period?.to)}`;
 
+  const previewSheets = useMemo(() => {
+    const currentMeta = TABS.find((t) => t.id === activeTab);
+    const sheetName = currentMeta?.label || 'Laporan Penjualan';
+
+    let columns = [];
+    let totals = [];
+    let data = filteredItems.map((item) => ({
+      ...item,
+      sku: item.sku || item.code || item.item_code || '-',
+      product_name: item.product_name || item.item_name || item.name || '-',
+      category_name: item.category_name || item.category || item.product_category || '-',
+      avg_price: item.avg_price ?? item.price ?? item.unit_price ?? 0,
+      cost_price: item.cost_price ?? item.hpp ?? 0,
+      price: item.price ?? item.unit_price ?? 0,
+      discount_amount: item.discount_amount ?? item.discount ?? item.discount_extra ?? 0,
+      discount_extra: item.discount_extra ?? item.discount ?? item.discount_amount ?? 0,
+      discount: item.discount ?? item.discount_amount ?? 0,
+      total_sales: item.total_sales ?? item.penjualan ?? item.subtotal ?? item.total ?? 0,
+      penjualan: item.penjualan ?? item.total_sales ?? item.subtotal ?? item.total ?? 0,
+      subtotal: item.subtotal ?? item.total ?? item.total_sales ?? 0,
+      modal: (item.cost_price ?? item.hpp ?? 0) * (Number(item.qty) || 1),
+      invoice_no: item.invoice_no || item.order_number || item.transaction_no || '-',
+      transaction_no: item.transaction_no || item.order_number || item.no_penjualan || item.receivable_no || '-',
+      customer_name: item.customer_name || item.customer || 'Walk-in Customer',
+      customer: item.customer || item.customer_name || 'Walk-in Customer',
+      reward_name: item.reward_name || item.penukaran || '-',
+      account_name: item.account_name || item.deposit_account || '-',
+      kasir: item.kasir || item.cashier || item.created_by || 'Kasir',
+      cashier: item.cashier || item.kasir || item.created_by || 'Kasir',
+      phone: item.phone || item.customer_phone || '-',
+      jam: item.jam || item.waktu || item.time || '-',
+      rata_rata: item.rata_rata ?? item.avg_penjualan ?? 0,
+      due_date: item.due_date || item.jatuh_tempo || '-',
+      nama_promo: item.nama_promo || item.promo || item.name || '-',
+    }));
+
+    if (activeTab === 'by-product') {
+      columns = [
+        { key: 'sku', label: 'SKU / Barcode', align: 'center', width: 14 },
+        { key: 'product_name', label: 'Nama Produk', align: 'left', width: 30 },
+        { key: 'category_name', label: 'Kategori', align: 'left', width: 18 },
+        { key: 'qty_sold', label: 'Terjual', align: 'right', format: 'number', width: 12 },
+        { key: 'qty_refund', label: 'Refund', align: 'right', format: 'number', width: 12 },
+        { key: 'cost_price', label: 'HPP Satuan', align: 'right', format: 'currency', width: 16 },
+        { key: 'avg_price', label: 'Harga Jual', align: 'right', format: 'currency', width: 16 },
+        { key: 'discount_amount', label: 'Diskon', align: 'right', format: 'currency', width: 16 },
+        { key: 'total_sales', label: 'Total Penjualan', align: 'right', format: 'currency', width: 20 },
+      ];
+      totals = [
+        {
+          label: 'TOTAL KESELURUHAN',
+          qty_sold: activeSummary?.total_qty_sold || 0,
+          qty_refund: activeSummary?.total_qty_refund || 0,
+          discount_amount: activeSummary?.total_discount || 0,
+          total_sales: activeSummary?.total_sales || 0,
+        },
+      ];
+    } else if (activeTab === 'point-redemptions') {
+      columns = [
+        { key: 'date', label: 'Tanggal', align: 'center', width: 14 },
+        { key: 'transaction_no', label: 'No Penjualan', align: 'center', width: 18 },
+        { key: 'customer_name', label: 'Nama Pelanggan', align: 'left', width: 24 },
+        { key: 'reward_name', label: 'Reward / Promo', align: 'left', width: 24 },
+        { key: 'points_used', label: 'Poin Digunakan', align: 'right', format: 'number', width: 14 },
+        { key: 'nilai', label: 'Nilai Diskon Poin', align: 'right', format: 'currency', width: 20 },
+      ];
+      totals = [
+        {
+          label: 'TOTAL PENUKARAN',
+          points_used: activeSummary?.total_points || 0,
+          nilai: activeSummary?.total_nilai || 0,
+        },
+      ];
+    } else if (activeTab === 'payments') {
+      columns = [
+        { key: 'payment_method', label: 'Metode Pembayaran', align: 'left', width: 24 },
+        { key: 'account_name', label: 'Akun Kas / Bank Masuk', align: 'left', width: 26 },
+        { key: 'total_transaction', label: 'Frekuensi (Tx)', align: 'right', format: 'number', width: 14 },
+        { key: 'paid_amount', label: 'Total Pembayaran', align: 'right', format: 'currency', width: 22 },
+        { key: 'receivable_amount', label: 'Sisa Piutang', align: 'right', format: 'currency', width: 20 },
+      ];
+      totals = [
+        {
+          label: 'TOTAL PEMBAYARAN',
+          total_transaction: activeSummary?.total_transaction || 0,
+          paid_amount: activeSummary?.total_paid || 0,
+          receivable_amount: activeSummary?.total_receivable || 0,
+        },
+      ];
+    } else if (activeTab === 'transactions') {
+      columns = [
+        { key: 'date', label: 'Tanggal & Waktu', align: 'center', width: 18 },
+        { key: 'invoice_no', label: 'No Nota', align: 'center', width: 16 },
+        { key: 'customer_name', label: 'Pelanggan', align: 'left', width: 20 },
+        { key: 'product_name', label: 'Nama Produk', align: 'left', width: 26 },
+        { key: 'qty', label: 'Qty', align: 'right', format: 'number', width: 10 },
+        { key: 'price', label: 'Harga Satuan', align: 'right', format: 'currency', width: 16 },
+        { key: 'discount_extra', label: 'Diskon', align: 'right', format: 'currency', width: 14 },
+        { key: 'penjualan', label: 'Total Jual', align: 'right', format: 'currency', width: 18 },
+        { key: 'modal', label: 'Total HPP', align: 'right', format: 'currency', width: 16 },
+        { key: 'profit', label: 'Laba Kotor', align: 'right', format: 'currency', width: 18 },
+        { key: 'payment_method', label: 'Metode Bayar', align: 'center', width: 16 },
+        { key: 'kasir', label: 'Kasir', align: 'left', width: 16 },
+      ];
+      totals = [
+        {
+          label: 'TOTAL TRANSAKSI',
+          discount_extra: activeSummary?.total_discount || 0,
+          penjualan: activeSummary?.total_sales ?? activeSummary?.total_sale ?? 0,
+          profit: activeSummary?.total_profit || 0,
+        },
+      ];
+    } else if (activeTab === 'by-customer') {
+      columns = [
+        { key: 'customer_code', label: 'Kode Member', align: 'center', width: 14 },
+        { key: 'customer_name', label: 'Nama Pelanggan', align: 'left', width: 24 },
+        { key: 'phone', label: 'No Telepon', align: 'center', width: 16 },
+        { key: 'transaction_no', label: 'No Nota', align: 'center', width: 16 },
+        { key: 'product_name', label: 'Produk Dibeli', align: 'left', width: 26 },
+        { key: 'qty', label: 'Qty', align: 'right', format: 'number', width: 10 },
+        { key: 'subtotal', label: 'Total Belanja', align: 'right', format: 'currency', width: 18 },
+        { key: 'total_paid', label: 'Total Dibayar', align: 'right', format: 'currency', width: 18 },
+        { key: 'receivable', label: 'Piutang', align: 'right', format: 'currency', width: 16 },
+      ];
+      totals = [
+        {
+          label: 'TOTAL PELANGGAN',
+          subtotal: activeSummary?.total_sales ?? activeSummary?.total_amount ?? 0,
+          total_paid: activeSummary?.total_paid || 0,
+          receivable: activeSummary?.total_receivable ?? activeSummary?.total_piutang ?? 0,
+        },
+      ];
+    } else if (activeTab === 'peak-hours') {
+      columns = [
+        { key: 'jam', label: 'Rentang Jam Operasional', align: 'center', width: 20 },
+        { key: 'total_penjualan', label: 'Total Penjualan', align: 'right', format: 'currency', width: 20 },
+        { key: 'rata_rata', label: 'Rata-Rata / Tx', align: 'right', format: 'currency', width: 18 },
+        { key: 'transaksi', label: 'Jumlah Transaksi', align: 'right', format: 'number', width: 16 },
+        { key: 'produk', label: 'Total Produk Terjual', align: 'right', format: 'number', width: 18 },
+        { key: 'tamu', label: 'Jumlah Tamu', align: 'right', format: 'number', width: 14 },
+      ];
+      totals = [
+        {
+          label: 'TOTAL KESELURUHAN',
+          total_penjualan: activeSummary?.total_sales ?? activeSummary?.total_penjualan ?? 0,
+          transaksi: activeSummary?.total_transactions || 0,
+          produk: activeSummary?.total_products || 0,
+          tamu: activeSummary?.total_guests || 0,
+        },
+      ];
+    } else if (activeTab === 'customer-receivables') {
+      columns = [
+        { key: 'ar_type', label: 'Kategori AR', align: 'center', width: 16 },
+        { key: 'transaction_no', label: 'No Nota / ID Order', align: 'center', width: 18 },
+        { key: 'date', label: 'Tgl Transaksi', align: 'center', width: 14 },
+        { key: 'due_date', label: 'Jatuh Tempo', align: 'center', width: 14 },
+        { key: 'customer_name', label: 'Pelanggan / Partner Merchant', align: 'left', width: 28 },
+        { key: 'piutang', label: 'Piutang Bruto', align: 'right', format: 'currency', width: 18 },
+        { key: 'mdr_fee', label: 'MDR / Potongan', align: 'right', format: 'currency', width: 16 },
+        { key: 'net_amount', label: 'Piutang Netto', align: 'right', format: 'currency', width: 18 },
+        { key: 'dibayar', label: 'Dibayar', align: 'right', format: 'currency', width: 18 },
+        { key: 'sisa_piutang', label: 'Sisa Piutang', align: 'right', format: 'currency', width: 18 },
+        { key: 'status', label: 'Status Pelunasan', align: 'center', width: 16 },
+      ];
+      totals = [
+        {
+          label: 'TOTAL BUKU PIUTANG',
+          piutang: activeSummary?.total_gross_piutang || activeSummary?.total_piutang || 0,
+          mdr_fee: activeSummary?.total_mdr_fee || 0,
+          net_amount: activeSummary?.total_net_piutang || 0,
+          dibayar: activeSummary?.total_dibayar || 0,
+          sisa_piutang: activeSummary?.total_sisa_piutang || 0,
+        },
+      ];
+    } else if (activeTab === 'promos') {
+      columns = [
+        { key: 'nama_promo', label: 'Nama Promo / Voucher', align: 'left', width: 30 },
+        { key: 'jumlah_transaksi', label: 'Jumlah Transaksi', align: 'right', format: 'number', width: 16 },
+        { key: 'nilai', label: 'Total Diskon Promo', align: 'right', format: 'currency', width: 22 },
+        { key: 'penjualan_promo', label: 'Omzet Penjualan', align: 'right', format: 'currency', width: 22 },
+      ];
+      totals = [
+        {
+          label: 'TOTAL PROMO',
+          jumlah_transaksi: activeSummary?.total_promo || 0,
+          nilai: activeSummary?.total_nilai || 0,
+          penjualan_promo: activeSummary?.total_penjualan_promo || 0,
+        },
+      ];
+    }
+
+    return [
+      {
+        id: activeTab,
+        name: sheetName,
+        columns,
+        data,
+        totals,
+      },
+    ];
+  }, [activeTab, filteredItems, activeSummary]);
+
+  const previewKpis = useMemo(() => {
+    if (activeTab === 'by-product') {
+      return [
+        { label: 'Total Penjualan', value: activeSummary?.total_sales || 0, format: 'currency', color: '#10b981' },
+        { label: 'Total Item Terjual', value: activeSummary?.total_qty_sold || 0, format: 'number', color: '#38bdf8' },
+        { label: 'Total Diskon Produk', value: activeSummary?.total_discount || 0, format: 'currency', color: '#f59e0b' },
+        { label: 'Total Refund', value: activeSummary?.total_refund || 0, format: 'currency', color: '#f43f5e' },
+      ];
+    }
+    if (activeTab === 'payments') {
+      return [
+        { label: 'Total Pembayaran Masuk', value: activeSummary?.total_paid || 0, format: 'currency', color: '#10b981' },
+        { label: 'Sisa Piutang (AR)', value: activeSummary?.total_receivable || 0, format: 'currency', color: '#f59e0b' },
+        { label: 'Total Transaksi', value: activeSummary?.total_transaction || 0, format: 'number', color: '#38bdf8' },
+      ];
+    }
+    if (activeTab === 'transactions') {
+      return [
+        { label: 'Total Penjualan Bruto', value: activeSummary?.total_sales || 0, format: 'currency', color: '#10b981' },
+        { label: 'Laba Kotor Transaksi', value: activeSummary?.total_profit || 0, format: 'currency', color: '#38bdf8' },
+        { label: 'Total Diskon', value: activeSummary?.total_discount || 0, format: 'currency', color: '#f59e0b' },
+      ];
+    }
+    if (activeTab === 'customer-receivables') {
+      return [
+        { label: 'Total Sisa Piutang', value: activeSummary?.total_sisa_piutang || 0, format: 'currency', color: '#f43f5e' },
+        { label: 'Piutang Netto', value: activeSummary?.total_net_piutang || 0, format: 'currency', color: '#38bdf8' },
+        { label: 'Total Telah Dibayar', value: activeSummary?.total_dibayar || 0, format: 'currency', color: '#10b981' },
+        { label: 'Potongan Fee MDR', value: activeSummary?.total_mdr_fee || 0, format: 'currency', color: '#f59e0b' },
+      ];
+    }
+    return [
+      { label: 'Total Penjualan', value: activeSummary?.total_sales || activeSummary?.total_penjualan || activeSummary?.total_nilai || 0, format: 'currency', color: '#10b981' },
+      { label: 'Total Data', value: filteredItems.length, format: 'number', color: '#38bdf8' },
+    ];
+  }, [activeTab, activeSummary, filteredItems]);
+
   return (
     <div className="fade-in" style={{ paddingBottom: 60 }}>
       {/* Header */}
@@ -402,6 +648,23 @@ export default function SalesReport() {
               display: 'flex',
               alignItems: 'center',
               gap: 6,
+              borderColor: 'rgba(56, 189, 248, 0.4)',
+              color: '#38bdf8',
+              background: 'rgba(56, 189, 248, 0.08)',
+              fontWeight: 600,
+            }}
+            onClick={() => setPreviewModalOpen(true)}
+            title="Lihat Pratinjau Dokumen Laporan Resmi Sebelum Cetak / Ekspor"
+          >
+            <Eye size={15} /> Pratinjau Laporan
+          </button>
+
+          <button
+            className="btn btn-secondary btn-sm"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
               borderColor: 'rgba(16, 185, 129, 0.4)',
               color: '#34d399',
               background: 'rgba(16, 185, 129, 0.08)',
@@ -419,15 +682,15 @@ export default function SalesReport() {
               display: 'flex',
               alignItems: 'center',
               gap: 6,
-              borderColor: 'rgba(56, 189, 248, 0.4)',
-              color: '#38bdf8',
-              background: 'rgba(56, 189, 248, 0.08)',
+              borderColor: 'rgba(167, 139, 250, 0.4)',
+              color: '#a78bfa',
+              background: 'rgba(167, 139, 250, 0.08)',
               fontWeight: 600,
             }}
             onClick={handlePrintPdf}
             title="Unduh / Cetak Dokumen PDF Resmi"
           >
-            <Printer size={15} /> Export PDF / Cetak
+            <Printer size={15} /> Cetak / PDF
           </button>
         </div>
       </div>
@@ -1338,32 +1601,32 @@ export default function SalesReport() {
                           {item.order_row_no || idx + 1}
                         </td>
                         <td style={{ fontSize: 11 }}>{item.date}</td>
-                        <td>{item.created_by}</td>
+                        <td>{item.created_by || item.cashier || 'Kasir'}</td>
                         <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{item.order_number}</td>
-                        <td style={{ fontWeight: 600 }}>{item.customer || 'Walk-in Customer'}</td>
+                        <td style={{ fontWeight: 600 }}>{item.customer || item.customer_name || 'Walk-in Customer'}</td>
                         <td>{item.payment_method}</td>
                         <td style={{ fontSize: 11 }}>{item.deposit_account}</td>
-                        <td style={{ fontFamily: 'monospace' }}>{item.item_code}</td>
-                        <td style={{ fontWeight: 600 }}>{item.item_name}</td>
-                        <td>{item.category}</td>
-                        <td className="right">{rupiah(item.cost_price)}</td>
+                        <td style={{ fontFamily: 'monospace' }}>{item.item_code || item.product_code || '-'}</td>
+                        <td style={{ fontWeight: 600 }}>{item.item_name || item.product_name || 'Menu'}</td>
+                        <td>{item.category || item.product_category || 'Menu'}</td>
+                        <td className="right">{rupiah(item.cost_price ?? item.hpp ?? 0)}</td>
                         <td className="right" style={{ fontWeight: 700 }}>{item.qty}</td>
-                        <td>{item.unit}</td>
-                        <td className="right">{rupiah(item.unit_price)}</td>
-                        <td className="right" style={{ color: item.discount > 0 ? '#fbbf24' : 'inherit' }}>
-                          {rupiah(item.discount)}
+                        <td>{item.unit || 'porsi'}</td>
+                        <td className="right">{rupiah(item.unit_price ?? item.price ?? 0)}</td>
+                        <td className="right" style={{ color: (item.discount || item.discount_amount || 0) > 0 ? '#fbbf24' : 'inherit' }}>
+                          {rupiah(item.discount ?? item.discount_amount ?? 0)}
                         </td>
-                        <td className="right" style={{ fontWeight: 600 }}>{rupiah(item.subtotal)}</td>
+                        <td className="right" style={{ fontWeight: 600 }}>{rupiah(item.subtotal ?? item.total ?? 0)}</td>
                         <td className="right" style={{ fontWeight: 700, color: '#34d399' }}>
-                          {rupiah(item.penjualan)}
+                          {rupiah(item.penjualan ?? item.total_sales ?? item.total_sale ?? item.subtotal ?? 0)}
                         </td>
-                        <td className="right" style={{ color: item.piutang > 0 ? '#f43f5e' : 'inherit' }}>
-                          {rupiah(item.piutang)}
+                        <td className="right" style={{ color: (item.piutang ?? item.receivable ?? 0) > 0 ? '#f43f5e' : 'inherit' }}>
+                          {rupiah(item.piutang ?? item.receivable ?? 0)}
                         </td>
-                        <td className="right" style={{ fontWeight: 700, color: item.profit >= 0 ? '#a78bfa' : '#f43f5e' }}>
-                          {rupiah(item.profit)}
+                        <td className="right" style={{ fontWeight: 700, color: (item.profit ?? 0) >= 0 ? '#a78bfa' : '#f43f5e' }}>
+                          {rupiah(item.profit ?? 0)}
                         </td>
-                        <td>{item.cashier}</td>
+                        <td>{item.cashier || item.created_by || 'Kasir'}</td>
                       </tr>
                     ))
                   )}
@@ -1376,10 +1639,10 @@ export default function SalesReport() {
                     </td>
                     <td></td>
                     <td className="right" style={{ color: '#34d399' }}>
-                      {rupiah(activeSummary?.total_sales || 0)}
+                      {rupiah(activeSummary?.total_sales ?? activeSummary?.total_sale ?? 0)}
                     </td>
                     <td className="right" style={{ color: '#f43f5e' }}>
-                      {rupiah(activeSummary?.total_receivable || 0)}
+                      {rupiah(activeSummary?.total_receivable ?? activeSummary?.total_piutang ?? 0)}
                     </td>
                     <td className="right" style={{ color: '#a78bfa' }}>
                       {rupiah(activeSummary?.total_profit || 0)}
@@ -1425,24 +1688,24 @@ export default function SalesReport() {
                         <td style={{ color: 'var(--text-muted)', textAlign: 'center' }}>{idx + 1}</td>
                         <td style={{ fontSize: 11 }}>{item.date}</td>
                         <td style={{ fontFamily: 'monospace' }}>{item.customer_code || '-'}</td>
-                        <td style={{ fontWeight: 600 }}>{item.customer_name || 'Walk-in'}</td>
-                        <td style={{ fontFamily: 'monospace' }}>{item.order_number}</td>
-                        <td style={{ fontWeight: 600 }}>{item.item_name}</td>
+                        <td style={{ fontWeight: 600 }}>{item.customer_name || item.customer || 'Walk-in'}</td>
+                        <td style={{ fontFamily: 'monospace' }}>{item.order_number || item.transaction_no || '-'}</td>
+                        <td style={{ fontWeight: 600 }}>{item.item_name || item.product_name || 'Menu'}</td>
                         <td className="right" style={{ fontWeight: 700 }}>{item.qty}</td>
-                        <td>{item.unit}</td>
-                        <td className="right">{rupiah(item.unit_price)}</td>
-                        <td className="right" style={{ color: item.discount > 0 ? '#fbbf24' : 'inherit' }}>
-                          {rupiah(item.discount)}
+                        <td>{item.unit || 'Cup'}</td>
+                        <td className="right">{rupiah(item.unit_price ?? item.price ?? 0)}</td>
+                        <td className="right" style={{ color: (item.discount || item.discount_amount || 0) > 0 ? '#fbbf24' : 'inherit' }}>
+                          {rupiah(item.discount ?? item.discount_amount ?? 0)}
                         </td>
-                        <td className="right" style={{ fontWeight: 700 }}>{rupiah(item.subtotal)}</td>
+                        <td className="right" style={{ fontWeight: 700 }}>{rupiah(item.subtotal ?? item.total ?? item.total_sales ?? 0)}</td>
                         <td className="right" style={{ fontWeight: 700, color: '#34d399' }}>
-                          {rupiah(item.total_paid)}
+                          {rupiah(item.total_paid ?? item.paid ?? 0)}
                         </td>
                         <td>{item.payment_method}</td>
-                        <td className="right" style={{ color: item.receivable > 0 ? '#f43f5e' : 'inherit' }}>
-                          {rupiah(item.receivable)}
+                        <td className="right" style={{ color: (item.receivable ?? item.piutang ?? 0) > 0 ? '#f43f5e' : 'inherit' }}>
+                          {rupiah(item.receivable ?? item.piutang ?? 0)}
                         </td>
-                        <td>{item.cashier}</td>
+                        <td>{item.cashier || 'Kasir'}</td>
                       </tr>
                     ))
                   )}
@@ -1450,10 +1713,10 @@ export default function SalesReport() {
                 <tfoot>
                   <tr style={{ fontWeight: 800, background: 'rgba(255, 255, 255, 0.04)', borderTop: '2px solid var(--border)' }}>
                     <td colSpan={10}>Total Penjualan Semua Customer</td>
-                    <td className="right">{rupiah(activeSummary?.total_sales || 0)}</td>
+                    <td className="right">{rupiah(activeSummary?.total_sales ?? activeSummary?.total_amount ?? 0)}</td>
                     <td className="right" style={{ color: '#34d399' }}>{rupiah(activeSummary?.total_paid || 0)}</td>
                     <td></td>
-                    <td className="right" style={{ color: '#f43f5e' }}>{rupiah(activeSummary?.total_receivable || 0)}</td>
+                    <td className="right" style={{ color: '#f43f5e' }}>{rupiah(activeSummary?.total_receivable ?? activeSummary?.total_piutang ?? 0)}</td>
                     <td></td>
                   </tr>
                 </tfoot>
@@ -2269,6 +2532,21 @@ export default function SalesReport() {
           </table>
         </div>
       </div>
+
+      {/* Interactive Publication Report Preview Modal */}
+      <ReportPreviewModal
+        isOpen={previewModalOpen}
+        onClose={() => setPreviewModalOpen(false)}
+        title={`Pratinjau ${currentTabInfo?.label || 'Laporan Penjualan'}`}
+        reportTitle={currentTabInfo?.title || 'LAPORAN PENJUALAN'}
+        businessName={businessName}
+        outletName={outletName}
+        periodText={periodText}
+        kpis={previewKpis}
+        sheets={previewSheets}
+        onExportExcel={handleExportExcel}
+        onPrint={handlePrintPdf}
+      />
     </div>
   );
 }

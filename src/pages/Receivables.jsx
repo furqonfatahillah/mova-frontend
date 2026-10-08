@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Wallet, PlusCircle, Search, RefreshCw, Eye,
   Printer, FileSpreadsheet, MessageCircle, AlertCircle,
@@ -7,7 +8,8 @@ import {
   Trash2, Edit3, ArrowRight, ShieldAlert, Receipt, Send, Check,
   Users, CheckSquare, Square, Layers, Sparkles, History,
   Landmark, Building2, Building, QrCode, ShoppingCart, ArrowDownToLine,
-  CheckCheck, Info, Percent, Settings2, Sliders, Tag, UserPlus
+  CheckCheck, Info, Percent, Settings2, Sliders, Tag, UserPlus,
+  Utensils, ExternalLink
 } from 'lucide-react';
 import api from '../api/client';
 import {
@@ -18,6 +20,7 @@ import { getTodayStr } from '../utils/date';
 import { useOutlet } from '../context/OutletContext';
 import { exportReceivablesToExcel, exportReceivablePaymentsToExcel } from '../utils/exportReport';
 import { printElement } from '../utils/print';
+import ReportPreviewModal from '../components/ReportPreviewModal';
 import toast from 'react-hot-toast';
 import ImportMasterModal from '../components/ImportMasterModal';
 import { confirmDialog } from '../utils/swal';
@@ -30,10 +33,16 @@ export default function Receivables() {
     canSwitchOutlet,
     currentBusiness,
     currentUser,
+    dateRange,
+    dateFrom,
+    dateTo,
   } = useOutlet();
 
   const businessName = currentBusiness?.name || currentUser?.business?.name || 'MOVA POS F&B Management';
   const outletName = (activeOutlet && activeOutletId !== 'ALL' && activeOutletId !== 'all') ? activeOutlet.name : 'Semua Cabang (Konsolidasi)';
+
+  const effectiveDateFrom = dateFrom || dateRange?.from || '';
+  const effectiveDateTo = dateTo || dateRange?.to || '';
 
   const targetOutlet = useMemo(() => {
     if (!canSwitchOutlet) {
@@ -45,11 +54,16 @@ export default function Receivables() {
     return undefined;
   }, [activeOutletId, outlets, canSwitchOutlet, currentUser?.outlet_id]);
 
-  // Tab State: 'CUSTOMERS' | 'RECEIVABLES' | 'PAYMENTS' | 'ECOMMERCE' | 'AR_MERCHANT'
+  const navigate = useNavigate();
+
+  // Tab State: 'CUSTOMERS' | 'RECEIVABLES' | 'OPEN_BILLS' | 'PAYMENTS' | 'ECOMMERCE' | 'AR_MERCHANT'
   const [activeTab, setActiveTab] = useState('CUSTOMERS');
 
   // Main Data States
   const [items, setItems] = useState([]);
+  const [openBills, setOpenBills] = useState([]);
+  const [selectedOpenBill, setSelectedOpenBill] = useState(null);
+  const [openBillModalOpen, setOpenBillModalOpen] = useState(false);
   const [customerSummary, setCustomerSummary] = useState([]);
   const [masterCustomers, setMasterCustomers] = useState([]);
   const [stats, setStats] = useState({
@@ -63,9 +77,13 @@ export default function Receivables() {
     count_partial: 0,
     count_paid: 0,
     total_customers: 0,
+    open_bills_total: 0,
+    open_bills_count: 0,
+    grand_total_remaining: 0,
   });
   const [loading, setLoading] = useState(true);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
@@ -79,8 +97,6 @@ export default function Receivables() {
   const [expandedDates, setExpandedDates] = useState([]);
   const [expandedShifts, setExpandedShifts] = useState([]);
   const [ecomChannelFilter, setEcomChannelFilter] = useState('ALL');
-  const [ecomDateFrom, setEcomDateFrom] = useState('');
-  const [ecomDateTo, setEcomDateTo] = useState('');
   const [ecomShiftFilterByDate, setEcomShiftFilterByDate] = useState({});
 
   // Single Item Net Editing State
@@ -266,12 +282,28 @@ export default function Receivables() {
   });
   const [submitting, setSubmitting] = useState(false);
 
+  const handleResetFilters = () => {
+    setStatusFilter('ALL');
+    setDueFilter('ALL');
+    setSearchQuery('');
+    setEcomChannelFilter('ALL');
+    setMerchantFilter('ALL');
+  };
+
+  const hasActiveFilters = Boolean(
+    statusFilter !== 'ALL' ||
+    dueFilter !== 'ALL' ||
+    searchQuery.trim() ||
+    (activeTab === 'ECOMMERCE' && ecomChannelFilter !== 'ALL') ||
+    (activeTab === 'AR_MERCHANT' && merchantFilter !== 'ALL')
+  );
+
   useEffect(() => {
     fetchData();
     fetchMasterCustomers();
     fetchBankAccounts();
     fetchEcommerceData();
-  }, [targetOutlet, statusFilter, dueFilter]);
+  }, [targetOutlet, statusFilter, dueFilter, effectiveDateFrom, effectiveDateTo]);
 
   useEffect(() => {
     if (activeTab === 'AR_MERCHANT') {
@@ -280,23 +312,27 @@ export default function Receivables() {
     if (activeTab === 'ECOMMERCE') {
       fetchEcommerceData();
     }
-  }, [activeTab, targetOutlet, ecomChannelFilter, ecomDateFrom, ecomDateTo, searchQuery]);
+  }, [activeTab, targetOutlet, ecomChannelFilter, effectiveDateFrom, effectiveDateTo, searchQuery]);
 
   async function fetchData() {
     setLoading(true);
     try {
       const params = {
         outlet_id: targetOutlet,
+        from: effectiveDateFrom || undefined,
+        to: effectiveDateTo || undefined,
         status: statusFilter !== 'ALL' ? statusFilter : undefined,
         due_filter: dueFilter !== 'ALL' ? dueFilter : undefined,
+        q: searchQuery.trim() || undefined,
       };
 
       const [resAll, resCust] = await Promise.all([
         api.get('/receivables', { params }),
-        api.get('/receivables/customers', { params: { outlet_id: targetOutlet } }),
+        api.get('/receivables/customers', { params }),
       ]);
 
       setItems(resAll.data?.data || []);
+      setOpenBills(resAll.data?.open_bills || []);
       setStats(resAll.data?.stats || {});
       setCustomerSummary(resCust.data?.data || []);
     } catch (err) {
@@ -306,6 +342,20 @@ export default function Receivables() {
       setLoading(false);
     }
   }
+
+  // Filtered Open Bills (Piutang Open Bill / Meja)
+  const filteredOpenBills = useMemo(() => {
+    if (!searchQuery || !searchQuery.trim()) return openBills;
+    const q = searchQuery.toLowerCase().trim();
+    return openBills.filter(ob =>
+      (ob.order_number || '').toLowerCase().includes(q) ||
+      (ob.customer_name || '').toLowerCase().includes(q) ||
+      (ob.table_number || '').toString().toLowerCase().includes(q) ||
+      (ob.notes || '').toLowerCase().includes(q) ||
+      (ob.cashier_name || '').toLowerCase().includes(q) ||
+      (ob.items || []).some(it => (it.menu_name || '').toLowerCase().includes(q))
+    );
+  }, [openBills, searchQuery]);
 
   async function fetchMasterCustomers() {
     try {
@@ -328,7 +378,12 @@ export default function Receivables() {
   async function fetchMerchantData() {
     setMerchantLoading(true);
     try {
-      const params = { outlet_id: targetOutlet };
+      const params = {
+        outlet_id: targetOutlet,
+        from: effectiveDateFrom || undefined,
+        to: effectiveDateTo || undefined,
+        q: searchQuery.trim() || undefined,
+      };
       const res = await api.get('/receivables/merchants', { params });
       setMerchantChannels(res.data?.data || []);
       setMerchantAllRows(res.data?.all_rows || []);
@@ -347,8 +402,8 @@ export default function Receivables() {
       const params = {
         outlet_id: targetOutlet,
         channel: ecomChannelFilter !== 'ALL' ? ecomChannelFilter : undefined,
-        from: ecomDateFrom || undefined,
-        to: ecomDateTo || undefined,
+        from: effectiveDateFrom || undefined,
+        to: effectiveDateTo || undefined,
         q: searchQuery.trim() || undefined,
       };
       const res = await api.get('/receivables/ecommerce-grouped', { params });
@@ -1117,6 +1172,106 @@ export default function Receivables() {
     );
   }
 
+  const previewSheets = useMemo(() => {
+    let sheetName = 'Buku Piutang Kasbon';
+    let columns = [];
+    let totals = [];
+    let data = filteredItems;
+
+    if (activeTab === 'PAYMENTS') {
+      sheetName = 'Riwayat Pembayaran Piutang';
+      columns = [
+        { key: 'payment_no', label: 'No. Bukti Bayar', align: 'center', width: 16 },
+        { key: 'receivable_no', label: 'No. Kasbon', align: 'center', width: 16 },
+        { key: 'payment_date', label: 'Tgl Bayar', align: 'center', width: 14 },
+        { key: 'customer_name', label: 'Nama Pelanggan', align: 'left', width: 24 },
+        { key: 'payment_method', label: 'Metode Bayar', align: 'center', width: 16 },
+        { key: 'amount', label: 'Nominal Pembayaran', align: 'right', format: 'currency', width: 20 },
+        { key: 'receiver_name', label: 'Diterima Oleh', align: 'left', width: 18 },
+      ];
+      totals = [
+        {
+          label: 'TOTAL PEMBAYARAN KASBON',
+          amount: (filteredPaymentLogs || []).reduce((s, p) => s + (Number(p.amount) || 0), 0),
+        },
+      ];
+      data = (filteredPaymentLogs || []).map(p => ({
+        ...p,
+        amount: Number(p.amount) || 0,
+      }));
+    } else if (activeTab === 'AR_MERCHANT') {
+      sheetName = 'Buku Piutang AR Merchant (QRIS)';
+      columns = [
+        { key: 'transaction_no', label: 'No Transaksi / Order', align: 'center', width: 18 },
+        { key: 'date', label: 'Tgl Transaksi', align: 'center', width: 14 },
+        { key: 'channel_label', label: 'Merchant / Saluran', align: 'left', width: 20 },
+        { key: 'gross_amount', label: 'Nilai Bruto (Rp)', align: 'right', format: 'currency', width: 18 },
+        { key: 'mdr_fee', label: 'MDR / Fee (Rp)', align: 'right', format: 'currency', width: 16 },
+        { key: 'net_amount', label: 'Nilai Netto (Rp)', align: 'right', format: 'currency', width: 18 },
+        { key: 'settlement_status', label: 'Status Pencairan', align: 'center', width: 16 },
+      ];
+      totals = [
+        {
+          label: 'TOTAL PIUTANG MERCHANT',
+          gross_amount: filteredMerchantRows.reduce((s, r) => s + (Number(r.gross_amount || r.total_amount) || 0), 0),
+          mdr_fee: filteredMerchantRows.reduce((s, r) => s + (Number(r.mdr_fee) || 0), 0),
+          net_amount: filteredMerchantRows.reduce((s, r) => s + (Number(r.net_amount || r.total_amount) || 0), 0),
+        },
+      ];
+      data = filteredMerchantRows.map(r => ({
+        ...r,
+        gross_amount: Number(r.gross_amount || r.total_amount) || 0,
+        mdr_fee: Number(r.mdr_fee) || 0,
+        net_amount: Number(r.net_amount || r.total_amount) || 0,
+      }));
+    } else {
+      columns = [
+        { key: 'customer_name', label: 'Nama Pelanggan / Kasbon', align: 'left', width: 26 },
+        { key: 'customer_phone', label: 'No. Telepon', align: 'center', width: 16 },
+        { key: 'receivable_no', label: 'No. Nota Kasbon', align: 'center', width: 18 },
+        { key: 'issue_date', label: 'Tgl Pinjam', align: 'center', width: 14 },
+        { key: 'due_date', label: 'Jatuh Tempo', align: 'center', width: 14 },
+        { key: 'total_amount', label: 'Total Kasbon', align: 'right', format: 'currency', width: 18 },
+        { key: 'paid_amount', label: 'Telah Dibayar', align: 'right', format: 'currency', width: 18 },
+        { key: 'remaining_amount', label: 'Sisa Piutang', align: 'right', format: 'currency', width: 20 },
+        { key: 'status_label', label: 'Status Pelunasan', align: 'center', width: 16 },
+      ];
+      totals = [
+        {
+          label: 'TOTAL PIUTANG PELANGGAN',
+          total_amount: stats.total_receivables,
+          paid_amount: stats.total_paid,
+          remaining_amount: stats.total_remaining,
+        },
+      ];
+      data = filteredItems.map(it => ({
+        ...it,
+        total_amount: Number(it.total_amount) || 0,
+        paid_amount: Number(it.paid_amount) || 0,
+        remaining_amount: Number(it.remaining_amount) || 0,
+      }));
+    }
+
+    return [
+      {
+        id: activeTab,
+        name: sheetName,
+        columns,
+        data,
+        totals,
+      },
+    ];
+  }, [activeTab, filteredItems, filteredPaymentLogs, filteredMerchantRows, stats]);
+
+  const previewKpis = useMemo(() => {
+    return [
+      { label: 'Total Sisa Piutang Aktif', value: stats.total_remaining || 0, format: 'currency', color: '#f43f5e' },
+      { label: 'Total Telah Diterima', value: stats.total_paid || 0, format: 'currency', color: '#10b981' },
+      { label: 'Piutang Jatuh Tempo', value: stats.total_overdue || 0, format: 'currency', color: '#f59e0b' },
+      { label: 'Total Kasbon Diterbitkan', value: stats.total_receivables || 0, format: 'currency', color: '#38bdf8' },
+    ];
+  }, [stats]);
+
   if (loading && items.length === 0 && customerSummary.length === 0) return <LoadingState />;
 
   return (
@@ -1140,6 +1295,23 @@ export default function Receivables() {
 
           <button
             className="btn btn-secondary btn-sm"
+            onClick={() => setPreviewModalOpen(true)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              color: '#38bdf8',
+              borderColor: 'rgba(56, 189, 248, 0.4)',
+              background: 'rgba(56, 189, 248, 0.08)',
+              fontWeight: 600,
+            }}
+            title="Lihat Pratinjau Dokumen Laporan Piutang Resmi"
+          >
+            <Eye size={14} /> Pratinjau Laporan
+          </button>
+
+          <button
+            className="btn btn-secondary btn-sm"
             onClick={handleExportExcel}
             style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#10b981' }}
             title="Unduh format spreadsheet Excel (.xlsx)"
@@ -1150,10 +1322,10 @@ export default function Receivables() {
           <button
             className="btn btn-secondary btn-sm"
             onClick={handlePrintReceivablesReport}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#38bdf8' }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#a78bfa' }}
             title="Unduh / Cetak Dokumen PDF Resmi Laporan Piutang Customer"
           >
-            <Printer size={14} /> Export PDF
+            <Printer size={14} /> Export PDF / Cetak
           </button>
 
           <button
@@ -1177,10 +1349,16 @@ export default function Receivables() {
       {/* KPI Stats Cards */}
       <div className="grid-4 mb-6">
         <MiniCard
-          label="Total Sisa Kasbon Berjalan"
-          value={rupiah(stats.total_remaining)}
-          sub={`Dari total ${rupiah(stats.total_receivables)} tagihan kasbon`}
+          label="Total Piutang Berjalan (Kasbon + Open Bill)"
+          value={rupiah(stats.grand_total_remaining !== undefined && stats.grand_total_remaining > 0 ? stats.grand_total_remaining : ((stats.total_remaining || 0) + (stats.open_bills_total || 0)))}
+          sub={`Kasbon ${rupiah(stats.total_remaining)} + Open Bill ${rupiah(stats.open_bills_total || 0)}`}
           icon={<Wallet size={20} color="var(--primary)" />}
+        />
+        <MiniCard
+          label="Piutang Open Bill (Tagihan Meja)"
+          value={rupiah(stats.open_bills_total || 0)}
+          sub={`${stats.open_bills_count || openBills.length} meja / pesanan aktif di kasir`}
+          icon={<Clock size={20} color="#f59e0b" />}
         />
         <MiniCard
           label="Kasbon Lewat Jatuh Tempo"
@@ -1194,20 +1372,15 @@ export default function Receivables() {
           sub={`Total akumulasi lunas: ${rupiah(stats.total_paid)}`}
           icon={<CheckCircle2 size={20} color="var(--ok)" />}
         />
-        <MiniCard
-          label="Total Pelanggan Berhutang"
-          value={`${stats.total_customers || 0} Pelanggan`}
-          sub={`${stats.count_unpaid} Belum Bayar · ${stats.count_partial} Cicil · ${stats.count_paid} Lunas`}
-          icon={<Users size={20} color="#60a5fa" />}
-        />
       </div>
 
-      {/* Mode View Switcher & Search Bar */}
-      <div className="card mb-5" style={{ padding: '14px 18px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+      {/* Mode View Switcher & Universal Filter Bar */}
+      <div className="card mb-5" style={{ padding: '16px 20px', borderRadius: '14px', border: '1px solid var(--border)' }}>
+        {/* Row 1: Tabs + Search Box */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px', marginBottom: '14px' }}>
           
           {/* Tabs */}
-          <div style={{ display: 'inline-flex', background: 'rgba(255, 255, 255, 0.06)', padding: '4px', borderRadius: '10px', gap: '4px' }}>
+          <div style={{ display: 'inline-flex', background: 'rgba(255, 255, 255, 0.06)', padding: '4px', borderRadius: '10px', gap: '4px', flexWrap: 'wrap' }}>
             <button
               onClick={() => setActiveTab('CUSTOMERS')}
               style={{
@@ -1225,7 +1398,7 @@ export default function Receivables() {
                 transition: 'all 0.2s ease',
               }}
             >
-              <Users size={15} /> Ringkasan Per Pelanggan ({customerSummary.filter(c => c.total_remaining > 0).length})
+              <Users size={15} /> Ringkasan Per Pelanggan ({customerSummary.filter(c => (c.total_remaining > 0 || c.open_bills_total > 0)).length})
             </button>
 
             <button
@@ -1249,7 +1422,7 @@ export default function Receivables() {
             </button>
 
             <button
-              onClick={() => setActiveTab('ECOMMERCE')}
+              onClick={() => setActiveTab('OPEN_BILLS')}
               style={{
                 padding: '7px 16px',
                 borderRadius: '7px',
@@ -1257,48 +1430,18 @@ export default function Receivables() {
                 fontSize: '13px',
                 fontWeight: 700,
                 cursor: 'pointer',
-                background: activeTab === 'ECOMMERCE' ? 'linear-gradient(135deg, #f97316, #ea580c)' : 'transparent',
-                color: activeTab === 'ECOMMERCE' ? '#ffffff' : 'var(--text-secondary)',
+                background: activeTab === 'OPEN_BILLS' ? 'var(--primary)' : 'transparent',
+                color: activeTab === 'OPEN_BILLS' ? '#ffffff' : 'var(--text-secondary)',
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '8px',
                 transition: 'all 0.2s ease',
               }}
             >
-              <ShoppingCart size={15} /> Rekonsiliasi E-Commerce ({ecommerceSummary.total_orders || 0})
-            </button>
-
-            <button
-              onClick={() => setActiveTab('AR_MERCHANT')}
-              style={{
-                padding: '7px 16px',
-                borderRadius: '7px',
-                border: 'none',
-                fontSize: '13px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                background: activeTab === 'AR_MERCHANT' ? 'linear-gradient(135deg, #f59e0b, #a855f7)' : 'transparent',
-                color: activeTab === 'AR_MERCHANT' ? '#ffffff' : 'var(--text-secondary)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                transition: 'all 0.2s ease',
-                position: 'relative',
-              }}
-            >
-              <Landmark size={15} /> AR Merchant QRIS ({merchantUnsettledCount > 0 ? `${merchantUnsettledCount} Belum Cair` : 'QRIS'})
-              {merchantUnsettledCount > 0 && (
-                <span style={{
-                  background: '#ef4444',
-                  color: '#fff',
-                  fontSize: '10px',
-                  fontWeight: 800,
-                  padding: '1px 6px',
-                  borderRadius: '10px',
-                  minWidth: '18px',
-                  textAlign: 'center',
-                }}>
-                  {merchantUnsettledCount}
+              <Clock size={15} /> Tagihan Open Bill ({openBills.length})
+              {stats.open_bills_total > 0 && (
+                <span style={{ fontSize: '11px', background: 'rgba(245, 158, 11, 0.2)', color: '#facc15', padding: '2px 7px', borderRadius: '4px', fontWeight: 800 }}>
+                  {rupiah(stats.open_bills_total)}
                 </span>
               )}
             </button>
@@ -1324,47 +1467,97 @@ export default function Receivables() {
             </button>
           </div>
 
-          {/* Search & Filters */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', flex: 1, justifyContent: 'flex-end' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0, 0, 0, 0.2)', padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--border)', minWidth: '240px' }}>
-              <Search size={15} style={{ color: 'var(--text-secondary)' }} />
-              <input
-                type="text"
-                className="form-control"
-                placeholder="Cari nama pelanggan, HP, atau nota..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                style={{ border: 'none', background: 'transparent', padding: 0, fontSize: '13px', color: '#ffffff' }}
-              />
-            </div>
+        </div>
 
-            {activeTab === 'RECEIVABLES' && (
+        {/* Row 2: Search & Status Filters (Follows Navbar Global Date Filter) */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px',
+          paddingTop: '12px',
+          borderTop: '1px solid rgba(255, 255, 255, 0.07)'
+        }}>
+          {/* Search Box */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0, 0, 0, 0.25)', padding: '6px 14px', borderRadius: '10px', border: '1px solid var(--border)', minWidth: '260px', flex: '1 1 260px', maxWidth: '400px' }}>
+            <Search size={15} style={{ color: 'var(--text-secondary)' }} />
+            <input
+              type="text"
+              className="form-control"
+              placeholder="Cari pelanggan, nota, HP, channel..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              style={{ border: 'none', background: 'transparent', padding: 0, fontSize: '13px', color: '#ffffff', width: '100%' }}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}
+                title="Hapus pencarian"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+
+          {/* Right: Status Filters & Reset */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            {(activeTab === 'CUSTOMERS' || activeTab === 'RECEIVABLES') && (
               <>
-                <select
-                  className="form-control form-control-sm"
-                  value={statusFilter}
-                  onChange={e => setStatusFilter(e.target.value)}
-                  style={{ width: 'auto', fontSize: '12px' }}
-                >
-                  <option value="ALL">Semua Status</option>
-                  <option value="UNPAID">Belum Dibayar (UNPAID)</option>
-                  <option value="PARTIAL">Cicilan (PARTIAL)</option>
-                  <option value="PAID">Sudah Lunas (PAID)</option>
-                  <option value="OVERDUE">Jatuh Tempo (OVERDUE)</option>
-                </select>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>Status:</span>
+                  <select
+                    className="form-control form-control-sm"
+                    value={statusFilter}
+                    onChange={e => setStatusFilter(e.target.value)}
+                    style={{ width: 'auto', fontSize: '12px', padding: '4px 8px' }}
+                  >
+                    <option value="ALL">Semua Status</option>
+                    <option value="UNPAID">Belum Lunas (UNPAID)</option>
+                    <option value="PARTIAL">Cicilan (PARTIAL)</option>
+                    <option value="PAID">Sudah Lunas (PAID)</option>
+                    <option value="OVERDUE">Jatuh Tempo (OVERDUE)</option>
+                  </select>
+                </div>
 
-                <select
-                  className="form-control form-control-sm"
-                  value={dueFilter}
-                  onChange={e => setDueFilter(e.target.value)}
-                  style={{ width: 'auto', fontSize: '12px' }}
-                >
-                  <option value="ALL">Semua Periode</option>
-                  <option value="OVERDUE">Sudah Lewat Jatuh Tempo</option>
-                  <option value="TODAY">Jatuh Tempo Hari Ini</option>
-                  <option value="THIS_WEEK">7 Hari ke Depan</option>
-                </select>
+                {activeTab === 'RECEIVABLES' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>Jatuh Tempo:</span>
+                    <select
+                      className="form-control form-control-sm"
+                      value={dueFilter}
+                      onChange={e => setDueFilter(e.target.value)}
+                      style={{ width: 'auto', fontSize: '12px', padding: '4px 8px' }}
+                    >
+                      <option value="ALL">Semua Kasbon</option>
+                      <option value="OVERDUE">Sudah Lewat Jatuh Tempo</option>
+                      <option value="TODAY">Jatuh Tempo Hari Ini</option>
+                      <option value="THIS_WEEK">7 Hari ke Depan</option>
+                      <option value="THIS_MONTH">Bulan Ini</option>
+                    </select>
+                  </div>
+                )}
               </>
+            )}
+
+            {hasActiveFilters && (
+              <button
+                onClick={handleResetFilters}
+                className="btn btn-secondary btn-sm"
+                style={{
+                  padding: '4px 10px',
+                  fontSize: '11.5px',
+                  gap: '4px',
+                  color: '#f87171',
+                  borderColor: 'rgba(239, 68, 68, 0.3)',
+                  background: 'rgba(239, 68, 68, 0.08)',
+                  cursor: 'pointer'
+                }}
+                title="Reset semua filter ke kondisi awal"
+              >
+                <X size={12} /> Reset Filter
+              </button>
             )}
           </div>
         </div>
@@ -1383,7 +1576,10 @@ export default function Receivables() {
             </div>
           ) : (
             filteredCustomerSummary.map((cust, idx) => {
-              const hasDebt = cust.total_remaining > 0;
+              const hasKasbonDebt = cust.total_remaining > 0;
+              const hasOpenBill = (cust.open_bills_total || 0) > 0;
+              const hasAnyDebt = hasKasbonDebt || hasOpenBill;
+              const grandCustomerDebt = cust.total_remaining_with_open_bills || (cust.total_remaining + (cust.open_bills_total || 0));
               const isExpanded = expandedCustomerKey === cust.group_key;
 
               return (
@@ -1391,8 +1587,8 @@ export default function Receivables() {
                   key={cust.group_key || idx}
                   className="card fade-in"
                   style={{
-                    border: cust.has_overdue ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid var(--border)',
-                    background: cust.has_overdue ? 'rgba(239, 68, 68, 0.03)' : undefined,
+                    border: cust.has_overdue ? '1px solid rgba(239, 68, 68, 0.4)' : (hasOpenBill ? '1px solid rgba(245, 158, 11, 0.35)' : '1px solid var(--border)'),
+                    background: cust.has_overdue ? 'rgba(239, 68, 68, 0.03)' : (hasOpenBill ? 'rgba(245, 158, 11, 0.02)' : undefined),
                     padding: '18px 20px',
                     borderRadius: '14px',
                   }}
@@ -1404,12 +1600,12 @@ export default function Receivables() {
                         width: '46px',
                         height: '46px',
                         borderRadius: '12px',
-                        background: hasDebt ? 'rgba(245, 158, 11, 0.15)' : 'rgba(34, 197, 94, 0.15)',
-                        border: hasDebt ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid rgba(34, 197, 94, 0.3)',
+                        background: hasAnyDebt ? 'rgba(245, 158, 11, 0.15)' : 'rgba(34, 197, 94, 0.15)',
+                        border: hasAnyDebt ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid rgba(34, 197, 94, 0.3)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        color: hasDebt ? '#f59e0b' : '#22c55e',
+                        color: hasAnyDebt ? '#f59e0b' : '#22c55e',
                         fontWeight: 800,
                         fontSize: '18px'
                       }}>
@@ -1417,10 +1613,26 @@ export default function Receivables() {
                       </div>
 
                       <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                           <span style={{ fontWeight: 800, color: '#ffffff', fontSize: '16px' }}>
                             {cust.customer_name}
                           </span>
+                          {hasOpenBill && (
+                            <span style={{
+                              fontSize: '10.5px',
+                              fontWeight: 700,
+                              color: '#facc15',
+                              background: 'rgba(234, 179, 8, 0.15)',
+                              border: '1px solid rgba(234, 179, 8, 0.35)',
+                              padding: '2px 7px',
+                              borderRadius: '4px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}>
+                              <Clock size={11} /> Open Bill: {rupiah(cust.open_bills_total)} ({cust.open_bills_count || cust.open_bills?.length} Meja)
+                            </span>
+                          )}
                           {cust.has_overdue && (
                             <span style={{
                               fontSize: '10.5px',
@@ -1435,7 +1647,7 @@ export default function Receivables() {
                           )}
                         </div>
 
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '3px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '3px', fontSize: '12px', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
                           {cust.customer_phone ? (
                             <span style={{ color: '#38bdf8', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                               <Phone size={12} /> {cust.customer_phone}
@@ -1443,8 +1655,9 @@ export default function Receivables() {
                           ) : (
                             <span>No HP: —</span>
                           )}
-                          <span>• {cust.unpaid_count} Nota Belum Lunas</span>
-                          <span>• Kasbon Terakhir: {cust.latest_issue_date}</span>
+                          <span>• {cust.unpaid_count} Nota Kasbon Belum Lunas</span>
+                          {hasOpenBill && <span style={{ color: '#fbbf24' }}>• {cust.open_bills_count || cust.open_bills?.length} Tagihan Open Bill</span>}
+                          {cust.latest_issue_date && <span>• Terakhir: {cust.latest_issue_date}</span>}
                         </div>
                       </div>
                     </div>
@@ -1453,28 +1666,39 @@ export default function Receivables() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
                       <div style={{ textAlign: 'right' }}>
                         <div style={{ fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                          Total Sisa Kasbon
+                          Total Piutang Berjalan
                         </div>
                         <div style={{
                           fontWeight: 800,
                           fontSize: '18px',
-                          color: hasDebt ? (cust.has_overdue ? '#f87171' : '#fbbf24') : 'var(--ok)'
+                          color: hasAnyDebt ? (cust.has_overdue ? '#f87171' : '#fbbf24') : 'var(--ok)'
                         }}>
-                          {rupiah(cust.total_remaining)}
+                          {rupiah(grandCustomerDebt)}
                         </div>
                         <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                          Dari total {rupiah(cust.total_kasbon)}
+                          {hasOpenBill ? `Kasbon: ${rupiah(cust.total_remaining)} + Open Bill: ${rupiah(cust.open_bills_total)}` : `Dari total kasbon ${rupiah(cust.total_kasbon)}`}
                         </div>
                       </div>
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {hasDebt && (
+                        {hasKasbonDebt && (
                           <button
                             className="btn btn-primary btn-sm"
                             onClick={() => openBulkPayModal(cust)}
                             style={{ fontWeight: 700, padding: '8px 14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                           >
-                            <CreditCard size={14} /> Bayar Sekaligus
+                            <CreditCard size={14} /> Bayar Kasbon
+                          </button>
+                        )}
+
+                        {hasOpenBill && (
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => { setActiveTab('OPEN_BILLS'); setSearchQuery(cust.customer_name); }}
+                            style={{ fontWeight: 700, padding: '8px 12px', display: 'inline-flex', alignItems: 'center', gap: '5px', color: '#f59e0b', borderColor: 'rgba(245, 158, 11, 0.4)' }}
+                            title="Buka Tagihan Open Bill Pelanggan"
+                          >
+                            <Clock size={14} /> Open Bill
                           </button>
                         )}
 
@@ -1492,7 +1716,7 @@ export default function Receivables() {
                         <button
                           className="btn btn-ghost btn-sm btn-icon"
                           onClick={() => setExpandedCustomerKey(isExpanded ? null : cust.group_key)}
-                          title="Lihat Rincian Nota Kasbon"
+                          title="Lihat Rincian Nota Kasbon & Open Bill"
                         >
                           <ChevronRight size={16} style={{ transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }} />
                         </button>
@@ -1503,6 +1727,61 @@ export default function Receivables() {
                   {/* Expanded Detail Rows */}
                   {isExpanded && (
                     <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                      {/* Active Open Bills Section if any */}
+                      {cust.open_bills && cust.open_bills.length > 0 && (
+                        <div style={{ marginBottom: '16px', background: 'rgba(245, 158, 11, 0.06)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: '10px', padding: '12px 14px' }}>
+                          <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#f59e0b', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <Clock size={14} /> Tagihan Open Bill Aktif ({cust.customer_name}) - Total {rupiah(cust.open_bills_total)}:
+                            </div>
+                            <button
+                              className="btn btn-primary btn-sm"
+                              onClick={() => navigate('/pos')}
+                              style={{ padding: '3px 8px', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                            >
+                              <ExternalLink size={11} /> Buka POS Kasir
+                            </button>
+                          </div>
+                          <div className="table-wrap">
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                              <thead>
+                                <tr style={{ background: 'rgba(0,0,0,0.25)', color: 'var(--text-secondary)' }}>
+                                  <th style={{ padding: '6px 10px' }}>No. Order</th>
+                                  <th style={{ padding: '6px 10px' }}>Meja / Tipe</th>
+                                  <th style={{ padding: '6px 10px' }}>Waktu Order</th>
+                                  <th style={{ padding: '6px 10px' }}>Item Menu</th>
+                                  <th style={{ padding: '6px 10px', textAlign: 'right' }}>Total Tagihan</th>
+                                  <th style={{ padding: '6px 10px', textAlign: 'center' }}>Status</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {cust.open_bills.map((ob, obIdx) => (
+                                  <tr key={ob.order_number || obIdx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                                    <td style={{ padding: '6px 10px', fontWeight: 700, color: '#ffffff' }}>{ob.order_number}</td>
+                                    <td style={{ padding: '6px 10px' }}>
+                                      <span className="pill pill-primary mono" style={{ fontSize: '10px' }}>
+                                        {ob.table_number ? `Meja ${ob.table_number}` : (ob.order_type || 'Take Away')}
+                                      </span>
+                                    </td>
+                                    <td style={{ padding: '6px 10px' }}>{ob.created_at || ob.issue_date}</td>
+                                    <td style={{ padding: '6px 10px' }}>
+                                      {(ob.items || []).map(i => `${i.qty}x ${i.menu_name}`).join(', ') || `${ob.total_items} items`}
+                                    </td>
+                                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 800, color: '#fbbf24' }}>
+                                      {rupiah(ob.total_amount)}
+                                    </td>
+                                    <td style={{ padding: '6px 10px', textAlign: 'center' }}>
+                                      <span className="pill pill-warn mono" style={{ fontSize: '10px' }}>OPEN BILL</span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Kasbon Invoices Section */}
                       <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--primary)', marginBottom: '10px' }}>
                         Rincian Nota Kasbon ({cust.customer_name}):
                       </div>
@@ -1948,6 +2227,153 @@ export default function Receivables() {
       )}
 
       {/* ========================================================================= */}
+      {/* TAB: DAFTAR TAGIHAN OPEN BILL (PIUTANG OPEN BILL / TAGIHAN MEJA AKTIF) */}
+      {/* ========================================================================= */}
+      {activeTab === 'OPEN_BILLS' && (
+        <div className="fade-in">
+          {/* Info Banner */}
+          <div className="card mb-4" style={{
+            padding: '14px 20px',
+            background: 'rgba(245, 158, 11, 0.08)',
+            border: '1px solid rgba(245, 158, 11, 0.3)',
+            borderRadius: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '12px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <Clock size={22} style={{ color: '#f59e0b' }} />
+              <div>
+                <div style={{ fontSize: '14px', fontWeight: 800, color: '#ffffff' }}>
+                  Piutang Open Bill / Tagihan Meja Belum Selesai ({filteredOpenBills.length} Tagihan)
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                  Total tagihan berjalan di kasir: <strong style={{ color: '#facc15' }}>{rupiah(stats.open_bills_total || 0)}</strong>. Seluruh pesanan ini tercatat sebagai piutang terbuka hingga diselesaikan di kasir POS.
+                </div>
+              </div>
+            </div>
+
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => navigate('/pos')}
+              style={{ fontWeight: 700, padding: '8px 16px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            >
+              <ExternalLink size={14} /> Buka POS Kasir
+            </button>
+          </div>
+
+          <div className="table-wrap" style={{ width: '100%', overflowX: 'auto', borderRadius: '12px' }}>
+            <table style={{ width: '100%', minWidth: '1100px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+              <thead>
+                <tr style={{ background: 'rgba(23, 28, 56, 0.7)', borderBottom: '1px solid var(--border-strong)' }}>
+                  <th style={{ padding: '14px 16px', fontWeight: 700, width: '40px' }}>No</th>
+                  <th style={{ padding: '14px 16px', fontWeight: 700 }}>No. Pesanan & Meja</th>
+                  <th style={{ padding: '14px 16px', fontWeight: 700 }}>Pelanggan / Pemesan</th>
+                  <th style={{ padding: '14px 16px', fontWeight: 700 }}>Waktu Order & Kasir</th>
+                  <th style={{ padding: '14px 16px', fontWeight: 700 }}>Rincian Menu ({'Qty x Nama Menu'})</th>
+                  <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'right' }}>Total Tagihan (Rp)</th>
+                  <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'center' }}>Status</th>
+                  <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'center', width: '150px' }}>Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredOpenBills.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} style={{ textAlign: 'center', padding: '48px 16px', color: 'var(--text-secondary)' }}>
+                      <Clock size={32} style={{ margin: '0 auto 10px', opacity: 0.5, color: '#f59e0b' }} />
+                      <div style={{ fontWeight: 600, fontSize: '14px' }}>Tidak Ada Tagihan Open Bill Aktif</div>
+                      <div style={{ fontSize: '12px', marginTop: '4px' }}>Seluruh pesanan meja di kasir telah diselesaikan dan dibayar</div>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredOpenBills.map((ob, idx) => (
+                    <tr
+                      key={ob.order_number || idx}
+                      style={{
+                        borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                        transition: 'background 0.2s ease',
+                      }}
+                    >
+                      <td style={{ padding: '14px 16px', color: 'var(--text-muted)' }}>{idx + 1}</td>
+                      <td style={{ padding: '14px 16px' }}>
+                        <div style={{ fontWeight: 800, color: '#ffffff' }}>{ob.order_number}</div>
+                        <div style={{ marginTop: '2px' }}>
+                          <span className="pill pill-primary mono" style={{ fontSize: '11px', fontWeight: 700 }}>
+                            {ob.table_number ? `MEJA ${ob.table_number}` : (ob.order_type || 'TAKE AWAY')}
+                          </span>
+                        </div>
+                      </td>
+                      <td style={{ padding: '14px 16px' }}>
+                        <div style={{ fontWeight: 700, color: '#ffffff' }}>
+                          {ob.customer_name || 'Walk-in Customer'}
+                        </div>
+                        {ob.customer_phone && (
+                          <div style={{ fontSize: '11px', color: '#38bdf8' }}>{ob.customer_phone}</div>
+                        )}
+                        {ob.outlet_name && (
+                          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{ob.outlet_name}</div>
+                        )}
+                      </td>
+                      <td style={{ padding: '14px 16px' }}>
+                        <div style={{ fontSize: '12.5px', color: 'var(--text-primary)' }}>
+                          {ob.created_at || ob.issue_date}
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          Kasir: {ob.cashier_name || 'Kasir'}
+                        </div>
+                      </td>
+                      <td style={{ padding: '14px 16px', maxWidth: '340px' }}>
+                        <div style={{ fontSize: '12px', lineHeight: '1.4' }}>
+                          {(ob.items || []).map((it, iIdx) => (
+                            <div key={iIdx} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', color: '#e2e8f0', marginBottom: '2px' }}>
+                              <span>• <strong>{it.qty}x</strong> {it.menu_name}</span>
+                              <span className="mono" style={{ color: 'var(--text-muted)' }}>{rupiah(it.total_price)}</span>
+                            </div>
+                          ))}
+                        </div>
+                        {ob.notes && (
+                          <div style={{ fontSize: '11px', color: '#f59e0b', fontStyle: 'italic', marginTop: '4px' }}>
+                            Catatan: {ob.notes}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                        <div style={{ fontWeight: 800, fontSize: '15px', color: '#facc15' }}>
+                          {rupiah(ob.total_amount)}
+                        </div>
+                        {ob.discount_amount > 0 && (
+                          <div style={{ fontSize: '11px', color: '#f87171' }}>
+                            Diskon: -{rupiah(ob.discount_amount)}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                        <span className="pill pill-warn mono" style={{ fontSize: '10.5px' }}>
+                          OPEN BILL
+                        </span>
+                      </td>
+                      <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={() => navigate('/pos')}
+                          style={{ padding: '6px 12px', fontSize: '11.5px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                          title="Selesaikan pembayaran tagihan ini di POS Kasir"
+                        >
+                          <ExternalLink size={12} /> Buka POS
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
       {/* TAB 3: RIWAYAT PEMBAYARAN & CICILAN (PAYMENT LOGS HISTORY) */}
       {/* ========================================================================= */}
       {activeTab === 'PAYMENTS' && (
@@ -2262,36 +2688,6 @@ export default function Receivables() {
                   );
                 })}
               </div>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Periode:</span>
-              <input
-                type="date"
-                className="form-control form-control-sm mono"
-                value={ecomDateFrom}
-                onChange={e => setEcomDateFrom(e.target.value)}
-                style={{ width: 'auto', fontSize: '12px', padding: '4px 8px' }}
-                placeholder="Dari"
-              />
-              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>-</span>
-              <input
-                type="date"
-                className="form-control form-control-sm mono"
-                value={ecomDateTo}
-                onChange={e => setEcomDateTo(e.target.value)}
-                style={{ width: 'auto', fontSize: '12px', padding: '4px 8px' }}
-                placeholder="Sampai"
-              />
-              {(ecomDateFrom || ecomDateTo) && (
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => { setEcomDateFrom(''); setEcomDateTo(''); }}
-                  style={{ fontSize: '11px', padding: '2px 6px', color: 'var(--text-secondary)' }}
-                >
-                  Reset
-                </button>
-              )}
             </div>
           </div>
 
@@ -4763,6 +5159,21 @@ export default function Receivables() {
           )}
         </div>
       </div>
+
+      {/* Interactive Publication Report Preview Modal */}
+      <ReportPreviewModal
+        isOpen={previewModalOpen}
+        onClose={() => setPreviewModalOpen(false)}
+        title="Pratinjau Laporan Piutang"
+        reportTitle="LAPORAN BUKU PIUTANG (ACCOUNTS RECEIVABLE)"
+        businessName={businessName}
+        outletName={outletName}
+        periodText={`Per ${getTodayStr()}`}
+        kpis={previewKpis}
+        sheets={previewSheets}
+        onExportExcel={handleExportExcel}
+        onPrint={handlePrintReceivablesReport}
+      />
     </div>
   );
 }

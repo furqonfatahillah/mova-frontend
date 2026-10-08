@@ -23,9 +23,10 @@ export const EXPENSE_CATEGORIES = [
 ];
 
 export const PAYMENT_METHODS = [
-  { value: 'CASH',       label: 'Kas Operasional / Kas Kecil (Tunai)' },
-  { value: 'TRANSFER',   label: 'Transfer Bank' },
-  { value: 'DEBIT',      label: 'Debit / Kartu EDC' },
+  { value: 'CASH',       label: 'Kas Kecil (Kasir / Outlet)' },
+  { value: 'KAS_BESAR',  label: 'Kas Besar (Brankas / Holding)' },
+  { value: 'TRANSFER',   label: 'Bank (Transfer Rekening)' },
+  { value: 'DEBIT',      label: 'Bank (Debit / EDC)' },
 ];
 
 export default function OpexManagement() {

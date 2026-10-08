@@ -17,6 +17,7 @@ import {
 import { getTodayStr, getMonthStartStr, getMonthEndStr } from '../utils/date';
 import { useOutlet } from '../context/OutletContext';
 import { exportSupplierPayablesToExcel, printSupplierPayablesReport } from '../utils/exportReport';
+import ReportPreviewModal from '../components/ReportPreviewModal';
 import toast from 'react-hot-toast';
 import { confirmDialog } from '../utils/swal';
 
@@ -77,6 +78,7 @@ export default function Payables() {
   const [reportSearch, setReportSearch] = useState('');
   const [reportData, setReportData] = useState({ rows: [], summary: {}, period: {}, outlet: '' });
   const [reportLoading, setReportLoading] = useState(false);
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
 
   // Modal States
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -280,6 +282,54 @@ export default function Payables() {
       count: acc.count + 1,
     }), { hutang: 0, dibayar: 0, sisa_hutang: 0, total_hutang: 0, count: 0 });
   }, [filteredReportRows, reportSearch, reportData.summary, reportData.rows]);
+
+  const previewSheets = useMemo(() => {
+    return [
+      {
+        id: 'supplier_payables',
+        name: 'Laporan Hutang Supplier',
+        columns: [
+          { key: 'no', label: 'No.', align: 'center', width: 8 },
+          { key: 'supplier_name', label: 'Nama Supplier', align: 'left', width: 28 },
+          { key: 'ingredient_name', label: 'Item Bahan Baku', align: 'left', width: 22 },
+          { key: 'tgl_dibuat_fmt', label: 'Tgl Dibuat', align: 'center', width: 14 },
+          { key: 'dibuat_oleh', label: 'Dibuat Oleh', align: 'left', width: 16 },
+          { key: 'no_pembelian', label: 'No. Pembelian', align: 'center', width: 16 },
+          { key: 'no_bayar', label: 'No. Bayar', align: 'center', width: 16 },
+          { key: 'jatuh_tempo_fmt', label: 'Jatuh Tempo', align: 'center', width: 14 },
+          { key: 'hutang', label: 'Hutang (Rp)', align: 'right', format: 'currency', width: 18 },
+          { key: 'dibayar', label: 'Dibayar (Rp)', align: 'right', format: 'currency', width: 18 },
+          { key: 'sisa_hutang', label: 'Sisa Hutang (Rp)', align: 'right', format: 'currency', width: 18 },
+        ],
+        data: filteredReportRows.map((r, i) => ({
+          ...r,
+          no: i + 1,
+          tgl_dibuat_fmt: r.tgl_dibuat_fmt || r.tgl_dibuat,
+          jatuh_tempo_fmt: r.jatuh_tempo_fmt || r.jatuh_tempo || '-',
+          hutang: Number(r.hutang) || 0,
+          dibayar: Number(r.dibayar) || 0,
+          sisa_hutang: Number(r.sisa_hutang) || 0,
+        })),
+        totals: [
+          {
+            label: 'TOTAL HUTANG SUPPLIER',
+            hutang: reportTotals.hutang,
+            dibayar: reportTotals.dibayar,
+            sisa_hutang: reportTotals.sisa_hutang,
+          },
+        ],
+      },
+    ];
+  }, [filteredReportRows, reportTotals]);
+
+  const previewKpis = useMemo(() => {
+    return [
+      { label: 'Total Sisa Hutang (AP)', value: reportTotals.sisa_hutang, format: 'currency', color: '#f43f5e' },
+      { label: 'Total Telah Dibayar', value: reportTotals.dibayar, format: 'currency', color: '#10b981' },
+      { label: 'Total Hutang Tercatat', value: reportTotals.hutang, format: 'currency', color: '#38bdf8' },
+      { label: 'Jumlah Tagihan', value: reportTotals.count, format: 'number', color: '#a78bfa' },
+    ];
+  }, [reportTotals]);
 
   // Filtered Payables
   const filteredItems = useMemo(() => {
@@ -1330,6 +1380,25 @@ export default function Payables() {
                 </button>
 
                 <button
+                  onClick={() => setPreviewModalOpen(true)}
+                  className="btn btn-secondary"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontSize: 12.5,
+                    color: '#38bdf8',
+                    borderColor: 'rgba(56, 189, 248, 0.35)',
+                    background: 'rgba(56, 189, 248, 0.08)',
+                    fontWeight: 600,
+                  }}
+                  title="Lihat Pratinjau Dokumen Laporan Hutang Supplier"
+                >
+                  <Eye size={15} />
+                  <span>Pratinjau Laporan</span>
+                </button>
+
+                <button
                   onClick={() => exportSupplierPayablesToExcel({
                     rows: filteredReportRows,
                     period: reportData.period || activePeriod,
@@ -2028,6 +2097,42 @@ export default function Payables() {
           </div>
         </div>
       )}
+
+      {/* Interactive Publication Report Preview Modal */}
+      <ReportPreviewModal
+        isOpen={previewModalOpen}
+        onClose={() => setPreviewModalOpen(false)}
+        title="Pratinjau Laporan Hutang Supplier"
+        reportTitle="LAPORAN HUTANG USAHA SUPPLIER (ACCOUNTS PAYABLE)"
+        businessName={businessName}
+        outletName={reportData.outlet || outletName}
+        periodText={`Per ${activePeriod.from} s/d ${activePeriod.to}`}
+        kpis={previewKpis}
+        sheets={previewSheets}
+        onExportExcel={() => exportSupplierPayablesToExcel({
+          rows: filteredReportRows,
+          period: reportData.period || activePeriod,
+          outletName: reportData.outlet || outletName,
+          businessName,
+          summary: {
+            total_hutang: reportTotals.hutang,
+            total_dibayar: reportTotals.dibayar,
+            total_sisa_hutang: reportTotals.sisa_hutang,
+            count_rows: reportTotals.count,
+          },
+        })}
+        onPrint={() => printSupplierPayablesReport({
+          rows: filteredReportRows,
+          period: reportData.period || activePeriod,
+          outletName: reportData.outlet || outletName,
+          summary: {
+            total_hutang: reportTotals.hutang,
+            total_dibayar: reportTotals.dibayar,
+            total_sisa_hutang: reportTotals.sisa_hutang,
+            count_rows: reportTotals.count,
+          },
+        })}
+      />
     </div>
   );
 }

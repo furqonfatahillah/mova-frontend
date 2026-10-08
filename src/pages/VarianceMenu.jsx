@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import api from '../api/client';
 import { num, pct, rupiah, StatusPill, LoadingState, PeriodPicker, PageHeader, MiniCard } from '../components/ui';
 import { FileSpreadsheet, Printer, Eye, X, Utensils, Layers, HelpCircle, CheckCircle2 } from 'lucide-react';
@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import { useOutlet } from '../context/OutletContext';
 import { exportVarianceMenuToExcel } from '../utils/exportReport';
 import { printElement } from '../utils/print';
+import ReportPreviewModal from '../components/ReportPreviewModal';
 
 export default function VarianceMenu() {
   const [menuData, setMenuData] = useState([]);
@@ -14,6 +15,8 @@ export default function VarianceMenu() {
   const [showDrillModal, setShowDrillModal] = useState(false);
   const [rankBy, setRankBy] = useState('value');
   const [loading, setLoading] = useState(true);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const { activeOutletId, activeOutlet, currentBusiness, dateRange: period } = useOutlet();
   const currentUser = JSON.parse(localStorage.getItem('pos_user') || '{}');
@@ -35,6 +38,7 @@ export default function VarianceMenu() {
   }
 
   async function handleExportExcel() {
+    setExporting(true);
     try {
       const fname = await exportVarianceMenuToExcel({
         menuData,
@@ -47,6 +51,8 @@ export default function VarianceMenu() {
     } catch (err) {
       console.error(err);
       toast.error('Gagal mengekspor laporan ke Excel');
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -64,17 +70,57 @@ export default function VarianceMenu() {
     setDrill(null);
   };
 
-  const sorted = [...menuData].sort((a, b) => {
-    if (rankBy === 'value') return Math.abs(b.variance_value) - Math.abs(a.variance_value);
-    if (rankBy === 'pct')   return b.weighted_pct - a.weighted_pct;
-    return b.qty_terjual - a.qty_terjual;
-  });
+  const sorted = useMemo(() => {
+    return [...menuData].sort((a, b) => {
+      if (rankBy === 'value') return Math.abs(b.variance_value) - Math.abs(a.variance_value);
+      if (rankBy === 'pct')   return b.weighted_pct - a.weighted_pct;
+      return b.qty_terjual - a.qty_terjual;
+    });
+  }, [menuData, rankBy]);
 
   const total = menuData.reduce((s, r) => s + (r.variance_value || 0), 0);
   const drillRow = selectedDrillMenu || (drill ? menuData.find(r => String(r.menu?.id ?? r.menu_id ?? r.id) === String(drill)) : null);
 
   const maxQty = Math.max(...menuData.map(r => r.qty_terjual), 1);
   const maxPct = Math.max(...menuData.map(r => r.weighted_pct || 0), 1);
+
+  // Preview Modal Sheets & KPIs
+  const previewKpis = useMemo(() => [
+    { label: 'Total Nilai Variansi', value: total, format: 'rupiah', color: total > 0 ? '#ef4444' : '#10b981' },
+    { label: 'Total Porsi Terjual', value: `${menuData.reduce((s, r) => s + (r.qty_terjual || 0), 0)} Porsi`, color: '#6366f1' },
+    { label: 'Jumlah Menu Dianalisis', value: `${menuData.length} Menu`, color: '#0ea5e9' }
+  ], [total, menuData]);
+
+  const previewSheets = useMemo(() => {
+    const rows = sorted.map(row => ({
+      menu_name: row.menu?.name || '-',
+      category: row.menu?.category || 'Menu',
+      qty_terjual: Number(row.qty_terjual || 0),
+      weighted_pct: Number(row.weighted_pct || 0),
+      variance_value: Number(row.variance_value || 0),
+      contribution: total !== 0 ? ((Math.abs(row.variance_value || 0) / Math.abs(total)) * 100) : 0
+    }));
+
+    return [
+      {
+        id: 'variance_menu_ranking',
+        name: 'Ranking Variansi Menu',
+        columns: [
+          { key: 'menu_name', label: 'Nama Menu', align: 'left', width: 25 },
+          { key: 'category', label: 'Kategori', align: 'left', width: 14 },
+          { key: 'qty_terjual', label: 'Qty Terjual (Porsi)', align: 'right', format: 'number', width: 16 },
+          { key: 'weighted_pct', label: 'Weighted Variance %', align: 'right', format: 'percent', width: 18 },
+          { key: 'variance_value', label: 'Nilai Alokasi Variansi', align: 'right', format: 'rupiah', width: 18 },
+          { key: 'contribution', label: 'Kontribusi %', align: 'right', format: 'percent', width: 14 }
+        ],
+        data: rows,
+        totals: [
+          { label: 'Total Qty Terjual', value: sorted.reduce((s, r) => s + (r.qty_terjual || 0), 0), format: 'number' },
+          { label: 'Total Nilai Variansi Menu', value: total, format: 'rupiah' }
+        ]
+      }
+    ];
+  }, [sorted, total]);
 
   if (loading) return <LoadingState />;
 
@@ -89,15 +135,32 @@ export default function VarianceMenu() {
               display: 'flex',
               alignItems: 'center',
               gap: 6,
+              borderColor: 'rgba(99, 102, 241, 0.4)',
+              color: 'var(--accent-bright)',
+              background: 'rgba(99, 102, 241, 0.08)',
+              fontWeight: 600
+            }}
+            onClick={() => setShowPreviewModal(true)}
+            title="Pratinjau interaktif laporan audit variansi menu di layar"
+          >
+            <Eye size={15} /> Pratinjau Laporan
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
               borderColor: 'rgba(16, 185, 129, 0.4)',
               color: '#34d399',
               background: 'rgba(16, 185, 129, 0.08)',
               fontWeight: 600
             }}
             onClick={handleExportExcel}
+            disabled={exporting}
             title="Unduh Ranking Variance Menu ke Excel (.xlsx)"
           >
-            <FileSpreadsheet size={15} /> Export Excel
+            <FileSpreadsheet size={15} /> {exporting ? 'Mengekspor...' : 'Export Excel'}
           </button>
           <button
             className="btn btn-secondary btn-sm"
@@ -451,6 +514,22 @@ export default function VarianceMenu() {
           </table>
         </div>
       </div>
+
+      {/* Universal Report Preview Modal */}
+      <ReportPreviewModal
+        isOpen={showPreviewModal}
+        onClose={() => setShowPreviewModal(false)}
+        title="Pratinjau Ranking Variansi Menu"
+        reportTitle="LAPORAN AUDIT RANKING VARIANSI MENU"
+        businessName={businessName}
+        outletName={outletName}
+        periodText={`${period.from} s/d ${period.to}`}
+        kpis={previewKpis}
+        sheets={previewSheets}
+        onExportExcel={handleExportExcel}
+        onPrint={handlePrintPdf}
+        exporting={exporting}
+      />
     </div>
   );
 }

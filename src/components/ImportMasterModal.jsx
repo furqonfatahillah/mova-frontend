@@ -388,8 +388,8 @@ export default function ImportMasterModal({
       title: 'Master Menu & F&B',
       downloadFn: downloadMenuTemplate,
       endpoint: '/menus/bulk-import',
-      columns: ['Kode Menu', 'Nama Menu*', 'Kategori*', 'Tipe Item*', 'Harga Jual*', 'HPP (Modal)', 'Deskripsi'],
-      sampleHint: 'Contoh: Kopi Aren, Kategori: Minuman, Tipe: RECIPE, Harga Jual: 20000, HPP: 8000',
+      columns: ['Kode Menu', 'Nama Menu*', 'Kategori*', 'Tipe Item*', 'Harga Jual*', 'Estimasi HPP Dasar (Rp)', 'Deskripsi'],
+      sampleHint: 'Contoh: Kopi Aren, Kategori: Minuman, Tipe: RECIPE, Harga Jual: 20000, Estimasi HPP Dasar: 8000',
     },
     RECIPE: {
       title: 'Resep & Gramasi Menu (BOM)',
@@ -864,7 +864,10 @@ export default function ImportMasterModal({
           const typeRaw = getVal(row, ['tipeitem', 'tipe', 'type']).toUpperCase();
           const itemType = ['RECIPE', 'DIRECT', 'SERVICE', 'BUNDLE'].includes(typeRaw) ? typeRaw : 'RECIPE';
           const price = parseDecimal(getVal(row, ['hargajualrp', 'hargajual', 'harga', 'price']), 0);
-          const costPrice = parseDecimal(getVal(row, ['hppmodalrp', 'hpp', 'modal', 'cost', 'hppmodal']), 0);
+          const costPrice = parseDecimal(getVal(row, [
+            'estimasihppdasarrp', 'estimasihppdasar', 'estimasihpp', 'hppdasarrp', 'hppdasar',
+            'targethpp', 'targethppdasar', 'hppmodalrp', 'hpp', 'modal', 'cost', 'hppmodal', 'costprice'
+          ]), 0);
           const description = getVal(row, ['deskripsi', 'keterangan']);
           const statusRaw = getVal(row, ['status']);
           const isKosong = statusRaw && statusRaw.toUpperCase().includes('KOSONG');
@@ -1137,13 +1140,18 @@ export default function ImportMasterModal({
       background: 'rgba(4, 7, 18, 0.88)', backdropFilter: 'blur(14px)',
       zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px'
     }}>
-      <div className="card modal-content" style={{
-        maxWidth: '880px', width: '100%', maxHeight: '92vh', overflowY: 'auto',
-        padding: '24px', borderRadius: '20px', background: '#11162d', border: '1px solid var(--border-strong)',
-        boxShadow: '0 25px 60px rgba(0, 0, 0, 0.7)'
+      <div className="modal modal-xl" style={{
+        maxWidth: '1320px', '--modal-max-w': '1320px', width: '96%', maxHeight: '92vh',
+        display: 'flex', flexDirection: 'column',
+        padding: 0, borderRadius: '20px', background: '#11162d', border: '1px solid var(--border-strong)',
+        boxShadow: '0 25px 60px rgba(0, 0, 0, 0.7)', overflow: 'hidden'
       }}>
         {/* Modal Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', gap: '12px' }}>
+        <div className="modal-header" style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          padding: '16px 24px', borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+          gap: '12px', flexShrink: 0, background: 'rgba(255, 255, 255, 0.02)'
+        }}>
           <div>
             <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
               <FileSpreadsheet size={22} color="var(--primary)" />
@@ -1212,6 +1220,17 @@ export default function ImportMasterModal({
             </button>
           </div>
         </div>
+
+        {/* Modal Body (Scrollable Container) */}
+        <div className="modal-body custom-scrollbar" style={{
+          flex: '1 1 auto',
+          overflowY: 'auto',
+          minHeight: 0,
+          padding: '20px 24px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '16px'
+        }}>
 
         {/* STEPPER TIMELINE BAR (When viewMode === 'STEPPER') */}
         {viewMode === 'STEPPER' && (
@@ -1899,7 +1918,16 @@ export default function ImportMasterModal({
                             )}
                           </div>
                         )}
-                        {currentMasterType === 'MENU' && `${row.data.category} · ${row.data.item_type} · ${rupiah(row.data.price)}`}
+                        {currentMasterType === 'MENU' && (
+                          <span>
+                            {row.data.category} · {row.data.item_type} · Jual: <strong style={{ color: 'var(--accent-bright)' }}>{rupiah(row.data.price)}</strong>
+                            {row.data.cost_price > 0 && (
+                              <span style={{ marginLeft: '6px', color: '#60a5fa' }}>
+                                · Est. HPP Dasar: <strong>{rupiah(row.data.cost_price)}</strong>
+                              </span>
+                            )}
+                          </span>
+                        )}
                         {currentMasterType === 'RECIPE' && (
                           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '5px' }}>
                             <span style={{ background: 'rgba(124, 58, 237, 0.2)', color: '#c084fc', fontSize: '10.5px', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>
@@ -1949,15 +1977,17 @@ export default function ImportMasterModal({
             </div>
           </div>
         )}
+        </div>
 
         {/* WIZARD ACTIONS & FOOTER CONTROLS */}
-        <div style={{
+        <div className="modal-footer" style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginTop: '16px',
-          paddingTop: '16px',
+          padding: '14px 24px',
           borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+          background: 'rgba(255, 255, 255, 0.02)',
+          flexShrink: 0,
           flexWrap: 'wrap',
           gap: '10px'
         }}>
